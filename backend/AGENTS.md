@@ -92,7 +92,7 @@ com.publicmonitor.backend
 
 ## 외부 연동
 
-- Spring Boot와 Python 모듈의 역할 및 통신 흐름은 `docs/architecture.md`를 따른다.
+- Spring Boot와 Python 모듈의 역할 및 통신 흐름은 `docs/DESIGN.md`를 따른다.
 - Python 수집·분석 모듈과 Telegram 같은 외부 시스템 호출은 전용 클라이언트 또는 어댑터로 분리한다.
 - Controller나 Entity에서 외부 API를 직접 호출하지 않는다.
 - 외부 요청에는 연결 및 응답 타임아웃을 설정한다.
@@ -126,10 +126,12 @@ com.publicmonitor.backend
 
 ## 문서 동기화
 
-- 구현 전에 `docs/architecture.md`, `docs/monitoring-process.md`와 작업에 관련된 설계 문서를 확인한다.
+- 구현 전에 `docs/DESIGN.md`에서 작업에 관련된 설계를 확인한다.
+- 작업 시작 전에 `docs/PLAN.md`에서 현재 단계와 다음 작업을 확인한다.
 - 구현과 프로젝트 문서가 충돌하면 임의로 판단하지 않고 사용자에게 알린다.
 - API 계약이 변경되면 API 문서도 함께 수정한다.
 - 테이블이나 연관관계가 변경되면 데이터베이스 설계 문서도 함께 수정한다.
 - 백엔드와 AI 모듈 사이의 요청·응답 형식이 변경되면 양쪽 관련 문서를 함께 확인한다.
-- 모니터링 처리 규칙이 변경되면 `docs/monitoring-process.md`도 함께 수정한다.
+- 시스템 구조나 모니터링 처리 규칙이 변경되면 `docs/DESIGN.md`도 함께 수정한다.
+- 계획된 백엔드 작업을 완료하면 `docs/PLAN.md`의 진행 상태를 갱신한다.
 - 아직 결정되지 않은 기술이나 구조를 확정된 규칙처럼 추가하지 않는다.
