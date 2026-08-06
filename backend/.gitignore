@@ -35,3 +35,6 @@ out/
 
 ### VS Code ###
 .vscode/
+
+### 직접 지정 ###
+src/main/resources/application.properties
