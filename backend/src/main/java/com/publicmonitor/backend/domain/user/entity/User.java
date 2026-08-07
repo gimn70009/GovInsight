@@ -1,5 +1,6 @@
 package com.publicmonitor.backend.domain.user.entity;
 
+import com.publicmonitor.backend.global.entity.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -22,7 +23,7 @@ import lombok.NoArgsConstructor;
         sequenceName = "app_users_sequence",
         allocationSize = 1
 )
-public class User {
+public class User extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "app_users_sequence_generator")

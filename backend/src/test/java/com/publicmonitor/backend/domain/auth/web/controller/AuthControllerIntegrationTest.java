@@ -25,7 +25,8 @@ import org.springframework.test.web.servlet.MockMvc;
                 + "org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration",
         "app.jwt.secret=VGhpcy1pcy1hLXRlc3Qtc2VjcmV0LWtleS10aGF0LWlzLWxvbmc=",
         "app.jwt.access-token-expiration=1h",
-        "app.local-admin.enabled=false"
+        "app.local-admin.enabled=false",
+        "app.jpa-auditing.enabled=false"
 })
 @AutoConfigureMockMvc
 class AuthControllerIntegrationTest {

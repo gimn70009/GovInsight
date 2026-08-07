@@ -40,6 +40,7 @@ public class JwtTokenProvider {
     public Claims parseClaims(String token) {
         return Jwts.parser()
                 .verifyWith(signingKey)
+                .clock(() -> Date.from(clock.instant()))
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
