@@ -1,5 +1,6 @@
 package com.publicmonitor.backend.global.response;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import java.time.OffsetDateTime;
 import lombok.Getter;
@@ -8,6 +9,7 @@ import lombok.Getter;
 @JsonPropertyOrder({"isSuccess", "timestamp", "code", "httpStatus", "message"})
 public abstract class BaseResponse {
 
+    @JsonProperty("isSuccess")
     private final boolean isSuccess;
     private final OffsetDateTime timestamp;
     private final String code;

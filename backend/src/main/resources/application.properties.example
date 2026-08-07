@@ -1,0 +1,20 @@
+spring.application.name=backend
+
+# Oracle Database Free example
+spring.datasource.url=${DB_URL:jdbc:oracle:thin:@localhost:1521/XEPDB1}
+spring.datasource.username=${DB_USERNAME:govinsight}
+spring.datasource.password=${DB_PASSWORD}
+spring.datasource.driver-class-name=oracle.jdbc.OracleDriver
+
+# Local development only. Use validate after creating the schema.
+spring.jpa.hibernate.ddl-auto=${JPA_DDL_AUTO:update}
+spring.jpa.open-in-view=false
+
+# Generate with: openssl rand -base64 32
+app.jwt.secret=${JWT_SECRET}
+app.jwt.access-token-expiration=${JWT_ACCESS_TOKEN_EXPIRATION:1h}
+
+# Creates the first local administrator only when enabled and absent.
+app.local-admin.enabled=${LOCAL_ADMIN_ENABLED:false}
+app.local-admin.login-id=${LOCAL_ADMIN_LOGIN_ID:admin}
+app.local-admin.password=${LOCAL_ADMIN_PASSWORD:}

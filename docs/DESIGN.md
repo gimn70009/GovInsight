@@ -2,7 +2,7 @@
 
 ## 문서 목적
 
-이 문서는 GovInsight를 구성하는 Spring Boot, Python, Frontend, PostgreSQL의 역할과 모듈 간 통신 방식, 공공기관 모니터링 처리 규칙을 정의한다.
+이 문서는 GovInsight를 구성하는 Spring Boot, Python, Frontend, Oracle의 역할과 모듈 간 통신 방식, 공공기관 모니터링 처리 규칙을 정의한다.
 
 ## 구성 요소와 책임
 
@@ -18,7 +18,7 @@ Spring Boot는 시스템 실행과 데이터 관리의 중심 역할을 담당�
 - 모니터링 실행 이력과 상태 관리
 - Python 모듈에 수집·분석 작업 요청
 - Python 모듈의 처리 결과 수신
-- PostgreSQL 데이터 저장 및 조회
+- Oracle 데이터 저장 및 조회
 - 보고서 생성 결과 관리
 - Telegram 수신자 관리 및 보고서 전송
 
@@ -35,7 +35,7 @@ Python 모듈은 수집과 문서 분석을 담당한다.
 - LLM 기반 요약, 핵심 포인트, 위험도, 중요도 생성
 - 처리 결과와 경고를 Spring Boot에 전달
 
-Python 모듈은 PostgreSQL에 직접 접근하지 않는다. 저장이 필요한 결과는 Spring Boot의 내부 API로 전달한다.
+Python 모듈은 Oracle에 직접 접근하지 않는다. 저장이 필요한 결과는 Spring Boot의 내부 API로 전달한다.
 
 ### Frontend
 
@@ -51,9 +51,9 @@ Frontend는 관리자용 화면을 제공하며 Spring Boot API만 호출한다.
 
 Frontend는 Python 모듈을 직접 호출하지 않는다.
 
-### PostgreSQL
+### Oracle
 
-PostgreSQL은 시스템의 영속 데이터를 저장한다.
+Oracle은 시스템의 영속 데이터를 저장한다.
 
 - 사용자와 Telegram 수신 설정
 - 모니터링 소스
@@ -63,7 +63,7 @@ PostgreSQL은 시스템의 영속 데이터를 저장한다.
 - 감지 결과와 LLM 분석 결과
 - 보고서와 Telegram 발송 결과
 
-PostgreSQL 접근은 Spring Boot를 통해서만 수행한다.
+Oracle 접근은 Spring Boot를 통해서만 수행한다.
 
 ## 비동기 HTTP 작업 흐름
 
@@ -144,7 +144,20 @@ Spring Boot API는 성공과 오류 응답에 공통 형식을 사용한다.
 - 공통 오류는 `ErrorResponseCode`, 도메인 오류는 도메인별 응답 코드로 정의한다.
 - 예상 가능한 비즈니스 오류는 `BaseException`을 상속한 도메인 예외로 표현한다.
 - 전역 예외 처리기가 검증 오류, 잘못된 요청, 비즈니스 오류와 처리하지 못한 서버 오류를 공통 형식으로 변환한다.
-- 인증·인가 오류는 JWT 보안 구성을 구현할 때 동일한 오류 응답 형식으로 연결한다.
+- 인증·인가 오류도 동일한 공통 오류 응답 형식으로 반환한다.
+
+## 로그인과 JWT 인증
+
+- 회원가입 API는 제공하지 않는다.
+- 사용자는 Oracle의 `app_users` 테이블에 저장한다.
+- 비밀번호는 BCrypt 해시로 저장하며 평문 비밀번호를 저장하지 않는다.
+- `POST /api/auth/login`에 로그인 아이디와 비밀번호를 전달해 로그인한다.
+- 로그인에 성공하면 `Bearer` 방식의 JWT 액세스 토큰을 반환한다.
+- 액세스 토큰에는 로그인 아이디, 역할, 발급 시각과 만료 시각을 포함한다.
+- 로그인 API를 제외한 Spring Boot API는 기본적으로 인증을 요구한다.
+- 인증 실패와 접근 거부는 공통 오류 응답 형식으로 반환한다.
+- 현재 단계에서는 리프레시 토큰과 로그아웃 토큰 차단 목록을 구현하지 않는다.
+- 최초 로컬 관리자 계정은 환경설정으로 생성하며 아이디, 비밀번호와 JWT 비밀키를 Git에 저장하지 않는다.
 
 ## 작업 상태
 
@@ -200,7 +213,7 @@ Spring Boot API는 성공과 오류 응답에 공통 형식을 사용한다.
 5. 기존 저장 문서와 비교해 신규·수정·변경 없음 상태를 판정한다.
 6. Python 모듈은 신규 또는 수정된 게시글을 LLM으로 요약하고 중요도를 판정한다.
 7. 처리가 끝나면 Python 모듈이 Spring Boot의 결과 수신 API로 처리 결과를 전달한다.
-8. Spring Boot는 실행 결과, 문서, 첨부파일, 감지 결과를 PostgreSQL에 저장한다.
+8. Spring Boot는 실행 결과, 문서, 첨부파일, 감지 결과를 Oracle에 저장한다.
 9. Spring Boot는 전송 조건을 충족하는 사용자에게 Telegram 보고서를 발송한다.
 
 ### 모니터링 소스
