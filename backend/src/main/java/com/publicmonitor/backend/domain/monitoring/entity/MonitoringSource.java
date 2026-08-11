@@ -107,4 +107,26 @@ public class MonitoringSource extends BaseEntity {
                 enabled
         );
     }
+
+    public void update(
+            String organizationName,
+            String boardName,
+            String description,
+            String listUrl,
+            String urlIncludePattern,
+            int detailFetchCount,
+            boolean enabled
+    ) {
+        this.organizationName = organizationName;
+        this.boardName = boardName;
+        this.description = description;
+        this.listUrl = listUrl;
+        this.urlIncludePattern = urlIncludePattern;
+        this.detailFetchCount = detailFetchCount;
+        this.enabled = enabled;
+    }
+
+    public void changeEnabled(boolean enabled) {
+        this.enabled = enabled;
+    }
 }

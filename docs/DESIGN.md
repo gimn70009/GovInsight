@@ -231,6 +231,10 @@ Spring Boot API는 성공과 오류 응답에 공통 형식을 사용한다.
 - `POST /api/monitoring-sources`는 새로운 소스를 등록한다.
 - `GET /api/monitoring-sources`는 최근 등록한 순서로 전체 소스를 조회한다.
 - `GET /api/monitoring-sources/{sourceId}`는 소스 하나를 조회하며 존재하지 않으면 `404 Not Found`를 반환한다.
+- `PUT /api/monitoring-sources/{sourceId}`로 수정 화면의 전체 입력값을 저장한다.
+- 소스 수정 시 목록 URL 중복 여부는 현재 수정 중인 소스를 제외하고 검사하며, 다른 소스가 사용 중이면 `409 Conflict`를 반환한다.
+- `PATCH /api/monitoring-sources/{sourceId}/enabled`로 다른 정보는 유지한 채 활성 여부만 변경한다.
+- 수정 및 활성 여부 변경 응답에는 DB 반영 후 갱신된 수정 시각을 포함한다.
 - 모니터링 소스 API는 JWT 인증을 요구하고 공통 응답 형식을 사용한다.
 
 ### 게시글 수집

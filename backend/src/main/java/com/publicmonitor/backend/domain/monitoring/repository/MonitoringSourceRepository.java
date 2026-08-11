@@ -8,5 +8,7 @@ public interface MonitoringSourceRepository extends JpaRepository<MonitoringSour
 
     boolean existsByListUrl(String listUrl);
 
+    boolean existsByListUrlAndIdNot(String listUrl, Long id);
+
     List<MonitoringSource> findAllByOrderByIdDesc();
 }

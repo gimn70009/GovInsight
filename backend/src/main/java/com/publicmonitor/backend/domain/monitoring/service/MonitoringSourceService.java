@@ -5,6 +5,8 @@ import com.publicmonitor.backend.domain.monitoring.exception.DuplicateMonitoring
 import com.publicmonitor.backend.domain.monitoring.exception.MonitoringSourceNotFoundException;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringSourceRepository;
 import com.publicmonitor.backend.domain.monitoring.web.dto.CreateMonitoringSourceRequest;
+import com.publicmonitor.backend.domain.monitoring.web.dto.UpdateMonitoringSourceEnabledRequest;
+import com.publicmonitor.backend.domain.monitoring.web.dto.UpdateMonitoringSourceRequest;
 import com.publicmonitor.backend.domain.monitoring.web.dto.MonitoringSourceResponse;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -51,8 +53,43 @@ public class MonitoringSourceService {
 
     @Transactional(readOnly = true)
     public MonitoringSourceResponse findById(Long sourceId) {
-        MonitoringSource source = monitoringSourceRepository.findById(sourceId)
-                .orElseThrow(MonitoringSourceNotFoundException::new);
+        MonitoringSource source = getSource(sourceId);
         return MonitoringSourceResponse.from(source);
+    }
+
+    @Transactional
+    public MonitoringSourceResponse update(Long sourceId, UpdateMonitoringSourceRequest request) {
+        MonitoringSource source = getSource(sourceId);
+        if (monitoringSourceRepository.existsByListUrlAndIdNot(request.listUrl(), sourceId)) {
+            throw new DuplicateMonitoringSourceException();
+        }
+
+        source.update(
+                request.organizationName(),
+                request.boardName(),
+                request.description(),
+                request.listUrl(),
+                request.urlIncludePattern(),
+                request.detailFetchCount(),
+                request.enabled()
+        );
+        monitoringSourceRepository.flush();
+        return MonitoringSourceResponse.from(source);
+    }
+
+    @Transactional
+    public MonitoringSourceResponse changeEnabled(
+            Long sourceId,
+            UpdateMonitoringSourceEnabledRequest request
+    ) {
+        MonitoringSource source = getSource(sourceId);
+        source.changeEnabled(request.enabled());
+        monitoringSourceRepository.flush();
+        return MonitoringSourceResponse.from(source);
+    }
+
+    private MonitoringSource getSource(Long sourceId) {
+        return monitoringSourceRepository.findById(sourceId)
+                .orElseThrow(MonitoringSourceNotFoundException::new);
     }
 }
