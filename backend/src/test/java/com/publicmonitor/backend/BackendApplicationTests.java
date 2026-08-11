@@ -1,5 +1,6 @@
 package com.publicmonitor.backend;
 
+import com.publicmonitor.backend.domain.monitoring.repository.MonitoringSourceRepository;
 import com.publicmonitor.backend.domain.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -18,6 +19,9 @@ class BackendApplicationTests {
 
 	@MockitoBean
 	UserRepository userRepository;
+
+	@MockitoBean
+	MonitoringSourceRepository monitoringSourceRepository;
 
 	@Test
 	void contextLoads() {

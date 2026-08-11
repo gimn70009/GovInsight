@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.publicmonitor.backend.domain.monitoring.repository.MonitoringSourceRepository;
 import com.publicmonitor.backend.domain.user.entity.Role;
 import com.publicmonitor.backend.domain.user.entity.User;
 import com.publicmonitor.backend.domain.user.repository.UserRepository;
@@ -39,6 +40,9 @@ class AuthControllerIntegrationTest {
 
     @MockitoBean
     private UserRepository userRepository;
+
+    @MockitoBean
+    private MonitoringSourceRepository monitoringSourceRepository;
 
     @Test
     void 로그인에_성공하면_공통_응답으로_JWT를_반환한다() throws Exception {
