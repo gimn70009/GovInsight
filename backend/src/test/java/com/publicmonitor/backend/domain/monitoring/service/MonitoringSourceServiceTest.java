@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
 
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringSource;
 import com.publicmonitor.backend.domain.monitoring.exception.DuplicateMonitoringSourceException;
@@ -11,6 +12,8 @@ import com.publicmonitor.backend.domain.monitoring.exception.MonitoringSourceNot
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringSourceRepository;
 import com.publicmonitor.backend.domain.monitoring.web.dto.CreateMonitoringSourceRequest;
 import com.publicmonitor.backend.domain.monitoring.web.dto.MonitoringSourceResponse;
+import com.publicmonitor.backend.domain.monitoring.web.dto.UpdateMonitoringSourceEnabledRequest;
+import com.publicmonitor.backend.domain.monitoring.web.dto.UpdateMonitoringSourceRequest;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -90,6 +93,66 @@ class MonitoringSourceServiceTest {
                 .isInstanceOf(MonitoringSourceNotFoundException.class);
     }
 
+    @Test
+    void 모니터링_소스를_수정한다() {
+        MonitoringSource source = createSource();
+        UpdateMonitoringSourceRequest request = updateRequest("https://example.go.kr/updated", false);
+        given(monitoringSourceRepository.findById(1L)).willReturn(Optional.of(source));
+        given(monitoringSourceRepository.existsByListUrlAndIdNot(request.listUrl(), 1L)).willReturn(false);
+
+        MonitoringSourceResponse response = monitoringSourceService.update(1L, request);
+
+        assertThat(response.organizationName()).isEqualTo("기획재정부");
+        assertThat(response.listUrl()).isEqualTo("https://example.go.kr/updated");
+        assertThat(response.detailFetchCount()).isEqualTo(5);
+        assertThat(response.enabled()).isFalse();
+        verify(monitoringSourceRepository).flush();
+    }
+
+    @Test
+    void 수정할_목록_URL을_다른_소스가_사용하면_실패한다() {
+        MonitoringSource source = createSource();
+        UpdateMonitoringSourceRequest request = updateRequest("https://example.go.kr/duplicate", true);
+        given(monitoringSourceRepository.findById(1L)).willReturn(Optional.of(source));
+        given(monitoringSourceRepository.existsByListUrlAndIdNot(request.listUrl(), 1L)).willReturn(true);
+
+        assertThatThrownBy(() -> monitoringSourceService.update(1L, request))
+                .isInstanceOf(DuplicateMonitoringSourceException.class);
+    }
+
+    @Test
+    void 존재하지_않는_모니터링_소스는_수정할_수_없다() {
+        UpdateMonitoringSourceRequest request = updateRequest("https://example.go.kr/updated", true);
+        given(monitoringSourceRepository.findById(1L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> monitoringSourceService.update(1L, request))
+                .isInstanceOf(MonitoringSourceNotFoundException.class);
+    }
+
+    @Test
+    void 모니터링_소스를_비활성화한다() {
+        MonitoringSource source = createSource();
+        given(monitoringSourceRepository.findById(1L)).willReturn(Optional.of(source));
+
+        MonitoringSourceResponse response = monitoringSourceService.changeEnabled(
+                1L,
+                new UpdateMonitoringSourceEnabledRequest(false)
+        );
+
+        assertThat(response.enabled()).isFalse();
+        verify(monitoringSourceRepository).flush();
+    }
+
+    @Test
+    void 존재하지_않는_모니터링_소스의_활성_상태는_변경할_수_없다() {
+        given(monitoringSourceRepository.findById(1L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> monitoringSourceService.changeEnabled(
+                1L,
+                new UpdateMonitoringSourceEnabledRequest(false)
+        )).isInstanceOf(MonitoringSourceNotFoundException.class);
+    }
+
     private CreateMonitoringSourceRequest createRequest(Integer detailFetchCount, Boolean enabled) {
         return new CreateMonitoringSourceRequest(
                 "조달청",
@@ -111,6 +174,18 @@ class MonitoringSourceServiceTest {
                 "/notice/view",
                 3,
                 true
+        );
+    }
+
+    private UpdateMonitoringSourceRequest updateRequest(String listUrl, boolean enabled) {
+        return new UpdateMonitoringSourceRequest(
+                "기획재정부",
+                "보도자료",
+                "기획재정부 보도자료 모니터링",
+                listUrl,
+                "/press/view",
+                5,
+                enabled
         );
     }
 }

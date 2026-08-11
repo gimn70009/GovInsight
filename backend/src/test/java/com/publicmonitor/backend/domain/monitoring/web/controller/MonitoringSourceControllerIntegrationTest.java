@@ -3,7 +3,9 @@ package com.publicmonitor.backend.domain.monitoring.web.controller;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -12,6 +14,8 @@ import com.publicmonitor.backend.domain.monitoring.exception.MonitoringSourceNot
 import com.publicmonitor.backend.domain.monitoring.service.MonitoringSourceService;
 import com.publicmonitor.backend.domain.monitoring.web.dto.CreateMonitoringSourceRequest;
 import com.publicmonitor.backend.domain.monitoring.web.dto.MonitoringSourceResponse;
+import com.publicmonitor.backend.domain.monitoring.web.dto.UpdateMonitoringSourceEnabledRequest;
+import com.publicmonitor.backend.domain.monitoring.web.dto.UpdateMonitoringSourceRequest;
 import com.publicmonitor.backend.domain.user.repository.UserRepository;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -129,6 +133,111 @@ class MonitoringSourceControllerIntegrationTest {
         given(monitoringSourceService.findById(1L)).willThrow(new MonitoringSourceNotFoundException());
 
         mockMvc.perform(get("/api/monitoring-sources/1"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("MONITORING_SOURCE_404_1"));
+    }
+
+    @Test
+    void 모니터링_소스를_수정한다() throws Exception {
+        given(monitoringSourceService.update(
+                org.mockito.ArgumentMatchers.eq(1L),
+                org.mockito.ArgumentMatchers.any(UpdateMonitoringSourceRequest.class)
+        )).willReturn(response(1L, false));
+
+        mockMvc.perform(put("/api/monitoring-sources/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "organizationName": "조달청",
+                                  "boardName": "공지사항",
+                                  "description": "조달청 공지 모니터링",
+                                  "listUrl": "https://example.go.kr/notices",
+                                  "urlIncludePattern": "/notice/view",
+                                  "detailFetchCount": 3,
+                                  "enabled": false
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sourceId").value(1))
+                .andExpect(jsonPath("$.data.enabled").value(false));
+    }
+
+    @Test
+    void 수정_필수값이_비어있으면_400을_반환한다() throws Exception {
+        mockMvc.perform(put("/api/monitoring-sources/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.data.organizationName").exists())
+                .andExpect(jsonPath("$.data.boardName").exists())
+                .andExpect(jsonPath("$.data.listUrl").exists())
+                .andExpect(jsonPath("$.data.detailFetchCount").exists())
+                .andExpect(jsonPath("$.data.enabled").exists());
+    }
+
+    @Test
+    void 중복된_목록_URL로_수정하면_409를_반환한다() throws Exception {
+        given(monitoringSourceService.update(
+                org.mockito.ArgumentMatchers.eq(1L),
+                org.mockito.ArgumentMatchers.any(UpdateMonitoringSourceRequest.class)
+        )).willThrow(new DuplicateMonitoringSourceException());
+
+        mockMvc.perform(put("/api/monitoring-sources/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "organizationName": "조달청",
+                                  "boardName": "공지사항",
+                                  "listUrl": "https://example.go.kr/duplicate",
+                                  "detailFetchCount": 3,
+                                  "enabled": true
+                                }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("MONITORING_SOURCE_409_1"));
+    }
+
+    @Test
+    void 모니터링_소스를_비활성화한다() throws Exception {
+        given(monitoringSourceService.changeEnabled(
+                org.mockito.ArgumentMatchers.eq(1L),
+                org.mockito.ArgumentMatchers.any(UpdateMonitoringSourceEnabledRequest.class)
+        )).willReturn(response(1L, false));
+
+        mockMvc.perform(patch("/api/monitoring-sources/1/enabled")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "enabled": false
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.enabled").value(false));
+    }
+
+    @Test
+    void 활성_여부가_없으면_400을_반환한다() throws Exception {
+        mockMvc.perform(patch("/api/monitoring-sources/1/enabled")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.data.enabled").exists());
+    }
+
+    @Test
+    void 존재하지_않는_소스의_활성_상태를_변경하면_404를_반환한다() throws Exception {
+        given(monitoringSourceService.changeEnabled(
+                org.mockito.ArgumentMatchers.eq(999L),
+                org.mockito.ArgumentMatchers.any(UpdateMonitoringSourceEnabledRequest.class)
+        )).willThrow(new MonitoringSourceNotFoundException());
+
+        mockMvc.perform(patch("/api/monitoring-sources/999/enabled")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "enabled": false
+                                }
+                                """))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("MONITORING_SOURCE_404_1"));
     }

@@ -3,6 +3,8 @@ package com.publicmonitor.backend.domain.monitoring.web.controller;
 import com.publicmonitor.backend.domain.monitoring.service.MonitoringSourceService;
 import com.publicmonitor.backend.domain.monitoring.web.dto.CreateMonitoringSourceRequest;
 import com.publicmonitor.backend.domain.monitoring.web.dto.MonitoringSourceResponse;
+import com.publicmonitor.backend.domain.monitoring.web.dto.UpdateMonitoringSourceEnabledRequest;
+import com.publicmonitor.backend.domain.monitoring.web.dto.UpdateMonitoringSourceRequest;
 import com.publicmonitor.backend.global.response.SuccessResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
@@ -13,6 +15,8 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -44,5 +48,21 @@ public class MonitoringSourceController {
             @Positive @PathVariable Long sourceId
     ) {
         return SuccessResponse.ok(monitoringSourceService.findById(sourceId));
+    }
+
+    @PutMapping("/{sourceId}")
+    public SuccessResponse<MonitoringSourceResponse> update(
+            @Positive @PathVariable Long sourceId,
+            @Valid @RequestBody UpdateMonitoringSourceRequest request
+    ) {
+        return SuccessResponse.ok(monitoringSourceService.update(sourceId, request));
+    }
+
+    @PatchMapping("/{sourceId}/enabled")
+    public SuccessResponse<MonitoringSourceResponse> changeEnabled(
+            @Positive @PathVariable Long sourceId,
+            @Valid @RequestBody UpdateMonitoringSourceEnabledRequest request
+    ) {
+        return SuccessResponse.ok(monitoringSourceService.changeEnabled(sourceId, request));
     }
 }
