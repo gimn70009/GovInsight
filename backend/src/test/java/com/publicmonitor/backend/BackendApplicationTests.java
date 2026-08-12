@@ -1,6 +1,8 @@
 package com.publicmonitor.backend;
 
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringSourceRepository;
+import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunRepository;
+import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunSourceRepository;
 import com.publicmonitor.backend.domain.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -22,6 +24,12 @@ class BackendApplicationTests {
 
 	@MockitoBean
 	MonitoringSourceRepository monitoringSourceRepository;
+
+	@MockitoBean
+	MonitoringRunRepository monitoringRunRepository;
+
+	@MockitoBean
+	MonitoringRunSourceRepository monitoringRunSourceRepository;
 
 	@Test
 	void contextLoads() {
