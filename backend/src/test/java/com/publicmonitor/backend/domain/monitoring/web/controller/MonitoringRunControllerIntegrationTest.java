@@ -64,6 +64,8 @@ class MonitoringRunControllerIntegrationTest {
 
         mockMvc.perform(post("/api/monitoring-runs"))
                 .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.success").doesNotExist())
                 .andExpect(jsonPath("$.code").value("SUCCESS_201"))
                 .andExpect(jsonPath("$.data.runId").value(1))
                 .andExpect(jsonPath("$.data.status").value("ACCEPTED"))
@@ -79,6 +81,8 @@ class MonitoringRunControllerIntegrationTest {
 
         mockMvc.perform(post("/api/monitoring-runs"))
                 .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.success").doesNotExist())
                 .andExpect(jsonPath("$.code").value("MONITORING_RUN_422_1"))
                 .andExpect(jsonPath("$.message").value("실행할 활성 모니터링 소스가 없습니다."));
     }
