@@ -51,6 +51,7 @@
 
 ## 3단계: Spring Boot와 Python 연동
 
+- [x] Python 3.12와 FastAPI 개발 환경 및 기본 패키지 구조 구성
 - [x] 모니터링 실행 이력 테이블 관계와 상태값 확정
 - [x] 실행 및 소스별 실행 이력 Entity와 Repository 구현
 - [x] Entity 기본값, Enum 매핑과 관계 제약조건 메타데이터 테스트 작성
