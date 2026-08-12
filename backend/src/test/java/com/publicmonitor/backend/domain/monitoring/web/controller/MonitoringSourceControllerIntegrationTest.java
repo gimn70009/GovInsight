@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.publicmonitor.backend.domain.monitoring.exception.DuplicateMonitoringSourceException;
 import com.publicmonitor.backend.domain.monitoring.exception.MonitoringSourceNotFoundException;
 import com.publicmonitor.backend.domain.monitoring.service.MonitoringSourceService;
+import com.publicmonitor.backend.domain.monitoring.service.MonitoringRunService;
 import com.publicmonitor.backend.domain.monitoring.web.dto.CreateMonitoringSourceRequest;
 import com.publicmonitor.backend.domain.monitoring.web.dto.MonitoringSourceResponse;
 import com.publicmonitor.backend.domain.monitoring.web.dto.UpdateMonitoringSourceEnabledRequest;
@@ -46,6 +47,9 @@ class MonitoringSourceControllerIntegrationTest {
 
     @MockitoBean
     private MonitoringSourceService monitoringSourceService;
+
+    @MockitoBean
+    private MonitoringRunService monitoringRunService;
 
     @MockitoBean
     private UserRepository userRepository;
