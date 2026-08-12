@@ -163,15 +163,27 @@ Spring Boot API는 성공과 오류 응답에 공통 형식을 사용한다.
 
 ## 작업 상태
 
-작업 상태는 최소한 다음 단계를 구분할 수 있어야 한다.
+전체 실행 상태는 다음 단계를 구분한다.
 
 - `REQUESTED`: Spring Boot가 실행을 생성함
 - `ACCEPTED`: Python 모듈이 작업을 접수함
+- `RUNNING`: Python 모듈이 수집·분석 작업을 처리 중임
 - `COMPLETED`: 결과 저장과 후속 처리가 정상 완료됨
-- `FALLBACK`: 정상 보고서를 만들 수 없어 점검용 결과로 종료됨
 - `FAILED`: 작업을 계속할 수 없는 오류로 종료됨
 
-상태 이름과 전환 조건은 구현 전에 데이터베이스 및 API 설계 문서에서 최종 확정한다.
+소스별 실행 상태는 `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`로 구분한다. `FALLBACK`은 실행 상태가 아니라 소스별 대체 처리 방식이며 `NORMAL`, `FALLBACK` 처리 모드로 구분한다.
+
+수동 실행은 `MANUAL`, 자동 스케줄 실행은 `SCHEDULED` 실행 방식으로 기록한다.
+
+## 모니터링 실행 이력 데이터 모델
+
+- `MONITORING_RUNS`는 전체 모니터링 실행 한 건의 상태, 실행 방식, Python 작업 ID, 집계 수량과 처리 시각을 저장한다.
+- `MONITORING_RUN_SOURCES`는 한 번의 실행에 포함된 소스별 상태, 처리 방식, 감지 문서 수, 경고 수와 실패 원인을 저장한다.
+- `MONITORING_RUNS`와 `MONITORING_RUN_SOURCES`는 1:N 관계이다.
+- `MONITORING_SOURCES`와 `MONITORING_RUN_SOURCES`는 1:N 관계이다.
+- 동일 실행에 동일 소스가 중복되지 않도록 `MONITORING_RUN_SOURCES`의 `(RUN_ID, SOURCE_ID)` 조합에 고유 제약조건을 적용한다.
+- `PYTHON_JOB_ID`는 Python이 작업을 접수하기 전에는 존재하지 않으므로 NULL을 허용하고, 값이 발급된 이후에는 중복되지 않도록 고유 제약조건을 적용한다.
+- 실행 및 소스별 수량 필드는 음수를 허용하지 않는다.
 
 ## 실패와 재시도
 
