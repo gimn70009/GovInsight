@@ -72,13 +72,14 @@ class MonitoringRunControllerIntegrationTest {
     }
 
     @Test
-    void 활성_소스가_없으면_실행_생성은_409를_반환한다() throws Exception {
+    void 활성_소스가_없으면_실행_생성은_422를_반환한다() throws Exception {
         given(monitoringRunService.create(MonitoringTriggerType.MANUAL))
                 .willThrow(new NoActiveMonitoringSourceException());
 
         mockMvc.perform(post("/api/monitoring-runs"))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("MONITORING_RUN_409_1"));
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("MONITORING_RUN_422_1"))
+                .andExpect(jsonPath("$.message").value("실행할 활성 모니터링 소스가 없습니다."));
     }
 
     @Test

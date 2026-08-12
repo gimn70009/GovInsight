@@ -10,9 +10,9 @@ import org.springframework.http.HttpStatus;
 public enum MonitoringRunResponseCode implements BaseResponseCode {
 
     NO_ACTIVE_SOURCE(
-            "MONITORING_RUN_409_1",
-            HttpStatus.CONFLICT.value(),
-            "활성화된 모니터링 소스가 없습니다."
+            "MONITORING_RUN_422_1",
+            HttpStatus.UNPROCESSABLE_CONTENT.value(),
+            "실행할 활성 모니터링 소스가 없습니다."
     );
 
     private final String code;
