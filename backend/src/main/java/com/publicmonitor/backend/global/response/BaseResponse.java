@@ -9,7 +9,6 @@ import lombok.Getter;
 @JsonPropertyOrder({"isSuccess", "timestamp", "code", "httpStatus", "message"})
 public abstract class BaseResponse {
 
-    @JsonProperty("isSuccess")
     private final boolean isSuccess;
     private final OffsetDateTime timestamp;
     private final String code;
@@ -22,5 +21,10 @@ public abstract class BaseResponse {
         this.code = code;
         this.httpStatus = httpStatus;
         this.message = message;
+    }
+
+    @JsonProperty("isSuccess")
+    public boolean isSuccess() {
+        return isSuccess;
     }
 }

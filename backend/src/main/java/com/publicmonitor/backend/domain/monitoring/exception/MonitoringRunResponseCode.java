@@ -13,6 +13,11 @@ public enum MonitoringRunResponseCode implements BaseResponseCode {
             "MONITORING_RUN_422_1",
             HttpStatus.UNPROCESSABLE_CONTENT.value(),
             "실행할 활성 모니터링 소스가 없습니다."
+    ),
+    PYTHON_JOB_ACCEPTANCE_FAILED(
+            "MONITORING_RUN_502_1",
+            HttpStatus.BAD_GATEWAY.value(),
+            "Python 모니터링 작업 접수에 실패했습니다."
     );
 
     private final String code;

@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRunStatus;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringTriggerType;
+import com.publicmonitor.backend.domain.monitoring.exception.MonitoringJobAcceptanceException;
 import com.publicmonitor.backend.domain.monitoring.exception.NoActiveMonitoringSourceException;
 import com.publicmonitor.backend.domain.monitoring.service.MonitoringRunService;
 import com.publicmonitor.backend.domain.monitoring.service.MonitoringSourceService;
@@ -55,7 +56,7 @@ class MonitoringRunControllerIntegrationTest {
         given(monitoringRunService.create(MonitoringTriggerType.MANUAL))
                 .willReturn(new CreateMonitoringRunResponse(
                         1L,
-                        MonitoringRunStatus.REQUESTED,
+                        MonitoringRunStatus.ACCEPTED,
                         MonitoringTriggerType.MANUAL,
                         2,
                         requestedAt
@@ -63,9 +64,11 @@ class MonitoringRunControllerIntegrationTest {
 
         mockMvc.perform(post("/api/monitoring-runs"))
                 .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.success").doesNotExist())
                 .andExpect(jsonPath("$.code").value("SUCCESS_201"))
                 .andExpect(jsonPath("$.data.runId").value(1))
-                .andExpect(jsonPath("$.data.status").value("REQUESTED"))
+                .andExpect(jsonPath("$.data.status").value("ACCEPTED"))
                 .andExpect(jsonPath("$.data.triggerType").value("MANUAL"))
                 .andExpect(jsonPath("$.data.totalSourceCount").value(2))
                 .andExpect(jsonPath("$.data.requestedAt").value("2026-08-12T10:00:00"));
@@ -78,8 +81,21 @@ class MonitoringRunControllerIntegrationTest {
 
         mockMvc.perform(post("/api/monitoring-runs"))
                 .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.success").doesNotExist())
                 .andExpect(jsonPath("$.code").value("MONITORING_RUN_422_1"))
                 .andExpect(jsonPath("$.message").value("실행할 활성 모니터링 소스가 없습니다."));
+    }
+
+    @Test
+    void Python_작업_접수에_실패하면_502를_반환한다() throws Exception {
+        given(monitoringRunService.create(MonitoringTriggerType.MANUAL))
+                .willThrow(new MonitoringJobAcceptanceException());
+
+        mockMvc.perform(post("/api/monitoring-runs"))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.code").value("MONITORING_RUN_502_1"))
+                .andExpect(jsonPath("$.message").value("Python 모니터링 작업 접수에 실패했습니다."));
     }
 
     @Test

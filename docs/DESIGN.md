@@ -92,18 +92,54 @@ Spring Boot가 Python 모듈을 호출한다.
 POST /internal/monitoring/jobs
 ```
 
-요청에는 최소한 다음 정보가 포함되어야 한다.
+초기 작업 접수 계약은 Spring Boot에서 생성한 실행 ID와 해당 실행에 포함된 활성 소스 목록만 전달한다.
 
-- Spring Boot에서 생성한 실행 ID
-- 수집할 활성 소스 목록
-- 소스 ID, 기관명, 게시판명, 목록 URL
-- 상세 수집 수와 URL 포함 패턴
-- 조회 기간과 작업 옵션
-- 기존 문서의 원문 식별자, 본문 해시, 첨부파일 시그니처
+```json
+{
+  "runId": 5,
+  "sources": [
+    {
+      "sourceId": 1,
+      "organizationName": "서울시",
+      "boardName": "공지사항",
+      "listUrl": "https://example.go.kr/notices",
+      "urlIncludePattern": "/notice/view",
+      "detailFetchCount": 3
+    }
+  ]
+}
+```
 
-Python 모듈은 작업을 접수한 후 최종 결과를 기다리게 하지 않고 `202 Accepted`와 작업 ID를 반환한다.
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---:|---|
+| `runId` | Number | O | Spring Boot에서 생성한 전체 실행 ID |
+| `sources` | Array | O | 이번 실행에서 처리할 활성 소스 목록이며 한 건 이상이어야 함 |
+| `sources[].sourceId` | Number | O | 모니터링 소스 ID |
+| `sources[].organizationName` | String | O | 공공기관 이름 |
+| `sources[].boardName` | String | O | 게시판 이름 |
+| `sources[].listUrl` | String | O | 게시판 목록 페이지 URL |
+| `sources[].urlIncludePattern` | String | X | 상세 게시글 URL 포함 패턴 |
+| `sources[].detailFetchCount` | Number | O | 실행 시 수집할 상세 게시글 수이며 1 이상이어야 함 |
 
-Python 모듈은 Spring Boot가 전달한 기존 문서의 해시 및 첨부파일 시그니처와 새로 수집한 값을 비교해 변경 상태를 판정한다. 기존 문서 정보가 없는 게시글은 신규 문서로 처리한다.
+Python 모듈은 요청 형식을 검증한 뒤 UUID 형식의 작업 ID를 생성하고, 최종 처리 결과를 기다리지 않은 채 `202 Accepted`를 반환한다.
+
+```json
+{
+  "jobId": "3ed1132b-8d61-45d9-bfab-06c1ed96f202",
+  "status": "ACCEPTED"
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---:|---|
+| `jobId` | String | O | Python에서 발급한 작업 식별자 |
+| `status` | String | O | 작업 접수 상태이며 `ACCEPTED`만 허용 |
+
+Spring Boot는 `202 Accepted`와 유효한 응답을 받으면 `MONITORING_RUNS`의 `PYTHON_JOB_ID`를 저장하고 상태를 `REQUESTED`에서 `ACCEPTED`로 변경하며 `ACCEPTED_AT`을 기록한다. 이 시점에는 소스별 실행 상태를 `PENDING`으로 유지한다.
+
+Python 서버 주소는 환경설정으로 관리하고 연결 및 응답 타임아웃을 적용한다. 응답 상태가 202가 아니거나 `jobId`, `status`가 유효하지 않거나 통신에 실패하면 작업 접수 실패로 처리한다. 실패한 실행 이력은 삭제하지 않고 `FAILED`, 종료 시각과 안전한 오류 메시지를 저장하며 외부 API에는 `502 Bad Gateway`를 반환한다.
+
+조회 기간, 작업 옵션, 기존 문서 식별자, 본문 해시와 첨부파일 시그니처는 초기 작업 접수 계약에 포함하지 않는다. 실제 변경 감지 기능을 구현할 때 저장 구조와 함께 별도로 확정한다.
 
 ### 결과 전달
 
@@ -124,7 +160,7 @@ POST /internal/monitoring/results
 
 Spring Boot가 결과를 정상적으로 저장하면 성공 응답을 반환한다.
 
-정확한 요청·응답 JSON과 오류 코드는 API 설계 문서에서 별도로 정의한다.
+최종 결과 전달의 정확한 요청·응답 JSON과 오류 코드는 결과 수신 기능을 구현하기 전에 별도로 확정한다.
 
 ## 공통 API 응답
 
@@ -189,10 +225,10 @@ Spring Boot API는 성공과 오류 응답에 공통 형식을 사용한다.
 
 - `POST /api/monitoring-runs`는 활성화된 모니터링 소스를 대상으로 수동 실행 이력을 생성한다.
 - 수동 실행 요청에는 별도 요청 본문을 사용하지 않으며 실행 방식은 서버에서 `MANUAL`로 지정한다.
-- 전체 실행은 `REQUESTED`, 소스별 실행 결과는 `PENDING`, 처리 방식은 `NORMAL`로 생성한다.
-- 전체 실행과 활성 소스별 실행 결과는 하나의 트랜잭션으로 저장한다.
+- 전체 실행은 `REQUESTED`, 소스별 실행 결과는 `PENDING`, 처리 방식은 `NORMAL`로 생성하고 Python 접수 성공 시 전체 실행을 `ACCEPTED`로 변경한다.
+- 전체 실행, 활성 소스별 실행 결과와 Python 접수 상태는 하나의 트랜잭션으로 저장한다.
 - 활성화된 소스가 없는 상태 자체는 오류가 아니지만, 이 상태에서 실행을 요청하면 처리할 대상이 없으므로 실행 이력을 생성하지 않고 `422 Unprocessable Content`를 반환한다.
-- 현재 단계의 수동 실행 API는 실행 이력만 생성하며 Python 작업 요청은 수행하지 않는다.
+- 수동 실행 API는 실행 이력을 생성한 뒤 Python의 `POST /internal/monitoring/jobs`를 호출한다.
 - `GET /api/monitoring-runs`는 실행 요청 시각과 실행 ID를 기준으로 최신 실행부터 조회한다.
 - 실행 이력 목록에는 상세 페이지 이동용 실행 ID와 화면에 표시할 실행 시각, 상태, 소스 수, 감지 문서 수와 경고 수만 포함한다.
 - 보고서 제목과 요약은 보고서 저장 구조를 설계한 뒤 별도 작업에서 실행 이력 조회에 연결한다.

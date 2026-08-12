@@ -7,6 +7,10 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.publicmonitor.backend.domain.monitoring.client.PythonMonitoringClient;
+import com.publicmonitor.backend.domain.monitoring.client.PythonMonitoringClientException;
+import com.publicmonitor.backend.domain.monitoring.client.PythonMonitoringJobStatus;
+import com.publicmonitor.backend.domain.monitoring.client.dto.PythonMonitoringJobResponse;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRun;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRunSource;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRunSourceStatus;
@@ -15,6 +19,7 @@ import com.publicmonitor.backend.domain.monitoring.entity.MonitoringSource;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringTriggerType;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringProcessingMode;
 import com.publicmonitor.backend.domain.monitoring.exception.NoActiveMonitoringSourceException;
+import com.publicmonitor.backend.domain.monitoring.exception.MonitoringJobAcceptanceException;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunRepository;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunSourceRepository;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringSourceRepository;
@@ -25,6 +30,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -45,6 +51,9 @@ class MonitoringRunServiceTest {
     @Mock
     private MonitoringRunSourceRepository monitoringRunSourceRepository;
 
+    @Mock
+    private PythonMonitoringClient pythonMonitoringClient;
+
     private MonitoringRunService monitoringRunService;
 
     @BeforeEach
@@ -54,6 +63,7 @@ class MonitoringRunServiceTest {
                 monitoringSourceRepository,
                 monitoringRunRepository,
                 monitoringRunSourceRepository,
+                pythonMonitoringClient,
                 clock
         );
     }
@@ -67,14 +77,22 @@ class MonitoringRunServiceTest {
             ReflectionTestUtils.setField(run, "id", 1L);
             return run;
         });
+        UUID jobId = UUID.fromString("3ed1132b-8d61-45d9-bfab-06c1ed96f202");
+        given(pythonMonitoringClient.accept(any(), any()))
+                .willReturn(new PythonMonitoringJobResponse(jobId, PythonMonitoringJobStatus.ACCEPTED));
 
         CreateMonitoringRunResponse response = monitoringRunService.create(MonitoringTriggerType.MANUAL);
 
         assertThat(response.runId()).isEqualTo(1L);
-        assertThat(response.status()).isEqualTo(MonitoringRunStatus.REQUESTED);
+        assertThat(response.status()).isEqualTo(MonitoringRunStatus.ACCEPTED);
         assertThat(response.triggerType()).isEqualTo(MonitoringTriggerType.MANUAL);
         assertThat(response.totalSourceCount()).isEqualTo(2);
         assertThat(response.requestedAt()).isEqualTo(LocalDateTime.of(2026, 8, 12, 10, 0));
+
+        ArgumentCaptor<MonitoringRun> runCaptor = ArgumentCaptor.forClass(MonitoringRun.class);
+        verify(monitoringRunRepository).save(runCaptor.capture());
+        assertThat(runCaptor.getValue().getPythonJobId()).isEqualTo(jobId.toString());
+        assertThat(runCaptor.getValue().getAcceptedAt()).isEqualTo(LocalDateTime.of(2026, 8, 12, 10, 0));
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<MonitoringRunSource>> captor = ArgumentCaptor.forClass(List.class);
@@ -93,7 +111,30 @@ class MonitoringRunServiceTest {
         assertThatThrownBy(() -> monitoringRunService.create(MonitoringTriggerType.MANUAL))
                 .isInstanceOf(NoActiveMonitoringSourceException.class);
 
-        verifyNoInteractions(monitoringRunRepository, monitoringRunSourceRepository);
+        verifyNoInteractions(monitoringRunRepository, monitoringRunSourceRepository, pythonMonitoringClient);
+    }
+
+    @Test
+    void Python_작업_접수에_실패하면_실행을_실패_상태로_남긴다() {
+        List<MonitoringSource> sources = List.of(createSource("서울시"));
+        given(monitoringSourceRepository.findAllByEnabledTrueOrderByIdAsc()).willReturn(sources);
+        given(monitoringRunRepository.save(any(MonitoringRun.class))).willAnswer(invocation -> {
+            MonitoringRun run = invocation.getArgument(0);
+            ReflectionTestUtils.setField(run, "id", 1L);
+            return run;
+        });
+        given(pythonMonitoringClient.accept(any(), any()))
+                .willThrow(new PythonMonitoringClientException("연결 실패"));
+
+        assertThatThrownBy(() -> monitoringRunService.create(MonitoringTriggerType.MANUAL))
+                .isInstanceOf(MonitoringJobAcceptanceException.class);
+
+        ArgumentCaptor<MonitoringRun> runCaptor = ArgumentCaptor.forClass(MonitoringRun.class);
+        verify(monitoringRunRepository).save(runCaptor.capture());
+        MonitoringRun failedRun = runCaptor.getValue();
+        assertThat(failedRun.getStatus()).isEqualTo(MonitoringRunStatus.FAILED);
+        assertThat(failedRun.getCompletedAt()).isEqualTo(LocalDateTime.of(2026, 8, 12, 10, 0));
+        assertThat(failedRun.getErrorMessage()).isEqualTo("Python 모니터링 작업 접수에 실패했습니다.");
     }
 
     @Test
