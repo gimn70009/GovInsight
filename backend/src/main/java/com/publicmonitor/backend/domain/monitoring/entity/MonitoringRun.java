@@ -118,4 +118,22 @@ public class MonitoringRun extends BaseEntity {
     ) {
         return new MonitoringRun(triggerType, totalSourceCount, requestedAt);
     }
+
+    public void accept(String pythonJobId, LocalDateTime acceptedAt) {
+        if (status != MonitoringRunStatus.REQUESTED) {
+            throw new IllegalStateException("요청 상태인 실행만 접수할 수 있습니다.");
+        }
+        this.pythonJobId = pythonJobId;
+        this.status = MonitoringRunStatus.ACCEPTED;
+        this.acceptedAt = acceptedAt;
+    }
+
+    public void failAcceptance(String errorMessage, LocalDateTime failedAt) {
+        if (status != MonitoringRunStatus.REQUESTED) {
+            throw new IllegalStateException("요청 상태인 실행만 접수 실패로 변경할 수 있습니다.");
+        }
+        this.status = MonitoringRunStatus.FAILED;
+        this.errorMessage = errorMessage;
+        this.completedAt = failedAt;
+    }
 }

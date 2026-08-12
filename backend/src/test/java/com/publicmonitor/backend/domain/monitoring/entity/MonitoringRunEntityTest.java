@@ -32,6 +32,38 @@ class MonitoringRunEntityTest {
     }
 
     @Test
+    void acceptChangesRequestedRunToAccepted() {
+        MonitoringRun run = MonitoringRun.create(
+                MonitoringTriggerType.MANUAL,
+                1,
+                LocalDateTime.of(2026, 8, 12, 9, 0)
+        );
+        LocalDateTime acceptedAt = LocalDateTime.of(2026, 8, 12, 9, 0, 1);
+
+        run.accept("python-job-id", acceptedAt);
+
+        assertThat(run.getStatus()).isEqualTo(MonitoringRunStatus.ACCEPTED);
+        assertThat(run.getPythonJobId()).isEqualTo("python-job-id");
+        assertThat(run.getAcceptedAt()).isEqualTo(acceptedAt);
+    }
+
+    @Test
+    void failAcceptanceChangesRequestedRunToFailed() {
+        MonitoringRun run = MonitoringRun.create(
+                MonitoringTriggerType.MANUAL,
+                1,
+                LocalDateTime.of(2026, 8, 12, 9, 0)
+        );
+        LocalDateTime failedAt = LocalDateTime.of(2026, 8, 12, 9, 0, 1);
+
+        run.failAcceptance("접수 실패", failedAt);
+
+        assertThat(run.getStatus()).isEqualTo(MonitoringRunStatus.FAILED);
+        assertThat(run.getErrorMessage()).isEqualTo("접수 실패");
+        assertThat(run.getCompletedAt()).isEqualTo(failedAt);
+    }
+
+    @Test
     void monitoringRunEnumsAreStoredAsStrings() throws NoSuchFieldException {
         assertStringEnum(MonitoringRun.class.getDeclaredField("status"));
         assertStringEnum(MonitoringRun.class.getDeclaredField("triggerType"));

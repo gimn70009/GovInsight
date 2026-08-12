@@ -18,3 +18,8 @@ app.jwt.access-token-expiration=${JWT_ACCESS_TOKEN_EXPIRATION:1h}
 app.local-admin.enabled=${LOCAL_ADMIN_ENABLED:false}
 app.local-admin.login-id=${LOCAL_ADMIN_LOGIN_ID:admin}
 app.local-admin.password=${LOCAL_ADMIN_PASSWORD:}
+
+# Python monitoring API
+app.python-monitoring.base-url=${PYTHON_MONITORING_BASE_URL:http://localhost:8000}
+app.python-monitoring.connect-timeout=${PYTHON_MONITORING_CONNECT_TIMEOUT:3s}
+app.python-monitoring.read-timeout=${PYTHON_MONITORING_READ_TIMEOUT:5s}
