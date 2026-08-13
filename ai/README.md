@@ -26,7 +26,8 @@ ai/
 │  │  └─ monitoring/
 │  └─ test_health.py
 ├─ pyproject.toml
-└─ uv.lock
+├─ requirements.txt
+└─ requirements-dev.txt
 ```
 
 - `main.py`: FastAPI 애플리케이션 생성과 공통 API 라우터 등록
@@ -44,19 +45,23 @@ ai/
 
 ```cmd
 cd C:\GovInsight\ai
-uv sync --dev
+python -m venv .venv
+.venv\Scripts\activate.bat
+python -m pip install --upgrade pip
+python -m pip install -r requirements-dev.txt
 ```
 
-가상환경을 직접 활성화하려면 CMD에서 다음 명령을 사용한다.
+이미 `.venv`가 존재하면 새로 만들지 않고 활성화한 뒤 requirements 파일을 설치한다.
 
 ```cmd
 .venv\Scripts\activate.bat
+python -m pip install -r requirements-dev.txt
 ```
 
 ## 실행
 
 ```cmd
-uv run uvicorn app.main:app --reload --port 8000
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 - API 문서: <http://localhost:8000/docs>
@@ -65,6 +70,6 @@ uv run uvicorn app.main:app --reload --port 8000
 ## 검증
 
 ```cmd
-uv run pytest
-uv run ruff check .
+python -m pytest
+python -m ruff check .
 ```

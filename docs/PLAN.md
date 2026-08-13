@@ -40,7 +40,7 @@
 
 ## 2단계: Python 수집 모듈
 
-- [x] Python 3.12와 uv 패키지 관리 방식 확정
+- [x] Python 3.12와 venv·pip·requirements 패키지 관리 방식 확정
 - [x] Python 프로젝트 기본 구조 생성
 - [x] 비동기 작업 접수 API 구현
 - [x] FastAPI 작업 접수 API에 프로세스 내부 백그라운드 작업 예약 연결
