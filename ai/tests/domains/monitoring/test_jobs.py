@@ -1,5 +1,7 @@
+from unittest.mock import Mock
 from uuid import UUID
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -23,12 +25,24 @@ def valid_request() -> dict[str, object]:
     }
 
 
-def test_accept_monitoring_job() -> None:
+def test_accept_monitoring_job(monkeypatch: pytest.MonkeyPatch) -> None:
+    background_job = Mock()
+    monkeypatch.setattr(
+        "app.domains.monitoring.api.run_monitoring_job",
+        background_job,
+    )
+
     response = client.post("/internal/monitoring/jobs", json=valid_request())
 
     assert response.status_code == 202
     assert response.json()["status"] == "ACCEPTED"
-    UUID(response.json()["jobId"])
+    job_id = UUID(response.json()["jobId"])
+
+    background_job.assert_called_once()
+    scheduled_job_id, scheduled_request = background_job.call_args.args
+    assert scheduled_job_id == job_id
+    assert scheduled_request.run_id == 5
+    assert [source.source_id for source in scheduled_request.sources] == [1]
 
 
 def test_reject_job_without_sources() -> None:
