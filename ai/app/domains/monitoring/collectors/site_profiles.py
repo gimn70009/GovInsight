@@ -3,64 +3,100 @@ from dataclasses import dataclass
 from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 
 
+# 기관별 상세 페이지에서 제목, 본문, 게시일을 찾는 CSS 선택자 설정
 @dataclass(frozen=True)
 class SiteProfile:
     title_selectors: tuple[str, ...]
     content_selectors: tuple[str, ...]
     date_selectors: tuple[str, ...]
 
-
+# 전용 기관 프로필이 없는 사이트에 적용하는 공통 CSS 선택자
 DEFAULT_PROFILE = SiteProfile(
     title_selectors=("h1", ".board-view-title", ".view-title", ".title"),
     content_selectors=("article", "main", ".board-view-content", ".view-content", ".content"),
     date_selectors=("time", "[datetime]", ".date", ".write-date", ".view-date"),
 )
 
+# 우선 지원하는 공공기관별 상세 페이지 수집 규칙
 SITE_PROFILES = {
+
+    # 산업통상부 보도자료
     "motir.go.kr": SiteProfile(
         title_selectors=(".detail-tit",),
         content_selectors=(".detail-cont",),
         date_selectors=(".detail-info li:has-text('등록일') span",),
     ),
+
+    # 과학기술정보통신부 게시글
     "msit.go.kr": SiteProfile(
         title_selectors=(".view_head h2",),
-        content_selectors=(".board_notcon",),
-        date_selectors=(".view_head .date", "time", "[datetime]"),
+        content_selectors=("#cont-wrap.view_cont", ".board_notcon"),
+        date_selectors=(
+            ".view_head .meta dl:has(dt:has-text('작성일')) dd",
+            ".view_head .date",
+            "time",
+            "[datetime]",
+        ),
     ),
+
+    # 기후에너지환경부 게시글
     "mcee.go.kr": SiteProfile(
-        title_selectors=(".articleSubject",),
-        content_selectors=(".articleDetail",),
-        date_selectors=(".articleInfo .item:has-text('작성일') .dd",),
+        title_selectors=("#boardTableWrapper > header", ".articleSubject"),
+        content_selectors=("#boardTableWrapper .view_con", ".articleDetail"),
+        date_selectors=(
+            "#boardViewListForRead_0 dl:has(dt:has-text('등록일자')) dd",
+            ".articleInfo .item:has-text('작성일') .dd",
+        ),
     ),
+
+    # 고용노동부 게시글
     "moel.go.kr": SiteProfile(
         title_selectors=(".b_info dl:first-child dd",),
-        content_selectors=(".b_content.news_content",),
+        content_selectors=(".b_content", ".b_content.news_content"),
         date_selectors=(".b_info dl:has-text('등록일') dd",),
     ),
+
+    # 국토교통부 게시글
     "molit.go.kr": SiteProfile(
         title_selectors=(".bd_view h4",),
-        content_selectors=(".bd_view_ul_lst",),
+        content_selectors=(".bd_view_cont", ".bd_view_ul_lst"),
         date_selectors=(".bd_view_ul_info li:has-text('등록일') span",),
     ),
 }
 
+# 산업통상부 JavaScript 링크에서 게시글 번호 추출
 ARTICLE_VIEW_PATTERN = re.compile(r"article\.view\(['\"]?(\d+)['\"]?\)")
+
+# 과기정통부 JavaScript 링크에서 게시글 번호 추출
 MSIT_DETAIL_PATTERN = re.compile(r"fn_detail\(['\"]?(\d+)['\"]?\)")
 
+# 과기정통부 fn_download(첨부그룹번호, 파일순서, 확장자)에서 다운로드 정보 추출
+MSIT_DOWNLOAD_PATTERN = re.compile(
+    r"fn_download\(\s*['\"]?(\d+)['\"]?\s*,\s*['\"]?(\d+)['\"]?"
+)
 
+# 기후에너지환경부 ajaxFileDownLoad(파일 ID, 파일 순서)에서 다운로드 정보 추출
+MCEE_DOWNLOAD_PATTERN = re.compile(
+    r"ajaxFileDownLoad\(\s*['\"]?(\d+)['\"]?\s*,\s*['\"]?(\d+)['\"]?"
+)
+
+
+# URL에 맞는 기관별 프로필을 반환하고, 없으면 기본 프로필을 사용
 def get_site_profile(url: str) -> SiteProfile:
     return SITE_PROFILES.get(_hostname(url), DEFAULT_PROFILE)
 
-
+# href 또는 onclick을 실제 상세 게시글 URL로 변환
 def resolve_link_target(href: str | None, onclick: str | None, list_url: str) -> str | None:
     script = " ".join(value for value in (href, onclick) if value)
     hostname = _hostname(list_url)
 
+    # 산업통상부 처리
     if hostname == "motir.go.kr":
         match = ARTICLE_VIEW_PATTERN.search(script)
         if match:
             return f"{list_url.rstrip('/')}/{match.group(1)}/view"
 
+    # 과기정통부 처리
     if hostname == "msit.go.kr":
         match = MSIT_DETAIL_PATTERN.search(script)
         if match:
@@ -75,12 +111,40 @@ def resolve_link_target(href: str | None, onclick: str | None, list_url: str) ->
             }
             return f"{parsed.scheme}://{parsed.netloc}/bbs/view.do?{urlencode(detail_query)}"
 
+    # 일반 사이트 처리
     if href and not href.lower().startswith("javascript:"):
         return href
     return None
 
 
-def resolve_download_url(href: str | None, page_url: str) -> str | None:
+# 일반 또는 JavaScript 첨부파일 링크를 절대 다운로드 URL로 변환
+def resolve_download_url(
+    href: str | None,
+    page_url: str,
+    onclick: str | None = None,
+) -> str | None:
+    script = " ".join(value for value in (href, onclick) if value)
+    match = MSIT_DOWNLOAD_PATTERN.search(script)
+    if match:
+        download_query = urlencode(
+            {
+                "atchFileNo": match.group(1),
+                "fileOrd": match.group(2),
+                "fileBtn": "A",
+            }
+        )
+        return urljoin(page_url, f"/ssm/file/fileDown.do?{download_query}")
+
+    match = MCEE_DOWNLOAD_PATTERN.search(script)
+    if match:
+        download_query = urlencode(
+            {
+                "fileId": match.group(1),
+                "fileSeq": match.group(2),
+            }
+        )
+        return urljoin(page_url, f"/home/file/readDownloadFile.do?{download_query}")
+
     if not href:
         return None
     if not href.lower().startswith("javascript:"):
@@ -91,6 +155,6 @@ def resolve_download_url(href: str | None, page_url: str) -> str | None:
         return urljoin(page_url, match.group(1))
     return None
 
-
+# URL에서 www.를 제거한 소문자 도메인을 추출
 def _hostname(url: str) -> str:
     return (urlparse(url).hostname or "").lower().removeprefix("www.")

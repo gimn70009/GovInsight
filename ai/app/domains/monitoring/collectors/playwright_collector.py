@@ -27,8 +27,10 @@ DATE_SELECTORS = ("time", "[datetime]", ".date", ".write-date", ".view-date")
 ATTACHMENT_EXTENSIONS = ("pdf", "hwp", "hwpx", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "zip")
 DATE_PATTERN = re.compile(r"(20\d{2})[.\-/년]\s*(\d{1,2})[.\-/월]\s*(\d{1,2})")
 
-
+# Playwright Chromium을 사용해 여러 모니터링 소스를 순서대로 수집
 class PlaywrightCollector:
+
+    # 브라우저를 실행하고 전달받은 모든 소스를 순서대로 처리
     async def collect_sources(
         self,
         sources: list[MonitoringSourceRequest],
@@ -40,6 +42,8 @@ class PlaywrightCollector:
             finally:
                 await browser.close()
 
+    # 기관 게시판 하나의 목록에서 상세 URL을 찾고 게시글을 수집
+    # 실패 시 전체 작업을 중단하지 않고 소스별 실패 결과를 반환
     async def _collect_source(
         self,
         browser: Browser,
@@ -132,10 +136,18 @@ def _parse_datetime(value: str | None) -> datetime | None:
     try:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
-        match = DATE_PATTERN.search(value)
-        if not match:
-            return None
+        pass
+
+    match = DATE_PATTERN.search(value)
+    if match:
         return datetime(*(int(part) for part in match.groups()))
+
+    for date_format in ("%b %d, %Y", "%B %d, %Y"):
+        try:
+            return datetime.strptime(value, date_format)
+        except ValueError:
+            continue
+    return None
 
 
 async def _collect_attachments(page: Page, page_url: str) -> list[CollectedAttachment]:
@@ -143,7 +155,11 @@ async def _collect_attachments(page: Page, page_url: str) -> list[CollectedAttac
         """elements => elements.map(element => ({
             href: element.getAttribute('href'),
             text: (element.textContent || '').trim(),
-            download: element.getAttribute('download') || ''
+            download: element.getAttribute('download') || '',
+            onclick: element.getAttribute('onclick'),
+            relatedFileName: (
+                element.closest('li')?.querySelector('a[class*="ico_file_"]')?.textContent || ''
+            ).trim()
         }))"""
     )
     attachments: list[CollectedAttachment] = []
@@ -155,15 +171,22 @@ async def _collect_attachments(page: Page, page_url: str) -> list[CollectedAttac
     for link in links:
         raw_href = link["href"]
         text = link["text"]
-        url = resolve_download_url(raw_href, page_url)
+        related_file_name = link["relatedFileName"]
+        url = resolve_download_url(raw_href, page_url, link["onclick"])
         is_file = bool(
             link["download"]
             or extension_pattern.search(raw_href or "")
             or file_name_pattern.search(text)
+            or file_name_pattern.search(related_file_name)
         )
         if not url or url in seen or not is_file:
             continue
-        file_name = link["download"] or text or url.rsplit("/", maxsplit=1)[-1]
+        file_name = (
+            link["download"]
+            or related_file_name
+            or text
+            or url.rsplit("/", maxsplit=1)[-1]
+        )
         attachments.append(CollectedAttachment(file_name=file_name[:500], download_url=url))
         seen.add(url)
     return attachments

@@ -40,6 +40,31 @@ def test_resolve_javascript_download_link() -> None:
     assert result == "https://www.motir.go.kr/attach/down/file-id"
 
 
+def test_resolve_msit_javascript_download_link() -> None:
+    result = resolve_download_url(
+        "javascript:void(0);",
+        "https://www.msit.go.kr/bbs/view.do?bbsSeqNo=100",
+        "fn_download('54751', '3', 'hwpx');",
+    )
+
+    assert result == (
+        "https://www.msit.go.kr/ssm/file/fileDown.do?"
+        "atchFileNo=54751&fileOrd=3&fileBtn=A"
+    )
+
+
+def test_resolve_mcee_javascript_download_link() -> None:
+    result = resolve_download_url(
+        "javascript:ajaxFileDownLoad('329108','1');",
+        "https://mcee.go.kr/home/web/board/read.do?boardId=1880370",
+    )
+
+    assert result == (
+        "https://mcee.go.kr/home/file/readDownloadFile.do?"
+        "fileId=329108&fileSeq=1"
+    )
+
+
 def test_get_profile_ignores_www_subdomain() -> None:
     profile = get_site_profile("https://www.moel.go.kr/news/enews/report/enewsView.do")
 

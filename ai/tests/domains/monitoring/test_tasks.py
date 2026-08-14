@@ -3,7 +3,11 @@ from uuid import UUID
 
 import pytest
 
-from app.domains.monitoring.schemas.collected_document import SourceCollectionResult
+from app.domains.monitoring.schemas.collected_document import (
+    CollectedAttachment,
+    CollectedDocument,
+    SourceCollectionResult,
+)
 from app.domains.monitoring.schemas.request import MonitoringJobRequest
 from app.domains.monitoring.tasks import run_monitoring_job
 
@@ -51,3 +55,67 @@ def test_run_monitoring_job_collects_every_source(monkeypatch: pytest.MonkeyPatc
     )
 
     assert collected_source_ids == [1, 2]
+
+
+def test_run_monitoring_job_logs_document_metadata_without_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logged_messages: list[str] = []
+
+    def capture_log(message: str, *args) -> None:
+        logged_messages.append(message % args)
+
+    async def collect_sources(_collector, _sources):
+        return [
+            SourceCollectionResult(
+                source_id=1,
+                documents=[
+                    CollectedDocument(
+                        original_url="https://example.go.kr/notices/1",
+                        title="테스트 공고",
+                        content_text="로그에 남기면 안 되는 게시글 원문",
+                        attachments=[
+                            CollectedAttachment(
+                                file_name="공고문.pdf",
+                                download_url="https://example.go.kr/files/1",
+                            )
+                        ],
+                    )
+                ],
+            )
+        ]
+
+    monkeypatch.setattr("app.domains.monitoring.tasks.sys.platform", "linux")
+    monkeypatch.setattr(
+        "app.domains.monitoring.tasks.PlaywrightCollector.collect_sources", collect_sources
+    )
+    monkeypatch.setattr("app.domains.monitoring.tasks.logger.info", capture_log)
+    request = MonitoringJobRequest.model_validate(
+        {
+            "runId": 5,
+            "sources": [
+                {
+                    "sourceId": 1,
+                    "organizationName": "서울시",
+                    "boardName": "공지사항",
+                    "listUrl": "https://example.go.kr/notices",
+                    "urlIncludePattern": "/notice/view",
+                    "detailFetchCount": 1,
+                }
+            ],
+        }
+    )
+
+    asyncio.run(
+        run_monitoring_job(
+            UUID("3ed1132b-8d61-45d9-bfab-06c1ed96f202"),
+            request,
+        )
+    )
+
+    log_text = "\n".join(logged_messages)
+    assert "title=테스트 공고" in log_text
+    assert "content_length=19" in log_text
+    assert "attachment_count=1" in log_text
+    assert "file_name=공고문.pdf" in log_text
+    assert "로그에 남기면 안 되는 게시글 원문" not in log_text
