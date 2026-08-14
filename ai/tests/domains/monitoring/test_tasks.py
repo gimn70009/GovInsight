@@ -1,25 +1,24 @@
-from unittest.mock import call
+import asyncio
 from uuid import UUID
 
 import pytest
 
+from app.domains.monitoring.schemas.collected_document import SourceCollectionResult
 from app.domains.monitoring.schemas.request import MonitoringJobRequest
 from app.domains.monitoring.tasks import run_monitoring_job
 
 
-def test_run_monitoring_job_processes_every_source(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    processed_sources = []
+def test_run_monitoring_job_collects_every_source(monkeypatch: pytest.MonkeyPatch) -> None:
+    collected_source_ids: list[int] = []
 
-    def record_source(run_id, job_id, source) -> None:
-        processed_sources.append(call(run_id, job_id, source.source_id))
+    async def collect_sources(_collector, sources):
+        collected_source_ids.extend(source.source_id for source in sources)
+        return [SourceCollectionResult(source_id=source.source_id) for source in sources]
 
+    monkeypatch.setattr("app.domains.monitoring.tasks.sys.platform", "linux")
     monkeypatch.setattr(
-        "app.domains.monitoring.tasks._process_monitoring_source",
-        record_source,
+        "app.domains.monitoring.tasks.PlaywrightCollector.collect_sources", collect_sources
     )
-    job_id = UUID("3ed1132b-8d61-45d9-bfab-06c1ed96f202")
     request = MonitoringJobRequest.model_validate(
         {
             "runId": 5,
@@ -44,9 +43,11 @@ def test_run_monitoring_job_processes_every_source(
         }
     )
 
-    run_monitoring_job(job_id, request)
+    asyncio.run(
+        run_monitoring_job(
+            UUID("3ed1132b-8d61-45d9-bfab-06c1ed96f202"),
+            request,
+        )
+    )
 
-    assert processed_sources == [
-        call(5, job_id, 1),
-        call(5, job_id, 2),
-    ]
+    assert collected_source_ids == [1, 2]

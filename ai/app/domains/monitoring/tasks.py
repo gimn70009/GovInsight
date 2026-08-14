@@ -1,15 +1,16 @@
+import asyncio
 import logging
+import sys
 from uuid import UUID
 
-from app.domains.monitoring.schemas.request import (
-    MonitoringJobRequest,
-    MonitoringSourceRequest,
-)
+from app.domains.monitoring.collectors import PlaywrightCollector
+from app.domains.monitoring.schemas.collected_document import SourceCollectionResult
+from app.domains.monitoring.schemas.request import MonitoringJobRequest, MonitoringSourceRequest
 
 logger = logging.getLogger(__name__)
 
 
-def run_monitoring_job(job_id: UUID, request: MonitoringJobRequest) -> None:
+async def run_monitoring_job(job_id: UUID, request: MonitoringJobRequest) -> None:
     logger.info(
         "모니터링 백그라운드 작업 시작. run_id=%s job_id=%s source_count=%s",
         request.run_id,
@@ -17,24 +18,51 @@ def run_monitoring_job(job_id: UUID, request: MonitoringJobRequest) -> None:
         len(request.sources),
     )
 
-    for source in request.sources:
-        _process_monitoring_source(request.run_id, job_id, source)
+    try:
+        results = await asyncio.to_thread(_collect_sources, request.sources)
+    except Exception:
+        logger.exception(
+            "모니터링 백그라운드 수집 실행 실패. run_id=%s job_id=%s",
+            request.run_id,
+            job_id,
+        )
+        return
+
+    for result in results:
+        if result.succeeded:
+            logger.info(
+                "모니터링 소스 수집 완료. run_id=%s job_id=%s source_id=%s document_count=%s",
+                request.run_id,
+                job_id,
+                result.source_id,
+                len(result.documents),
+            )
+        else:
+            logger.warning(
+                "모니터링 소스 수집 실패. run_id=%s job_id=%s source_id=%s error=%s",
+                request.run_id,
+                job_id,
+                result.source_id,
+                result.error_message,
+            )
 
     logger.info(
-        "모니터링 백그라운드 작업의 임시 처리를 마침. run_id=%s job_id=%s",
+        "모니터링 백그라운드 작업 수집 완료. run_id=%s job_id=%s",
         request.run_id,
         job_id,
     )
 
 
-def _process_monitoring_source(
-    run_id: int,
-    job_id: UUID,
-    source: MonitoringSourceRequest,
-) -> None:
-    logger.info(
-        "모니터링 소스의 임시 처리를 실행. run_id=%s job_id=%s source_id=%s",
-        run_id,
-        job_id,
-        source.source_id,
-    )
+def _collect_sources(
+    sources: list[MonitoringSourceRequest],
+) -> list[SourceCollectionResult]:
+    if sys.platform == "win32":
+        loop = asyncio.ProactorEventLoop()
+    else:
+        loop = asyncio.new_event_loop()
+
+    try:
+        asyncio.set_event_loop(loop)
+        return loop.run_until_complete(PlaywrightCollector().collect_sources(sources))
+    finally:
+        loop.close()
