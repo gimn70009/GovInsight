@@ -1,0 +1,27 @@
+from datetime import datetime
+
+from pydantic import BaseModel, Field
+
+
+class CollectedAttachment(BaseModel):
+    file_name: str = Field(min_length=1, max_length=500)
+    download_url: str = Field(min_length=1, max_length=2000)
+
+
+class CollectedDocument(BaseModel):
+    original_url: str = Field(min_length=1, max_length=2000)
+    external_document_id: str | None = Field(default=None, max_length=200)
+    title: str = Field(min_length=1, max_length=500)
+    content_text: str | None = None
+    published_at: datetime | None = None
+    attachments: list[CollectedAttachment] = Field(default_factory=list)
+
+
+class SourceCollectionResult(BaseModel):
+    source_id: int = Field(gt=0)
+    documents: list[CollectedDocument] = Field(default_factory=list)
+    error_message: str | None = Field(default=None, max_length=2000)
+
+    @property
+    def succeeded(self) -> bool:
+        return self.error_message is None
