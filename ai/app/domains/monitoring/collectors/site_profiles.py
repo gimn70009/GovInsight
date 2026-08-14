@@ -64,6 +64,16 @@ SITE_PROFILES = {
     ),
 }
 
+MOLIT_TENDER_PROFILE = SiteProfile(
+    title_selectors=(
+        ".bd_view_tbl_info li:has(em:has-text('공사명')) span",
+    ),
+    content_selectors=(".bd_view",),
+    date_selectors=(
+        ".bd_view_tbl_info li:has(em:has-text('등록일시')) span",
+    ),
+)
+
 # 산업통상부 JavaScript 링크에서 게시글 번호 추출
 ARTICLE_VIEW_PATTERN = re.compile(r"article\.view\(['\"]?(\d+)['\"]?\)")
 
@@ -83,12 +93,16 @@ MCEE_DOWNLOAD_PATTERN = re.compile(
 
 # URL에 맞는 기관별 프로필을 반환하고, 없으면 기본 프로필을 사용
 def get_site_profile(url: str) -> SiteProfile:
+    parsed = urlparse(url)
+    if _hostname(url) == "molit.go.kr" and "/USR/tender/" in parsed.path:
+        return MOLIT_TENDER_PROFILE
     return SITE_PROFILES.get(_hostname(url), DEFAULT_PROFILE)
 
 # href 또는 onclick을 실제 상세 게시글 URL로 변환
 def resolve_link_target(href: str | None, onclick: str | None, list_url: str) -> str | None:
     script = " ".join(value for value in (href, onclick) if value)
     hostname = _hostname(list_url)
+    list_path = urlparse(list_url).path
 
     # 산업통상부 처리
     if hostname == "motir.go.kr":
@@ -110,6 +124,11 @@ def resolve_link_target(href: str | None, onclick: str | None, list_url: str) ->
                 "sCode": query.get("sCode", ["user"])[0],
             }
             return f"{parsed.scheme}://{parsed.netloc}/bbs/view.do?{urlencode(detail_query)}"
+
+    if hostname == "molit.go.kr" and "/USR/tender/" in list_path:
+        if href and "mng.jsp" in href and "ID=" in href.upper():
+            return href
+        return None
 
     # 일반 사이트 처리
     if href and not href.lower().startswith("javascript:"):

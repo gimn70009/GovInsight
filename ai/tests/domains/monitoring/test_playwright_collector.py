@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 
 from playwright.async_api import async_playwright
 
@@ -101,6 +102,31 @@ def test_extract_msit_document_content_and_published_date() -> None:
     assert document.content_text == "지원사업 공고 본문입니다."
     assert document.published_at is not None
     assert document.published_at.date().isoformat() == "2026-08-12"
+
+
+def test_extract_document_uses_list_date_when_detail_has_no_date() -> None:
+    async def collect():
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch(headless=True)
+            page = await browser.new_page()
+            await page.set_content(
+                """
+                <div class="view_head"><h2>과기정통부 보도자료</h2></div>
+                <div id="cont-wrap" class="view_cont">보도자료 본문</div>
+                """
+            )
+            try:
+                return await PlaywrightCollector()._extract_document(
+                    page,
+                    "https://www.msit.go.kr/bbs/view.do?nttSeqNo=1",
+                    datetime(2026, 8, 14),
+                )
+            finally:
+                await browser.close()
+
+    document = asyncio.run(collect())
+
+    assert document.published_at == datetime(2026, 8, 14)
 
 
 def test_extract_remaining_institution_profiles() -> None:

@@ -1,5 +1,6 @@
 import re
 from datetime import datetime
+from urllib.parse import urljoin
 
 from playwright.async_api import Browser, Error, Page, async_playwright
 
@@ -56,20 +57,36 @@ class PlaywrightCollector:
             links = await page.locator("a[href], a[onclick]").evaluate_all(
                 """elements => elements.map(element => ({
                     href: element.getAttribute('href'),
-                    onclick: element.getAttribute('onclick')
+                    onclick: element.getAttribute('onclick'),
+                    rowText: (
+                        element.closest('tr, .toggle')?.textContent || ''
+                    ).trim()
                 }))"""
             )
-            hrefs = [
-                resolve_link_target(link["href"], link["onclick"], source.list_url)
-                for link in links
-            ]
+            hrefs = []
+            list_dates: dict[str, datetime] = {}
+            for link in links:
+                target = resolve_link_target(
+                    link["href"],
+                    link["onclick"],
+                    source.list_url,
+                )
+                if target:
+                    target = urljoin(source.list_url, target)
+                hrefs.append(target)
+                row_date = _parse_datetime(link["rowText"])
+                if target and row_date:
+                    list_dates[target] = row_date
             document_urls = select_document_urls(
                 hrefs,
                 source.list_url,
                 source.url_include_pattern,
                 source.detail_fetch_count,
             )
-            documents = [await self._collect_document(page, url) for url in document_urls]
+            documents = [
+                await self._collect_document(page, url, list_dates.get(url))
+                for url in document_urls
+            ]
             return SourceCollectionResult(source_id=source.source_id, documents=documents)
         except (Error, OSError, ValueError) as exception:
             return SourceCollectionResult(
@@ -79,11 +96,21 @@ class PlaywrightCollector:
         finally:
             await page.close()
 
-    async def _collect_document(self, page: Page, url: str) -> CollectedDocument:
+    async def _collect_document(
+        self,
+        page: Page,
+        url: str,
+        fallback_published_at: datetime | None = None,
+    ) -> CollectedDocument:
         await page.goto(url, wait_until="domcontentloaded", timeout=PAGE_TIMEOUT_MS)
-        return await self._extract_document(page, url)
+        return await self._extract_document(page, url, fallback_published_at)
 
-    async def _extract_document(self, page: Page, url: str) -> CollectedDocument:
+    async def _extract_document(
+        self,
+        page: Page,
+        url: str,
+        fallback_published_at: datetime | None = None,
+    ) -> CollectedDocument:
         profile = get_site_profile(url)
         title = await _first_text(page, profile.title_selectors)
         if not title and profile != DEFAULT_PROFILE:
@@ -98,8 +125,9 @@ class PlaywrightCollector:
             external_document_id=extract_external_document_id(url),
             title=title,
             content_text=await _first_text(page, profile.content_selectors),
-            published_at=_parse_datetime(
-                await _first_date_value(page, profile.date_selectors)
+            published_at=(
+                _parse_datetime(await _first_date_value(page, profile.date_selectors))
+                or fallback_published_at
             ),
             attachments=await _collect_attachments(page, url),
         )

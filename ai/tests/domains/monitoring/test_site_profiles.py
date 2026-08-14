@@ -69,3 +69,25 @@ def test_get_profile_ignores_www_subdomain() -> None:
     profile = get_site_profile("https://www.moel.go.kr/news/enews/report/enewsView.do")
 
     assert profile.title_selectors == (".b_info dl:first-child dd",)
+
+
+def test_resolve_molit_tender_detail_link_only() -> None:
+    list_url = "https://www.molit.go.kr/USR/tender/m_83/lst.jsp"
+
+    detail = resolve_link_target(
+        "./mng.jsp?SECTION=선택없음&ID=32699&TYPE=VIEW",
+        None,
+        list_url,
+    )
+    category = resolve_link_target("./lst.jsp?SECTION=공사", None, list_url)
+
+    assert detail == "./mng.jsp?SECTION=선택없음&ID=32699&TYPE=VIEW"
+    assert category is None
+
+
+def test_get_molit_tender_profile() -> None:
+    profile = get_site_profile(
+        "https://www.molit.go.kr/USR/tender/m_83/mng.jsp?ID=32699"
+    )
+
+    assert profile.content_selectors == (".bd_view",)
