@@ -1,11 +1,22 @@
 from datetime import datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
+
+
+class AttachmentParseStatus(StrEnum):
+    PENDING = "PENDING"
+    FAILED = "FAILED"
 
 
 class CollectedAttachment(BaseModel):
     file_name: str = Field(min_length=1, max_length=500)
     download_url: str = Field(min_length=1, max_length=2000)
+    content_type: str | None = Field(default=None, max_length=200)
+    file_size: int | None = Field(default=None, ge=0)
+    file_hash: str | None = Field(default=None, min_length=64, max_length=64)
+    parse_status: AttachmentParseStatus = AttachmentParseStatus.PENDING
+    error_message: str | None = Field(default=None, max_length=2000)
 
 
 class CollectedDocument(BaseModel):

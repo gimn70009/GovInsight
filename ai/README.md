@@ -82,7 +82,18 @@ python -m playwright install chromium
 ```cmd
 set SPRING_BOOT_BASE_URL=http://127.0.0.1:8080
 set SPRING_BOOT_TIMEOUT_SECONDS=5
+set ATTACHMENT_DOWNLOAD_TIMEOUT_SECONDS=15
+set ATTACHMENT_MAX_SIZE_BYTES=20971520
 ```
+## 첨부파일 메타데이터 처리
+
+수집한 첨부파일은 운영체제 임시 폴더에 스트리밍 방식으로 내려받는다. 다운로드 중 파일 크기와 SHA-256 해시를 계산하고 HTTP 응답의 MIME 타입을 정리한 뒤, 임시 파일은 즉시 삭제한다. 파일 원본은 Git이나 Oracle에 저장하지 않는다.
+
+- 기본 다운로드 제한 시간: 15초
+- 기본 최대 파일 크기: 20 MiB
+- 다운로드 성공: 메타데이터 저장 후 `PARSE_STATUS=PENDING`
+- 다운로드 실패: `PARSE_STATUS=FAILED`와 안전한 오류 메시지 저장
+- 본문 전체와 다운로드 URL은 로그에 남기지 않음
 ## 실행
 
 ```cmd

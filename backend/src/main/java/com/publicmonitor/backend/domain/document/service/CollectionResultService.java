@@ -1,5 +1,6 @@
 package com.publicmonitor.backend.domain.document.service;
 
+import com.publicmonitor.backend.domain.document.entity.AttachmentParseStatus;
 import com.publicmonitor.backend.domain.document.entity.Document;
 import com.publicmonitor.backend.domain.document.entity.DocumentAttachment;
 import com.publicmonitor.backend.domain.document.entity.DocumentChangeType;
@@ -84,12 +85,17 @@ public class CollectionResultService {
                 continue;
             }
 
+            int sourceWarningCount = Math.toIntExact(sourceResult.documents().stream()
+                    .flatMap(document -> document.attachments().stream())
+                    .filter(attachment -> attachment.parseStatus() == AttachmentParseStatus.FAILED)
+                    .count());
             int displayOrder = 0;
             for (CollectedDocument collected : sourceResult.documents()) {
                 results.add(saveDocument(runSource, collected, displayOrder++, now));
             }
-            runSource.complete(sourceResult.documents().size(), 0, now);
+            runSource.complete(sourceResult.documents().size(), sourceWarningCount, now);
             successCount++;
+            warningCount += sourceWarningCount;
         }
 
         run.completeCollection(successCount, failedCount, results.size(), warningCount, now);
@@ -142,11 +148,15 @@ public class CollectionResultService {
                             attachment.fileName(),
                             attachment.downloadUrl(),
                             extensionOf(attachment.fileName()),
-                            null,
-                            null,
-                            null
+                            attachment.contentType(),
+                            attachment.fileSize(),
+                            attachment.fileHash(),
+                            attachment.parseStatus(),
+                            attachment.errorMessage()
                     ))
                     .toList());
+        } else {
+            updateAttachmentMetadata(version, attachments);
         }
 
         if (!documentDetectionRepository.existsByMonitoringRunSourceIdAndDocumentId(runSource.getId(), document.getId())) {
@@ -169,6 +179,23 @@ public class CollectionResultService {
         );
     }
 
+    private void updateAttachmentMetadata(
+            DocumentVersion version,
+            List<CollectedAttachment> collectedAttachments
+    ) {
+        documentAttachmentRepository.findAllByDocumentVersionId(version.getId()).forEach(savedAttachment ->
+                collectedAttachments.stream()
+                        .filter(collected -> collected.downloadUrl().equals(savedAttachment.getDownloadUrl()))
+                        .findFirst()
+                        .ifPresent(collected -> savedAttachment.updateDownloadMetadata(
+                                collected.contentType(),
+                                collected.fileSize(),
+                                collected.fileHash(),
+                                collected.parseStatus(),
+                                collected.errorMessage()
+                        ))
+        );
+    }
     private DocumentChangeType determineChangeType(DocumentVersion latestVersion, String versionHash) {
         if (latestVersion == null) {
             return DocumentChangeType.NEW_DOCUMENT;
@@ -182,7 +209,12 @@ public class CollectionResultService {
         return attachments.stream()
                 .map(attachment -> new CollectedAttachment(
                         normalizeFileName(attachment.fileName()),
-                        attachment.downloadUrl()
+                        attachment.downloadUrl(),
+                        attachment.contentType(),
+                        attachment.fileSize(),
+                        attachment.fileHash(),
+                        attachment.parseStatus(),
+                        attachment.errorMessage()
                 ))
                 .toList();
     }

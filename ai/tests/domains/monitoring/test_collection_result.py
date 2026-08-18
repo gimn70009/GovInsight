@@ -31,6 +31,9 @@ def test_convert_collected_results_to_camel_case_request() -> None:
                             CollectedAttachment(
                                 file_name="공고.pdf",
                                 download_url="https://example.com/file/1",
+                                content_type="application/pdf",
+                                file_size=1024,
+                                file_hash="a" * 64,
                             )
                         ],
                     )
@@ -44,7 +47,12 @@ def test_convert_collected_results_to_camel_case_request() -> None:
     assert body["runId"] == 10
     assert body["sources"][0]["status"] == "COMPLETED"
     assert body["sources"][0]["documents"][0]["publishedAt"] == "2026-08-18T09:00:00"
-    assert body["sources"][0]["documents"][0]["attachments"][0]["fileName"] == "공고.pdf"
+    attachment = body["sources"][0]["documents"][0]["attachments"][0]
+    assert attachment["fileName"] == "공고.pdf"
+    assert attachment["contentType"] == "application/pdf"
+    assert attachment["fileSize"] == 1024
+    assert attachment["fileHash"] == "a" * 64
+    assert attachment["parseStatus"] == "PENDING"
 
 
 def test_send_collection_result_to_spring_boot() -> None:

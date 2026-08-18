@@ -5,6 +5,7 @@ from uuid import UUID
 
 from app.domains.monitoring.clients import CollectionResultClient
 from app.domains.monitoring.collectors import PlaywrightCollector
+from app.domains.monitoring.downloaders import AttachmentDownloader
 from app.domains.monitoring.schemas.collected_document import (
     CollectedDocument,
     SourceCollectionResult,
@@ -32,6 +33,8 @@ async def run_monitoring_job(job_id: UUID, request: MonitoringJobRequest) -> Non
             job_id,
         )
         return
+
+    results = await AttachmentDownloader().enrich_results(results)
 
     for result in results:
         if result.succeeded:
@@ -98,12 +101,13 @@ def _log_collected_documents(
         for attachment in document.attachments:
             logger.info(
                 "수집 첨부파일 확인. run_id=%s job_id=%s source_id=%s "
-                "file_name=%s download_url=%s",
+                "file_name=%s parse_status=%s file_size=%s",
                 run_id,
                 job_id,
                 source_id,
                 attachment.file_name,
-                attachment.download_url,
+                attachment.parse_status,
+                attachment.file_size,
             )
 
 
