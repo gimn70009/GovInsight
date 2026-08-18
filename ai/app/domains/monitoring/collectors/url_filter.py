@@ -1,5 +1,10 @@
+import re
 from collections.abc import Iterable
 from urllib.parse import parse_qs, urljoin, urlparse, urlunparse
+
+from app.domains.monitoring.collectors.site_profiles import get_site_profile
+
+VALID_EXTERNAL_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def select_document_urls(
@@ -37,17 +42,22 @@ def select_document_urls(
 
 def extract_external_document_id(url: str) -> str | None:
     parsed = urlparse(url)
-    query = parse_qs(parsed.query)
-    for key in ("id", "seq", "no", "idx", "newsId", "articleId", "boardSeq"):
-        value = query.get(key)
-        if value and value[0]:
-            return value[0]
+    profile = get_site_profile(url)
+    query = {key.lower(): values for key, values in parse_qs(parsed.query).items()}
 
-    path_parts = parsed.path.rstrip("/").split("/")
-    path_part = path_parts[-1]
-    if path_part == "view" and len(path_parts) > 1:
-        path_part = path_parts[-2]
-    return path_part or None
+    for key in profile.document_id_query_keys:
+        values = query.get(key.lower())
+        if not values:
+            continue
+        candidate = values[0].strip()
+        if VALID_EXTERNAL_ID.fullmatch(candidate):
+            return candidate
+
+    if profile.document_id_path_pattern:
+        match = re.search(profile.document_id_path_pattern, parsed.path, re.IGNORECASE)
+        if match and VALID_EXTERNAL_ID.fullmatch(match.group(1)):
+            return match.group(1)
+    return None
 
 
 def _normalize_url(url: str) -> str:

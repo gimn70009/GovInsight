@@ -55,3 +55,34 @@ def test_extract_external_document_id_prefers_known_query_parameter() -> None:
     assert extract_external_document_id(
         "https://www.motir.go.kr/kor/article/ATCL3f49a5a8c/172106/view"
     ) == "172106"
+
+
+def test_extract_external_document_id_supports_institution_query_parameters() -> None:
+    assert extract_external_document_id(
+        "https://www.msit.go.kr/bbs/view.do?nttSeqNo=3186858"
+    ) == "3186858"
+    assert extract_external_document_id(
+        "https://mcee.go.kr/home/web/board/read.do?boardId=1880370"
+    ) == "1880370"
+    assert extract_external_document_id(
+        "https://www.moel.go.kr/info/view.do?bbs_seq=12345"
+    ) == "12345"
+    assert extract_external_document_id(
+        "https://www.molit.go.kr/USR/BORD0201/DTL.jsp?idx=269284"
+    ) == "269284"
+
+
+def test_extract_external_document_id_never_returns_page_file_name() -> None:
+    assert extract_external_document_id("https://example.go.kr/board/read.do") is None
+    assert extract_external_document_id("https://example.go.kr/board/view.do") is None
+    assert extract_external_document_id("https://example.go.kr/board/DTL.jsp") is None
+    assert extract_external_document_id("https://example.go.kr/board/list.html") is None
+
+
+def test_extract_external_document_id_handles_case_and_encoded_value() -> None:
+    assert extract_external_document_id(
+        "https://example.go.kr/view.do?NTTSEQNO=ABC-123"
+    ) == "ABC-123"
+    assert extract_external_document_id(
+        "https://example.go.kr/view.do?articleId=ABC%5F123"
+    ) == "ABC_123"

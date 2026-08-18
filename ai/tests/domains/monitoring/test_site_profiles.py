@@ -69,6 +69,7 @@ def test_get_profile_ignores_www_subdomain() -> None:
     profile = get_site_profile("https://www.moel.go.kr/news/enews/report/enewsView.do")
 
     assert profile.title_selectors == (".b_info dl:first-child dd",)
+    assert profile.document_id_query_keys == ("bbs_seq", "bbsSeq")
 
 
 def test_resolve_molit_tender_detail_link_only() -> None:
@@ -91,3 +92,15 @@ def test_get_molit_tender_profile() -> None:
     )
 
     assert profile.content_selectors == (".bd_view",)
+
+
+def test_profiles_keep_document_id_rules_with_each_institution() -> None:
+    assert get_site_profile("https://www.msit.go.kr/bbs/view.do").document_id_query_keys == (
+        "nttSeqNo",
+    )
+    assert get_site_profile("https://mcee.go.kr/home/web/board/read.do").document_id_query_keys == (
+        "boardId",
+    )
+    assert get_site_profile("https://www.motir.go.kr/article/1/view").document_id_path_pattern == (
+        r"/(\d+)/view/?$"
+    )

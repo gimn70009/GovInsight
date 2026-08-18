@@ -9,12 +9,28 @@ class SiteProfile:
     title_selectors: tuple[str, ...]
     content_selectors: tuple[str, ...]
     date_selectors: tuple[str, ...]
+    document_id_query_keys: tuple[str, ...] = ()
+    document_id_path_pattern: str | None = None
 
 # 전용 기관 프로필이 없는 사이트에 적용하는 공통 CSS 선택자
 DEFAULT_PROFILE = SiteProfile(
     title_selectors=("h1", ".board-view-title", ".view-title", ".title"),
     content_selectors=("article", "main", ".board-view-content", ".view-content", ".content"),
     date_selectors=("time", "[datetime]", ".date", ".write-date", ".view-date"),
+    document_id_query_keys=(
+        "id",
+        "seq",
+        "no",
+        "idx",
+        "newsId",
+        "articleId",
+        "boardSeq",
+        "boardId",
+        "nttSeqNo",
+        "bbsSeq",
+        "bbs_seq",
+    ),
+    document_id_path_pattern=r"/(\d+)(?:/view)?/?$",
 )
 
 # 우선 지원하는 공공기관별 상세 페이지 수집 규칙
@@ -25,6 +41,7 @@ SITE_PROFILES = {
         title_selectors=(".detail-tit",),
         content_selectors=(".detail-cont",),
         date_selectors=(".detail-info li:has-text('등록일') span",),
+        document_id_path_pattern=r"/(\d+)/view/?$",
     ),
 
     # 과학기술정보통신부 게시글
@@ -37,6 +54,7 @@ SITE_PROFILES = {
             "time",
             "[datetime]",
         ),
+        document_id_query_keys=("nttSeqNo",),
     ),
 
     # 기후에너지환경부 게시글
@@ -47,6 +65,7 @@ SITE_PROFILES = {
             "#boardViewListForRead_0 dl:has(dt:has-text('등록일자')) dd",
             ".articleInfo .item:has-text('작성일') .dd",
         ),
+        document_id_query_keys=("boardId",),
     ),
 
     # 고용노동부 게시글
@@ -54,6 +73,7 @@ SITE_PROFILES = {
         title_selectors=(".b_info dl:first-child dd",),
         content_selectors=(".b_content", ".b_content.news_content"),
         date_selectors=(".b_info dl:has-text('등록일') dd",),
+        document_id_query_keys=("bbs_seq", "bbsSeq"),
     ),
 
     # 국토교통부 게시글
@@ -61,6 +81,7 @@ SITE_PROFILES = {
         title_selectors=(".bd_view h4",),
         content_selectors=(".bd_view_cont", ".bd_view_ul_lst"),
         date_selectors=(".bd_view_ul_info li:has-text('등록일') span",),
+        document_id_query_keys=("idx", "ID"),
     ),
 }
 
@@ -72,6 +93,7 @@ MOLIT_TENDER_PROFILE = SiteProfile(
     date_selectors=(
         ".bd_view_tbl_info li:has(em:has-text('등록일시')) span",
     ),
+    document_id_query_keys=("ID",),
 )
 
 # 산업통상부 JavaScript 링크에서 게시글 번호 추출
