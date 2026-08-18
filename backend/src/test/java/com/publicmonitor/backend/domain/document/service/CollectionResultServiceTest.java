@@ -106,7 +106,8 @@ class CollectionResultServiceTest {
             assertThat(attachment.getContentType()).isEqualTo("application/zip");
             assertThat(attachment.getFileSize()).isEqualTo(1024L);
             assertThat(attachment.getFileHash()).isEqualTo("a".repeat(64));
-            assertThat(attachment.getParseStatus()).isEqualTo(AttachmentParseStatus.PENDING);
+            assertThat(attachment.getExtractedText()).isEqualTo("HWPX 추출 본문");
+            assertThat(attachment.getParseStatus()).isEqualTo(AttachmentParseStatus.COMPLETED);
             return List.of(attachment);
         });
 
@@ -160,6 +161,7 @@ class CollectionResultServiceTest {
         assertThat(storedAttachment.getContentType()).isEqualTo("application/zip");
         assertThat(storedAttachment.getFileSize()).isEqualTo(1024L);
         assertThat(storedAttachment.getFileHash()).isEqualTo("a".repeat(64));
+        assertThat(storedAttachment.getExtractedText()).isEqualTo("HWPX 추출 본문");
         verify(versionRepository, never()).save(any());
         verify(attachmentRepository, never()).saveAll(any());
         verify(detectionRepository).save(any());
@@ -178,7 +180,8 @@ class CollectionResultServiceTest {
                         "application/zip",
                         1024L,
                         "a".repeat(64),
-                        AttachmentParseStatus.PENDING,
+                        "HWPX 추출 본문",
+                        AttachmentParseStatus.COMPLETED,
                         null
                 ))
         );

@@ -146,10 +146,14 @@ Python은 Playwright로 다음 정보를 수집한다.
 
 첨부파일은 운영체제 임시 폴더에 스트리밍 방식으로 다운로드한다. 다운로드 중 MIME 타입, 파일 크기와 SHA-256 해시를 계산하고 임시 파일은 즉시 삭제한다. 원본 파일 자체는 Oracle에 저장하지 않는다.
 
-- 다운로드 성공: 텍스트 추출 전이므로 `PARSE_STATUS=PENDING`
+- HWPX 파싱 성공: `EXTRACTED_TEXT` 저장 및 `PARSE_STATUS=COMPLETED`
+- HWPX 파싱 실패: `PARSE_STATUS=FAILED`와 안전한 오류 메시지 저장
+- PDF·HWP: 후속 파싱 구현 전까지 `PARSE_STATUS=PENDING`
+- 그 외 형식: `PARSE_STATUS=UNSUPPORTED`
 - 다운로드 실패: `PARSE_STATUS=FAILED`와 안전한 오류 메시지 저장
 - 제한 시간과 최대 파일 크기: 환경변수로 관리
-- PDF·HWP·HWPX 텍스트 추출: 이후 단계에서 구현
+- HWPX: ZIP 내부 `Contents/section*.xml`을 순서대로 읽어 본문 텍스트 추출
+- PDF·HWP 텍스트 추출: 이후 단계에서 구현
 
 ## 8. 문서 저장과 변경 감지
 

@@ -21,6 +21,7 @@ class CollectionAttachmentRequest(CamelCaseModel):
     content_type: str | None = Field(default=None, max_length=200)
     file_size: int | None = Field(default=None, ge=0)
     file_hash: str | None = Field(default=None, min_length=64, max_length=64)
+    extracted_text: str | None = None
     parse_status: AttachmentParseStatus
     error_message: str | None = Field(default=None, max_length=2000)
 
@@ -68,6 +69,7 @@ class CollectionSourceResultRequest(CamelCaseModel):
                             content_type=attachment.content_type,
                             file_size=attachment.file_size,
                             file_hash=attachment.file_hash,
+                            extracted_text=attachment.extracted_text,
                             parse_status=attachment.parse_status,
                             error_message=attachment.error_message,
                         )

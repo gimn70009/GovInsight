@@ -6,7 +6,9 @@ from pydantic import BaseModel, Field
 
 class AttachmentParseStatus(StrEnum):
     PENDING = "PENDING"
+    COMPLETED = "COMPLETED"
     FAILED = "FAILED"
+    UNSUPPORTED = "UNSUPPORTED"
 
 
 class CollectedAttachment(BaseModel):
@@ -15,6 +17,7 @@ class CollectedAttachment(BaseModel):
     content_type: str | None = Field(default=None, max_length=200)
     file_size: int | None = Field(default=None, ge=0)
     file_hash: str | None = Field(default=None, min_length=64, max_length=64)
+    extracted_text: str | None = None
     parse_status: AttachmentParseStatus = AttachmentParseStatus.PENDING
     error_message: str | None = Field(default=None, max_length=2000)
 

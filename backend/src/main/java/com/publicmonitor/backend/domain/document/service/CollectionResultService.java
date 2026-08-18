@@ -151,6 +151,7 @@ public class CollectionResultService {
                             attachment.contentType(),
                             attachment.fileSize(),
                             attachment.fileHash(),
+                            attachment.extractedText(),
                             attachment.parseStatus(),
                             attachment.errorMessage()
                     ))
@@ -191,6 +192,7 @@ public class CollectionResultService {
                                 collected.contentType(),
                                 collected.fileSize(),
                                 collected.fileHash(),
+                                collected.extractedText(),
                                 collected.parseStatus(),
                                 collected.errorMessage()
                         ))
@@ -213,6 +215,7 @@ public class CollectionResultService {
                         attachment.contentType(),
                         attachment.fileSize(),
                         attachment.fileHash(),
+                        attachment.extractedText(),
                         attachment.parseStatus(),
                         attachment.errorMessage()
                 ))

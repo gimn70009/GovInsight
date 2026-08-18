@@ -7,6 +7,7 @@ from pathlib import Path
 import httpx
 
 from app.core.config import ATTACHMENT_DOWNLOAD_TIMEOUT_SECONDS, ATTACHMENT_MAX_SIZE_BYTES
+from app.domains.monitoring.parsers import AttachmentParserRegistry, HwpxParseError
 from app.domains.monitoring.schemas.collected_document import (
     AttachmentParseStatus,
     CollectedAttachment,
@@ -34,10 +35,12 @@ class AttachmentDownloader:
         timeout_seconds: float = ATTACHMENT_DOWNLOAD_TIMEOUT_SECONDS,
         max_size_bytes: int = ATTACHMENT_MAX_SIZE_BYTES,
         transport: httpx.AsyncBaseTransport | None = None,
+        parser_registry: AttachmentParserRegistry | None = None,
     ) -> None:
         self.timeout_seconds = timeout_seconds
         self.max_size_bytes = max_size_bytes
         self.transport = transport
+        self.parser_registry = parser_registry or AttachmentParserRegistry()
 
     async def enrich_results(
         self,
@@ -76,6 +79,7 @@ class AttachmentDownloader:
         attachment: CollectedAttachment,
         referer: str,
     ) -> CollectedAttachment:
+        metadata: DownloadedMetadata | None = None
         try:
             with tempfile.TemporaryDirectory(prefix="govinsight-attachment-") as directory:
                 file_path = Path(directory) / "download"
@@ -85,26 +89,30 @@ class AttachmentDownloader:
                     referer,
                     file_path,
                 )
+                parser = self.parser_registry.find(attachment.file_name)
+                parsed = parser.parse(file_path) if parser is not None else None
             return attachment.model_copy(
                 update={
                     "content_type": metadata.content_type,
                     "file_size": metadata.file_size,
                     "file_hash": metadata.file_hash,
-                    "parse_status": AttachmentParseStatus.PENDING,
+                    "extracted_text": parsed.text if parsed is not None else None,
+                    "parse_status": _successful_parse_status(attachment.file_name, parsed),
                     "error_message": None,
                 }
             )
-        except (httpx.HTTPError, OSError, AttachmentTooLargeError) as exception:
+        except (httpx.HTTPError, OSError, AttachmentTooLargeError, HwpxParseError) as exception:
             logger.warning(
-                "첨부파일 임시 다운로드 실패. file_name=%s reason=%s",
+                "첨부파일 다운로드 또는 파싱 실패. file_name=%s reason=%s",
                 attachment.file_name,
                 type(exception).__name__,
             )
             return attachment.model_copy(
                 update={
-                    "content_type": None,
-                    "file_size": None,
-                    "file_hash": None,
+                    "content_type": metadata.content_type if metadata is not None else None,
+                    "file_size": metadata.file_size if metadata is not None else None,
+                    "file_hash": metadata.file_hash if metadata is not None else None,
+                    "extracted_text": None,
                     "parse_status": AttachmentParseStatus.FAILED,
                     "error_message": _safe_error_message(exception),
                 }
@@ -141,6 +149,14 @@ class AttachmentDownloader:
             )
 
 
+def _successful_parse_status(file_name: str, parsed: object | None) -> AttachmentParseStatus:
+    if parsed is not None:
+        return AttachmentParseStatus.COMPLETED
+    if Path(file_name).suffix.lower() in {".pdf", ".hwp"}:
+        return AttachmentParseStatus.PENDING
+    return AttachmentParseStatus.UNSUPPORTED
+
+
 def _content_length(response: httpx.Response) -> int | None:
     value = response.headers.get("content-length")
     try:
@@ -164,4 +180,6 @@ def _safe_error_message(exception: Exception) -> str:
         return "첨부파일 다운로드 시간이 초과되었습니다."
     if isinstance(exception, httpx.HTTPStatusError):
         return f"첨부파일 서버가 HTTP {exception.response.status_code} 상태를 반환했습니다."
+    if isinstance(exception, HwpxParseError):
+        return str(exception)
     return "첨부파일을 다운로드하지 못했습니다."
