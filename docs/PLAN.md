@@ -180,3 +180,12 @@
 - [x] 첨부파일 실패를 실행 경고 수에 반영
 - [x] Python 및 Spring Boot 테스트 작성
 - [ ] PDF, HWP, HWPX 텍스트 추출
+
+## 원본 게시글 식별자 오류 수정
+
+- [x] 기관별 게시글 ID 쿼리 파라미터 지원
+- [x] 게시글 ID 규칙을 기관별 SiteProfile에 통합
+- [x] URL 경로 숫자 ID 추출
+- [x] 페이지 파일명 제외와 식별자 미확인 시 `NULL` 처리
+- [x] 단위 테스트와 Ruff 검사
+- [ ] 기존 DB의 잘못된 `EXTERNAL_DOCUMENT_ID` 데이터 정리
