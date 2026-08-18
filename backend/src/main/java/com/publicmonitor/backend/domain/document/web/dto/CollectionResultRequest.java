@@ -42,11 +42,24 @@ public record CollectionResultRequest(
             @Size(max = 200) String contentType,
             @PositiveOrZero Long fileSize,
             @Pattern(regexp = "[0-9a-f]{64}") String fileHash,
+            String extractedText,
             @NotNull AttachmentParseStatus parseStatus,
             @Size(max = 2000) String errorMessage
     ) {
+        public CollectedAttachment(
+                String fileName,
+                String downloadUrl,
+                String contentType,
+                Long fileSize,
+                String fileHash,
+                AttachmentParseStatus parseStatus,
+                String errorMessage
+        ) {
+            this(fileName, downloadUrl, contentType, fileSize, fileHash, null, parseStatus, errorMessage);
+        }
+
         public CollectedAttachment(String fileName, String downloadUrl) {
-            this(fileName, downloadUrl, null, null, null, AttachmentParseStatus.PENDING, null);
+            this(fileName, downloadUrl, null, null, null, null, AttachmentParseStatus.PENDING, null);
         }
     }
 }

@@ -96,6 +96,7 @@ public class DocumentAttachment extends BaseEntity {
             String contentType,
             Long fileSize,
             String fileHash,
+            String extractedText,
             AttachmentParseStatus parseStatus,
             String errorMessage
     ) {
@@ -106,6 +107,7 @@ public class DocumentAttachment extends BaseEntity {
         this.contentType = contentType;
         this.fileSize = fileSize;
         this.fileHash = fileHash;
+        this.extractedText = extractedText;
         this.parseStatus = parseStatus;
         this.errorMessage = errorMessage;
     }
@@ -127,6 +129,7 @@ public class DocumentAttachment extends BaseEntity {
                 contentType,
                 fileSize,
                 fileHash,
+                null,
                 AttachmentParseStatus.PENDING,
                 null
         );
@@ -136,12 +139,14 @@ public class DocumentAttachment extends BaseEntity {
             String contentType,
             Long fileSize,
             String fileHash,
+            String extractedText,
             AttachmentParseStatus parseStatus,
             String errorMessage
     ) {
         this.contentType = contentType;
         this.fileSize = fileSize;
         this.fileHash = fileHash;
+        this.extractedText = extractedText;
         this.parseStatus = parseStatus;
         this.errorMessage = errorMessage;
     }
@@ -153,6 +158,7 @@ public class DocumentAttachment extends BaseEntity {
             String contentType,
             Long fileSize,
             String fileHash,
+            String extractedText,
             AttachmentParseStatus parseStatus,
             String errorMessage
     ) {
@@ -164,6 +170,7 @@ public class DocumentAttachment extends BaseEntity {
                 contentType,
                 fileSize,
                 fileHash,
+                extractedText,
                 parseStatus,
                 errorMessage
         );
