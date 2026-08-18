@@ -108,4 +108,23 @@ public class MonitoringRunSource extends BaseEntity {
     ) {
         return new MonitoringRunSource(monitoringRun, monitoringSource);
     }
+    public void complete(int detectedDocumentCount, int warningCount, LocalDateTime completedAt) {
+        if (startedAt == null) {
+            startedAt = completedAt;
+        }
+        this.status = MonitoringRunSourceStatus.COMPLETED;
+        this.detectedDocumentCount = detectedDocumentCount;
+        this.warningCount = warningCount;
+        this.completedAt = completedAt;
+        this.errorMessage = null;
+    }
+
+    public void fail(String errorMessage, LocalDateTime completedAt) {
+        if (startedAt == null) {
+            startedAt = completedAt;
+        }
+        this.status = MonitoringRunSourceStatus.FAILED;
+        this.completedAt = completedAt;
+        this.errorMessage = errorMessage;
+    }
 }

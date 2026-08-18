@@ -58,13 +58,17 @@ Python이 작업 ID와 ACCEPTED 상태 반환
         ↓
 Python 백그라운드 작업 실행
         ↓
-게시글 및 첨부파일 수집
+게시글 및 첨부파일 정보 수집
         ↓
-문서 변경 감지 및 AI 분석
+Python이 Spring Boot에 수집 결과 전달
         ↓
-Python이 Spring Boot에 결과 전달
+Spring Boot가 변경 감지 후 Oracle에 저장
+- 전체 실행 상태 = COLLECTED
         ↓
-Spring Boot가 Oracle에 결과 저장
+Python AI 분석 및 분석 결과 전달
+        ↓
+분석과 보고서 생성 완료
+- 전체 실행 상태 = COMPLETED
 ```
 
 ## 4. Spring Boot와 Python 통신
@@ -88,15 +92,27 @@ Python은 작업을 백그라운드로 예약한 후 즉시 다음 응답을 반
 
 `ACCEPTED`는 작업 완료가 아니라 작업 접수와 예약이 완료되었다는 의미다.
 
-### 결과 전달
+### 수집 결과 전달
 
 ```http
-POST /internal/monitoring/results
+POST /internal/monitoring/collection-results
 ```
 
-Python이 수집과 분석을 완료한 후 Spring Boot에 최종 결과를 전달한다.
+Python은 게시글 수집이 끝나면 실행 ID, 작업 ID, 소스별 상태, 게시글과 첨부파일 정보를 Spring Boot에 전달한다.
 
-구체적인 결과 JSON 형식은 결과 수신 API 구현 전에 확정한다.
+Spring Boot는 제목과 본문을 정규화하고 해시를 비교해 `NEW_DOCUMENT`, `UPDATED_DOCUMENT`, `UNCHANGED_DOCUMENT`를 판정한다. 신규·수정 문서만 새 버전과 첨부파일 정보를 저장하며, 모든 문서는 실행별 감지 결과를 남긴다.
+
+하나 이상의 소스 수집 결과가 정상 저장되면 전체 실행 상태를 `COLLECTED`로 변경한다. 모든 소스가 실패한 경우에는 `FAILED`로 변경한다. 수집 완료 시점에는 전체 처리가 끝난 것이 아니므로 `COMPLETED_AT`을 기록하지 않는다.
+
+응답에는 저장된 문서 ID, 버전 ID, 변경 유형과 AI 분석 필요 여부를 포함한다.
+
+### AI 분석 결과 전달
+
+```http
+POST /internal/monitoring/analysis-results
+```
+
+Python AI 에이전트는 분석이 필요한 문서의 분석 결과를 Spring Boot에 전달한다. 이 API는 AI 분석 단계에서 구현한다.
 
 ## 5. 실행 상태
 
@@ -104,8 +120,9 @@ Python이 수집과 분석을 완료한 후 Spring Boot에 최종 결과를 전�
 
 - `REQUESTED`: Spring Boot가 실행 이력을 생성함
 - `ACCEPTED`: Python이 작업을 접수함
-- `RUNNING`: Python이 작업을 처리 중임
-- `COMPLETED`: 작업이 정상적으로 완료됨
+- `RUNNING`: Python이 문서를 수집하고 처리 중임
+- `COLLECTED`: 수집 결과의 DB 저장까지 완료되었으며 AI 분석을 기다리는 상태
+- `COMPLETED`: AI 분석과 보고서 생성을 포함한 전체 작업이 정상적으로 완료됨
 - `FAILED`: 작업이 실패함
 
 ### 소스별 실행 상태

@@ -28,7 +28,7 @@ import lombok.NoArgsConstructor;
         check = {
                 @CheckConstraint(
                         name = "ck_monitoring_runs_status",
-                        constraint = "status in ('REQUESTED', 'ACCEPTED', 'RUNNING', 'COMPLETED', 'FAILED')"
+                        constraint = "status in ('REQUESTED', 'ACCEPTED', 'RUNNING', 'COLLECTED', 'COMPLETED', 'FAILED')"
                 ),
                 @CheckConstraint(
                         name = "ck_monitoring_runs_trigger_type",
@@ -135,5 +135,31 @@ public class MonitoringRun extends BaseEntity {
         this.status = MonitoringRunStatus.FAILED;
         this.errorMessage = errorMessage;
         this.completedAt = failedAt;
+    }
+
+    public void start(LocalDateTime startedAt) {
+        if (status == MonitoringRunStatus.ACCEPTED) {
+            this.status = MonitoringRunStatus.RUNNING;
+            this.startedAt = startedAt;
+        }
+    }
+
+    public void completeCollection(
+            int successSourceCount,
+            int failedSourceCount,
+            int detectedDocumentCount,
+            int warningCount,
+            LocalDateTime failedAt
+    ) {
+        this.successSourceCount = successSourceCount;
+        this.failedSourceCount = failedSourceCount;
+        this.detectedDocumentCount = detectedDocumentCount;
+        this.warningCount = warningCount;
+        if (successSourceCount == 0 && failedSourceCount > 0) {
+            this.status = MonitoringRunStatus.FAILED;
+            this.completedAt = failedAt;
+            return;
+        }
+        this.status = MonitoringRunStatus.COLLECTED;
     }
 }

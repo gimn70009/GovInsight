@@ -1,5 +1,6 @@
 package com.publicmonitor.backend;
 
+import com.publicmonitor.backend.domain.document.service.CollectionResultService;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringSourceRepository;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunRepository;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunSourceRepository;
@@ -18,6 +19,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 		"app.jpa-auditing.enabled=false"
 })
 class BackendApplicationTests {
+
+    @MockitoBean
+    private CollectionResultService collectionResultService;
 
 	@MockitoBean
 	UserRepository userRepository;

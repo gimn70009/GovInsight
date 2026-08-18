@@ -1,5 +1,6 @@
 package com.publicmonitor.backend.domain.monitoring.web.controller;
 
+import com.publicmonitor.backend.domain.document.service.CollectionResultService;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -37,6 +38,9 @@ import org.springframework.test.web.servlet.MockMvc;
 @AutoConfigureMockMvc
 @WithMockUser(roles = "ADMIN")
 class MonitoringRunControllerIntegrationTest {
+
+    @MockitoBean
+    private CollectionResultService collectionResultService;
 
     @Autowired
     private MockMvc mockMvc;

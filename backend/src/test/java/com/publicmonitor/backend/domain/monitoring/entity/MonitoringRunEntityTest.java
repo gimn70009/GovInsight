@@ -64,6 +64,24 @@ class MonitoringRunEntityTest {
     }
 
     @Test
+    void completeCollectionChangesRunningRunToCollectedWithoutCompletingEntireRun() {
+        MonitoringRun run = MonitoringRun.create(
+                MonitoringTriggerType.MANUAL,
+                1,
+                LocalDateTime.of(2026, 8, 18, 9, 0)
+        );
+        run.accept("python-job-id", LocalDateTime.of(2026, 8, 18, 9, 0, 1));
+        run.start(LocalDateTime.of(2026, 8, 18, 9, 0, 2));
+
+        run.completeCollection(1, 0, 1, 0, LocalDateTime.of(2026, 8, 18, 9, 0, 3));
+
+        assertThat(run.getStatus()).isEqualTo(MonitoringRunStatus.COLLECTED);
+        assertThat(run.getCompletedAt()).isNull();
+        assertThat(run.getSuccessSourceCount()).isEqualTo(1);
+        assertThat(run.getDetectedDocumentCount()).isEqualTo(1);
+    }
+
+    @Test
     void monitoringRunEnumsAreStoredAsStrings() throws NoSuchFieldException {
         assertStringEnum(MonitoringRun.class.getDeclaredField("status"));
         assertStringEnum(MonitoringRun.class.getDeclaredField("triggerType"));
