@@ -7,4 +7,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface DocumentDetectionRepository extends JpaRepository<DocumentDetection, Long> {
 
     List<DocumentDetection> findAllByMonitoringRunSourceIdOrderByDisplayOrderAsc(Long runSourceId);
+
+    boolean existsByMonitoringRunSourceIdAndDocumentId(Long runSourceId, Long documentId);
 }

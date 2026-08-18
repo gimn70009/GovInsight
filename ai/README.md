@@ -34,12 +34,15 @@ ai/
 - `api/router.py`: 도메인별 API 라우터 조립
 - `core/logging.py`: AI 모듈의 공통 로그 레벨과 출력 형식 설정
 - `core/schemas.py`: JSON 필드 명명 방식 등 공통 스키마 규칙
+- `core/config.py`: Spring Boot 주소와 HTTP 타임아웃 환경설정
 - `domains/monitoring/api.py`: 모니터링 내부 API의 HTTP 요청과 응답 처리
 - `domains/monitoring/schemas/request.py`: Spring Boot에서 받는 요청 형식 정의
 - `domains/monitoring/schemas/response.py`: Spring Boot로 보내는 응답 형식 정의
 - `domains/monitoring/service.py`: 작업 ID 생성과 접수 응답 생성
 - `domains/monitoring/tasks.py`: HTTP 응답 이후 실행되는 모니터링 백그라운드 작업
 - `domains/monitoring/collectors`: Playwright 수집과 상세 게시글 URL 선별
+- `domains/monitoring/clients`: Spring Boot 수집 결과 API 호출
+- `domains/monitoring/schemas/collection_result.py`: 수집 결과 요청·응답 형식
 - `domains/monitoring/schemas/collected_document.py`: 문서·첨부파일·소스별 수집 결과 모델
 - `tests/domains/monitoring`: 모니터링 API와 백그라운드 작업 테스트
 
@@ -72,6 +75,14 @@ python -m pip install -r requirements-dev.txt
 python -m playwright install chromium
 ```
 
+## Spring Boot 연동 설정
+
+기본적으로 `http://127.0.0.1:8080`으로 수집 결과를 전달한다. 주소나 타임아웃을 바꿀 때만 환경변수를 설정한다.
+
+```cmd
+set SPRING_BOOT_BASE_URL=http://127.0.0.1:8080
+set SPRING_BOOT_TIMEOUT_SECONDS=5
+```
 ## 실행
 
 ```cmd

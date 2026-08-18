@@ -4,6 +4,7 @@ public enum MonitoringRunStatus {
     REQUESTED,
     ACCEPTED,
     RUNNING,
+    COLLECTED,
     COMPLETED,
     FAILED
 }

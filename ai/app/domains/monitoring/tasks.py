@@ -3,11 +3,13 @@ import logging
 import sys
 from uuid import UUID
 
+from app.domains.monitoring.clients import CollectionResultClient
 from app.domains.monitoring.collectors import PlaywrightCollector
 from app.domains.monitoring.schemas.collected_document import (
     CollectedDocument,
     SourceCollectionResult,
 )
+from app.domains.monitoring.schemas.collection_result import CollectionResultRequest
 from app.domains.monitoring.schemas.request import MonitoringJobRequest, MonitoringSourceRequest
 
 logger = logging.getLogger(__name__)
@@ -50,10 +52,26 @@ async def run_monitoring_job(job_id: UUID, request: MonitoringJobRequest) -> Non
                 result.error_message,
             )
 
-    logger.info(
-        "모니터링 백그라운드 작업 수집 완료. run_id=%s job_id=%s",
+    collection_request = CollectionResultRequest.from_collected(
         request.run_id,
         job_id,
+        results,
+    )
+    try:
+        response = await CollectionResultClient().send(collection_request)
+    except Exception:
+        logger.exception(
+            "Spring Boot 수집 결과 전달 실패. run_id=%s job_id=%s",
+            request.run_id,
+            job_id,
+        )
+        return
+
+    logger.info(
+        "모니터링 수집 결과 저장 완료. run_id=%s job_id=%s stored_document_count=%s",
+        request.run_id,
+        job_id,
+        len(response.data.documents),
     )
 
 

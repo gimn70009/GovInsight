@@ -12,6 +12,17 @@ from app.domains.monitoring.schemas.request import MonitoringJobRequest
 from app.domains.monitoring.tasks import run_monitoring_job
 
 
+@pytest.fixture(autouse=True)
+def prevent_real_result_delivery(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def send_result(_client, _request):
+        return type("Response", (), {"data": type("Data", (), {"documents": []})()})()
+
+    monkeypatch.setattr(
+        "app.domains.monitoring.tasks.CollectionResultClient.send",
+        send_result,
+    )
+
+
 def test_run_monitoring_job_collects_every_source(monkeypatch: pytest.MonkeyPatch) -> None:
     collected_source_ids: list[int] = []
 
