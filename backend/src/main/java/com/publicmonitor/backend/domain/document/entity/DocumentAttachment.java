@@ -95,7 +95,9 @@ public class DocumentAttachment extends BaseEntity {
             String fileExtension,
             String contentType,
             Long fileSize,
-            String fileHash
+            String fileHash,
+            AttachmentParseStatus parseStatus,
+            String errorMessage
     ) {
         this.documentVersion = documentVersion;
         this.fileName = fileName;
@@ -104,6 +106,8 @@ public class DocumentAttachment extends BaseEntity {
         this.contentType = contentType;
         this.fileSize = fileSize;
         this.fileHash = fileHash;
+        this.parseStatus = parseStatus;
+        this.errorMessage = errorMessage;
     }
 
     public static DocumentAttachment create(
@@ -115,6 +119,43 @@ public class DocumentAttachment extends BaseEntity {
             Long fileSize,
             String fileHash
     ) {
+        return create(
+                documentVersion,
+                fileName,
+                downloadUrl,
+                fileExtension,
+                contentType,
+                fileSize,
+                fileHash,
+                AttachmentParseStatus.PENDING,
+                null
+        );
+    }
+
+    public void updateDownloadMetadata(
+            String contentType,
+            Long fileSize,
+            String fileHash,
+            AttachmentParseStatus parseStatus,
+            String errorMessage
+    ) {
+        this.contentType = contentType;
+        this.fileSize = fileSize;
+        this.fileHash = fileHash;
+        this.parseStatus = parseStatus;
+        this.errorMessage = errorMessage;
+    }
+    public static DocumentAttachment create(
+            DocumentVersion documentVersion,
+            String fileName,
+            String downloadUrl,
+            String fileExtension,
+            String contentType,
+            Long fileSize,
+            String fileHash,
+            AttachmentParseStatus parseStatus,
+            String errorMessage
+    ) {
         return new DocumentAttachment(
                 documentVersion,
                 fileName,
@@ -122,7 +163,9 @@ public class DocumentAttachment extends BaseEntity {
                 fileExtension,
                 contentType,
                 fileSize,
-                fileHash
+                fileHash,
+                parseStatus,
+                errorMessage
         );
     }
 }

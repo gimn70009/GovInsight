@@ -1,10 +1,13 @@
 package com.publicmonitor.backend.domain.document.web.dto;
 
+import com.publicmonitor.backend.domain.document.entity.AttachmentParseStatus;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -35,7 +38,15 @@ public record CollectionResultRequest(
 
     public record CollectedAttachment(
             @NotBlank @Size(max = 500) String fileName,
-            @NotBlank @Size(max = 2000) String downloadUrl
+            @NotBlank @Size(max = 2000) String downloadUrl,
+            @Size(max = 200) String contentType,
+            @PositiveOrZero Long fileSize,
+            @Pattern(regexp = "[0-9a-f]{64}") String fileHash,
+            @NotNull AttachmentParseStatus parseStatus,
+            @Size(max = 2000) String errorMessage
     ) {
+        public CollectedAttachment(String fileName, String downloadUrl) {
+            this(fileName, downloadUrl, null, null, null, AttachmentParseStatus.PENDING, null);
+        }
     }
 }

@@ -6,6 +6,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import com.publicmonitor.backend.domain.document.entity.AttachmentParseStatus;
 import com.publicmonitor.backend.domain.document.entity.Document;
 import com.publicmonitor.backend.domain.document.entity.DocumentAttachment;
 import com.publicmonitor.backend.domain.document.entity.DocumentChangeType;
@@ -102,6 +103,10 @@ class CollectionResultServiceTest {
             DocumentAttachment attachment = (DocumentAttachment) savedAttachments.iterator().next();
             assertThat(attachment.getFileName()).isEqualTo("붙임 01. 품목요구서 등.zip");
             assertThat(attachment.getFileExtension()).isEqualTo("zip");
+            assertThat(attachment.getContentType()).isEqualTo("application/zip");
+            assertThat(attachment.getFileSize()).isEqualTo(1024L);
+            assertThat(attachment.getFileHash()).isEqualTo("a".repeat(64));
+            assertThat(attachment.getParseStatus()).isEqualTo(AttachmentParseStatus.PENDING);
             return List.of(attachment);
         });
 
@@ -133,6 +138,16 @@ class CollectionResultServiceTest {
                 document, 1, "사업 공고", "본문 내용", hash, null, 1, LocalDateTime.now()
         );
         ReflectionTestUtils.setField(version, "id", 200L);
+        DocumentAttachment storedAttachment = DocumentAttachment.create(
+                version,
+                "붙임 01. 품목요구서 등.zip",
+                "https://example.com/file/1",
+                "zip",
+                null,
+                null,
+                null
+        );
+        given(attachmentRepository.findAllByDocumentVersionId(200L)).willReturn(List.of(storedAttachment));
         given(documentRepository.findByMonitoringSourceIdAndOriginalUrl(1L, "https://example.com/notice/1"))
                 .willReturn(Optional.of(document));
         given(versionRepository.findTopByDocumentIdOrderByVersionNoDesc(100L)).willReturn(Optional.of(version));
@@ -142,6 +157,9 @@ class CollectionResultServiceTest {
 
         assertThat(response.documents().getFirst().changeType()).isEqualTo(DocumentChangeType.UNCHANGED_DOCUMENT);
         assertThat(response.documents().getFirst().analysisRequired()).isFalse();
+        assertThat(storedAttachment.getContentType()).isEqualTo("application/zip");
+        assertThat(storedAttachment.getFileSize()).isEqualTo(1024L);
+        assertThat(storedAttachment.getFileHash()).isEqualTo("a".repeat(64));
         verify(versionRepository, never()).save(any());
         verify(attachmentRepository, never()).saveAll(any());
         verify(detectionRepository).save(any());
@@ -154,7 +172,15 @@ class CollectionResultServiceTest {
                 title,
                 content,
                 null,
-                List.of(new CollectedAttachment("붙임 01. 품목요구서 등.zip [11,", "https://example.com/file/1"))
+                List.of(new CollectedAttachment(
+                        "붙임 01. 품목요구서 등.zip [11,",
+                        "https://example.com/file/1",
+                        "application/zip",
+                        1024L,
+                        "a".repeat(64),
+                        AttachmentParseStatus.PENDING,
+                        null
+                ))
         );
         return new CollectionResultRequest(
                 10L,

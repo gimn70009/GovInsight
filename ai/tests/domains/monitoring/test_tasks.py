@@ -130,3 +130,14 @@ def test_run_monitoring_job_logs_document_metadata_without_content(
     assert "attachment_count=1" in log_text
     assert "file_name=공고문.pdf" in log_text
     assert "로그에 남기면 안 되는 게시글 원문" not in log_text
+
+
+@pytest.fixture(autouse=True)
+def prevent_real_attachment_download(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def enrich_results(_downloader, results):
+        return results
+
+    monkeypatch.setattr(
+        "app.domains.monitoring.tasks.AttachmentDownloader.enrich_results",
+        enrich_results,
+    )
