@@ -91,8 +91,11 @@ set ATTACHMENT_MAX_SIZE_BYTES=20971520
 
 - 기본 다운로드 제한 시간: 15초
 - 기본 최대 파일 크기: 20 MiB
-- 다운로드 성공: 메타데이터 저장 후 `PARSE_STATUS=PENDING`
-- 다운로드 실패: `PARSE_STATUS=FAILED`와 안전한 오류 메시지 저장
+- PDF·HWPX 파싱 성공: 추출 텍스트 저장 후 `PARSE_STATUS=COMPLETED`
+- HWP: 후속 파서 구현 전까지 `PARSE_STATUS=PENDING`
+- 그 외 형식: `PARSE_STATUS=UNSUPPORTED`
+- 다운로드 또는 파싱 실패: `PARSE_STATUS=FAILED`와 안전한 오류 메시지 저장
+- PDF는 `pypdf`, HWPX는 Python ZIP·XML 기능으로 처리
 - 본문 전체와 다운로드 URL은 로그에 남기지 않음
 ## 실행
 

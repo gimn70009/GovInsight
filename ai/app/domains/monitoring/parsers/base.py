@@ -8,5 +8,9 @@ class ParsedAttachment:
     text: str
 
 
+class AttachmentParseError(Exception):
+    pass
+
+
 class AttachmentTextParser(Protocol):
     def parse(self, file_path: Path) -> ParsedAttachment: ...

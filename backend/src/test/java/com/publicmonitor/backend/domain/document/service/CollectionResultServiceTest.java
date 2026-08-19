@@ -133,7 +133,15 @@ class CollectionResultServiceTest {
         String hash = new DocumentVersionHasher().hash(
                 "사업 공고",
                 "본문 내용",
-                List.of(new CollectedAttachment("붙임 01. 품목요구서 등.zip", "https://example.com/file/1"))
+                List.of(new CollectedAttachment(
+                        "붙임 01. 품목요구서 등.zip",
+                        "https://example.com/file/1",
+                        "application/zip",
+                        1024L,
+                        "a".repeat(64),
+                        AttachmentParseStatus.COMPLETED,
+                        null
+                ))
         );
         DocumentVersion version = DocumentVersion.create(
                 document, 1, "사업 공고", "본문 내용", hash, null, 1, LocalDateTime.now()

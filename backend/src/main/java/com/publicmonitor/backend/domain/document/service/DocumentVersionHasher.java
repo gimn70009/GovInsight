@@ -16,7 +16,12 @@ public class DocumentVersionHasher {
         String attachmentSignature = attachments.stream()
                 .sorted(Comparator.comparing(CollectedAttachment::downloadUrl)
                         .thenComparing(CollectedAttachment::fileName))
-                .map(attachment -> attachment.fileName() + "\u001f" + attachment.downloadUrl())
+                .map(attachment -> String.join(
+                        "\u001f",
+                        attachment.fileName(),
+                        attachment.downloadUrl(),
+                        attachment.fileHash() == null ? "" : attachment.fileHash()
+                ))
                 .reduce((left, right) -> left + "\u001e" + right)
                 .orElse("");
         String value = title + "\u001d" + content + "\u001d" + attachmentSignature;

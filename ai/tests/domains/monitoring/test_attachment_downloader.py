@@ -22,7 +22,7 @@ def _result() -> list[SourceCollectionResult]:
                     title="지원사업 공고",
                     attachments=[
                         CollectedAttachment(
-                            file_name="공고문.pdf",
+                            file_name="공고문.hwp",
                             download_url="https://example.go.kr/files/1",
                         )
                     ],
@@ -41,7 +41,7 @@ def test_download_attachment_calculates_metadata() -> None:
         captured_referer = request.headers["referer"]
         return httpx.Response(
             200,
-            headers={"content-type": "application/pdf; charset=binary"},
+            headers={"content-type": "application/x-hwp; charset=binary"},
             content=content,
         )
 
@@ -51,7 +51,7 @@ def test_download_attachment_calculates_metadata() -> None:
     attachment = results[0].documents[0].attachments[0]
 
     assert captured_referer == "https://example.go.kr/notices/1"
-    assert attachment.content_type == "application/pdf"
+    assert attachment.content_type == "application/x-hwp"
     assert attachment.file_size == len(content)
     assert attachment.file_hash == hashlib.sha256(content).hexdigest()
     assert attachment.parse_status == AttachmentParseStatus.PENDING

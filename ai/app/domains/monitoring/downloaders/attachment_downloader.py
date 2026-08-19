@@ -7,7 +7,8 @@ from pathlib import Path
 import httpx
 
 from app.core.config import ATTACHMENT_DOWNLOAD_TIMEOUT_SECONDS, ATTACHMENT_MAX_SIZE_BYTES
-from app.domains.monitoring.parsers import AttachmentParserRegistry, HwpxParseError
+from app.domains.monitoring.file_names import attachment_file_extension
+from app.domains.monitoring.parsers import AttachmentParseError, AttachmentParserRegistry
 from app.domains.monitoring.schemas.collected_document import (
     AttachmentParseStatus,
     CollectedAttachment,
@@ -101,7 +102,12 @@ class AttachmentDownloader:
                     "error_message": None,
                 }
             )
-        except (httpx.HTTPError, OSError, AttachmentTooLargeError, HwpxParseError) as exception:
+        except (
+            httpx.HTTPError,
+            OSError,
+            AttachmentTooLargeError,
+            AttachmentParseError,
+        ) as exception:
             logger.warning(
                 "첨부파일 다운로드 또는 파싱 실패. file_name=%s reason=%s",
                 attachment.file_name,
@@ -152,7 +158,7 @@ class AttachmentDownloader:
 def _successful_parse_status(file_name: str, parsed: object | None) -> AttachmentParseStatus:
     if parsed is not None:
         return AttachmentParseStatus.COMPLETED
-    if Path(file_name).suffix.lower() in {".pdf", ".hwp"}:
+    if attachment_file_extension(file_name) == ".hwp":
         return AttachmentParseStatus.PENDING
     return AttachmentParseStatus.UNSUPPORTED
 
@@ -180,6 +186,6 @@ def _safe_error_message(exception: Exception) -> str:
         return "첨부파일 다운로드 시간이 초과되었습니다."
     if isinstance(exception, httpx.HTTPStatusError):
         return f"첨부파일 서버가 HTTP {exception.response.status_code} 상태를 반환했습니다."
-    if isinstance(exception, HwpxParseError):
+    if isinstance(exception, AttachmentParseError):
         return str(exception)
     return "첨부파일을 다운로드하지 못했습니다."
