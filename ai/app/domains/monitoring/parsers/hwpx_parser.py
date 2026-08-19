@@ -3,14 +3,14 @@ import zipfile
 from pathlib import Path
 from xml.etree import ElementTree
 
-from app.domains.monitoring.parsers.base import ParsedAttachment
+from app.domains.monitoring.parsers.base import AttachmentParseError, ParsedAttachment
 
 SECTION_PATH = re.compile(r"^Contents/section(\d+)\.xml$", re.IGNORECASE)
 MAX_SECTION_COUNT = 1_000
 MAX_XML_SIZE_BYTES = 50 * 1024 * 1024
 
 
-class HwpxParseError(Exception):
+class HwpxParseError(AttachmentParseError):
     pass
 
 

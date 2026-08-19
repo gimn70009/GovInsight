@@ -23,7 +23,7 @@ def _result() -> list[SourceCollectionResult]:
                     title="지원사업 공고",
                     attachments=[
                         CollectedAttachment(
-                            file_name="공고문.hwpx",
+                            file_name="공고문.hwpx [123 KB]",
                             download_url="https://example.go.kr/files/1",
                         )
                     ],

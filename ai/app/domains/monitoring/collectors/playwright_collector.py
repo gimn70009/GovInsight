@@ -14,6 +14,7 @@ from app.domains.monitoring.collectors.url_filter import (
     extract_external_document_id,
     select_document_urls,
 )
+from app.domains.monitoring.file_names import normalize_attachment_file_name
 from app.domains.monitoring.schemas.collected_document import (
     CollectedAttachment,
     CollectedDocument,
@@ -215,6 +216,9 @@ async def _collect_attachments(page: Page, page_url: str) -> list[CollectedAttac
             or text
             or url.rsplit("/", maxsplit=1)[-1]
         )
-        attachments.append(CollectedAttachment(file_name=file_name[:500], download_url=url))
+        normalized_file_name = normalize_attachment_file_name(file_name)
+        attachments.append(
+            CollectedAttachment(file_name=normalized_file_name[:500], download_url=url)
+        )
         seen.add(url)
     return attachments

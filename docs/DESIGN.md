@@ -24,7 +24,7 @@ GovInsight는 공공기관 게시판을 주기적으로 확인하고 새로 등�
 - 첨부파일 텍스트 추출과 AI 에이전트 분석
 - 처리 결과를 Spring Boot로 전달
 
-첨부파일 텍스트 추출과 AI 분석은 이후 단계에서 구현한다.
+PDF·HWPX 첨부파일 텍스트 추출은 구현됐으며 HWP 파싱과 AI 분석은 이후 단계에서 구현한다.
 
 ### Frontend
 
@@ -146,14 +146,18 @@ Python은 Playwright로 다음 정보를 수집한다.
 
 첨부파일은 운영체제 임시 폴더에 스트리밍 방식으로 다운로드한다. 다운로드 중 MIME 타입, 파일 크기와 SHA-256 해시를 계산하고 임시 파일은 즉시 삭제한다. 원본 파일 자체는 Oracle에 저장하지 않는다.
 
-- HWPX 파싱 성공: `EXTRACTED_TEXT` 저장 및 `PARSE_STATUS=COMPLETED`
-- HWPX 파싱 실패: `PARSE_STATUS=FAILED`와 안전한 오류 메시지 저장
-- PDF·HWP: 후속 파싱 구현 전까지 `PARSE_STATUS=PENDING`
+파일명 뒤에 `[123 KB]`, 쉼표 또는 보이지 않는 문자가 붙어도 정규화한 확장자를 기준으로 파서를 선택한다.
+
+- PDF·HWPX 파싱 성공: `EXTRACTED_TEXT` 저장 및 `PARSE_STATUS=COMPLETED`
+- PDF·HWPX 파싱 실패: `PARSE_STATUS=FAILED`와 안전한 오류 메시지 저장
+- HWP: 후속 파싱 구현 전까지 `PARSE_STATUS=PENDING`
 - 그 외 형식: `PARSE_STATUS=UNSUPPORTED`
 - 다운로드 실패: `PARSE_STATUS=FAILED`와 안전한 오류 메시지 저장
 - 제한 시간과 최대 파일 크기: 환경변수로 관리
 - HWPX: ZIP 내부 `Contents/section*.xml`을 순서대로 읽어 본문 텍스트 추출
-- PDF·HWP 텍스트 추출: 이후 단계에서 구현
+- PDF: `pypdf`로 페이지 순서대로 텍스트를 추출하고 페이지 사이를 줄바꿈으로 구분
+- 이미지로만 구성된 PDF와 암호화된 PDF는 OCR 없이 실패 처리
+- HWP 텍스트 추출: 이후 단계에서 구현
 
 ## 8. 문서 저장과 변경 감지
 
@@ -182,7 +186,7 @@ JPA 연관관계는 자식 엔티티의 `LAZY @ManyToOne` 단방향 매핑을 �
 - 기존 게시글의 내용이나 첨부파일이 변경됨: `UPDATED_DOCUMENT`
 - 이전 버전과 같음: `UNCHANGED_DOCUMENT`
 
-제목, 정규화한 본문과 첨부파일 구성으로 버전 해시를 생성한다. 변경되지 않은 문서는 새 버전을 만들거나 다시 분석하지 않고 마지막 확인 시각만 갱신한다.
+제목, 정규화한 본문, 첨부파일 이름·다운로드 URL·파일 SHA-256 해시로 버전 해시를 생성한다. 따라서 첨부파일의 이름과 URL이 같아도 실제 파일 내용이 바뀌면 수정 문서로 판정한다. 변경되지 않은 문서는 새 버전을 만들거나 다시 분석하지 않고 마지막 확인 시각만 갱신한다.
 
 ## 9. AI 에이전트
 
