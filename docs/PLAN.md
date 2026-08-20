@@ -13,6 +13,7 @@
 - [x] Oracle 연결과 공통 응답·예외 처리 구성
 - [x] JWT 로그인과 인증 필터 구현
 - [x] Python 3.12, venv와 pip 개발 환경 구성
+- [x] Swagger/OpenAPI API 문서와 JWT 테스트 환경 구성
 
 ## 1단계: 모니터링 소스 관리
 
