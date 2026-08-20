@@ -3,12 +3,14 @@ package com.publicmonitor.backend.global.response;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import com.publicmonitor.backend.global.response.code.BaseResponseCode;
 import com.publicmonitor.backend.global.response.code.SuccessResponseCode;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 
 @Getter
 @JsonPropertyOrder({"isSuccess", "timestamp", "code", "httpStatus", "message", "data"})
 public final class SuccessResponse<T> extends BaseResponse {
 
+    @Schema(description = "API별 성공 응답 데이터")
     private final T data;
 
     private SuccessResponse(T data, BaseResponseCode responseCode) {

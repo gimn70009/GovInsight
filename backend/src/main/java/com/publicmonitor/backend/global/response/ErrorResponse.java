@@ -2,12 +2,14 @@ package com.publicmonitor.backend.global.response;
 
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import com.publicmonitor.backend.global.response.code.BaseResponseCode;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 
 @Getter
 @JsonPropertyOrder({"isSuccess", "timestamp", "code", "httpStatus", "message", "data"})
 public final class ErrorResponse<T> extends BaseResponse {
 
+    @Schema(description = "오류 상세 데이터", nullable = true)
     private final T data;
 
     private ErrorResponse(BaseResponseCode responseCode, String message, T data) {

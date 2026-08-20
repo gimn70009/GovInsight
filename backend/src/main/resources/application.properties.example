@@ -23,3 +23,8 @@ app.local-admin.password=${LOCAL_ADMIN_PASSWORD:}
 app.python-monitoring.base-url=${PYTHON_MONITORING_BASE_URL:http://localhost:8000}
 app.python-monitoring.connect-timeout=${PYTHON_MONITORING_CONNECT_TIMEOUT:3s}
 app.python-monitoring.read-timeout=${PYTHON_MONITORING_READ_TIMEOUT:5s}
+# OpenAPI / Swagger UI
+springdoc.swagger-ui.path=/swagger-ui.html
+springdoc.swagger-ui.groups-order=asc
+springdoc.swagger-ui.operations-sorter=method
+springdoc.swagger-ui.tags-sorter=alpha
