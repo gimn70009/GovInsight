@@ -7,7 +7,6 @@ from pathlib import Path
 import httpx
 
 from app.core.config import ATTACHMENT_DOWNLOAD_TIMEOUT_SECONDS, ATTACHMENT_MAX_SIZE_BYTES
-from app.domains.monitoring.file_names import attachment_file_extension
 from app.domains.monitoring.parsers import AttachmentParseError, AttachmentParserRegistry
 from app.domains.monitoring.schemas.collected_document import (
     AttachmentParseStatus,
@@ -158,8 +157,6 @@ class AttachmentDownloader:
 def _successful_parse_status(file_name: str, parsed: object | None) -> AttachmentParseStatus:
     if parsed is not None:
         return AttachmentParseStatus.COMPLETED
-    if attachment_file_extension(file_name) == ".hwp":
-        return AttachmentParseStatus.PENDING
     return AttachmentParseStatus.UNSUPPORTED
 
 

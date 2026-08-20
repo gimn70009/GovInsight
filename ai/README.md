@@ -91,11 +91,11 @@ set ATTACHMENT_MAX_SIZE_BYTES=20971520
 
 - 기본 다운로드 제한 시간: 15초
 - 기본 최대 파일 크기: 20 MiB
-- PDF·HWPX 파싱 성공: 추출 텍스트 저장 후 `PARSE_STATUS=COMPLETED`
-- HWP: 후속 파서 구현 전까지 `PARSE_STATUS=PENDING`
+- PDF·HWP·HWPX 파싱 성공: 추출 텍스트 저장 후 `PARSE_STATUS=COMPLETED`
 - 그 외 형식: `PARSE_STATUS=UNSUPPORTED`
 - 다운로드 또는 파싱 실패: `PARSE_STATUS=FAILED`와 안전한 오류 메시지 저장
-- PDF는 `pypdf`, HWPX는 Python ZIP·XML 기능으로 처리
+- PDF는 `pypdf`, HWP는 `olefile`과 HWP 5.0 레코드 분석, HWPX는 Python ZIP·XML 기능으로 처리
+- 암호화·DRM·배포용 HWP와 그림·OLE 개체 추출은 지원하지 않음
 - 본문 전체와 다운로드 URL은 로그에 남기지 않음
 ## 실행
 

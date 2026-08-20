@@ -24,7 +24,7 @@ GovInsight는 공공기관 게시판을 주기적으로 확인하고 새로 등�
 - 첨부파일 텍스트 추출과 AI 에이전트 분석
 - 처리 결과를 Spring Boot로 전달
 
-PDF·HWPX 첨부파일 텍스트 추출은 구현됐으며 HWP 파싱과 AI 분석은 이후 단계에서 구현한다.
+PDF·HWP·HWPX 첨부파일 텍스트 추출은 구현됐으며 AI 분석은 이후 단계에서 구현한다.
 
 ### Frontend
 
@@ -148,16 +148,16 @@ Python은 Playwright로 다음 정보를 수집한다.
 
 파일명 뒤에 `[123 KB]`, 쉼표 또는 보이지 않는 문자가 붙어도 정규화한 확장자를 기준으로 파서를 선택한다.
 
-- PDF·HWPX 파싱 성공: `EXTRACTED_TEXT` 저장 및 `PARSE_STATUS=COMPLETED`
-- PDF·HWPX 파싱 실패: `PARSE_STATUS=FAILED`와 안전한 오류 메시지 저장
-- HWP: 후속 파싱 구현 전까지 `PARSE_STATUS=PENDING`
+- PDF·HWP·HWPX 파싱 성공: `EXTRACTED_TEXT` 저장 및 `PARSE_STATUS=COMPLETED`
+- PDF·HWP·HWPX 파싱 실패: `PARSE_STATUS=FAILED`와 안전한 오류 메시지 저장
 - 그 외 형식: `PARSE_STATUS=UNSUPPORTED`
 - 다운로드 실패: `PARSE_STATUS=FAILED`와 안전한 오류 메시지 저장
 - 제한 시간과 최대 파일 크기: 환경변수로 관리
 - HWPX: ZIP 내부 `Contents/section*.xml`을 순서대로 읽어 본문 텍스트 추출
 - PDF: `pypdf`로 페이지 순서대로 텍스트를 추출하고 페이지 사이를 줄바꿈으로 구분
+- HWP: `olefile`로 HWP 5.0 OLE 구조를 열고 `FileHeader`를 검사한 뒤 `BodyText/Section*`의 문단 텍스트 레코드를 추출
+- 압축된 HWP 본문은 raw deflate 방식으로 압축 해제하며 암호화·DRM·배포용 HWP와 그림·OLE 개체 추출은 지원하지 않음
 - 이미지로만 구성된 PDF와 암호화된 PDF는 OCR 없이 실패 처리
-- HWP 텍스트 추출: 이후 단계에서 구현
 
 ## 8. 문서 저장과 변경 감지
 
