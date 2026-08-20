@@ -54,8 +54,8 @@ def test_download_attachment_calculates_metadata() -> None:
     assert attachment.content_type == "application/x-hwp"
     assert attachment.file_size == len(content)
     assert attachment.file_hash == hashlib.sha256(content).hexdigest()
-    assert attachment.parse_status == AttachmentParseStatus.PENDING
-    assert attachment.error_message is None
+    assert attachment.parse_status == AttachmentParseStatus.FAILED
+    assert attachment.error_message == "정상적인 HWP 5.0 OLE 파일이 아닙니다."
 
 
 def test_oversized_attachment_is_marked_failed() -> None:
