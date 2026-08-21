@@ -97,6 +97,22 @@ set ATTACHMENT_MAX_SIZE_BYTES=20971520
 - PDF는 `pypdf`, HWP는 `olefile`과 HWP 5.0 레코드 분석, HWPX는 Python ZIP·XML 기능으로 처리
 - 암호화·DRM·배포용 HWP와 그림·OLE 개체 추출은 지원하지 않음
 - 본문 전체와 다운로드 URL은 로그에 남기지 않음
+
+## AI 문서 분석 설정
+
+`.env.example`을 참고하여 `ai/.env`에 OpenAI API 키를 설정한다. `.env`는 Git에서 제외되며 실제 키를 커밋하지 않는다.
+
+```ini
+OPENAI_API_KEY=발급받은_API_키
+OPENAI_MODEL=gpt-5-mini
+ANALYSIS_TIMEOUT_SECONDS=90
+ANALYSIS_MAX_ATTEMPTS=2
+ANALYSIS_MAX_TOOL_CALLS=6
+ANALYSIS_MAX_TEXT_CHARS=40000
+```
+
+분석 에이전트는 LangChain 도구로 현재 게시글 본문, 첨부파일 추출 텍스트와 이전 버전 차이를 필요한 순서대로 조회한다. LangGraph는 문서별 분석 상태, 결과 검증과 제한된 재시도를 관리한다. 현재는 구조화된 분석 결과 생성까지 구현되어 있으며 Spring Boot 결과 전달과 Oracle 저장은 후속 단계다.
+
 ## 실행
 
 ```cmd
