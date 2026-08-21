@@ -69,11 +69,12 @@ class OpenApiDocumentationIntegrationTest {
     }
 
     @Test
-    void 내부_API_OpenAPI_문서는_수집_결과_API만_포함한다() throws Exception {
+    void 내부_API_OpenAPI_문서는_Python_결과_수신_API를_포함한다() throws Exception {
         mockMvc.perform(get("/v3/api-docs/internal-api"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.paths['/internal/monitoring/collection-results'].post").exists())
                 .andExpect(jsonPath("$.paths['/internal/monitoring/analysis-results'].post").exists())
+                .andExpect(jsonPath("$.paths['/internal/monitoring/report-results'].post").exists())
                 .andExpect(jsonPath("$.paths['/api/auth/login']").doesNotExist());
     }
 

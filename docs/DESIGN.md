@@ -290,3 +290,22 @@ OpenAI 모델명, 호출 제한 시간, 최대 재시도, 도구 호출 제한�
 - 로그인, CAPTCHA와 접근 제한을 우회하지 않는다.
 - 과도한 요청을 피하고 수집 주기와 건수를 제한한다.
 - 현재는 프로세스 내부 백그라운드 작업을 사용하며, 필요할 때 Redis·Celery 등의 도입을 검토한다.
+분석 결과 저장 트랜잭션이 커밋되면 Spring Boot는 실행별 문서 분석 결과를 모아 Python에 보고서 생성을 요청한다.
+
+```http
+POST /internal/monitoring/report-jobs
+```
+
+Python은 작업 ID와 `202 Accepted`를 즉시 반환한 뒤 백그라운드에서 구조화된 보고서 제목과 전체 요약을 생성한다. 보고서 생성이 끝나면 다음 내부 API로 결과를 전달한다.
+
+```http
+POST /internal/monitoring/report-results
+```
+
+Spring Boot는 실행당 하나의 `MONITORING_REPORTS` 행을 관리한다.
+
+- 요청 전 `PENDING` 보고서를 생성해 콜백과의 경합을 방지한다.
+- 성공 결과에는 제목, 요약과 생성 완료 시각을 저장한다.
+- 실패 결과에는 오류 메시지를 저장하고 실행 상태는 `COLLECTED`로 유지한다.
+- 같은 완료 결과가 다시 전달되면 기존 보고서를 덮어쓰지 않고 중복 응답으로 처리한다.
+- 보고서 저장이 완료된 경우에만 전체 실행을 `COMPLETED`로 전환한다.

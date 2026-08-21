@@ -11,11 +11,13 @@ import com.publicmonitor.backend.domain.document.entity.DocumentDetection;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRun;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRunStatus;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunRepository;
+import com.publicmonitor.backend.domain.report.event.AnalysisStoredEvent;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
@@ -32,6 +34,7 @@ public class AnalysisResultService {
     private final DocumentAnalysisRepository analysisRepository;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public AnalysisResultResponse receive(AnalysisResultRequest request) {
@@ -76,6 +79,7 @@ public class AnalysisResultService {
                 "AI 분석 결과 저장 완료. runId={} jobId={} storedCount={} duplicateCount={} failedCount={}",
                 request.runId(), request.jobId(), storedCount, duplicateCount, request.failures().size()
         );
+        eventPublisher.publishEvent(new AnalysisStoredEvent(request.runId()));
         return new AnalysisResultResponse(
                 request.runId(), storedCount, duplicateCount, request.failures().size()
         );
