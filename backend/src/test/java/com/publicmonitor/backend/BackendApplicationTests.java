@@ -1,6 +1,7 @@
 package com.publicmonitor.backend;
 
 import com.publicmonitor.backend.domain.analysis.service.AnalysisJobRequestService;
+import com.publicmonitor.backend.domain.analysis.service.AnalysisResultService;
 import com.publicmonitor.backend.domain.document.service.CollectionResultService;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringSourceRepository;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunRepository;
@@ -26,6 +27,9 @@ class BackendApplicationTests {
 
     @MockitoBean
     private AnalysisJobRequestService analysisJobRequestService;
+
+    @MockitoBean
+    private AnalysisResultService analysisResultService;
 
 	@MockitoBean
 	UserRepository userRepository;

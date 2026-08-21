@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.publicmonitor.backend.domain.analysis.service.AnalysisJobRequestService;
+import com.publicmonitor.backend.domain.analysis.service.AnalysisResultService;
 import com.publicmonitor.backend.domain.document.service.CollectionResultService;
 import com.publicmonitor.backend.domain.monitoring.service.MonitoringRunService;
 import com.publicmonitor.backend.domain.monitoring.service.MonitoringSourceService;
@@ -47,6 +48,9 @@ class OpenApiDocumentationIntegrationTest {
     @MockitoBean
     private AnalysisJobRequestService analysisJobRequestService;
 
+    @MockitoBean
+    private AnalysisResultService analysisResultService;
+
     @Test
     void 공개_API_OpenAPI_문서에_현재_엔드포인트와_JWT_스키마가_포함된다() throws Exception {
         mockMvc.perform(get("/v3/api-docs/public-api"))
@@ -69,6 +73,7 @@ class OpenApiDocumentationIntegrationTest {
         mockMvc.perform(get("/v3/api-docs/internal-api"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.paths['/internal/monitoring/collection-results'].post").exists())
+                .andExpect(jsonPath("$.paths['/internal/monitoring/analysis-results'].post").exists())
                 .andExpect(jsonPath("$.paths['/api/auth/login']").doesNotExist());
     }
 

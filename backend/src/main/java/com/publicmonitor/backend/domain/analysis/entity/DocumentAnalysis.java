@@ -72,4 +72,46 @@ public class DocumentAnalysis extends BaseEntity {
 
     @Column(name = "analyzed_at", nullable = false)
     private LocalDateTime analyzedAt;
+
+    private DocumentAnalysis(
+            DocumentVersion documentVersion,
+            String summary,
+            String keyPoints,
+            DocumentImportance importance,
+            String reason,
+            String usedTools,
+            String modelName,
+            LocalDateTime analyzedAt
+    ) {
+        this.documentVersion = documentVersion;
+        this.summary = summary;
+        this.keyPoints = keyPoints;
+        this.importance = importance;
+        this.reason = reason;
+        this.usedTools = usedTools;
+        this.modelName = modelName;
+        this.analyzedAt = analyzedAt;
+    }
+
+    public static DocumentAnalysis create(
+            DocumentVersion documentVersion,
+            String summary,
+            String keyPoints,
+            DocumentImportance importance,
+            String reason,
+            String usedTools,
+            String modelName,
+            LocalDateTime analyzedAt
+    ) {
+        return new DocumentAnalysis(
+                documentVersion,
+                summary,
+                keyPoints,
+                importance,
+                reason,
+                usedTools,
+                modelName,
+                analyzedAt
+        );
+    }
 }
