@@ -25,6 +25,7 @@ import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunSourc
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringSourceRepository;
 import com.publicmonitor.backend.domain.monitoring.web.dto.CreateMonitoringRunResponse;
 import com.publicmonitor.backend.domain.monitoring.web.dto.MonitoringRunSummaryResponse;
+import com.publicmonitor.backend.global.response.PageResponse;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -37,6 +38,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -139,17 +142,23 @@ class MonitoringRunServiceTest {
 
     @Test
     void 실행_이력을_최신순으로_조회한다() {
-        MonitoringRun recentRun = createRun(2L, LocalDateTime.of(2026, 8, 12, 10, 0));
-        MonitoringRun oldRun = createRun(1L, LocalDateTime.of(2026, 8, 11, 10, 0));
-        given(monitoringRunRepository.findAllByOrderByRequestedAtDescIdDesc())
-                .willReturn(List.of(recentRun, oldRun));
+        MonitoringRunSummaryResponse recentRun = new MonitoringRunSummaryResponse(
+                2L, LocalDateTime.of(2026, 8, 12, 10, 0), MonitoringTriggerType.MANUAL,
+                MonitoringRunStatus.COMPLETED, 5, 8, 1, "최근 보고서"
+        );
+        MonitoringRunSummaryResponse oldRun = new MonitoringRunSummaryResponse(
+                1L, LocalDateTime.of(2026, 8, 11, 10, 0), MonitoringTriggerType.SCHEDULED,
+                MonitoringRunStatus.COLLECTED, 5, 3, 0, null
+        );
+        given(monitoringRunRepository.findSummaries(PageRequest.of(0, 20)))
+                .willReturn(new PageImpl<>(List.of(recentRun, oldRun), PageRequest.of(0, 20), 2));
 
-        List<MonitoringRunSummaryResponse> responses = monitoringRunService.findAll();
+        PageResponse<MonitoringRunSummaryResponse> response = monitoringRunService.findAll(0, 20);
 
-        assertThat(responses).extracting(MonitoringRunSummaryResponse::runId)
-                .containsExactly(2L, 1L);
-        assertThat(responses.getFirst().status()).isEqualTo(MonitoringRunStatus.REQUESTED);
-        assertThat(responses.getFirst().totalSourceCount()).isEqualTo(1);
+        assertThat(response.content()).extracting(MonitoringRunSummaryResponse::runId).containsExactly(2L, 1L);
+        assertThat(response.content().getFirst().status()).isEqualTo(MonitoringRunStatus.COMPLETED);
+        assertThat(response.content().getFirst().reportTitle()).isEqualTo("최근 보고서");
+        assertThat(response.totalElements()).isEqualTo(2);
     }
 
     private MonitoringSource createSource(String organizationName) {

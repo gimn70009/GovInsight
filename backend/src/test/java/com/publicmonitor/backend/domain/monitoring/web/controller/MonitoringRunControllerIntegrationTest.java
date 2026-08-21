@@ -2,6 +2,10 @@ package com.publicmonitor.backend.domain.monitoring.web.controller;
 
 import com.publicmonitor.backend.domain.analysis.service.AnalysisJobRequestService;
 import com.publicmonitor.backend.domain.analysis.service.AnalysisResultService;
+import com.publicmonitor.backend.domain.analysis.entity.DocumentImportance;
+import com.publicmonitor.backend.domain.document.entity.DocumentChangeType;
+import com.publicmonitor.backend.domain.document.service.DocumentDetectionQueryService;
+import com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionSummaryResponse;
 import com.publicmonitor.backend.domain.document.service.CollectionResultService;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -18,6 +22,7 @@ import com.publicmonitor.backend.domain.monitoring.service.MonitoringSourceServi
 import com.publicmonitor.backend.domain.monitoring.web.dto.CreateMonitoringRunResponse;
 import com.publicmonitor.backend.domain.monitoring.web.dto.MonitoringRunSummaryResponse;
 import com.publicmonitor.backend.domain.user.repository.UserRepository;
+import com.publicmonitor.backend.global.response.PageResponse;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -49,6 +54,9 @@ class MonitoringRunControllerIntegrationTest {
 
     @MockitoBean
     private AnalysisResultService analysisResultService;
+    @MockitoBean
+    private DocumentDetectionQueryService documentDetectionQueryService;
+
 
     @Autowired
     private MockMvc mockMvc;
@@ -113,28 +121,56 @@ class MonitoringRunControllerIntegrationTest {
     @Test
     void 실행_이력_목록을_조회한다() throws Exception {
         LocalDateTime requestedAt = LocalDateTime.of(2026, 8, 12, 10, 0);
-        given(monitoringRunService.findAll()).willReturn(List.of(
-                new MonitoringRunSummaryResponse(
-                        1L,
-                        requestedAt,
-                        MonitoringRunStatus.COMPLETED,
-                        2,
-                        5,
-                        1
-                )
+        given(monitoringRunService.findAll(0, 20)).willReturn(new PageResponse<>(
+                List.of(new MonitoringRunSummaryResponse(1L, requestedAt, MonitoringTriggerType.MANUAL,
+                        MonitoringRunStatus.COMPLETED, 2, 5, 1, "주요 공고 요약")),
+                0, 20, 1, 1, true, true
         ));
 
         mockMvc.perform(get("/api/monitoring-runs"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.length()").value(1))
-                .andExpect(jsonPath("$.data[0].runId").value(1))
-                .andExpect(jsonPath("$.data[0].requestedAt").value("2026-08-12T10:00:00"))
-                .andExpect(jsonPath("$.data[0].status").value("COMPLETED"))
-                .andExpect(jsonPath("$.data[0].detectedDocumentCount").value(5))
-                .andExpect(jsonPath("$.data[0].warningCount").value(1))
-                .andExpect(jsonPath("$.data[0].triggerType").doesNotExist())
-                .andExpect(jsonPath("$.data[0].successSourceCount").doesNotExist())
-                .andExpect(jsonPath("$.data[0].failedSourceCount").doesNotExist())
-                .andExpect(jsonPath("$.data[0].completedAt").doesNotExist());
+                .andExpect(jsonPath("$.data.content.length()").value(1))
+                .andExpect(jsonPath("$.data.content[0].runId").value(1))
+                .andExpect(jsonPath("$.data.content[0].requestedAt").value("2026-08-12T10:00:00"))
+                .andExpect(jsonPath("$.data.content[0].triggerType").value("MANUAL"))
+                .andExpect(jsonPath("$.data.content[0].status").value("COMPLETED"))
+                .andExpect(jsonPath("$.data.content[0].detectedDocumentCount").value(5))
+                .andExpect(jsonPath("$.data.content[0].warningCount").value(1))
+                .andExpect(jsonPath("$.data.content[0].reportTitle").value("주요 공고 요약"))
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.page").value(0))
+                .andExpect(jsonPath("$.data.last").value(true));
+    }
+
+    @Test
+    void 감지_문서_목록을_조회한다() throws Exception {
+        LocalDateTime checkedAt = LocalDateTime.of(2026, 8, 21, 13, 31, 55);
+        given(documentDetectionQueryService.findAll(0, 20)).willReturn(new PageResponse<>(
+                List.of(new DocumentDetectionSummaryResponse(
+                        15L, 8L, 10L, "기후에너지환경부", "공지/공고", "기업 지원사업 모집 공고",
+                        DocumentChangeType.NEW_DOCUMENT, 2, DocumentImportance.HIGH, checkedAt
+                )),
+                0, 20, 1, 1, true, true
+        ));
+
+        mockMvc.perform(get("/api/document-detections"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content.length()").value(1))
+                .andExpect(jsonPath("$.data.content[0].detectionId").value(15))
+                .andExpect(jsonPath("$.data.content[0].organizationName").value("기후에너지환경부"))
+                .andExpect(jsonPath("$.data.content[0].boardName").value("공지/공고"))
+                .andExpect(jsonPath("$.data.content[0].changeType").value("NEW_DOCUMENT"))
+                .andExpect(jsonPath("$.data.content[0].attachmentCount").value(2))
+                .andExpect(jsonPath("$.data.content[0].importance").value("HIGH"))
+                .andExpect(jsonPath("$.data.content[0].lastCheckedAt").value("2026-08-21T13:31:55"))
+                .andExpect(jsonPath("$.data.totalElements").value(1));
+    }
+
+    @Test
+    void 목록_페이징_범위가_올바르지_않으면_400을_반환한다() throws Exception {
+        mockMvc.perform(get("/api/monitoring-runs?page=-1"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/document-detections?size=101"))
+                .andExpect(status().isBadRequest());
     }
 }
