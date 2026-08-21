@@ -62,6 +62,7 @@ class OpenApiDocumentationIntegrationTest {
                 .andExpect(jsonPath("$.paths['/api/monitoring-sources/{sourceId}/enabled'].patch").exists())
                 .andExpect(jsonPath("$.paths['/api/monitoring-runs'].post").exists())
                 .andExpect(jsonPath("$.paths['/api/monitoring-runs'].get").exists())
+                .andExpect(jsonPath("$.paths['/api/document-detections'].get").exists())
                 .andExpect(jsonPath("$.components.securitySchemes.bearerAuth.type").value("http"))
                 .andExpect(jsonPath("$.components.securitySchemes.bearerAuth.scheme").value("bearer"))
                 .andExpect(jsonPath("$.paths['/api/monitoring-sources'].get.security[0].bearerAuth").exists())
@@ -88,6 +89,9 @@ class OpenApiDocumentationIntegrationTest {
     @Test
     void 기존_보호_API는_토큰_없이_접근할_수_없다() throws Exception {
         mockMvc.perform(get("/api/monitoring-sources"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/api/document-detections"))
                 .andExpect(status().isUnauthorized());
     }
 }

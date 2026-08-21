@@ -14,12 +14,14 @@ import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunSourc
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringSourceRepository;
 import com.publicmonitor.backend.domain.monitoring.web.dto.CreateMonitoringRunResponse;
 import com.publicmonitor.backend.domain.monitoring.web.dto.MonitoringRunSummaryResponse;
+import com.publicmonitor.backend.global.response.PageResponse;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -69,9 +71,7 @@ public class MonitoringRunService {
     }
 
     @Transactional(readOnly = true)
-    public List<MonitoringRunSummaryResponse> findAll() {
-        return monitoringRunRepository.findAllByOrderByRequestedAtDescIdDesc().stream()
-                .map(MonitoringRunSummaryResponse::from)
-                .toList();
+    public PageResponse<MonitoringRunSummaryResponse> findAll(int page, int size) {
+        return PageResponse.from(monitoringRunRepository.findSummaries(PageRequest.of(page, size)));
     }
 }
