@@ -1,6 +1,7 @@
 package com.publicmonitor.backend.domain.monitoring.web.controller;
 
 import com.publicmonitor.backend.domain.analysis.service.AnalysisJobRequestService;
+import com.publicmonitor.backend.domain.analysis.service.AnalysisResultService;
 import com.publicmonitor.backend.domain.document.service.CollectionResultService;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -49,6 +50,9 @@ class MonitoringSourceControllerIntegrationTest {
 
     @MockitoBean
     private AnalysisJobRequestService analysisJobRequestService;
+
+    @MockitoBean
+    private AnalysisResultService analysisResultService;
 
     @Autowired
     private MockMvc mockMvc;

@@ -24,7 +24,7 @@ GovInsight는 공공기관 게시판을 주기적으로 확인하고 새로 등�
 - 첨부파일 텍스트 추출과 AI 에이전트 분석
 - 처리 결과를 Spring Boot로 전달
 
-PDF·HWP·HWPX 첨부파일 텍스트 추출과 LangChain·LangGraph 기반 문서 분석 결과 생성은 구현됐다. 분석 결과를 Spring Boot로 전달하고 Oracle에 저장하는 기능은 이후 단계에서 구현한다.
+PDF·HWP·HWPX 첨부파일 텍스트 추출, LangChain·LangGraph 기반 문서 분석, 분석 결과의 Spring Boot 전달과 Oracle 저장까지 구현됐다.
 
 ### Frontend
 
@@ -109,11 +109,15 @@ Python 백그라운드 분석 작업 예약
 
 Python은 분석 요청을 검증하고 작업 ID를 발급한 뒤 백그라운드에서 LangGraph 문서 분석 워크플로우를 실행한다. Python 접수 실패가 이미 저장된 수집 결과를 롤백하지 않도록 수집 저장과 분석 요청을 분리한다.
 
-실제 LLM 분석이 끝나면 Python은 다음 API로 결과를 전달하도록 후속 구현한다.
+LLM 분석이 끝나면 Python은 성공 결과와 문서별 실패 결과를 다음 내부 API로 전달한다.
 
 ```http
 POST /internal/monitoring/analysis-results
 ```
+
+Spring Boot는 `runId`, `detectionId`, `documentId`, `versionId` 관계와 실행 상태를 검증한 뒤 성공 결과를 `DOCUMENT_ANALYSES`에 저장한다. 같은 문서 버전의 결과가 다시 전달되면 `VERSION_ID` 고유 제약을 기준으로 중복 저장하지 않는다.
+
+네트워크 오류와 서버 오류는 설정된 횟수만큼 재시도하고, 요청값이나 관계 오류를 의미하는 4xx 응답은 재시도하지 않는다. 분석 결과 저장만으로 전체 실행을 `COMPLETED`로 변경하지 않으며, 보고서 생성까지 끝난 후 완료 상태로 전환한다.
 
 ## 5. 실행 상태
 

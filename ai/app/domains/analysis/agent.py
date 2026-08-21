@@ -78,11 +78,13 @@ class LangChainAnalysisRunner:
             )
 
         draft = AnalysisDraft.model_validate(response["structured_response"])
+        analysis_tool_names = {tool.name for tool in ANALYSIS_TOOLS}
         used_tools = list(
             dict.fromkeys(
                 message.name
                 for message in response["messages"]
-                if isinstance(message, ToolMessage) and message.name
+                if isinstance(message, ToolMessage)
+                and message.name in analysis_tool_names
             )
         )
         if not used_tools:

@@ -1,6 +1,7 @@
 package com.publicmonitor.backend.domain.auth.web.controller;
 
 import com.publicmonitor.backend.domain.analysis.service.AnalysisJobRequestService;
+import com.publicmonitor.backend.domain.analysis.service.AnalysisResultService;
 import com.publicmonitor.backend.domain.document.service.CollectionResultService;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -40,6 +41,9 @@ class AuthControllerIntegrationTest {
 
     @MockitoBean
     private AnalysisJobRequestService analysisJobRequestService;
+
+    @MockitoBean
+    private AnalysisResultService analysisResultService;
 
     @Autowired
     private MockMvc mockMvc;
