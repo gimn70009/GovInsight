@@ -111,7 +111,9 @@ ANALYSIS_MAX_TOOL_CALLS=6
 ANALYSIS_MAX_TEXT_CHARS=40000
 ```
 
-분석 에이전트는 LangChain 도구로 현재 게시글 본문, 첨부파일 추출 텍스트와 이전 버전 차이를 필요한 순서대로 조회한다. LangGraph는 문서별 분석 상태, 결과 검증과 제한된 재시도를 관리한다. 현재는 구조화된 분석 결과 생성까지 구현되어 있으며 Spring Boot 결과 전달과 Oracle 저장은 후속 단계다.
+분석 에이전트는 LangChain 도구로 현재 게시글 본문, 첨부파일 추출 텍스트와 이전 버전 차이를 필요한 순서대로 조회한다. LangGraph는 문서별 분석 상태, 결과 검증과 제한된 재시도를 관리한다. 분석 결과는 Spring Boot로 전달되어 Oracle에 저장된다.
+
+문서별 분석 저장이 완료되면 Spring Boot가 `/internal/monitoring/report-jobs`로 보고서 생성을 요청한다. Python은 문서별 요약과 중요도를 바탕으로 전체 보고서 제목·요약을 백그라운드에서 생성하고 `/internal/monitoring/report-results`로 전달한다.
 
 ## 실행
 

@@ -162,4 +162,13 @@ public class MonitoringRun extends BaseEntity {
         }
         this.status = MonitoringRunStatus.COLLECTED;
     }
+
+    public void completeReport(LocalDateTime completedAt) {
+        if (status != MonitoringRunStatus.COLLECTED) {
+            throw new IllegalStateException("수집 완료 상태인 실행만 최종 완료할 수 있습니다.");
+        }
+        this.status = MonitoringRunStatus.COMPLETED;
+        this.completedAt = completedAt;
+        this.errorMessage = null;
+    }
 }

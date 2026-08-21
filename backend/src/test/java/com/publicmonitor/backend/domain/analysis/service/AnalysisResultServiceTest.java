@@ -34,6 +34,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
 
@@ -43,6 +44,7 @@ class AnalysisResultServiceTest {
     @Mock MonitoringRunRepository runRepository;
     @Mock AnalysisDocumentDetectionRepository detectionRepository;
     @Mock DocumentAnalysisRepository analysisRepository;
+    @Mock ApplicationEventPublisher eventPublisher;
 
     private AnalysisResultService service;
     private MonitoringRun run;
@@ -55,7 +57,8 @@ class AnalysisResultServiceTest {
                 detectionRepository,
                 analysisRepository,
                 new ObjectMapper(),
-                Clock.fixed(Instant.parse("2026-08-21T01:00:00Z"), ZoneOffset.UTC)
+                Clock.fixed(Instant.parse("2026-08-21T01:00:00Z"), ZoneOffset.UTC),
+                eventPublisher
         );
         MonitoringSource source = MonitoringSource.create(
                 "산업통상부", "사업공고", null, "https://example.com", null, 3, true
