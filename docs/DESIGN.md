@@ -89,15 +89,27 @@ Spring Boot는 제목과 본문을 정규화하고 해시를 비교하여 `NEW_D
 
 ### AI 분석 작업 요청과 결과 전달
 
-수집 결과 저장과 변경 감지가 끝나면 Spring Boot는 `NEW_DOCUMENT`, `UPDATED_DOCUMENT`로 판정된 문서만 Python에 분석 작업으로 요청한다. Python은 Oracle을 직접 조회하지 않으므로 분석에 필요한 현재 문서와 이전 버전 정보는 요청 데이터에 포함한다.
+수집 결과 저장과 변경 감지 트랜잭션이 커밋되면 Spring Boot가 분석 대상을 선별하여 Python에 분석 작업을 요청한다. Python은 Oracle을 직접 조회하지 않으므로 분석에 필요한 현재 문서와 이전 버전 정보는 요청 데이터에 포함한다.
 
 ```http
 POST /internal/monitoring/analysis-jobs
 ```
 
-Python은 분석 작업을 접수한 뒤 비동기로 실행한다. `UNCHANGED_DOCUMENT`는 다시 분석하지 않고 기존 문서 버전의 분석 결과를 그대로 사용한다.
+```text
+수집 결과 저장 및 커밋
+        ↓
+분석 대상 문서 선별
+        ↓
+Python 분석 작업 요청
+        ↓
+202 Accepted + jobId
+        ↓
+Python 백그라운드 분석 작업 예약
+```
 
-분석이 끝나면 Python은 다음 API로 결과를 전달한다.
+현재 Python은 분석 요청 검증, 작업 ID 발급과 백그라운드 작업 예약까지만 수행한다. Python 접수 실패가 이미 저장된 수집 결과를 롤백하지 않도록 수집 저장과 분석 요청을 분리한다.
+
+실제 LLM 분석이 끝나면 Python은 다음 API로 결과를 전달하도록 후속 구현한다.
 
 ```http
 POST /internal/monitoring/analysis-results
@@ -194,11 +206,15 @@ JPA 연관관계는 자식 엔티티의 `LAZY @ManyToOne` 단방향 매핑을 �
 - 기존 게시글의 내용이나 첨부파일이 변경됨: `UPDATED_DOCUMENT`
 - 이전 버전과 같음: `UNCHANGED_DOCUMENT`
 
-제목, 정규화한 본문, 첨부파일 이름·다운로드 URL·파일 SHA-256 해시로 버전 해시를 생성한다. 따라서 첨부파일의 이름과 URL이 같아도 실제 파일 내용이 바뀌면 수정 문서로 판정한다. 변경되지 않은 문서는 새 버전을 만들거나 다시 분석하지 않고 마지막 확인 시각만 갱신한다.
+제목, 정규화한 본문, 첨부파일 이름·다운로드 URL·파일 SHA-256 해시로 버전 해시를 생성한다. 따라서 첨부파일의 이름과 URL이 같아도 실제 파일 내용이 바뀌면 수정 문서로 판정한다. 변경되지 않은 문서는 새 버전을 만들지 않고 마지막 확인 시각만 갱신한다.
 
 ## 9. AI 에이전트
 
-수집, 첨부파일 파싱과 변경 감지는 예측 가능한 일반 코드가 담당한다. AI 에이전트는 `NEW_DOCUMENT`, `UPDATED_DOCUMENT`만 분석하며 `UNCHANGED_DOCUMENT`는 다시 분석하지 않는다.
+수집, 첨부파일 파싱과 변경 감지는 예측 가능한 일반 코드가 담당한다. 분석 대상은 다음 규칙으로 선별한다.
+
+- `NEW_DOCUMENT`, `UPDATED_DOCUMENT`: 현재 문서 버전을 분석한다.
+- `UNCHANGED_DOCUMENT`: 해당 버전의 기존 분석 결과가 있으면 재사용하고 다시 요청하지 않는다.
+- `UNCHANGED_DOCUMENT`: 기존 분석 결과가 없으면 누락 보완을 위해 분석을 요청한다.
 
 ### 분석 입력
 

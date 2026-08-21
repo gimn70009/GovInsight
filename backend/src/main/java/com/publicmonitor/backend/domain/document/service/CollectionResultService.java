@@ -1,5 +1,6 @@
 package com.publicmonitor.backend.domain.document.service;
 
+import com.publicmonitor.backend.domain.analysis.event.CollectionStoredEvent;
 import com.publicmonitor.backend.domain.document.entity.AttachmentParseStatus;
 import com.publicmonitor.backend.domain.document.entity.Document;
 import com.publicmonitor.backend.domain.document.entity.DocumentAttachment;
@@ -32,6 +33,7 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -57,6 +59,7 @@ public class CollectionResultService {
     private final DocumentContentNormalizer normalizer;
     private final DocumentVersionHasher hasher;
     private final Clock clock;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public CollectionResultResponse receive(CollectionResultRequest request) {
@@ -99,6 +102,7 @@ public class CollectionResultService {
         }
 
         run.completeCollection(successCount, failedCount, results.size(), warningCount, now);
+        eventPublisher.publishEvent(new CollectionStoredEvent(run.getId()));
         return new CollectionResultResponse(results);
     }
 

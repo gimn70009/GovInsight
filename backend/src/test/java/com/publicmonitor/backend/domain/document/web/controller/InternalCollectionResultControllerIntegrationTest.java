@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.publicmonitor.backend.domain.analysis.service.AnalysisJobRequestService;
 import com.publicmonitor.backend.domain.document.entity.DocumentChangeType;
 import com.publicmonitor.backend.domain.document.service.CollectionResultService;
 import com.publicmonitor.backend.domain.document.web.dto.CollectionResultResponse;
@@ -36,6 +37,7 @@ class InternalCollectionResultControllerIntegrationTest {
 
     @Autowired MockMvc mockMvc;
     @MockitoBean CollectionResultService collectionResultService;
+    @MockitoBean AnalysisJobRequestService analysisJobRequestService;
     @MockitoBean MonitoringRunService monitoringRunService;
     @MockitoBean MonitoringSourceService monitoringSourceService;
     @MockitoBean UserRepository userRepository;
