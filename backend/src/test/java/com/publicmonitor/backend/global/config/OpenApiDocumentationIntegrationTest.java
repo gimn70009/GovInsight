@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.publicmonitor.backend.domain.analysis.service.AnalysisJobRequestService;
 import com.publicmonitor.backend.domain.document.service.CollectionResultService;
 import com.publicmonitor.backend.domain.monitoring.service.MonitoringRunService;
 import com.publicmonitor.backend.domain.monitoring.service.MonitoringSourceService;
@@ -42,6 +43,9 @@ class OpenApiDocumentationIntegrationTest {
 
     @MockitoBean
     private CollectionResultService collectionResultService;
+
+    @MockitoBean
+    private AnalysisJobRequestService analysisJobRequestService;
 
     @Test
     void 공개_API_OpenAPI_문서에_현재_엔드포인트와_JWT_스키마가_포함된다() throws Exception {

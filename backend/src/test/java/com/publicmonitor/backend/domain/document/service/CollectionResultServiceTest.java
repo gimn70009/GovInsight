@@ -6,6 +6,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import com.publicmonitor.backend.domain.analysis.event.CollectionStoredEvent;
 import com.publicmonitor.backend.domain.document.entity.AttachmentParseStatus;
 import com.publicmonitor.backend.domain.document.entity.Document;
 import com.publicmonitor.backend.domain.document.entity.DocumentAttachment;
@@ -39,6 +40,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -50,6 +52,7 @@ class CollectionResultServiceTest {
     @Mock DocumentVersionRepository versionRepository;
     @Mock DocumentAttachmentRepository attachmentRepository;
     @Mock DocumentDetectionRepository detectionRepository;
+    @Mock ApplicationEventPublisher eventPublisher;
 
     private CollectionResultService service;
     private MonitoringRun run;
@@ -68,7 +71,8 @@ class CollectionResultServiceTest {
                 detectionRepository,
                 new DocumentContentNormalizer(),
                 new DocumentVersionHasher(),
-                clock
+                clock,
+                eventPublisher
         );
         source = MonitoringSource.create("산업통상부", "사업공고", null, "https://example.com", null, 3, true);
         ReflectionTestUtils.setField(source, "id", 1L);
@@ -121,6 +125,7 @@ class CollectionResultServiceTest {
         });
         verify(attachmentRepository).saveAll(any());
         verify(detectionRepository).save(any());
+        verify(eventPublisher).publishEvent(any(CollectionStoredEvent.class));
         assertThat(runSource.getDetectedDocumentCount()).isEqualTo(1);
         assertThat(run.getStatus()).isEqualTo(MonitoringRunStatus.COLLECTED);
         assertThat(run.getCompletedAt()).isNull();
