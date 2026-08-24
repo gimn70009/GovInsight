@@ -12,6 +12,8 @@ from app.domains.analysis.schemas.result import (
     DocumentImportance,
     Eligibility,
     Favorability,
+    ProposalSection,
+    ProposalStrategy,
 )
 
 
@@ -30,7 +32,12 @@ def analysis_request() -> AnalysisResultRequest:
                 reason="접수 기한이 명시되어 있어 빠른 검토가 필요합니다.",
                 eligibility=Eligibility.REVIEW_REQUIRED,
                 favorable_or_not=Favorability.NOT_APPLICABLE,
-                proposal_direction="제조 AI 기술을 활용한 사업 제안 가능성을 검토합니다.",
+                proposal=ProposalStrategy(sections=[
+                    ProposalSection(
+                        title="핵심 판단",
+                        body="제조 AI 기술을 활용한 사업 제안 가능성을 검토합니다.",
+                    )
+                ]),
                 used_tools=["get_document_content"],
                 model_name="gpt-5-mini",
             )
@@ -70,6 +77,7 @@ def test_send_analysis_result_in_camel_case() -> None:
 
     assert captured_body["runId"] == 10
     assert captured_body["results"][0]["detectionId"] == 20
+    assert captured_body["results"][0]["proposal"]["sections"][0]["title"] == "핵심 판단"
     assert response.data.stored_analysis_count == 1
 
 

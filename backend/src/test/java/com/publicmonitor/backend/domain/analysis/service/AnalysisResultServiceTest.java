@@ -98,7 +98,8 @@ class AnalysisResultServiceTest {
         assertThat(captor.getValue().getImportance()).isEqualTo(DocumentImportance.HIGH);
         assertThat(captor.getValue().getEligibility()).isEqualTo(AnalysisEligibility.REVIEW_REQUIRED);
         assertThat(captor.getValue().getFavorableOrNot()).isEqualTo(AnalysisFavorability.NOT_APPLICABLE);
-        assertThat(captor.getValue().getProposalDirection()).contains("제조 AI");
+        assertThat(captor.getValue().getProposalDirection())
+                .contains("sections", "핵심 판단", "제조 AI");
         assertThat(response.storedAnalysisCount()).isEqualTo(1);
         assertThat(response.duplicateAnalysisCount()).isZero();
     }
@@ -127,7 +128,12 @@ class AnalysisResultServiceTest {
                         "접수 기한이 있어 빠른 검토가 필요합니다.",
                         AnalysisEligibility.REVIEW_REQUIRED,
                         AnalysisFavorability.NOT_APPLICABLE,
-                        "제조 AI 기술을 활용한 사업 제안 가능성을 검토합니다.",
+                        new AnalysisResultRequest.Proposal(List.of(
+                                new AnalysisResultRequest.Section(
+                                        "핵심 판단",
+                                        "제조 AI 기술을 활용한 사업 제안 가능성을 검토합니다."
+                                )
+                        )),
                         List.of("get_document_content"),
                         "gpt-5-mini"
                 )),

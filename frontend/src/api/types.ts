@@ -90,7 +90,9 @@ export interface DocumentAnalysis {
   reason: string
   eligibility: 'ELIGIBLE' | 'INELIGIBLE' | 'REVIEW_REQUIRED'
   favorableOrNot: 'FAVORABLE' | 'UNFAVORABLE' | 'NEUTRAL' | 'NOT_APPLICABLE' | 'REVIEW_REQUIRED'
-  proposalDirection: string
+  proposal: {
+    sections: Array<{ title: string; body: string }>
+  }
 }
 
 export interface DocumentAttachment {

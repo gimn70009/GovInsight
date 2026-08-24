@@ -64,8 +64,21 @@ public class DocumentDetectionDetailService {
                 analysis.getReason(),
                 analysis.getEligibility(),
                 analysis.getFavorableOrNot(),
-                analysis.getProposalDirection()
+                parseProposal(analysis.getProposalDirection())
         );
+    }
+
+    private DocumentDetectionDetailResponse.Proposal parseProposal(String proposalDirection) {
+        if (proposalDirection == null || proposalDirection.isBlank()) {
+            return new DocumentDetectionDetailResponse.Proposal(List.of());
+        }
+        String normalized = proposalDirection.strip();
+        if (!normalized.startsWith("{")) {
+            return new DocumentDetectionDetailResponse.Proposal(List.of(
+                    new DocumentDetectionDetailResponse.Section("기존 제안 방향", normalized)
+            ));
+        }
+        return objectMapper.readValue(normalized, DocumentDetectionDetailResponse.Proposal.class);
     }
 
     private DocumentDetectionDetailResponse.Attachment toAttachment(DocumentAttachment attachment) {

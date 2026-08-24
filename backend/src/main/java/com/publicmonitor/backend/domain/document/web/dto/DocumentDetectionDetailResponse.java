@@ -31,8 +31,16 @@ public record DocumentDetectionDetailResponse(
             String reason,
             AnalysisEligibility eligibility,
             AnalysisFavorability favorableOrNot,
-            String proposalDirection
+            Proposal proposal
     ) {
+    }
+
+    @Schema(description = "회사 활용·대응 전략")
+    public record Proposal(List<Section> sections) {
+    }
+
+    @Schema(description = "회사 활용·대응 전략의 한 단계")
+    public record Section(String title, String body) {
     }
 
     @Schema(description = "첨부파일")
