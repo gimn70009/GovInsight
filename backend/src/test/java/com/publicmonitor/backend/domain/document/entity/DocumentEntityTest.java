@@ -123,7 +123,6 @@ class DocumentEntityTest {
                 document,
                 version,
                 DocumentChangeType.NEW_DOCUMENT,
-                0,
                 detectedAt
         );
 
@@ -131,7 +130,6 @@ class DocumentEntityTest {
         assertThat(detection.getDocument()).isSameAs(document);
         assertThat(detection.getDocumentVersion()).isSameAs(version);
         assertThat(detection.getChangeType()).isEqualTo(DocumentChangeType.NEW_DOCUMENT);
-        assertThat(detection.getDisplayOrder()).isZero();
         assertThat(detection.getDetectedAt()).isEqualTo(detectedAt);
     }
 

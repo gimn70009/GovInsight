@@ -92,9 +92,8 @@ public class CollectionResultService {
                     .flatMap(document -> document.attachments().stream())
                     .filter(attachment -> attachment.parseStatus() == AttachmentParseStatus.FAILED)
                     .count());
-            int displayOrder = 0;
             for (CollectedDocument collected : sourceResult.documents()) {
-                results.add(saveDocument(runSource, collected, displayOrder++, now));
+                results.add(saveDocument(runSource, collected, now));
             }
             runSource.complete(sourceResult.documents().size(), sourceWarningCount, now);
             successCount++;
@@ -109,7 +108,6 @@ public class CollectionResultService {
     private DocumentResult saveDocument(
             MonitoringRunSource runSource,
             CollectedDocument collected,
-            int displayOrder,
             LocalDateTime detectedAt
     ) {
         String title = normalizer.normalize(collected.title());
@@ -170,7 +168,6 @@ public class CollectionResultService {
                     document,
                     version,
                     changeType,
-                    displayOrder,
                     detectedAt
             ));
         }

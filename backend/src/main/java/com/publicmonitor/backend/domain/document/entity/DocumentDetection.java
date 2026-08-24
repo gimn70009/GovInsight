@@ -33,10 +33,6 @@ import lombok.NoArgsConstructor;
                 @CheckConstraint(
                         name = "ck_document_detections_change_type",
                         constraint = "change_type in ('NEW_DOCUMENT', 'UPDATED_DOCUMENT', 'UNCHANGED_DOCUMENT')"
-                ),
-                @CheckConstraint(
-                        name = "ck_document_detections_display_order",
-                        constraint = "display_order >= 0"
                 )
         }
 )
@@ -69,9 +65,6 @@ public class DocumentDetection extends BaseEntity {
     @Column(name = "change_type", nullable = false, length = 30)
     private DocumentChangeType changeType;
 
-    @Column(name = "display_order", nullable = false, columnDefinition = "NUMBER DEFAULT 0")
-    private int displayOrder;
-
     @Column(name = "detected_at", nullable = false)
     private LocalDateTime detectedAt;
 
@@ -80,14 +73,12 @@ public class DocumentDetection extends BaseEntity {
             Document document,
             DocumentVersion documentVersion,
             DocumentChangeType changeType,
-            int displayOrder,
             LocalDateTime detectedAt
     ) {
         this.monitoringRunSource = monitoringRunSource;
         this.document = document;
         this.documentVersion = documentVersion;
         this.changeType = changeType;
-        this.displayOrder = displayOrder;
         this.detectedAt = detectedAt;
     }
 
@@ -96,7 +87,6 @@ public class DocumentDetection extends BaseEntity {
             Document document,
             DocumentVersion documentVersion,
             DocumentChangeType changeType,
-            int displayOrder,
             LocalDateTime detectedAt
     ) {
         return new DocumentDetection(
@@ -104,7 +94,6 @@ public class DocumentDetection extends BaseEntity {
                 document,
                 documentVersion,
                 changeType,
-                displayOrder,
                 detectedAt
         );
     }

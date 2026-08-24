@@ -55,7 +55,7 @@ class DocumentDetectionDetailServiceTest {
         );
         ReflectionTestUtils.setField(version, "id", 3L);
         DocumentDetection detection = DocumentDetection.create(
-                runSource, document, version, DocumentChangeType.NEW_DOCUMENT, 0, now
+                runSource, document, version, DocumentChangeType.NEW_DOCUMENT, now
         );
         ReflectionTestUtils.setField(detection, "id", 4L);
         DocumentAnalysis analysis = DocumentAnalysis.create(
