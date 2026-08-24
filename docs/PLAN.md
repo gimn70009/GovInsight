@@ -72,6 +72,7 @@
 - [x] Python 및 Spring Boot 테스트 작성
 - [x] PDF 텍스트 추출
 - [x] HWP 5.0 OLE 본문 텍스트 추출
+- [x] HWP UTF-16 surrogate 문자 정규화와 전송 오류 방지
 - [x] HWPX 텍스트 추출
 - [x] 지원하지 않는 파일 형식 처리
 - [x] PDF·HWP·HWPX 파싱 상태 전이와 오류 처리

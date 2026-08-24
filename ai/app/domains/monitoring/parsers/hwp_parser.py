@@ -150,6 +150,21 @@ def _decode_paragraph_text(data: bytes) -> str:
         if code < 32:
             position += 1 if code in CHAR_CONTROL_CODES else min(8, unit_count - position)
             continue
+        if 0xD800 <= code <= 0xDBFF:
+            if position + 1 < unit_count:
+                low_surrogate = struct.unpack_from("<H", data, (position + 1) * 2)[0]
+                if 0xDC00 <= low_surrogate <= 0xDFFF:
+                    code_point = 0x10000 + ((code - 0xD800) << 10) + (low_surrogate - 0xDC00)
+                    characters.append(chr(code_point))
+                    position += 2
+                    continue
+            characters.append("�")
+            position += 1
+            continue
+        if 0xDC00 <= code <= 0xDFFF:
+            characters.append("�")
+            position += 1
+            continue
         characters.append(chr(code))
         position += 1
 
