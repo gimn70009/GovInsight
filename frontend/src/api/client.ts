@@ -62,7 +62,11 @@ export const api = {
   createRun: () => request<CreateMonitoringRunResponse>('/api/monitoring-runs', { method: 'POST' }),
   getRuns: (page = 0, size = 10) =>
     request<PageResponse<MonitoringRun>>(`/api/monitoring-runs?page=${page}&size=${size}`),
-  getDocuments: (page = 0, size = 20) =>
-    request<PageResponse<DocumentDetection>>(`/api/document-detections?page=${page}&size=${size}`),
+  getDocuments: (page = 0, size = 20, from?: string, to?: string) => {
+    const params = new URLSearchParams({ page: String(page), size: String(size) })
+    if (from) params.set('from', from)
+    if (to) params.set('to', to)
+    return request<PageResponse<DocumentDetection>>(`/api/document-detections?${params}`)
+  },
   getDocument: (detectionId: number) => request<DocumentDetail>(`/api/document-detections/${detectionId}`),
 }

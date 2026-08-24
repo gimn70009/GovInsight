@@ -2,11 +2,13 @@ package com.publicmonitor.backend.domain.document.repository;
 
 import com.publicmonitor.backend.domain.document.entity.DocumentDetection;
 import com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionSummaryResponse;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface DocumentDetectionRepository extends JpaRepository<DocumentDetection, Long> {
 
@@ -27,9 +29,20 @@ public interface DocumentDetectionRepository extends JpaRepository<DocumentDetec
                     join detection.monitoringRunSource runSource
                     join runSource.monitoringSource source
                     left join DocumentAnalysis analysis on analysis.documentVersion = version
+                    where (:fromDateTime is null or detection.detectedAt >= :fromDateTime)
+                      and (:toDateTime is null or detection.detectedAt <= :toDateTime)
                     order by detection.detectedAt desc, detection.id desc
                     """,
-            countQuery = "select count(detection) from DocumentDetection detection"
+            countQuery = """
+                    select count(detection)
+                    from DocumentDetection detection
+                    where (:fromDateTime is null or detection.detectedAt >= :fromDateTime)
+                      and (:toDateTime is null or detection.detectedAt <= :toDateTime)
+                    """
     )
-    Page<DocumentDetectionSummaryResponse> findSummaries(Pageable pageable);
+    Page<DocumentDetectionSummaryResponse> findSummaries(
+            @Param("fromDateTime") LocalDateTime fromDateTime,
+            @Param("toDateTime") LocalDateTime toDateTime,
+            Pageable pageable
+    );
 }
