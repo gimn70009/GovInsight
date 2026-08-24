@@ -102,10 +102,17 @@ public class DocumentDetectionDetailService {
         int totalScore = analysis.getOpportunityScore() != null
                 ? analysis.getOpportunityScore()
                 : OpportunityScoreCalculator.calculate(scores);
+        int companyFitScore = scores.getOrDefault(OpportunityDimensionType.COMPANY_FIT, 0);
+        int feasibilityScore = scores.getOrDefault(OpportunityDimensionType.FEASIBILITY, 0);
         int urgencyScore = scores.getOrDefault(OpportunityDimensionType.URGENCY, 0);
         return new DocumentDetectionDetailResponse.Opportunity(
                 totalScore,
-                OpportunityScoreCalculator.priority(totalScore, urgencyScore),
+                OpportunityScoreCalculator.priority(
+                        totalScore,
+                        companyFitScore,
+                        feasibilityScore,
+                        urgencyScore
+                ),
                 stored.dimensions()
         );
     }

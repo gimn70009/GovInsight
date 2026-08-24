@@ -47,14 +47,14 @@ def document(change_type: str = "NEW_DOCUMENT") -> AnalysisDocumentRequest:
     return AnalysisDocumentRequest.model_validate(payload)
 
 
-def opportunity() -> OpportunityAssessment:
+def opportunity(company_fit: int = 80) -> OpportunityAssessment:
     return OpportunityAssessment(
         dimensions=[
             OpportunityDimension(type=dimension_type, score=score, reason=reason)
             for dimension_type, score, reason in (
                 (
                     OpportunityDimensionType.COMPANY_FIT,
-                    80,
+                    company_fit,
                     "회사 산업 AI 기술과 공고 목적의 관련성이 높습니다.",
                 ),
                 (
@@ -87,6 +87,7 @@ def analysis(
     used_tools: list[str] | None = None,
     proposal_titles: list[str] | None = None,
     proposal_body: str = "산업 AI 적용 가능성과 세부 자격 조건을 검토해 사업화를 추진합니다.",
+    opportunity_assessment: OpportunityAssessment | None = None,
 ) -> AgentAnalysis:
     titles = proposal_titles or ["핵심 판단", "활용·추진 방안", "필요 파트너·준비사항", "즉시 실행"]
     return AgentAnalysis(
@@ -100,7 +101,7 @@ def analysis(
             proposal=ProposalStrategy(
                 sections=[ProposalSection(title=title, body=proposal_body) for title in titles]
             ),
-            opportunity=opportunity(),
+            opportunity=opportunity_assessment or opportunity(),
         ),
         used_tools=used_tools or ["get_document_content", "get_company_profile"],
         model_name="mock-model",
@@ -262,6 +263,30 @@ def test_system_prompt_uses_consistent_polite_tone() -> None:
     assert "`~한다`, `~이다`, `~있다`" in SYSTEM_PROMPT
     assert "`~을 권장합니다`" in SYSTEM_PROMPT
 
+
+def test_graph_retries_high_importance_without_company_relevance() -> None:
+    runner = SequencedRunner(
+        [
+            analysis(
+                Favorability.NOT_APPLICABLE,
+                opportunity_assessment=opportunity(company_fit=35),
+            ),
+            analysis(Favorability.NOT_APPLICABLE),
+        ]
+    )
+    workflow = DocumentAnalysisWorkflow(runner=runner, max_attempts=2)
+
+    result = asyncio.run(workflow.analyze(document()))
+
+    assert result.importance == DocumentImportance.HIGH
+    assert "HIGH 중요도는 회사 관련성이 확인" in (runner.feedbacks[1] or "")
+
+
+def test_system_prompt_calibrates_importance_and_opportunity_scores() -> None:
+    assert "마감일이 임박했다는 사실만으로 HIGH" in SYSTEM_PROMPT
+    assert "21~40점 `키워드·산업 수준의 간접 접점`" in SYSTEM_PROMPT
+    assert "COMPANY_FIT은 40점을 넘기지 않습니다" in SYSTEM_PROMPT
+    assert "URGENCY는 대응까지 남은 시간만 평가" in SYSTEM_PROMPT
 
 def test_graph_stops_after_max_attempts() -> None:
     runner = SequencedRunner([RuntimeError("모델 호출 실패"), RuntimeError("모델 호출 실패")])
