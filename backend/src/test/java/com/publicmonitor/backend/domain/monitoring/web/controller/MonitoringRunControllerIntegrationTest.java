@@ -145,7 +145,7 @@ class MonitoringRunControllerIntegrationTest {
     @Test
     void 감지_문서_목록을_조회한다() throws Exception {
         LocalDateTime checkedAt = LocalDateTime.of(2026, 8, 21, 13, 31, 55);
-        given(documentDetectionQueryService.findAll(0, 20)).willReturn(new PageResponse<>(
+        given(documentDetectionQueryService.findAll(0, 20, null, null)).willReturn(new PageResponse<>(
                 List.of(new DocumentDetectionSummaryResponse(
                         15L, 8L, 10L, "기후에너지환경부", "공지/공고", "기업 지원사업 모집 공고",
                         DocumentChangeType.NEW_DOCUMENT, 2, DocumentImportance.HIGH, checkedAt
