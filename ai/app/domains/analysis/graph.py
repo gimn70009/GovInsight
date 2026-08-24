@@ -10,7 +10,9 @@ from app.domains.analysis.schemas.request import (
 from app.domains.analysis.schemas.result import (
     AnalysisDraft,
     DocumentAnalysisResult,
+    DocumentImportance,
     Favorability,
+    OpportunityDimensionType,
 )
 
 
@@ -254,6 +256,20 @@ def _business_rule_violations(
         violations.append(
             "제안 섹션 제목과 순서는 " + ", ".join(expected_titles) + "이어야 합니다."
         )
+    dimension_scores = {
+        dimension.type: dimension.score
+        for dimension in candidate.draft.opportunity.dimensions
+    }
+    company_fit_score = dimension_scores.get(OpportunityDimensionType.COMPANY_FIT, 0)
+    if (
+        candidate.draft.importance == DocumentImportance.HIGH
+        and company_fit_score < 50
+    ):
+        violations.append(
+            "HIGH 중요도는 회사 관련성이 확인되어야 합니다. "
+            "마감 임박만으로 높이지 말고 회사 적합도와 실제 대응 필요성을 다시 판단하세요."
+        )
+
     favorability = candidate.draft.favorable_or_not
     if path == "new" and favorability != Favorability.NOT_APPLICABLE:
         violations.append("신규 문서의 favorable_or_not은 NOT_APPLICABLE이어야 합니다.")

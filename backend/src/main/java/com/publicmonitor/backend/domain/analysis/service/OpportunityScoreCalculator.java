@@ -24,8 +24,21 @@ public final class OpportunityScoreCalculator {
         return (int) Math.round(weightedScore);
     }
 
-    public static OpportunityPriority priority(int totalScore, int urgencyScore) {
-        if (totalScore >= 75 || urgencyScore >= 85) {
+    public static OpportunityPriority priority(
+            int totalScore,
+            int companyFitScore,
+            int feasibilityScore,
+            int urgencyScore
+    ) {
+        if (totalScore >= 75
+                && companyFitScore >= 50
+                && feasibilityScore >= 50) {
+            return OpportunityPriority.HIGH;
+        }
+        if (totalScore >= 50
+                && companyFitScore >= 50
+                && feasibilityScore >= 50
+                && urgencyScore >= 85) {
             return OpportunityPriority.HIGH;
         }
         if (totalScore >= 50) {
