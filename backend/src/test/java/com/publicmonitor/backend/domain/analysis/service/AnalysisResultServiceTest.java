@@ -5,6 +5,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 
+import com.publicmonitor.backend.domain.analysis.entity.AnalysisEligibility;
+import com.publicmonitor.backend.domain.analysis.entity.AnalysisFavorability;
 import com.publicmonitor.backend.domain.analysis.entity.DocumentAnalysis;
 import com.publicmonitor.backend.domain.analysis.entity.DocumentImportance;
 import com.publicmonitor.backend.domain.analysis.repository.AnalysisDocumentDetectionRepository;
@@ -94,6 +96,9 @@ class AnalysisResultServiceTest {
         assertThat(captor.getValue().getSummary()).contains("지원사업");
         assertThat(captor.getValue().getKeyPoints()).contains("신청 기한");
         assertThat(captor.getValue().getImportance()).isEqualTo(DocumentImportance.HIGH);
+        assertThat(captor.getValue().getEligibility()).isEqualTo(AnalysisEligibility.REVIEW_REQUIRED);
+        assertThat(captor.getValue().getFavorableOrNot()).isEqualTo(AnalysisFavorability.NOT_APPLICABLE);
+        assertThat(captor.getValue().getProposalDirection()).contains("제조 AI");
         assertThat(response.storedAnalysisCount()).isEqualTo(1);
         assertThat(response.duplicateAnalysisCount()).isZero();
     }
@@ -120,6 +125,9 @@ class AnalysisResultServiceTest {
                         List.of("신청 기한 확인", "지원 대상 검토"),
                         DocumentImportance.HIGH,
                         "접수 기한이 있어 빠른 검토가 필요합니다.",
+                        AnalysisEligibility.REVIEW_REQUIRED,
+                        AnalysisFavorability.NOT_APPLICABLE,
+                        "제조 AI 기술을 활용한 사업 제안 가능성을 검토합니다.",
                         List.of("get_document_content"),
                         "gpt-5-mini"
                 )),

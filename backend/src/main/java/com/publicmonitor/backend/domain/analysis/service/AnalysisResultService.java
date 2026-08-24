@@ -62,6 +62,9 @@ public class AnalysisResultService {
                     objectMapper.writeValueAsString(result.keyPoints()),
                     result.importance(),
                     result.reason().strip(),
+                    result.eligibility(),
+                    result.favorableOrNot(),
+                    result.proposalDirection().strip(),
                     objectMapper.writeValueAsString(result.usedTools()),
                     result.modelName().strip(),
                     analyzedAt

@@ -10,6 +10,8 @@ from app.domains.analysis.schemas.delivery import AnalysisResultRequest
 from app.domains.analysis.schemas.result import (
     DocumentAnalysisResult,
     DocumentImportance,
+    Eligibility,
+    Favorability,
 )
 
 
@@ -26,6 +28,9 @@ def analysis_request() -> AnalysisResultRequest:
                 key_points=["신청 기한 확인", "지원 대상 검토"],
                 importance=DocumentImportance.HIGH,
                 reason="접수 기한이 명시되어 있어 빠른 검토가 필요합니다.",
+                eligibility=Eligibility.REVIEW_REQUIRED,
+                favorable_or_not=Favorability.NOT_APPLICABLE,
+                proposal_direction="제조 AI 기술을 활용한 사업 제안 가능성을 검토합니다.",
                 used_tools=["get_document_content"],
                 model_name="gpt-5-mini",
             )

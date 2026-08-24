@@ -24,6 +24,14 @@ class PreviousVersionRequest(CamelCaseModel):
     content_text: str | None = None
 
 
+class PreviousAnalysisRequest(CamelCaseModel):
+    summary: str = Field(min_length=1, max_length=4000)
+    key_points: str | None = None
+    eligibility: str | None = None
+    favorable_or_not: str | None = None
+    proposal_direction: str | None = None
+
+
 class AnalysisDocumentRequest(CamelCaseModel):
     detection_id: int = Field(gt=0)
     document_id: int = Field(gt=0)
@@ -37,6 +45,7 @@ class AnalysisDocumentRequest(CamelCaseModel):
     original_url: str = Field(min_length=1, max_length=2000)
     attachments: list[AnalysisAttachmentRequest] = Field(default_factory=list)
     previous_version: PreviousVersionRequest | None = None
+    previous_analysis: PreviousAnalysisRequest | None = None
 
     @model_validator(mode="after")
     def require_analyzable_text(self) -> "AnalysisDocumentRequest":

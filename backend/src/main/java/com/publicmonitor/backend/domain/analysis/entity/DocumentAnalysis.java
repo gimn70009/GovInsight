@@ -64,6 +64,17 @@ public class DocumentAnalysis extends BaseEntity {
     @Column(name = "reason", columnDefinition = "CLOB")
     private String reason;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "eligibility", length = 30)
+    private AnalysisEligibility eligibility;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "favorable_or_not", length = 30)
+    private AnalysisFavorability favorableOrNot;
+
+    @Column(name = "proposal_direction", columnDefinition = "CLOB")
+    private String proposalDirection;
+
     @Column(name = "used_tools", columnDefinition = "CLOB")
     private String usedTools;
 
@@ -79,6 +90,9 @@ public class DocumentAnalysis extends BaseEntity {
             String keyPoints,
             DocumentImportance importance,
             String reason,
+            AnalysisEligibility eligibility,
+            AnalysisFavorability favorableOrNot,
+            String proposalDirection,
             String usedTools,
             String modelName,
             LocalDateTime analyzedAt
@@ -88,6 +102,9 @@ public class DocumentAnalysis extends BaseEntity {
         this.keyPoints = keyPoints;
         this.importance = importance;
         this.reason = reason;
+        this.eligibility = eligibility;
+        this.favorableOrNot = favorableOrNot;
+        this.proposalDirection = proposalDirection;
         this.usedTools = usedTools;
         this.modelName = modelName;
         this.analyzedAt = analyzedAt;
@@ -99,6 +116,9 @@ public class DocumentAnalysis extends BaseEntity {
             String keyPoints,
             DocumentImportance importance,
             String reason,
+            AnalysisEligibility eligibility,
+            AnalysisFavorability favorableOrNot,
+            String proposalDirection,
             String usedTools,
             String modelName,
             LocalDateTime analyzedAt
@@ -109,6 +129,9 @@ public class DocumentAnalysis extends BaseEntity {
                 keyPoints,
                 importance,
                 reason,
+                eligibility,
+                favorableOrNot,
+                proposalDirection,
                 usedTools,
                 modelName,
                 analyzedAt

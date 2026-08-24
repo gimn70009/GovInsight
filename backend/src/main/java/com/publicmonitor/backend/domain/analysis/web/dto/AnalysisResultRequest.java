@@ -1,5 +1,7 @@
 package com.publicmonitor.backend.domain.analysis.web.dto;
 
+import com.publicmonitor.backend.domain.analysis.entity.AnalysisEligibility;
+import com.publicmonitor.backend.domain.analysis.entity.AnalysisFavorability;
 import com.publicmonitor.backend.domain.analysis.entity.DocumentImportance;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
@@ -32,6 +34,9 @@ public record AnalysisResultRequest(
             @NotNull @Size(min = 1, max = 8) List<@NotBlank @Size(max = 1000) String> keyPoints,
             @NotNull DocumentImportance importance,
             @NotBlank @Size(max = 1000) String reason,
+            @NotNull AnalysisEligibility eligibility,
+            @NotNull AnalysisFavorability favorableOrNot,
+            @NotBlank @Size(max = 2000) String proposalDirection,
             @NotNull @Size(max = 20) List<@NotBlank @Size(max = 100) String> usedTools,
             @NotBlank @Size(max = 100) String modelName
     ) {
