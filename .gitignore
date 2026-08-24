@@ -7,3 +7,9 @@ Thumbs.db
 
 # 사용자 추가
 .codex/
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
