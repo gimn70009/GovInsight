@@ -36,9 +36,20 @@ public record AnalysisResultRequest(
             @NotBlank @Size(max = 1000) String reason,
             @NotNull AnalysisEligibility eligibility,
             @NotNull AnalysisFavorability favorableOrNot,
-            @NotBlank @Size(max = 2000) String proposalDirection,
+            @NotNull @Valid Proposal proposal,
             @NotNull @Size(max = 20) List<@NotBlank @Size(max = 100) String> usedTools,
             @NotBlank @Size(max = 100) String modelName
+    ) {
+    }
+
+    public record Proposal(
+            @NotNull @Size(min = 1, max = 6) List<@Valid Section> sections
+    ) {
+    }
+
+    public record Section(
+            @NotBlank @Size(max = 100) String title,
+            @NotBlank @Size(max = 1000) String body
     ) {
     }
 

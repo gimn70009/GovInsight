@@ -66,7 +66,7 @@ class DocumentDetectionDetailServiceTest {
                 "신청 기한이 있어 빠른 검토가 필요합니다.",
                 AnalysisEligibility.REVIEW_REQUIRED,
                 AnalysisFavorability.NOT_APPLICABLE,
-                "제조 데이터 분석 역량을 활용한 참여 방향을 검토합니다.",
+                "{\"sections\":[{\"title\":\"핵심 판단\",\"body\":\"제조 데이터 분석 역량을 활용한 참여 방향을 검토합니다.\"}]}",
                 "[\"get_document_content\",\"get_company_profile\"]",
                 "mock-model",
                 now
@@ -88,6 +88,12 @@ class DocumentDetectionDetailServiceTest {
         assertThat(response.attachments()).hasSize(1);
         assertThat(response.analysis().keyPoints()).containsExactly("신청 자격 확인", "제출 기한 확인");
         assertThat(response.analysis().eligibility()).isEqualTo(AnalysisEligibility.REVIEW_REQUIRED);
+        assertThat(response.analysis().proposal().sections())
+                .singleElement()
+                .satisfies(section -> {
+                    assertThat(section.title()).isEqualTo("핵심 판단");
+                    assertThat(section.body()).contains("제조 데이터 분석 역량");
+                });
         assertThat(response.attachments()).singleElement().satisfies(item ->
                 assertThat(item.parseStatus()).isEqualTo(AttachmentParseStatus.COMPLETED)
         );

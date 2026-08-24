@@ -25,6 +25,20 @@ class Favorability(StrEnum):
     REVIEW_REQUIRED = "REVIEW_REQUIRED"
 
 
+class ProposalSection(BaseModel):
+    title: str = Field(min_length=2, max_length=100)
+    body: str = Field(min_length=10, max_length=1000)
+
+    @field_validator("title", "body")
+    @classmethod
+    def strip_section_text(cls, value: str) -> str:
+        return value.strip()
+
+
+class ProposalStrategy(BaseModel):
+    sections: list[ProposalSection] = Field(min_length=1, max_length=6)
+
+
 class AnalysisDraft(BaseModel):
     summary: str = Field(min_length=20, max_length=4000)
     key_points: list[str] = Field(min_length=1, max_length=8)
@@ -32,9 +46,9 @@ class AnalysisDraft(BaseModel):
     reason: str = Field(min_length=10, max_length=1000)
     eligibility: Eligibility
     favorable_or_not: Favorability
-    proposal_direction: str = Field(min_length=10, max_length=2000)
+    proposal: ProposalStrategy
 
-    @field_validator("summary", "reason", "proposal_direction")
+    @field_validator("summary", "reason")
     @classmethod
     def strip_text(cls, value: str) -> str:
         return value.strip()
@@ -58,6 +72,6 @@ class DocumentAnalysisResult(CamelCaseModel):
     reason: str
     eligibility: Eligibility
     favorable_or_not: Favorability
-    proposal_direction: str
+    proposal: ProposalStrategy
     used_tools: list[str]
     model_name: str

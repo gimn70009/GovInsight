@@ -13,6 +13,8 @@ from app.domains.analysis.schemas.result import (
     AnalysisDraft,
     DocumentAnalysisResult,
     DocumentImportance,
+    ProposalSection,
+    ProposalStrategy,
 )
 
 __all__ = [
@@ -26,4 +28,6 @@ __all__ = [
     "DocumentAnalysisResult",
     "DocumentImportance",
     "PreviousVersionRequest",
+    "ProposalSection",
+    "ProposalStrategy",
 ]
