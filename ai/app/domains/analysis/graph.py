@@ -70,6 +70,9 @@ class DocumentAnalysisWorkflow:
                 key_points=draft.key_points,
                 importance=draft.importance,
                 reason=draft.reason,
+                eligibility=draft.eligibility,
+                favorable_or_not=draft.favorable_or_not,
+                proposal_direction=draft.proposal_direction,
                 used_tools=candidate.used_tools,
                 model_name=candidate.model_name,
             )

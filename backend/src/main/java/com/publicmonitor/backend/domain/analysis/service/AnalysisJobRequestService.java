@@ -3,6 +3,7 @@ package com.publicmonitor.backend.domain.analysis.service;
 import com.publicmonitor.backend.domain.analysis.client.dto.PythonAnalysisAttachmentRequest;
 import com.publicmonitor.backend.domain.analysis.client.dto.PythonAnalysisDocumentRequest;
 import com.publicmonitor.backend.domain.analysis.client.dto.PythonAnalysisJobRequest;
+import com.publicmonitor.backend.domain.analysis.client.dto.PythonPreviousAnalysisRequest;
 import com.publicmonitor.backend.domain.analysis.client.dto.PythonPreviousVersionRequest;
 import com.publicmonitor.backend.domain.analysis.repository.AnalysisDocumentDetectionRepository;
 import com.publicmonitor.backend.domain.analysis.repository.AnalysisDocumentVersionRepository;
@@ -67,7 +68,8 @@ public class AnalysisJobRequestService {
                 version.getPublishedAt(),
                 detection.getDocument().getOriginalUrl(),
                 attachments,
-                previousVersion(version).orElse(null)
+                previousVersion(version).orElse(null),
+                previousAnalysis(version).orElse(null)
         );
     }
 
@@ -97,6 +99,22 @@ public class AnalysisJobRequestService {
                         previous.getId(),
                         previous.getTitle(),
                         previous.getContentText()
+                ));
+    }
+
+    private Optional<PythonPreviousAnalysisRequest> previousAnalysis(DocumentVersion version) {
+        if (version.getVersionNo() <= 1) {
+            return Optional.empty();
+        }
+        return versionRepository
+                .findByDocumentIdAndVersionNo(version.getDocument().getId(), version.getVersionNo() - 1)
+                .flatMap(previous -> analysisRepository.findByDocumentVersionId(previous.getId()))
+                .map(analysis -> new PythonPreviousAnalysisRequest(
+                        analysis.getSummary(),
+                        analysis.getKeyPoints(),
+                        analysis.getEligibility() == null ? null : analysis.getEligibility().name(),
+                        analysis.getFavorableOrNot() == null ? null : analysis.getFavorableOrNot().name(),
+                        analysis.getProposalDirection()
                 ));
     }
 }

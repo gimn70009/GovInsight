@@ -4,6 +4,11 @@ from difflib import unified_diff
 
 from langchain.tools import ToolRuntime, tool
 
+from app.domains.analysis.company_profile import BISTELLIGENCE_PROFILE, CompanyProfile
+from app.domains.analysis.context_tools import (
+    read_company_profile,
+    read_previous_analysis,
+)
 from app.domains.analysis.schemas.request import AnalysisDocumentRequest
 
 
@@ -11,6 +16,7 @@ from app.domains.analysis.schemas.request import AnalysisDocumentRequest
 class AnalysisToolContext:
     document: AnalysisDocumentRequest
     max_text_chars: int
+    company_profile: CompanyProfile = BISTELLIGENCE_PROFILE
 
 
 def read_document_content(context: AnalysisToolContext) -> str:
@@ -94,11 +100,25 @@ def compare_previous_version(runtime: ToolRuntime[AnalysisToolContext]) -> str:
     """수정 문서의 바로 이전 버전과 현재 버전의 제목·본문 차이를 조회한다."""
     return compare_with_previous_version(runtime.context)
 
+@tool
+def get_company_profile(runtime: ToolRuntime[AnalysisToolContext]) -> str:
+    """회사 사업 분야, 서비스, 기술, 대상 산업과 확인되지 않은 정보를 조회한다."""
+    return read_company_profile(runtime.context)
+
+
+@tool
+def get_previous_analysis(runtime: ToolRuntime[AnalysisToolContext]) -> str:
+    """수정 문서의 직전 버전에 저장된 AI 분석과 제안 방향을 조회한다."""
+    return read_previous_analysis(runtime.context)
+
+
 
 ANALYSIS_TOOLS = [
     get_document_content,
     get_attachment_texts,
     compare_previous_version,
+    get_company_profile,
+    get_previous_analysis,
 ]
 
 

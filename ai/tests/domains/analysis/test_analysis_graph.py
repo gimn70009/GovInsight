@@ -5,7 +5,12 @@ import pytest
 from app.domains.analysis.agent import AgentAnalysis
 from app.domains.analysis.graph import AnalysisWorkflowError, DocumentAnalysisWorkflow
 from app.domains.analysis.schemas.request import AnalysisDocumentRequest
-from app.domains.analysis.schemas.result import AnalysisDraft, DocumentImportance
+from app.domains.analysis.schemas.result import (
+    AnalysisDraft,
+    DocumentImportance,
+    Eligibility,
+    Favorability,
+)
 
 
 def document() -> AnalysisDocumentRequest:
@@ -38,6 +43,9 @@ class RetryRunner:
                 key_points=["신청 기한은 9월 30일입니다."],
                 importance=DocumentImportance.HIGH,
                 reason="기업의 신청 기한이 명시되어 빠른 검토가 필요합니다.",
+                eligibility=Eligibility.REVIEW_REQUIRED,
+                favorable_or_not=Favorability.NOT_APPLICABLE,
+                proposal_direction="산업 AI 적용 가능성과 세부 자격 조건을 추가로 검토합니다.",
             ),
             used_tools=["get_document_content"],
             model_name="mock-model",

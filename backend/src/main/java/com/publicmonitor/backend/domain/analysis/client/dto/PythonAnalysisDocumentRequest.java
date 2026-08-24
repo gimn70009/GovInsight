@@ -16,6 +16,7 @@ public record PythonAnalysisDocumentRequest(
         LocalDateTime publishedAt,
         String originalUrl,
         List<PythonAnalysisAttachmentRequest> attachments,
-        PythonPreviousVersionRequest previousVersion
+        PythonPreviousVersionRequest previousVersion,
+        PythonPreviousAnalysisRequest previousAnalysis
 ) {
 }

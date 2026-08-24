@@ -11,13 +11,30 @@ class DocumentImportance(StrEnum):
     LOW = "LOW"
 
 
+class Eligibility(StrEnum):
+    ELIGIBLE = "ELIGIBLE"
+    INELIGIBLE = "INELIGIBLE"
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"
+
+
+class Favorability(StrEnum):
+    FAVORABLE = "FAVORABLE"
+    UNFAVORABLE = "UNFAVORABLE"
+    NEUTRAL = "NEUTRAL"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"
+
+
 class AnalysisDraft(BaseModel):
     summary: str = Field(min_length=20, max_length=4000)
     key_points: list[str] = Field(min_length=1, max_length=8)
     importance: DocumentImportance
     reason: str = Field(min_length=10, max_length=1000)
+    eligibility: Eligibility
+    favorable_or_not: Favorability
+    proposal_direction: str = Field(min_length=10, max_length=2000)
 
-    @field_validator("summary", "reason")
+    @field_validator("summary", "reason", "proposal_direction")
     @classmethod
     def strip_text(cls, value: str) -> str:
         return value.strip()
@@ -39,5 +56,8 @@ class DocumentAnalysisResult(CamelCaseModel):
     key_points: list[str]
     importance: DocumentImportance
     reason: str
+    eligibility: Eligibility
+    favorable_or_not: Favorability
+    proposal_direction: str
     used_tools: list[str]
     model_name: str
