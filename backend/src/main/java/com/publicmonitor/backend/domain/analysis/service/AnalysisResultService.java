@@ -1,6 +1,7 @@
 package com.publicmonitor.backend.domain.analysis.service;
 
 import com.publicmonitor.backend.domain.analysis.entity.DocumentAnalysis;
+import com.publicmonitor.backend.domain.analysis.entity.OpportunityDimensionType;
 import com.publicmonitor.backend.domain.analysis.exception.AnalysisResultException;
 import com.publicmonitor.backend.domain.analysis.exception.AnalysisResultResponseCode;
 import com.publicmonitor.backend.domain.analysis.repository.AnalysisDocumentDetectionRepository;
@@ -15,6 +16,8 @@ import com.publicmonitor.backend.domain.report.event.AnalysisStoredEvent;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -56,6 +59,12 @@ public class AnalysisResultService {
                 duplicateCount++;
                 continue;
             }
+            Map<OpportunityDimensionType, Integer> opportunityScores = result.opportunity().dimensions().stream()
+                    .collect(Collectors.toMap(
+                            AnalysisResultRequest.OpportunityDimension::type,
+                            AnalysisResultRequest.OpportunityDimension::score
+                    ));
+            int opportunityScore = OpportunityScoreCalculator.calculate(opportunityScores);
             analysisRepository.save(DocumentAnalysis.create(
                     detection.getDocumentVersion(),
                     result.summary().strip(),
@@ -65,6 +74,8 @@ public class AnalysisResultService {
                     result.eligibility(),
                     result.favorableOrNot(),
                     objectMapper.writeValueAsString(result.proposal()),
+                    opportunityScore,
+                    objectMapper.writeValueAsString(result.opportunity()),
                     objectMapper.writeValueAsString(result.usedTools()),
                     result.modelName().strip(),
                     analyzedAt

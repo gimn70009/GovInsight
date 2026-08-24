@@ -144,9 +144,7 @@ class DocumentAnalysisWorkflow:
                 "error": error,
             }
 
-    def _validate_business_rules_node(
-        self, state: AnalysisGraphState
-    ) -> AnalysisGraphState:
+    def _validate_business_rules_node(self, state: AnalysisGraphState) -> AnalysisGraphState:
         candidate = state.get("candidate")
         if candidate is None:
             return {"error": "검증할 분석 결과가 없습니다."}
@@ -192,6 +190,7 @@ class DocumentAnalysisWorkflow:
                 eligibility=draft.eligibility,
                 favorable_or_not=draft.favorable_or_not,
                 proposal=draft.proposal,
+                opportunity=draft.opportunity,
                 used_tools=candidate.used_tools,
                 model_name=candidate.model_name,
             ),
@@ -203,18 +202,14 @@ class DocumentAnalysisWorkflow:
 
     def _route_after_analyze(
         self, state: AnalysisGraphState
-    ) -> Literal[
-        "validate", "retry_new", "retry_updated", "retry_unchanged", "failed"
-    ]:
+    ) -> Literal["validate", "retry_new", "retry_updated", "retry_unchanged", "failed"]:
         if state.get("candidate") is not None and not state.get("error"):
             return "validate"
         return self._retry_route(state)
 
     def _route_after_validate(
         self, state: AnalysisGraphState
-    ) -> Literal[
-        "completed", "retry_new", "retry_updated", "retry_unchanged", "failed"
-    ]:
+    ) -> Literal["completed", "retry_new", "retry_updated", "retry_unchanged", "failed"]:
         if state.get("candidate") is not None and not state.get("error"):
             return "completed"
         return self._retry_route(state)

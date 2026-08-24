@@ -83,6 +83,23 @@ export interface DocumentDetection {
   lastCheckedAt: string
 }
 
+export type OpportunityDimensionType =
+  | 'COMPANY_FIT'
+  | 'BUSINESS_VALUE'
+  | 'FEASIBILITY'
+  | 'URGENCY'
+  | 'EVIDENCE_CONFIDENCE'
+
+export interface OpportunityAssessment {
+  totalScore: number
+  priority: 'HIGH' | 'NORMAL' | 'LOW'
+  dimensions: Array<{
+    type: OpportunityDimensionType
+    score: number
+    reason: string
+  }>
+}
+
 export interface DocumentAnalysis {
   summary: string
   keyPoints: string[]
@@ -93,6 +110,7 @@ export interface DocumentAnalysis {
   proposal: {
     sections: Array<{ title: string; body: string }>
   }
+  opportunity: OpportunityAssessment | null
 }
 
 export interface DocumentAttachment {

@@ -75,6 +75,12 @@ public class DocumentAnalysis extends BaseEntity {
     @Column(name = "proposal_direction", columnDefinition = "CLOB")
     private String proposalDirection;
 
+    @Column(name = "opportunity_score")
+    private Integer opportunityScore;
+
+    @Column(name = "opportunity_assessment", columnDefinition = "CLOB")
+    private String opportunityAssessment;
+
     @Column(name = "used_tools", columnDefinition = "CLOB")
     private String usedTools;
 
@@ -93,6 +99,8 @@ public class DocumentAnalysis extends BaseEntity {
             AnalysisEligibility eligibility,
             AnalysisFavorability favorableOrNot,
             String proposalDirection,
+            Integer opportunityScore,
+            String opportunityAssessment,
             String usedTools,
             String modelName,
             LocalDateTime analyzedAt
@@ -105,6 +113,8 @@ public class DocumentAnalysis extends BaseEntity {
         this.eligibility = eligibility;
         this.favorableOrNot = favorableOrNot;
         this.proposalDirection = proposalDirection;
+        this.opportunityScore = opportunityScore;
+        this.opportunityAssessment = opportunityAssessment;
         this.usedTools = usedTools;
         this.modelName = modelName;
         this.analyzedAt = analyzedAt;
@@ -119,6 +129,8 @@ public class DocumentAnalysis extends BaseEntity {
             AnalysisEligibility eligibility,
             AnalysisFavorability favorableOrNot,
             String proposalDirection,
+            Integer opportunityScore,
+            String opportunityAssessment,
             String usedTools,
             String modelName,
             LocalDateTime analyzedAt
@@ -132,6 +144,8 @@ public class DocumentAnalysis extends BaseEntity {
                 eligibility,
                 favorableOrNot,
                 proposalDirection,
+                opportunityScore,
+                opportunityAssessment,
                 usedTools,
                 modelName,
                 analyzedAt

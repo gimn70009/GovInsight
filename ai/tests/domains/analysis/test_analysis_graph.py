@@ -3,7 +3,7 @@ from collections.abc import Sequence
 
 import pytest
 
-from app.domains.analysis.agent import AgentAnalysis, _strategy_instruction
+from app.domains.analysis.agent import SYSTEM_PROMPT, AgentAnalysis, _strategy_instruction
 from app.domains.analysis.graph import AnalysisWorkflowError, DocumentAnalysisWorkflow
 from app.domains.analysis.schemas.request import (
     AnalysisChangeType,
@@ -14,6 +14,9 @@ from app.domains.analysis.schemas.result import (
     DocumentImportance,
     Eligibility,
     Favorability,
+    OpportunityAssessment,
+    OpportunityDimension,
+    OpportunityDimensionType,
     ProposalSection,
     ProposalStrategy,
 )
@@ -44,6 +47,41 @@ def document(change_type: str = "NEW_DOCUMENT") -> AnalysisDocumentRequest:
     return AnalysisDocumentRequest.model_validate(payload)
 
 
+def opportunity() -> OpportunityAssessment:
+    return OpportunityAssessment(
+        dimensions=[
+            OpportunityDimension(type=dimension_type, score=score, reason=reason)
+            for dimension_type, score, reason in (
+                (
+                    OpportunityDimensionType.COMPANY_FIT,
+                    80,
+                    "회사 산업 AI 기술과 공고 목적의 관련성이 높습니다.",
+                ),
+                (
+                    OpportunityDimensionType.BUSINESS_VALUE,
+                    70,
+                    "사업 실적과 적용 사례 확보에 도움이 됩니다.",
+                ),
+                (
+                    OpportunityDimensionType.FEASIBILITY,
+                    60,
+                    "지원 자격과 투입 인력을 추가로 확인해야 합니다.",
+                ),
+                (
+                    OpportunityDimensionType.URGENCY,
+                    90,
+                    "신청 기한이 임박해 빠른 검토가 필요합니다.",
+                ),
+                (
+                    OpportunityDimensionType.EVIDENCE_CONFIDENCE,
+                    65,
+                    "회사 규모 정보가 없어 일부 조건은 추가 확인이 필요합니다.",
+                ),
+            )
+        ]
+    )
+
+
 def analysis(
     favorability: Favorability,
     used_tools: list[str] | None = None,
@@ -62,6 +100,7 @@ def analysis(
             proposal=ProposalStrategy(
                 sections=[ProposalSection(title=title, body=proposal_body) for title in titles]
             ),
+            opportunity=opportunity(),
         ),
         used_tools=used_tools or ["get_document_content", "get_company_profile"],
         model_name="mock-model",
@@ -105,6 +144,7 @@ def test_graph_retries_transient_failure_and_returns_new_document_result() -> No
     assert result.detection_id == 10
     assert result.importance == DocumentImportance.HIGH
     assert result.favorable_or_not == Favorability.NOT_APPLICABLE
+    assert len(result.opportunity.dimensions) == 5
 
 
 def test_graph_returns_business_rule_feedback_before_retrying_new_document() -> None:
@@ -119,6 +159,7 @@ def test_graph_returns_business_rule_feedback_before_retrying_new_document() -> 
     result = asyncio.run(workflow.analyze(document()))
 
     assert result.favorable_or_not == Favorability.NOT_APPLICABLE
+    assert len(result.opportunity.dimensions) == 5
     assert "신규 문서의 favorable_or_not" in (runner.feedbacks[1] or "")
 
 
@@ -154,10 +195,12 @@ def test_updated_document_requires_comparison_tools_and_revises_plan() -> None:
 
 
 def test_graph_retries_when_proposal_sections_do_not_match_change_type() -> None:
-    runner = SequencedRunner([
-        analysis(Favorability.NOT_APPLICABLE, proposal_titles=["1. 접점", "7. 최종"]),
-        analysis(Favorability.NOT_APPLICABLE),
-    ])
+    runner = SequencedRunner(
+        [
+            analysis(Favorability.NOT_APPLICABLE, proposal_titles=["1. 접점", "7. 최종"]),
+            analysis(Favorability.NOT_APPLICABLE),
+        ]
+    )
     workflow = DocumentAnalysisWorkflow(runner=runner, max_attempts=2)
 
     result = asyncio.run(workflow.analyze(document()))
@@ -172,10 +215,14 @@ def test_graph_retries_when_proposal_sections_do_not_match_change_type() -> None
 
 
 def test_unchanged_document_requires_neutral_impact() -> None:
-    runner = SequencedRunner([analysis(
-        Favorability.NEUTRAL,
-        proposal_titles=["현재 상태", "유지할 대응", "다음 확인"],
-    )])
+    runner = SequencedRunner(
+        [
+            analysis(
+                Favorability.NEUTRAL,
+                proposal_titles=["현재 상태", "유지할 대응", "다음 확인"],
+            )
+        ]
+    )
     workflow = DocumentAnalysisWorkflow(runner=runner, max_attempts=2)
 
     result = asyncio.run(workflow.analyze(document("UNCHANGED_DOCUMENT")))
@@ -208,6 +255,13 @@ def test_change_type_strategy_defines_readable_proposal_sections(
     instruction = _strategy_instruction(change_type)
 
     assert all(title in instruction for title in section_titles)
+
+
+def test_system_prompt_uses_consistent_polite_tone() -> None:
+    assert "모두 정중한 `합니다체`" in SYSTEM_PROMPT
+    assert "`~한다`, `~이다`, `~있다`" in SYSTEM_PROMPT
+    assert "`~을 권장합니다`" in SYSTEM_PROMPT
+
 
 def test_graph_stops_after_max_attempts() -> None:
     runner = SequencedRunner([RuntimeError("모델 호출 실패"), RuntimeError("모델 호출 실패")])

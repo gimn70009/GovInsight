@@ -67,6 +67,8 @@ class DocumentDetectionDetailServiceTest {
                 AnalysisEligibility.REVIEW_REQUIRED,
                 AnalysisFavorability.NOT_APPLICABLE,
                 "{\"sections\":[{\"title\":\"핵심 판단\",\"body\":\"제조 데이터 분석 역량을 활용한 참여 방향을 검토합니다.\"}]}",
+                74,
+                opportunityJson(),
                 "[\"get_document_content\",\"get_company_profile\"]",
                 "mock-model",
                 now
@@ -88,6 +90,9 @@ class DocumentDetectionDetailServiceTest {
         assertThat(response.attachments()).hasSize(1);
         assertThat(response.analysis().keyPoints()).containsExactly("신청 자격 확인", "제출 기한 확인");
         assertThat(response.analysis().eligibility()).isEqualTo(AnalysisEligibility.REVIEW_REQUIRED);
+        assertThat(response.analysis().opportunity().totalScore()).isEqualTo(74);
+        assertThat(response.analysis().opportunity().priority().name()).isEqualTo("HIGH");
+        assertThat(response.analysis().opportunity().dimensions()).hasSize(5);
         assertThat(response.analysis().proposal().sections())
                 .singleElement()
                 .satisfies(section -> {
@@ -105,6 +110,18 @@ class DocumentDetectionDetailServiceTest {
 
         assertThatThrownBy(() -> service().findById(999L))
                 .isInstanceOf(DocumentDetectionException.class);
+    }
+
+    private String opportunityJson() {
+        return """
+                {"dimensions":[
+                  {"type":"COMPANY_FIT","score":80,"reason":"회사 기술과 관련성이 높습니다."},
+                  {"type":"BUSINESS_VALUE","score":70,"reason":"사업 실적 확보에 도움이 됩니다."},
+                  {"type":"FEASIBILITY","score":60,"reason":"지원 자격 확인이 필요합니다."},
+                  {"type":"URGENCY","score":90,"reason":"신청 기한이 임박했습니다."},
+                  {"type":"EVIDENCE_CONFIDENCE","score":65,"reason":"회사 정보의 추가 확인이 필요합니다."}
+                ]}
+                """;
     }
 
     private DocumentDetectionDetailService service() {

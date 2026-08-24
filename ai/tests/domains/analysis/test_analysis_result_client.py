@@ -12,6 +12,9 @@ from app.domains.analysis.schemas.result import (
     DocumentImportance,
     Eligibility,
     Favorability,
+    OpportunityAssessment,
+    OpportunityDimension,
+    OpportunityDimensionType,
     ProposalSection,
     ProposalStrategy,
 )
@@ -32,12 +35,43 @@ def analysis_request() -> AnalysisResultRequest:
                 reason="접수 기한이 명시되어 있어 빠른 검토가 필요합니다.",
                 eligibility=Eligibility.REVIEW_REQUIRED,
                 favorable_or_not=Favorability.NOT_APPLICABLE,
-                proposal=ProposalStrategy(sections=[
-                    ProposalSection(
-                        title="핵심 판단",
-                        body="제조 AI 기술을 활용한 사업 제안 가능성을 검토합니다.",
-                    )
-                ]),
+                proposal=ProposalStrategy(
+                    sections=[
+                        ProposalSection(
+                            title="핵심 판단",
+                            body="제조 AI 기술을 활용한 사업 제안 가능성을 검토합니다.",
+                        )
+                    ]
+                ),
+                opportunity=OpportunityAssessment(
+                    dimensions=[
+                        OpportunityDimension(
+                            type=OpportunityDimensionType.COMPANY_FIT,
+                            score=80,
+                            reason="회사 산업 AI 기술과 공고 목적의 관련성이 높습니다.",
+                        ),
+                        OpportunityDimension(
+                            type=OpportunityDimensionType.BUSINESS_VALUE,
+                            score=70,
+                            reason="사업 실적과 적용 사례 확보에 도움이 됩니다.",
+                        ),
+                        OpportunityDimension(
+                            type=OpportunityDimensionType.FEASIBILITY,
+                            score=60,
+                            reason="지원 자격과 투입 인력을 추가로 확인해야 합니다.",
+                        ),
+                        OpportunityDimension(
+                            type=OpportunityDimensionType.URGENCY,
+                            score=90,
+                            reason="신청 기한이 임박해 빠른 검토가 필요합니다.",
+                        ),
+                        OpportunityDimension(
+                            type=OpportunityDimensionType.EVIDENCE_CONFIDENCE,
+                            score=65,
+                            reason="회사 규모 정보가 없어 일부 조건은 추가 확인이 필요합니다.",
+                        ),
+                    ]
+                ),
                 used_tools=["get_document_content"],
                 model_name="gpt-5-mini",
             )
@@ -78,6 +112,7 @@ def test_send_analysis_result_in_camel_case() -> None:
     assert captured_body["runId"] == 10
     assert captured_body["results"][0]["detectionId"] == 20
     assert captured_body["results"][0]["proposal"]["sections"][0]["title"] == "핵심 판단"
+    assert captured_body["results"][0]["opportunity"]["dimensions"][0]["score"] == 80
     assert response.data.stored_analysis_count == 1
 
 
