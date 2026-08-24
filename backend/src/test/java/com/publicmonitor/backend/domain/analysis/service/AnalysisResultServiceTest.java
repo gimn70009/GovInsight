@@ -78,7 +78,7 @@ class AnalysisResultServiceTest {
         );
         ReflectionTestUtils.setField(version, "id", 40L);
         detection = DocumentDetection.create(
-                runSource, document, version, DocumentChangeType.NEW_DOCUMENT, 0, LocalDateTime.now()
+                runSource, document, version, DocumentChangeType.NEW_DOCUMENT, LocalDateTime.now()
         );
         ReflectionTestUtils.setField(detection, "id", 50L);
         given(runRepository.findById(10L)).willReturn(Optional.of(run));

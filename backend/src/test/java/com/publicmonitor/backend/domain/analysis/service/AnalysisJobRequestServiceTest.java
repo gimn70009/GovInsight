@@ -154,7 +154,7 @@ class AnalysisJobRequestServiceTest {
             DocumentChangeType changeType
     ) {
         DocumentDetection detection = DocumentDetection.create(
-                runSource, document, version, changeType, 0, LocalDateTime.now()
+                runSource, document, version, changeType, LocalDateTime.now()
         );
         ReflectionTestUtils.setField(detection, "id", id);
         return detection;

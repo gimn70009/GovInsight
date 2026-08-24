@@ -204,6 +204,8 @@ DOCUMENT_VERSIONS 1 ── N DOCUMENT_DETECTIONS
 
 JPA 연관관계는 자식 엔티티의 `LAZY @ManyToOne` 단방향 매핑을 기준으로 한다.
 
+`DOCUMENT_DETECTIONS`는 실행별 감지 사실과 변경 유형만 저장한다. 수집 순서는 저장하지 않으며, 감지 문서 조회 순서는 감지 시각과 감지 ID의 내림차순으로 결정한다.
+
 변경 유형은 다음과 같다.
 
 - 처음 발견한 게시글: `NEW_DOCUMENT`

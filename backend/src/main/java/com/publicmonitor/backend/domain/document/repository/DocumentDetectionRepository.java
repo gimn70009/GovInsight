@@ -3,7 +3,6 @@ package com.publicmonitor.backend.domain.document.repository;
 import com.publicmonitor.backend.domain.document.entity.DocumentDetection;
 import com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionSummaryResponse;
 import java.time.LocalDateTime;
-import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -11,8 +10,6 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface DocumentDetectionRepository extends JpaRepository<DocumentDetection, Long> {
-
-    List<DocumentDetection> findAllByMonitoringRunSourceIdOrderByDisplayOrderAsc(Long runSourceId);
 
     boolean existsByMonitoringRunSourceIdAndDocumentId(Long runSourceId, Long documentId);
 
