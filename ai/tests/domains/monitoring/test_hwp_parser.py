@@ -70,6 +70,30 @@ def test_decompresses_body_text_and_removes_inline_control(monkeypatch) -> None:
     assert result.text == "지원사업 공고"
 
 
+def test_combines_utf16_surrogate_pair(monkeypatch) -> None:
+    document = FakeOleDocument(0, {"Section0": _paragraph_record("AI😀지원사업")})
+    _use_fake_document(monkeypatch, document)
+
+    result = HwpParser().parse(Path("surrogate-pair.hwp"))
+
+    assert result.text == "AI😀지원사업"
+    assert result.text.encode("utf-8")
+
+
+def test_replaces_unpaired_utf16_surrogate(monkeypatch) -> None:
+    malformed_text = struct.pack("<3H", ord("A"), 0xD800, ord("B"))
+    document = FakeOleDocument(
+        0,
+        {"Section0": _record(HWPTAG_PARA_TEXT, malformed_text)},
+    )
+    _use_fake_document(monkeypatch, document)
+
+    result = HwpParser().parse(Path("unpaired-surrogate.hwp"))
+
+    assert result.text == "A�B"
+    assert result.text.encode("utf-8")
+
+
 def test_rejects_non_ole_file(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.domains.monitoring.parsers.hwp_parser.olefile.isOleFile",

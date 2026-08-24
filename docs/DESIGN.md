@@ -179,7 +179,7 @@ Python은 Playwright로 다음 정보를 수집한다.
 - 제한 시간과 최대 파일 크기: 환경변수로 관리
 - HWPX: ZIP 내부 `Contents/section*.xml`을 순서대로 읽어 본문 텍스트 추출
 - PDF: `pypdf`로 페이지 순서대로 텍스트를 추출하고 페이지 사이를 줄바꿈으로 구분
-- HWP: `olefile`로 HWP 5.0 OLE 구조를 열고 `FileHeader`를 검사한 뒤 `BodyText/Section*`의 문단 텍스트 레코드를 추출
+- HWP: `olefile`로 HWP 5.0 OLE 구조를 열고 `FileHeader`를 검사한 뒤 `BodyText/Section*`의 문단 텍스트 레코드를 추출. UTF-16 surrogate pair는 하나의 문자로 결합하고 잘못된 단독 surrogate는 대체 문자로 정규화
 - 압축된 HWP 본문은 raw deflate 방식으로 압축 해제하며 암호화·DRM·배포용 HWP와 그림·OLE 개체 추출은 지원하지 않음
 - 이미지로만 구성된 PDF와 암호화된 PDF는 OCR 없이 실패 처리
 
