@@ -2,6 +2,8 @@ package com.publicmonitor.backend.domain.document.service;
 
 import com.publicmonitor.backend.domain.analysis.entity.DocumentAnalysis;
 import com.publicmonitor.backend.domain.analysis.repository.DocumentAnalysisRepository;
+import com.publicmonitor.backend.domain.analysis.entity.OpportunityDimensionType;
+import com.publicmonitor.backend.domain.analysis.service.OpportunityScoreCalculator;
 import com.publicmonitor.backend.domain.document.entity.DocumentAttachment;
 import com.publicmonitor.backend.domain.document.entity.DocumentDetection;
 import com.publicmonitor.backend.domain.document.entity.DocumentVersion;
@@ -12,6 +14,8 @@ import com.publicmonitor.backend.domain.document.repository.DocumentDetectionRep
 import com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionDetailResponse;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
@@ -64,7 +68,8 @@ public class DocumentDetectionDetailService {
                 analysis.getReason(),
                 analysis.getEligibility(),
                 analysis.getFavorableOrNot(),
-                parseProposal(analysis.getProposalDirection())
+                parseProposal(analysis.getProposalDirection()),
+                parseOpportunity(analysis)
         );
     }
 
@@ -79,6 +84,35 @@ public class DocumentDetectionDetailService {
             ));
         }
         return objectMapper.readValue(normalized, DocumentDetectionDetailResponse.Proposal.class);
+    }
+
+    private DocumentDetectionDetailResponse.Opportunity parseOpportunity(DocumentAnalysis analysis) {
+        if (analysis.getOpportunityAssessment() == null || analysis.getOpportunityAssessment().isBlank()) {
+            return null;
+        }
+        StoredOpportunity stored = objectMapper.readValue(
+                analysis.getOpportunityAssessment(),
+                StoredOpportunity.class
+        );
+        Map<OpportunityDimensionType, Integer> scores = stored.dimensions().stream()
+                .collect(Collectors.toMap(
+                        DocumentDetectionDetailResponse.OpportunityDimension::type,
+                        DocumentDetectionDetailResponse.OpportunityDimension::score
+                ));
+        int totalScore = analysis.getOpportunityScore() != null
+                ? analysis.getOpportunityScore()
+                : OpportunityScoreCalculator.calculate(scores);
+        int urgencyScore = scores.getOrDefault(OpportunityDimensionType.URGENCY, 0);
+        return new DocumentDetectionDetailResponse.Opportunity(
+                totalScore,
+                OpportunityScoreCalculator.priority(totalScore, urgencyScore),
+                stored.dimensions()
+        );
+    }
+
+    private record StoredOpportunity(
+            List<DocumentDetectionDetailResponse.OpportunityDimension> dimensions
+    ) {
     }
 
     private DocumentDetectionDetailResponse.Attachment toAttachment(DocumentAttachment attachment) {

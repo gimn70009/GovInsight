@@ -3,6 +3,8 @@ package com.publicmonitor.backend.domain.document.web.dto;
 import com.publicmonitor.backend.domain.analysis.entity.AnalysisEligibility;
 import com.publicmonitor.backend.domain.analysis.entity.AnalysisFavorability;
 import com.publicmonitor.backend.domain.analysis.entity.DocumentImportance;
+import com.publicmonitor.backend.domain.analysis.entity.OpportunityDimensionType;
+import com.publicmonitor.backend.domain.analysis.entity.OpportunityPriority;
 import com.publicmonitor.backend.domain.document.entity.AttachmentParseStatus;
 import com.publicmonitor.backend.domain.document.entity.DocumentChangeType;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -31,7 +33,8 @@ public record DocumentDetectionDetailResponse(
             String reason,
             AnalysisEligibility eligibility,
             AnalysisFavorability favorableOrNot,
-            Proposal proposal
+            Proposal proposal,
+            Opportunity opportunity
     ) {
     }
 
@@ -41,6 +44,22 @@ public record DocumentDetectionDetailResponse(
 
     @Schema(description = "회사 활용·대응 전략의 한 단계")
     public record Section(String title, String body) {
+    }
+
+    @Schema(description = "AI 기회 점수와 대응 우선순위", nullable = true)
+    public record Opportunity(
+            Integer totalScore,
+            OpportunityPriority priority,
+            List<OpportunityDimension> dimensions
+    ) {
+    }
+
+    @Schema(description = "기회 점수 평가 항목")
+    public record OpportunityDimension(
+            OpportunityDimensionType type,
+            Integer score,
+            String reason
+    ) {
     }
 
     @Schema(description = "첨부파일")

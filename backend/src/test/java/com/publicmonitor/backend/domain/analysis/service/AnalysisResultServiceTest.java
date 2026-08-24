@@ -9,6 +9,7 @@ import com.publicmonitor.backend.domain.analysis.entity.AnalysisEligibility;
 import com.publicmonitor.backend.domain.analysis.entity.AnalysisFavorability;
 import com.publicmonitor.backend.domain.analysis.entity.DocumentAnalysis;
 import com.publicmonitor.backend.domain.analysis.entity.DocumentImportance;
+import com.publicmonitor.backend.domain.analysis.entity.OpportunityDimensionType;
 import com.publicmonitor.backend.domain.analysis.repository.AnalysisDocumentDetectionRepository;
 import com.publicmonitor.backend.domain.analysis.repository.DocumentAnalysisRepository;
 import com.publicmonitor.backend.domain.analysis.web.dto.AnalysisResultRequest;
@@ -100,6 +101,9 @@ class AnalysisResultServiceTest {
         assertThat(captor.getValue().getFavorableOrNot()).isEqualTo(AnalysisFavorability.NOT_APPLICABLE);
         assertThat(captor.getValue().getProposalDirection())
                 .contains("sections", "핵심 판단", "제조 AI");
+        assertThat(captor.getValue().getOpportunityScore()).isEqualTo(74);
+        assertThat(captor.getValue().getOpportunityAssessment())
+                .contains("COMPANY_FIT", "EVIDENCE_CONFIDENCE");
         assertThat(response.storedAnalysisCount()).isEqualTo(1);
         assertThat(response.duplicateAnalysisCount()).isZero();
     }
@@ -112,6 +116,17 @@ class AnalysisResultServiceTest {
 
         assertThat(response.storedAnalysisCount()).isZero();
         assertThat(response.duplicateAnalysisCount()).isEqualTo(1);
+    }
+
+    private AnalysisResultRequest.OpportunityDimension opportunityDimension(
+            OpportunityDimensionType type,
+            int score
+    ) {
+        return new AnalysisResultRequest.OpportunityDimension(
+                type,
+                score,
+                "공고 원문과 회사 프로필을 기준으로 산정한 평가 근거입니다."
+        );
     }
 
     private AnalysisResultRequest request() {
@@ -133,6 +148,13 @@ class AnalysisResultServiceTest {
                                         "핵심 판단",
                                         "제조 AI 기술을 활용한 사업 제안 가능성을 검토합니다."
                                 )
+                        )),
+                        new AnalysisResultRequest.Opportunity(List.of(
+                                opportunityDimension(OpportunityDimensionType.COMPANY_FIT, 80),
+                                opportunityDimension(OpportunityDimensionType.BUSINESS_VALUE, 70),
+                                opportunityDimension(OpportunityDimensionType.FEASIBILITY, 60),
+                                opportunityDimension(OpportunityDimensionType.URGENCY, 90),
+                                opportunityDimension(OpportunityDimensionType.EVIDENCE_CONFIDENCE, 65)
                         )),
                         List.of("get_document_content"),
                         "gpt-5-mini"

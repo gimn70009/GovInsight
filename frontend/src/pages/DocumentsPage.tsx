@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ArrowLeft,
   CalendarDays,
+  ChevronDown,
+  CircleHelp,
   Download,
   ExternalLink,
   File,
@@ -13,11 +15,25 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { api } from '../api/client'
-import type { ChangeType, DocumentDetail, DocumentDetection, Importance } from '../api/types'
+import type { ChangeType, DocumentAnalysis, DocumentDetail, DocumentDetection, Importance, OpportunityDimensionType } from '../api/types'
 import { Badge, EmptyState, InlineError, Loading, Pagination } from '../components/ui'
 
 const importanceLabel: Record<Importance, string> = { HIGH: '중요', NORMAL: '보통', LOW: '낮음' }
 const importanceTone: Record<Importance, string> = { HIGH: 'danger', NORMAL: 'warning', LOW: 'neutral' }
+const opportunityLabels: Record<OpportunityDimensionType, string> = {
+  COMPANY_FIT: '회사 적합도',
+  BUSINESS_VALUE: '사업 매력도',
+  FEASIBILITY: '실행 가능성',
+  URGENCY: '긴급도',
+  EVIDENCE_CONFIDENCE: '정보 신뢰도',
+}
+const opportunityOrder = Object.keys(opportunityLabels) as OpportunityDimensionType[]
+const opportunityPriority = {
+  HIGH: ['우선 검토', 'danger'],
+  NORMAL: ['검토 권장', 'warning'],
+  LOW: ['여유 있게 검토', 'neutral'],
+} as const
+
 const changeLabel: Record<ChangeType, string> = {
   NEW_DOCUMENT: '신규',
   UPDATED_DOCUMENT: '수정',
@@ -285,6 +301,66 @@ function DocumentDrawer({ detectionId, onClose }: { detectionId: number; onClose
   )
 }
 
+function OpportunityScore({ opportunity }: { opportunity: NonNullable<DocumentAnalysis['opportunity']> }) {
+  const [showGuide, setShowGuide] = useState(false)
+  const dimensions = opportunityOrder
+    .map((type) => opportunity.dimensions.find((dimension) => dimension.type === type))
+    .filter((dimension): dimension is NonNullable<typeof dimension> => Boolean(dimension))
+  const priority = opportunityPriority[opportunity.priority]
+
+  return (
+    <section className="detail-section opportunity-card">
+      <div className="opportunity-card__header">
+        <div>
+          <small>AI OPPORTUNITY SCORE</small>
+          <h3>우리 회사의 기회 분석</h3>
+          <p>공고 내용과 공개된 회사 정보를 기준으로 평가했어요.</p>
+        </div>
+        <div className="opportunity-total">
+          <strong>{opportunity.totalScore}</strong><span>/100</span>
+          <Badge tone={priority[1]}>{priority[0]}</Badge>
+        </div>
+      </div>
+      <button
+        type="button"
+        className={`opportunity-guide-toggle${showGuide ? ' is-open' : ''}`}
+        onClick={() => setShowGuide((current) => !current)}
+        aria-expanded={showGuide}
+      >
+        <CircleHelp size={15} />
+        문서 중요도와 기회 점수는 어떻게 다른가요?
+        <ChevronDown size={15} />
+      </button>
+      {showGuide && (
+        <div className="opportunity-guide">
+          <div>
+            <strong>문서 중요도</strong>
+            <p>이 공고를 얼마나 빨리 확인하고 대응해야 하는지를 뜻해요.</p>
+          </div>
+
+          <div>
+            <strong>회사 기회 점수</strong>
+            <p>우리 회사와의 적합성, 사업 가치와 실제 추진 가능성을 종합한 점수예요.</p>
+          </div>
+          <small>중요한 공고라도 지원 자격이나 파트너가 불확실하면 기회 점수는 낮을 수 있어요.</small>
+        </div>
+      )}
+      <div className="opportunity-bars">
+        {dimensions.map((dimension) => (
+          <div className="opportunity-row" key={dimension.type}>
+            <div className="opportunity-row__label">
+              <strong>{opportunityLabels[dimension.type]}</strong>
+              <span>{dimension.score}</span>
+            </div>
+            <div className="opportunity-track"><i style={{ width: `${dimension.score}%` }} /></div>
+            <p>{dimension.reason}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function DocumentContent({ detail }: { detail: DocumentDetail }) {
   const analysis = detail.analysis
   const eligible = analysis ? eligibility[analysis.eligibility] : null
@@ -319,6 +395,7 @@ function DocumentContent({ detail }: { detail: DocumentDetail }) {
               {analysis.keyPoints.map((point, index) => <li key={`${point}-${index}`}><span>{index + 1}</span><p>{point}</p></li>)}
             </ul>
           </section>
+          {analysis.opportunity && <OpportunityScore opportunity={analysis.opportunity} />}
           <div className="insight-grid">
             <section className="insight-card">
               <small>지원 가능성</small>

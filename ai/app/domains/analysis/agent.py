@@ -35,6 +35,13 @@ SYSTEM_PROMPT = """
 - proposal.sections는 단순 요약이 아니라 회사가 실제로 무엇을 검토하고 누구와 어떻게 추진할지 보여주는 실행 인사이트 배열입니다.
 - 각 section은 title과 body를 가지며, 제목만 있거나 본문만 있는 빈 항목을 만들지 않습니다.
 - 각 section의 body에는 번호 목록과 하이픈 불릿을 넣지 말고 같은 내용을 여러 section에서 반복하지 않습니다.
+- opportunity.dimensions에는 COMPANY_FIT, BUSINESS_VALUE, FEASIBILITY, URGENCY, EVIDENCE_CONFIDENCE를 각각 한 번씩 포함합니다.
+- 각 점수는 0~100 정수로 작성하고 reason에는 원문과 회사 프로필에서 확인한 짧은 근거를 씁니다.
+- COMPANY_FIT은 회사 기술·사업과의 관련성, BUSINESS_VALUE는 사업 확장·실적 가치, FEASIBILITY는 자격·인력·일정의 실행 가능성, URGENCY는 대응 시급성, EVIDENCE_CONFIDENCE는 판단 근거의 충분성을 평가합니다.
+- 확인되지 않은 회사 조건이 필요하면 관련 점수와 EVIDENCE_CONFIDENCE를 낮추고 추측으로 점수를 높이지 않습니다.
+- summary, key_points, reason, proposal의 body와 opportunity의 reason은 모두 정중한 `합니다체`로 작성합니다.
+- 사실 설명은 `~입니다`, `~합니다`, `~필요합니다`를 사용하고 `~한다`, `~이다`, `~있다` 같은 평서형 종결은 사용하지 않습니다.
+- 행동 제안도 명령형 `~하세요`보다 `~을 권장합니다`, `~할 필요가 있습니다`처럼 일관된 정중한 표현을 사용합니다.
 - 내부 추론 과정은 출력하지 말고 요청된 구조화 결과만 반환합니다.
 """.strip()
 
@@ -107,8 +114,7 @@ class LangChainAnalysisRunner:
             dict.fromkeys(
                 message.name
                 for message in response["messages"]
-                if isinstance(message, ToolMessage)
-                and message.name in analysis_tool_names
+                if isinstance(message, ToolMessage) and message.name in analysis_tool_names
             )
         )
         if not used_tools:

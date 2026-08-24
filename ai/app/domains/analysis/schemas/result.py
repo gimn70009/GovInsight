@@ -1,6 +1,6 @@
 from enum import StrEnum
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.schemas import CamelCaseModel
 
@@ -25,6 +25,37 @@ class Favorability(StrEnum):
     REVIEW_REQUIRED = "REVIEW_REQUIRED"
 
 
+class OpportunityDimensionType(StrEnum):
+    COMPANY_FIT = "COMPANY_FIT"
+    BUSINESS_VALUE = "BUSINESS_VALUE"
+    FEASIBILITY = "FEASIBILITY"
+    URGENCY = "URGENCY"
+    EVIDENCE_CONFIDENCE = "EVIDENCE_CONFIDENCE"
+
+
+class OpportunityDimension(BaseModel):
+    type: OpportunityDimensionType
+    score: int = Field(ge=0, le=100)
+    reason: str = Field(min_length=10, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def strip_reason(cls, value: str) -> str:
+        return value.strip()
+
+
+class OpportunityAssessment(BaseModel):
+    dimensions: list[OpportunityDimension] = Field(min_length=5, max_length=5)
+
+    @model_validator(mode="after")
+    def validate_dimensions(self) -> "OpportunityAssessment":
+        expected = set(OpportunityDimensionType)
+        actual = {dimension.type for dimension in self.dimensions}
+        if actual != expected:
+            raise ValueError("기회 점수의 다섯 평가 항목이 각각 한 번씩 필요합니다.")
+        return self
+
+
 class ProposalSection(BaseModel):
     title: str = Field(min_length=2, max_length=100)
     body: str = Field(min_length=10, max_length=1000)
@@ -47,6 +78,7 @@ class AnalysisDraft(BaseModel):
     eligibility: Eligibility
     favorable_or_not: Favorability
     proposal: ProposalStrategy
+    opportunity: OpportunityAssessment
 
     @field_validator("summary", "reason")
     @classmethod
@@ -73,5 +105,6 @@ class DocumentAnalysisResult(CamelCaseModel):
     eligibility: Eligibility
     favorable_or_not: Favorability
     proposal: ProposalStrategy
+    opportunity: OpportunityAssessment
     used_tools: list[str]
     model_name: str
