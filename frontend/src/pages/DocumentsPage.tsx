@@ -72,10 +72,8 @@ function getChangeImpact(detail: DocumentDetail, value: NonNullable<DocumentDeta
   return { label, tone, description: '이전 버전과 비교했을 때 회사에 미치는 영향이에요.' }
 }
 
-function proposalHeading(changeType: ChangeType) {
-  if (changeType === 'NEW_DOCUMENT') return '우리 회사는 이렇게 활용해 보세요'
-  if (changeType === 'UPDATED_DOCUMENT') return '변경에 이렇게 대응해 보세요'
-  return '현재 대응은 이렇게 유지해 보세요'
+function proposalHeading() {
+  return '회사 관점에서 정리했어요'
 }
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<DocumentDetection[]>([])
@@ -461,7 +459,7 @@ function DocumentContent({ detail }: { detail: DocumentDetail }) {
           <section className="detail-section proposal-box">
             <span className="proposal-box__icon"><Sparkles size={18} /></span>
             <div className="proposal-box__content">
-              <h3>{proposalHeading(detail.changeType)}</h3>
+              <h3>{proposalHeading()}</h3>
               <div className="proposal-steps">
                 {proposalSections.map((section, index) => (
                   <article className="proposal-step" key={`${section.title ?? 'insight'}-${index}`}>
