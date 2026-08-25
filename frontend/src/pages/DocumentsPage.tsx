@@ -457,7 +457,7 @@ function DocumentContent({ detail }: { detail: DocumentDetail }) {
               <p>{changeImpact!.description}</p>
             </section>
           </div>
-          <section className="detail-section reason-box"><h3>왜 주목해야 하나요?</h3><p>{analysis.reason}</p></section>
+          <section className="detail-section reason-box"><h3>이렇게 판단했어요</h3><p>{analysis.reason}</p></section>
           <section className="detail-section proposal-box">
             <span className="proposal-box__icon"><Sparkles size={18} /></span>
             <div className="proposal-box__content">

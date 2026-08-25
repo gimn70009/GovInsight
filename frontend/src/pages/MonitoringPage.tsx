@@ -62,7 +62,7 @@ export default function MonitoringPage() {
 
   return (
     <div className="page">
-      <header className="page-header"><div><span className="eyebrow">MONITORING</span><h1>모니터링</h1><p>살펴볼 기관을 관리하고, 필요할 때 바로 새로운 확인을 시작하세요.</p></div><button className="button button--primary button--run" onClick={runNow} disabled={running || activeCount === 0}>{running ? <RefreshCw size={18} className="spin" /> : <Play size={18} fill="currentColor" />}{running ? '확인 중이에요' : '지금 모니터링 실행'}</button></header>
+      <header className="page-header"><div><span className="eyebrow">MONITORING</span><h1>모니터링</h1><p>살펴볼 기관을 관리하고, 필요할 때 바로 모니터링을 시작하세요.</p></div><button className="button button--primary button--run" onClick={runNow} disabled={running || activeCount === 0}>{running ? <RefreshCw size={18} className="spin" /> : <Play size={18} fill="currentColor" />}{running ? '확인 중이에요' : '지금 모니터링 실행'}</button></header>
       {error && <InlineError message={error} />}
       <section className="metric-grid">
         <article className="metric-card"><span className="metric-card__icon metric-card__icon--blue"><Building2 size={20} /></span><div><small>등록된 소스</small><strong>{sources.length}<em>개</em></strong><span>{activeCount}개가 확인 중이에요</span></div></article>
