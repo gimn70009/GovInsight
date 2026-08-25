@@ -15,11 +15,9 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { api } from '../api/client'
-import type { ChangeType, DocumentAnalysis, DocumentDetail, DocumentDetection, Importance, OpportunityDimensionType } from '../api/types'
+import type { ChangeType, DocumentAnalysis, DocumentDetail, DocumentDetection, MonitoringRun, OpportunityDimensionType, OpportunityPriority } from '../api/types'
 import { Badge, EmptyState, InlineError, Loading, Pagination } from '../components/ui'
 
-const importanceLabel: Record<Importance, string> = { HIGH: '중요', NORMAL: '보통', LOW: '낮음' }
-const importanceTone: Record<Importance, string> = { HIGH: 'danger', NORMAL: 'warning', LOW: 'neutral' }
 const opportunityLabels: Record<OpportunityDimensionType, string> = {
   COMPANY_FIT: '회사 적합도',
   BUSINESS_VALUE: '사업 매력도',
@@ -31,7 +29,7 @@ const opportunityOrder = Object.keys(opportunityLabels) as OpportunityDimensionT
 const opportunityPriority = {
   HIGH: ['우선 검토', 'danger'],
   NORMAL: ['검토 권장', 'warning'],
-  LOW: ['여유 있게 검토', 'neutral'],
+  LOW: ['참고', 'neutral'],
 } as const
 
 const changeLabel: Record<ChangeType, string> = {
@@ -63,11 +61,6 @@ const formatDateTime = (value: string) =>
 const formatBytes = (value: number | null) =>
   value == null ? '크기 미확인' : value < 1024 * 1024 ? `${Math.ceil(value / 1024)} KB` : `${(value / 1024 / 1024).toFixed(1)} MB`
 
-const toLocalInputValue = (date: Date) => {
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
-  return local.toISOString().slice(0, 16)
-}
-
 function getChangeImpact(detail: DocumentDetail, value: NonNullable<DocumentDetail['analysis']>['favorableOrNot']) {
   if (detail.changeType === 'NEW_DOCUMENT') {
     return { label: '비교 대상 없음', tone: 'info', description: '처음 확인된 문서로 이전 버전이 없어요.' }
@@ -86,25 +79,45 @@ function proposalHeading(changeType: ChangeType) {
 }
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<DocumentDetection[]>([])
+  const [runs, setRuns] = useState<MonitoringRun[]>([])
+  const [selectedRunId, setSelectedRunId] = useState<number | 'ALL' | null>(null)
   const [page, setPage] = useState(0)
   const [pages, setPages] = useState(0)
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
-  const [importance, setImportance] = useState<'ALL' | Importance>('ALL')
+  const [priorityFilter, setPriorityFilter] = useState<'ALL' | OpportunityPriority>('ALL')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [appliedFrom, setAppliedFrom] = useState('')
   const [appliedTo, setAppliedTo] = useState('')
-  const [activePreset, setActivePreset] = useState<'TODAY' | '24_HOURS' | '7_DAYS' | null>(null)
+  const [showDateFilter, setShowDateFilter] = useState(false)
   const [selectedId, setSelectedId] = useState<number | null>(null)
 
+  const loadRuns = useCallback(async () => {
+    try {
+      const data = await api.getRuns(0, 50)
+      setRuns(data.content)
+      setSelectedRunId((current) => current ?? data.content[0]?.runId ?? 'ALL')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '모니터링 실행 이력을 불러오지 못했습니다.')
+      setSelectedRunId('ALL')
+    }
+  }, [])
+
   const load = useCallback(async () => {
+    if (selectedRunId === null) return
     setLoading(true)
     setError('')
     try {
-      const data = await api.getDocuments(page, 20, appliedFrom || undefined, appliedTo || undefined)
+      const data = await api.getDocuments(
+        page,
+        20,
+        appliedFrom || undefined,
+        appliedTo || undefined,
+        selectedRunId === 'ALL' ? undefined : selectedRunId,
+      )
       setDocuments(data.content)
       setPages(data.totalPages)
       setTotal(data.totalElements)
@@ -113,7 +126,11 @@ export default function DocumentsPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, appliedFrom, appliedTo])
+  }, [page, appliedFrom, appliedTo, selectedRunId])
+
+  useEffect(() => {
+    void loadRuns()
+  }, [loadRuns])
 
   useEffect(() => {
     void load()
@@ -125,9 +142,9 @@ export default function DocumentsPage() {
         const matchesQuery = `${item.organizationName} ${item.boardName} ${item.title}`
           .toLowerCase()
           .includes(query.toLowerCase())
-        return matchesQuery && (importance === 'ALL' || item.importance === importance)
+        return matchesQuery && (priorityFilter === 'ALL' || item.opportunityPriority === priorityFilter)
       }),
-    [documents, query, importance],
+    [documents, query, priorityFilter],
   )
 
   const applyDateRange = () => {
@@ -136,26 +153,10 @@ export default function DocumentsPage() {
       return
     }
     setError('')
-    setActivePreset(null)
     setPage(0)
     setAppliedFrom(from)
     setAppliedTo(to)
-  }
-
-  const applyPreset = (preset: 'TODAY' | '24_HOURS' | '7_DAYS') => {
-    const end = new Date()
-    const start = new Date(end)
-    if (preset === 'TODAY') start.setHours(0, 0, 0, 0)
-    if (preset === '24_HOURS') start.setHours(start.getHours() - 24)
-    if (preset === '7_DAYS') start.setDate(start.getDate() - 7)
-    const nextFrom = toLocalInputValue(start)
-    const nextTo = toLocalInputValue(end)
-    setFrom(nextFrom)
-    setTo(nextTo)
-    setPage(0)
-    setAppliedFrom(nextFrom)
-    setAppliedTo(nextTo)
-    setActivePreset(preset)
+    setShowDateFilter(false)
   }
 
   const resetDateRange = () => {
@@ -164,8 +165,13 @@ export default function DocumentsPage() {
     setPage(0)
     setAppliedFrom('')
     setAppliedTo('')
-    setActivePreset(null)
+    setShowDateFilter(false)
   }
+
+  const selectedRun = selectedRunId === 'ALL' ? null : runs.find((run) => run.runId === selectedRunId)
+  const dateFilterLabel = appliedFrom || appliedTo
+    ? `${appliedFrom ? appliedFrom.slice(5).replace('T', ' ') : '처음'} – ${appliedTo ? appliedTo.slice(5).replace('T', ' ') : '현재'}`
+    : '기간 설정'
 
   return (
     <div className="page">
@@ -184,19 +190,83 @@ export default function DocumentsPage() {
       {error && <InlineError message={error} />}
 
       <section className="panel documents-panel">
-        <div className="panel-header">
-          <div className="filter-tabs">
-            {(['ALL', 'HIGH', 'NORMAL', 'LOW'] as const).map((value) => (
-              <button
-                key={value}
-                className={importance === value ? 'active' : ''}
-                onClick={() => setImportance(value)}
-              >
-                {value === 'ALL' ? '전체' : importanceLabel[value]}
-              </button>
-            ))}
+        <div className="run-filter-bar">
+          <div className="run-filter-bar__copy">
+            <span>표시할 실행</span>
+            <strong>{selectedRunId === 'ALL' ? '전체 실행 결과' : '최근 실행 결과'}</strong>
+            <small>
+              {selectedRun
+                ? `${formatDateTime(selectedRun.requestedAt)} · ${selectedRun.totalSourceCount}개 소스 · ${selectedRun.detectedDocumentCount}건`
+                : '모든 실행에서 감지한 게시글을 함께 보여드려요.'}
+            </small>
+          </div>
+          <label className="run-select">
+            <select
+              value={selectedRunId ?? ''}
+              onChange={(event) => {
+                setPage(0)
+                setSelectedRunId(event.target.value === 'ALL' ? 'ALL' : Number(event.target.value))
+              }}
+              disabled={selectedRunId === null}
+            >
+              <option value="ALL">전체 실행 결과</option>
+              {runs[0] && (
+                <option value={runs[0].runId}>
+                  최근 실행 결과 · {formatDateTime(runs[0].requestedAt)} · {runs[0].detectedDocumentCount}건
+                </option>
+              )}
+            </select>
+            <ChevronDown size={15} />
+          </label>
+        </div>
+        <div className="panel-header document-filter-header">
+          <div className="document-filter-header__filters">
+            <div className="filter-tabs">
+              {(['ALL', 'HIGH', 'NORMAL', 'LOW'] as const).map((value) => (
+                <button
+                  key={value}
+                  className={priorityFilter === value ? 'active' : ''}
+                  onClick={() => setPriorityFilter(value)}
+                >
+                  {value === 'ALL' ? '전체' : opportunityPriority[value][0]}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="panel-actions">
+            <div className="date-filter-menu">
+              <button
+                className={`date-filter-trigger${appliedFrom || appliedTo ? ' active' : ''}`}
+                onClick={() => setShowDateFilter((visible) => !visible)}
+                aria-expanded={showDateFilter}
+              >
+                <CalendarDays size={15} />
+                <span>{dateFilterLabel}</span>
+                <ChevronDown size={14} />
+              </button>
+              {showDateFilter && (
+                <div className="date-filter-popover">
+                  <div className="date-filter-popover__header">
+                    <strong>확인 기간 설정</strong>
+                    <small>선택한 실행 안에서 확인 일시로 조회해요.</small>
+                  </div>
+                  <label>
+                    <span>시작 일시</span>
+                    <input type="datetime-local" value={from} onChange={(event) => setFrom(event.target.value)} />
+                  </label>
+                  <label>
+                    <span>종료 일시</span>
+                    <input type="datetime-local" value={to} onChange={(event) => setTo(event.target.value)} />
+                  </label>
+                  <div className="date-filter-popover__actions">
+                    <button className="button button--subtle" onClick={resetDateRange}>
+                      <RotateCcw size={14} /> 초기화
+                    </button>
+                    <button className="button button--primary" onClick={applyDateRange}>적용</button>
+                  </div>
+                </div>
+              )}
+            </div>
             <label className="search-box">
               <Search size={17} />
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="기관, 게시판, 제목 검색" />
@@ -207,40 +277,13 @@ export default function DocumentsPage() {
           </div>
         </div>
 
-        <div className="date-filter-bar">
-          <div className="date-filter-bar__title">
-            <CalendarDays size={16} />
-            <span>확인 일시</span>
-          </div>
-          <label>
-            <span>시작</span>
-            <input type="datetime-local" value={from} onChange={(event) => { setFrom(event.target.value); setActivePreset(null) }} />
-          </label>
-          <span className="date-filter-bar__separator">–</span>
-          <label>
-            <span>종료</span>
-            <input type="datetime-local" value={to} onChange={(event) => { setTo(event.target.value); setActivePreset(null) }} />
-          </label>
-          <div className="date-presets">
-            <button className={activePreset === 'TODAY' ? 'active' : ''} aria-pressed={activePreset === 'TODAY'} onClick={() => applyPreset('TODAY')}>오늘</button>
-            <button className={activePreset === '24_HOURS' ? 'active' : ''} aria-pressed={activePreset === '24_HOURS'} onClick={() => applyPreset('24_HOURS')}>최근 24시간</button>
-            <button className={activePreset === '7_DAYS' ? 'active' : ''} aria-pressed={activePreset === '7_DAYS'} onClick={() => applyPreset('7_DAYS')}>최근 7일</button>
-          </div>
-          <button className="button button--secondary" onClick={applyDateRange}>조회</button>
-          {(appliedFrom || appliedTo) && (
-            <button className="icon-button" onClick={resetDateRange} title="날짜 필터 초기화">
-              <RotateCcw size={16} />
-            </button>
-          )}
-        </div>
-
         {loading ? (
           <Loading />
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={<FileSearch2 />}
             title="조건에 맞는 게시글이 없어요"
-            description="검색어, 중요도 또는 확인 일시를 바꿔 다시 확인해 보세요."
+            description="검색어, 대응 우선순위 또는 확인 일시를 바꿔 다시 확인해 보세요."
           />
         ) : (
           <div className="document-list">
@@ -260,7 +303,14 @@ export default function DocumentsPage() {
                   </span>
                 </div>
                 <div className="document-row__importance">
-                  {item.importance ? <Badge tone={importanceTone[item.importance]}>{importanceLabel[item.importance]}</Badge> : <Badge>분석 중</Badge>}
+                  {item.opportunityPriority ? (
+                    <>
+                      <Badge tone={opportunityPriority[item.opportunityPriority][1]}>
+                        {opportunityPriority[item.opportunityPriority][0]}
+                      </Badge>
+                      {item.opportunityScore != null && <span className="document-row__score">{item.opportunityScore}점</span>}
+                    </>
+                  ) : <Badge>분석 중</Badge>}
                 </div>
                 <time>{formatDateTime(item.lastCheckedAt)}</time>
               </button>
@@ -328,21 +378,21 @@ function OpportunityScore({ opportunity }: { opportunity: NonNullable<DocumentAn
         aria-expanded={showGuide}
       >
         <CircleHelp size={15} />
-        문서 중요도와 기회 점수는 어떻게 다른가요?
+        문서 주목도와 회사 대응 우선순위는 어떻게 다른가요?
         <ChevronDown size={15} />
       </button>
       {showGuide && (
         <div className="opportunity-guide">
           <div>
-            <strong>문서 중요도</strong>
-            <p>이 공고를 얼마나 빨리 확인하고 대응해야 하는지를 뜻해요.</p>
+            <strong>문서 주목도</strong>
+            <p>공고 자체의 변화와 대응 필요성을 AI가 판단한 참고 정보예요.</p>
           </div>
 
           <div>
-            <strong>회사 기회 점수</strong>
-            <p>우리 회사와의 적합성, 사업 가치와 실제 추진 가능성을 종합한 점수예요.</p>
+            <strong>회사 대응 우선순위</strong>
+            <p>회사 적합성, 사업 가치, 실행 가능성, 긴급도와 근거 수준을 종합한 목록 기준이에요.</p>
           </div>
-          <small>중요한 공고라도 지원 자격이나 파트너가 불확실하면 기회 점수는 낮을 수 있어요.</small>
+          <small>목록은 회사 대응 우선순위로 표시하므로, 주목할 문서라도 추진 가능성이 낮으면 검토 권장이나 참고로 보여요.</small>
         </div>
       )}
       <div className="opportunity-bars">
@@ -385,7 +435,6 @@ function DocumentContent({ detail }: { detail: DocumentDetail }) {
             <div className="analysis-hero__title">
               <span><Sparkles size={18} /></span>
               <div><small>AI ANALYSIS</small><h3>이 문서, 이렇게 이해하면 돼요</h3></div>
-              <Badge tone={importanceTone[analysis.importance]}>{importanceLabel[analysis.importance]}</Badge>
             </div>
             <p className="summary-text">{analysis.summary}</p>
           </section>
@@ -408,7 +457,7 @@ function DocumentContent({ detail }: { detail: DocumentDetail }) {
               <p>{changeImpact!.description}</p>
             </section>
           </div>
-          <section className="detail-section reason-box"><h3>왜 중요하게 봤나요?</h3><p>{analysis.reason}</p></section>
+          <section className="detail-section reason-box"><h3>왜 주목해야 하나요?</h3><p>{analysis.reason}</p></section>
           <section className="detail-section proposal-box">
             <span className="proposal-box__icon"><Sparkles size={18} /></span>
             <div className="proposal-box__content">

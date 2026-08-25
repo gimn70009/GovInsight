@@ -44,11 +44,14 @@ public class DocumentDetectionController {
     public SuccessResponse<PageResponse<DocumentDetectionSummaryResponse>> findAll(
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
+            @RequestParam(required = false) @Min(1) Long runId,
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to
     ) {
-        return SuccessResponse.ok(queryService.findAll(page, size, from, to));
+        return SuccessResponse.ok(runId == null
+                ? queryService.findAll(page, size, from, to)
+                : queryService.findAll(page, size, from, to, runId));
     }
 }

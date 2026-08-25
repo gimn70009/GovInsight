@@ -68,9 +68,11 @@ export interface CreateMonitoringRunResponse {
 }
 
 export type Importance = 'HIGH' | 'NORMAL' | 'LOW'
+export type OpportunityPriority = 'HIGH' | 'NORMAL' | 'LOW'
 export type ChangeType = 'NEW_DOCUMENT' | 'UPDATED_DOCUMENT' | 'UNCHANGED_DOCUMENT'
 
 export interface DocumentDetection {
+  runId: number
   detectionId: number
   documentId: number
   versionId: number
@@ -80,6 +82,8 @@ export interface DocumentDetection {
   changeType: ChangeType
   attachmentCount: number
   importance: Importance | null
+  opportunityScore: number | null
+  opportunityPriority: OpportunityPriority | null
   lastCheckedAt: string
 }
 
@@ -92,7 +96,7 @@ export type OpportunityDimensionType =
 
 export interface OpportunityAssessment {
   totalScore: number
-  priority: 'HIGH' | 'NORMAL' | 'LOW'
+  priority: OpportunityPriority
   dimensions: Array<{
     type: OpportunityDimensionType
     score: number
