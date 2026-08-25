@@ -325,6 +325,8 @@ validate_business_rules
 
 OpenAI 모델명, 호출 제한 시간, 최대 재시도, 도구 호출 제한, 입력 텍스트 길이와 분석 동시 실행 수는 환경변수로 관리한다. Python은 `ANALYSIS_CONCURRENCY`의 기본값 2를 사용해 문서를 최대 두 건씩 동시에 분석한다. `asyncio.Semaphore`로 동시 호출 수를 제한하고 입력 순서대로 결과를 모으며, 한 문서의 분석 실패가 같은 작업의 다른 문서 분석을 중단하지 않도록 문서별로 실패를 격리한다. 검증된 분석 결과는 Spring Boot로 전달해 문서 버전별로 Oracle에 저장한다.
 
+Windows의 애플리케이션 제어 정책이 `uuid-utils`의 서명되지 않은 네이티브 확장 모듈을 차단하지 않도록 AI 모듈은 프로젝트 소유의 순수 Python `uuid_utils.compat.uuid7` 호환 패키지를 우선 사용한다. 호환 계층은 LangChain과 LangSmith가 사용하는 호출 규격과 UUIDv7의 버전·variant·시간 순서 특성을 유지하며, 외부 `uuid-utils` 패키지의 다른 API에는 의존하지 않는다.
+
 ## 10. 운영 원칙
 
 - 비밀번호, JWT와 API 키를 Git에 저장하지 않는다.
