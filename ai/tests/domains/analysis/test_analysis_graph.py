@@ -285,7 +285,8 @@ def test_graph_retries_high_importance_without_company_relevance() -> None:
 def test_system_prompt_calibrates_importance_and_opportunity_scores() -> None:
     assert "마감일이 임박했다는 사실만으로 HIGH" in SYSTEM_PROMPT
     assert "21~40점 `키워드·산업 수준의 간접 접점`" in SYSTEM_PROMPT
-    assert "COMPANY_FIT은 40점을 넘기지 않습니다" in SYSTEM_PROMPT
+    assert "범용 수요만 겹치면 COMPANY_FIT은 40점을 넘기지 않습니다" in SYSTEM_PROMPT
+    assert "직접 일치와 구체적인 수행 과업의 일치" in SYSTEM_PROMPT
     assert "URGENCY는 대응까지 남은 시간만 평가" in SYSTEM_PROMPT
 
 def test_graph_stops_after_max_attempts() -> None:
