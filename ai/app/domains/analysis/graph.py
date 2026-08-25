@@ -246,21 +246,26 @@ def _business_rule_violations(
         for tool_name in required_tools
         if tool_name not in candidate.used_tools
     ]
-    expected_titles = {
-        "new": ["핵심 판단", "활용·추진 방안", "필요 파트너·준비사항", "즉시 실행"],
-        "updated": ["변경 요약", "회사 영향", "대응 조정", "즉시 실행"],
-        "unchanged": ["현재 상태", "유지할 대응", "다음 확인"],
-    }[path]
-    actual_titles = [section.title for section in candidate.draft.proposal.sections]
-    if actual_titles != expected_titles:
-        violations.append(
-            "제안 섹션 제목과 순서는 " + ", ".join(expected_titles) + "이어야 합니다."
-        )
     dimension_scores = {
         dimension.type: dimension.score
         for dimension in candidate.draft.opportunity.dimensions
     }
     company_fit_score = dimension_scores.get(OpportunityDimensionType.COMPANY_FIT, 0)
+    if path == "new" and company_fit_score <= 40:
+        expected_titles = ["핵심 판단", "도메인 불일치 근거", "재검토 조건", "현재 대응"]
+    else:
+        expected_titles = {
+            "new": ["핵심 판단", "활용·추진 방안", "필요 파트너·준비사항", "즉시 실행"],
+            "updated": ["변경 요약", "회사 영향", "대응 조정", "즉시 실행"],
+            "unchanged": ["현재 상태", "유지할 대응", "다음 확인"],
+        }[path]
+    actual_titles = [section.title for section in candidate.draft.proposal.sections]
+    if actual_titles != expected_titles:
+        violations.append(
+            "회사 적합도에 맞는 제안 섹션 제목과 순서는 "
+            + ", ".join(expected_titles)
+            + "이어야 합니다."
+        )
     if (
         candidate.draft.importance == DocumentImportance.HIGH
         and company_fit_score < 50
