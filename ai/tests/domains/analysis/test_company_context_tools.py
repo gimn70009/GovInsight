@@ -33,6 +33,12 @@ def test_company_profile_and_previous_analysis_are_available() -> None:
 
     assert profile["companyName"] == "BISTelligence(비스텔리젼스)"
     assert "산업 AI" in profile["businessAreas"]
-    assert "중소기업·중견기업 여부" in profile["unknownFields"]
+    assert any("중소기업" in fact for fact in profile["verifiedFacts"])
+    assert any("반도체" in case for case in profile["caseStudies"])
+    assert any("중소기업확인서" in field for field in profile["unknownFields"])
+    assert any(
+        url.startswith("https://www.jobplanet.co.kr/companies/397061")
+        for url in profile["sourceUrls"]
+    )
     assert previous["available"] is True
     assert previous["eligibility"] == "REVIEW_REQUIRED"

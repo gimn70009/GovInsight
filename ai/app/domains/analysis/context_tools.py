@@ -15,14 +15,17 @@ def read_company_profile(context: ContextToolProtocol) -> str:
         {
             "companyName": profile.company_name,
             "description": profile.description,
+            "verifiedFacts": profile.verified_facts,
             "businessAreas": profile.business_areas,
             "services": profile.services,
             "technologies": profile.technologies,
             "targetIndustries": profile.target_industries,
             "relevantProjectTypes": profile.relevant_project_types,
+            "caseStudies": profile.case_studies,
             "location": profile.location,
+            "evidenceLimitations": profile.evidence_limitations,
             "unknownFields": profile.unknown_fields,
-            "sourceUrl": profile.source_url,
+            "sourceUrls": profile.source_urls,
         },
         ensure_ascii=False,
     )

@@ -1,7 +1,7 @@
 package com.publicmonitor.backend.domain.document.repository;
 
 import com.publicmonitor.backend.domain.document.entity.DocumentDetection;
-import com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionSummaryResponse;
+import com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionSummaryRow;
 import java.time.LocalDateTime;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -15,10 +15,11 @@ public interface DocumentDetectionRepository extends JpaRepository<DocumentDetec
 
     @Query(
             value = """
-                    select new com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionSummaryResponse(
-                        detection.id, document.id, version.id,
+                    select new com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionSummaryRow(
+                        runSource.monitoringRun.id, detection.id, document.id, version.id,
                         source.organizationName, source.boardName, version.title,
-                        detection.changeType, version.attachmentCount, analysis.importance, detection.detectedAt
+                        detection.changeType, version.attachmentCount, analysis.importance,
+                        analysis.opportunityScore, analysis.opportunityAssessment, detection.detectedAt
                     )
                     from DocumentDetection detection
                     join detection.document document
@@ -26,18 +27,22 @@ public interface DocumentDetectionRepository extends JpaRepository<DocumentDetec
                     join detection.monitoringRunSource runSource
                     join runSource.monitoringSource source
                     left join DocumentAnalysis analysis on analysis.documentVersion = version
-                    where (:fromDateTime is null or detection.detectedAt >= :fromDateTime)
+                    where (:runId is null or runSource.monitoringRun.id = :runId)
+                      and (:fromDateTime is null or detection.detectedAt >= :fromDateTime)
                       and (:toDateTime is null or detection.detectedAt <= :toDateTime)
                     order by detection.detectedAt desc, detection.id desc
                     """,
             countQuery = """
                     select count(detection)
                     from DocumentDetection detection
-                    where (:fromDateTime is null or detection.detectedAt >= :fromDateTime)
+                    join detection.monitoringRunSource runSource
+                    where (:runId is null or runSource.monitoringRun.id = :runId)
+                      and (:fromDateTime is null or detection.detectedAt >= :fromDateTime)
                       and (:toDateTime is null or detection.detectedAt <= :toDateTime)
                     """
     )
-    Page<DocumentDetectionSummaryResponse> findSummaries(
+    Page<DocumentDetectionSummaryRow> findSummaries(
+            @Param("runId") Long runId,
             @Param("fromDateTime") LocalDateTime fromDateTime,
             @Param("toDateTime") LocalDateTime toDateTime,
             Pageable pageable
