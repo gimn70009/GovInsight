@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ArrowLeft,
   CalendarDays,
-  ChevronDown,
   CircleHelp,
+  ChevronDown,
   Download,
   ExternalLink,
   File,
@@ -350,7 +350,7 @@ function DocumentDrawer({ detectionId, onClose }: { detectionId: number; onClose
 }
 
 function OpportunityScore({ opportunity }: { opportunity: NonNullable<DocumentAnalysis['opportunity']> }) {
-  const [showGuide, setShowGuide] = useState(false)
+  const [showScoreGuide, setShowScoreGuide] = useState(false)
   const dimensions = opportunityOrder
     .map((type) => opportunity.dimensions.find((dimension) => dimension.type === type))
     .filter((dimension): dimension is NonNullable<typeof dimension> => Boolean(dimension))
@@ -369,30 +369,30 @@ function OpportunityScore({ opportunity }: { opportunity: NonNullable<DocumentAn
           <Badge tone={priority[1]}>{priority[0]}</Badge>
         </div>
       </div>
+
       <button
         type="button"
-        className={`opportunity-guide-toggle${showGuide ? ' is-open' : ''}`}
-        onClick={() => setShowGuide((current) => !current)}
-        aria-expanded={showGuide}
+        className={`score-guide-toggle${showScoreGuide ? ' is-open' : ''}`}
+        onClick={() => setShowScoreGuide((current) => !current)}
+        aria-expanded={showScoreGuide}
       >
         <CircleHelp size={15} />
-        문서 주목도와 회사 대응 우선순위는 어떻게 다른가요?
+        기회 점수는 어떻게 계산하나요?
         <ChevronDown size={15} />
       </button>
-      {showGuide && (
-        <div className="opportunity-guide">
-          <div>
-            <strong>문서 주목도</strong>
-            <p>공고 자체의 변화와 대응 필요성을 AI가 판단한 참고 정보예요.</p>
-          </div>
-
-          <div>
-            <strong>회사 대응 우선순위</strong>
-            <p>회사 적합성, 사업 가치, 실행 가능성, 긴급도와 근거 수준을 종합한 목록 기준이에요.</p>
-          </div>
-          <small>목록은 회사 대응 우선순위로 표시하므로, 주목할 문서라도 추진 가능성이 낮으면 검토 권장이나 참고로 보여요.</small>
+      {showScoreGuide && (
+        <div className="score-guide">
+          <dl>
+            <div><dt>회사 적합도</dt><dd>40%</dd></div>
+            <div><dt>사업 매력도</dt><dd>20%</dd></div>
+            <div><dt>실행 가능성</dt><dd>20%</dd></div>
+            <div><dt>긴급도</dt><dd>10%</dd></div>
+            <div><dt>정보 신뢰도</dt><dd>10%</dd></div>
+          </dl>
+          <p>회사 적합도가 40점 이하이면 종합 점수는 최대 49점이에요.</p>
         </div>
       )}
+
       <div className="opportunity-bars">
         {dimensions.map((dimension) => (
           <div className="opportunity-row" key={dimension.type}>
