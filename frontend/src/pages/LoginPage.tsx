@@ -34,7 +34,6 @@ export default function LoginPage() {
       <section className="login-story">
         <div className="brand brand--light"><span className="brand__mark"><ShieldCheck size={20} /></span>GovInsight</div>
         <div className="login-story__copy">
-          <span className="eyebrow eyebrow--light">PUBLIC SIGNAL INTELLIGENCE</span>
           <h1>흩어진 공공기관 공고를<br />한곳에서 확인하세요.</h1>
           <p>변화를 놓치지 않도록 수집부터 분석까지 이어집니다.</p>
           <div className="login-preview">
@@ -47,7 +46,7 @@ export default function LoginPage() {
             <div className="login-preview__insight"><Sparkles size={15} /><span><b>회사 맞춤 분석 완료</b><small>지원 가능성과 대응 방향을 확인할 수 있어요.</small></span><ArrowRight size={15} /></div>
           </div>
         </div>
-        <p className="login-story__footer">GovInsight · For better decisions</p>
+        <p className="login-story__footer">GovInsight · 공공기관 변화 분석</p>
       </section>
       <section className="login-form-wrap">
         <form className="login-card" onSubmit={submit}>
