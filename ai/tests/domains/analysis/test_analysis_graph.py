@@ -88,13 +88,14 @@ def analysis(
     proposal_titles: list[str] | None = None,
     proposal_body: str = "산업 AI 적용 가능성과 세부 자격 조건을 검토해 사업화를 추진합니다.",
     opportunity_assessment: OpportunityAssessment | None = None,
+    importance: DocumentImportance = DocumentImportance.HIGH,
 ) -> AgentAnalysis:
     titles = proposal_titles or ["핵심 판단", "활용·추진 방안", "필요 파트너·준비사항", "즉시 실행"]
     return AgentAnalysis(
         draft=AnalysisDraft(
             summary="중소기업을 대상으로 신청 기한이 정해진 지원사업 공고입니다.",
             key_points=["신청 기한은 9월 30일입니다."],
-            importance=DocumentImportance.HIGH,
+            importance=importance,
             reason="기업의 신청 기한이 명시되어 빠른 검토가 필요합니다.",
             eligibility=Eligibility.REVIEW_REQUIRED,
             favorable_or_not=favorability,
@@ -215,6 +216,37 @@ def test_graph_retries_when_proposal_sections_do_not_match_change_type() -> None
     assert "제안 섹션 제목과 순서" in (runner.feedbacks[1] or "")
 
 
+def test_low_domain_fit_requires_conservative_proposal_sections() -> None:
+    conservative_titles = [
+        "핵심 판단",
+        "도메인 불일치 근거",
+        "재검토 조건",
+        "현재 대응",
+    ]
+    low_fit = opportunity(company_fit=35)
+    runner = SequencedRunner(
+        [
+            analysis(
+                Favorability.NOT_APPLICABLE,
+                opportunity_assessment=low_fit,
+                importance=DocumentImportance.LOW,
+            ),
+            analysis(
+                Favorability.NOT_APPLICABLE,
+                proposal_titles=conservative_titles,
+                opportunity_assessment=low_fit,
+                importance=DocumentImportance.LOW,
+            ),
+        ]
+    )
+    workflow = DocumentAnalysisWorkflow(runner=runner, max_attempts=2)
+
+    result = asyncio.run(workflow.analyze(document()))
+
+    assert [section.title for section in result.proposal.sections] == conservative_titles
+    assert "회사 적합도에 맞는 제안 섹션" in (runner.feedbacks[1] or "")
+
+
 def test_unchanged_document_requires_neutral_impact() -> None:
     runner = SequencedRunner(
         [
@@ -287,6 +319,11 @@ def test_system_prompt_calibrates_importance_and_opportunity_scores() -> None:
     assert "21~40점 `키워드·산업 수준의 간접 접점`" in SYSTEM_PROMPT
     assert "범용 수요만 겹치면 COMPANY_FIT은 40점을 넘기지 않습니다" in SYSTEM_PROMPT
     assert "직접 일치와 구체적인 수행 과업의 일치" in SYSTEM_PROMPT
+    assert "단순히 해당 기관이나 기업이 자산·설비를 보유한다는 이유" in SYSTEM_PROMPT
+    assert (
+        "COMPANY_FIT이 40점 이하이면 현재 문서를 사업화 기회로 확장하지 않습니다"
+        in SYSTEM_PROMPT
+    )
     assert "URGENCY는 대응까지 남은 시간만 평가" in SYSTEM_PROMPT
 
 def test_graph_stops_after_max_attempts() -> None:
