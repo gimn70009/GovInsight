@@ -7,10 +7,10 @@ import java.util.Map;
 public final class OpportunityScoreCalculator {
 
     private static final Map<OpportunityDimensionType, Double> WEIGHTS = Map.of(
-            OpportunityDimensionType.COMPANY_FIT, 0.30,
-            OpportunityDimensionType.BUSINESS_VALUE, 0.25,
+            OpportunityDimensionType.COMPANY_FIT, 0.40,
+            OpportunityDimensionType.BUSINESS_VALUE, 0.20,
             OpportunityDimensionType.FEASIBILITY, 0.20,
-            OpportunityDimensionType.URGENCY, 0.15,
+            OpportunityDimensionType.URGENCY, 0.10,
             OpportunityDimensionType.EVIDENCE_CONFIDENCE, 0.10
     );
 
@@ -21,7 +21,12 @@ public final class OpportunityScoreCalculator {
         double weightedScore = WEIGHTS.entrySet().stream()
                 .mapToDouble(entry -> scores.getOrDefault(entry.getKey(), 0) * entry.getValue())
                 .sum();
-        return (int) Math.round(weightedScore);
+        int roundedScore = (int) Math.round(weightedScore);
+        int companyFitScore = scores.getOrDefault(OpportunityDimensionType.COMPANY_FIT, 0);
+        if (companyFitScore <= 40) {
+            return Math.min(roundedScore, 49);
+        }
+        return roundedScore;
     }
 
     public static OpportunityPriority priority(
