@@ -172,12 +172,13 @@ Python은 Playwright로 다음 정보를 수집한다.
 
 파일명 뒤에 `[123 KB]`, 쉼표 또는 보이지 않는 문자가 붙어도 정규화한 확장자를 기준으로 파서를 선택한다.
 
-- PDF·HWP·HWPX 파싱 성공: `EXTRACTED_TEXT` 저장 및 `PARSE_STATUS=COMPLETED`
+- PDF·HWP·HWPX와 ZIP 내부의 PDF·HWP·HWPX 파싱 성공: `EXTRACTED_TEXT` 저장 및 `PARSE_STATUS=COMPLETED`
 - PDF·HWP·HWPX 파싱 실패: `PARSE_STATUS=FAILED`와 안전한 오류 메시지 저장
 - 그 외 형식: `PARSE_STATUS=UNSUPPORTED`
 - 다운로드 실패: `PARSE_STATUS=FAILED`와 안전한 오류 메시지 저장
 - 제한 시간과 최대 파일 크기: 환경변수로 관리
 - HWPX: ZIP 내부 `Contents/section*.xml`을 순서대로 읽어 본문 텍스트 추출
+- ZIP: 경로에 직접 압축 해제하지 않고 내부 PDF·HWP·HWPX만 임시 파일로 스트리밍하여 기존 파서로 처리. 내부 파일은 기본 20개, 총 압축 해제 크기는 기본 100 MiB로 제한하고 중첩 ZIP은 분석하지 않음. 일부 문서 파싱에 실패해도 성공한 문서의 텍스트는 파일명과 함께 저장
 - PDF: `pypdf`로 페이지 순서대로 텍스트를 추출하고 페이지 사이를 줄바꿈으로 구분
 - HWP: `olefile`로 HWP 5.0 OLE 구조를 열고 `FileHeader`를 검사한 뒤 `BodyText/Section*`의 문단 텍스트 레코드를 추출. UTF-16 surrogate pair는 하나의 문자로 결합하고 잘못된 단독 surrogate는 대체 문자로 정규화
 - 압축된 HWP 본문은 raw deflate 방식으로 압축 해제하며 암호화·DRM·배포용 HWP와 그림·OLE 개체 추출은 지원하지 않음
