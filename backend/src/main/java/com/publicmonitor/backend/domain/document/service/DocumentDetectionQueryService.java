@@ -32,7 +32,7 @@ public class DocumentDetectionQueryService {
     public PageResponse<DocumentDetectionSummaryResponse> findAll(
             int page, int size, LocalDateTime fromDateTime, LocalDateTime toDateTime
     ) {
-        return findAll(page, size, fromDateTime, toDateTime, null);
+        return findAll(page, size, fromDateTime, toDateTime, null, DocumentDetectionSort.LATEST);
     }
 
     @Transactional(readOnly = true)
@@ -43,12 +43,26 @@ public class DocumentDetectionQueryService {
             LocalDateTime toDateTime,
             Long runId
     ) {
+        return findAll(page, size, fromDateTime, toDateTime, runId, DocumentDetectionSort.LATEST);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<DocumentDetectionSummaryResponse> findAll(
+            int page,
+            int size,
+            LocalDateTime fromDateTime,
+            LocalDateTime toDateTime,
+            Long runId,
+            DocumentDetectionSort sort
+    ) {
         if (fromDateTime != null && toDateTime != null && fromDateTime.isAfter(toDateTime)) {
             throw new DocumentDetectionException(DocumentDetectionResponseCode.INVALID_DATE_RANGE);
         }
-        return PageResponse.from(detectionRepository.findSummaries(
-                runId, fromDateTime, toDateTime, PageRequest.of(page, size)
-        ).map(this::toResponse));
+        PageRequest pageRequest = PageRequest.of(page, size);
+        var summaries = sort == DocumentDetectionSort.OPPORTUNITY_SCORE
+                ? detectionRepository.findSummariesOrderByOpportunityScore(runId, fromDateTime, toDateTime, pageRequest)
+                : detectionRepository.findSummaries(runId, fromDateTime, toDateTime, pageRequest);
+        return PageResponse.from(summaries.map(this::toResponse));
     }
 
     private DocumentDetectionSummaryResponse toResponse(DocumentDetectionSummaryRow row) {
