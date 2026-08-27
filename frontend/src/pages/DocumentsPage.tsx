@@ -501,7 +501,18 @@ function DocumentContent({ detail }: { detail: DocumentDetail }) {
               <span className="file-icon"><File size={18} /></span>
               <span>
                 <strong>{file.fileName}</strong>
-                <small>{file.fileExtension.toUpperCase()} · {formatBytes(file.fileSize)} · {file.parseStatus === 'COMPLETED' ? '내용 분석 완료' : file.parseStatus === 'UNSUPPORTED' ? '내용 분석 미지원' : '내용 분석 실패'}</small>
+                <small>
+                  {file.fileExtension.toUpperCase()} · {formatBytes(file.fileSize)}
+                  {file.parseStatus !== 'FAILED' && ` · ${file.parseStatus === 'COMPLETED' ? '내용 분석 완료' : '내용 분석 미지원'}`}
+                  {file.parseStatus === 'FAILED' && (
+                    <span
+                      className="attachment-failure-badge"
+                      title={file.fileSize == null ? '첨부파일을 다운로드하지 못했어요' : '첨부파일 내용을 읽지 못했어요'}
+                    >
+                      {file.fileSize == null ? '다운로드 실패' : '읽기 실패'}
+                    </span>
+                  )}
+                </small>
               </span>
               <Download size={18} />
             </a>
