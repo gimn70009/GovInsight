@@ -84,6 +84,8 @@ set SPRING_BOOT_BASE_URL=http://127.0.0.1:8080
 set SPRING_BOOT_TIMEOUT_SECONDS=5
 set ATTACHMENT_DOWNLOAD_TIMEOUT_SECONDS=15
 set ATTACHMENT_MAX_SIZE_BYTES=20971520
+set ZIP_MAX_ENTRY_COUNT=20
+set ZIP_MAX_UNCOMPRESSED_SIZE_BYTES=104857600
 ```
 ## 첨부파일 메타데이터 처리
 
@@ -91,10 +93,11 @@ set ATTACHMENT_MAX_SIZE_BYTES=20971520
 
 - 기본 다운로드 제한 시간: 15초
 - 기본 최대 파일 크기: 20 MiB
-- PDF·HWP·HWPX 파싱 성공: 추출 텍스트 저장 후 `PARSE_STATUS=COMPLETED`
+- PDF·HWP·HWPX 및 ZIP 내부의 PDF·HWP·HWPX 파싱 성공: 추출 텍스트 저장 후 `PARSE_STATUS=COMPLETED`
 - 그 외 형식: `PARSE_STATUS=UNSUPPORTED`
 - 다운로드 또는 파싱 실패: `PARSE_STATUS=FAILED`와 안전한 오류 메시지 저장
 - PDF는 `pypdf`, HWP는 `olefile`과 HWP 5.0 레코드 분석, HWPX는 Python ZIP·XML 기능으로 처리
+- ZIP은 내부 파일 20개와 총 압축 해제 크기 100 MiB를 기본 상한으로 사용하며 중첩 ZIP은 분석하지 않음
 - 암호화·DRM·배포용 HWP와 그림·OLE 개체 추출은 지원하지 않음
 - 본문 전체와 다운로드 URL은 로그에 남기지 않음
 
