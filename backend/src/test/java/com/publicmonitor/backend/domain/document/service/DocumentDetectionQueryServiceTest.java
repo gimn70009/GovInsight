@@ -62,6 +62,19 @@ class DocumentDetectionQueryServiceTest {
                 .isInstanceOf(DocumentDetectionException.class);
     }
 
+    @Test
+    void 기회_점수순을_선택하면_점수순_조회_쿼리를_사용한다() {
+        PageRequest pageRequest = PageRequest.of(0, 20);
+        given(detectionRepository.findSummariesOrderByOpportunityScore(null, null, null, pageRequest))
+                .willReturn(new PageImpl<>(List.of(), pageRequest, 0));
+
+        PageResponse<DocumentDetectionSummaryResponse> response = service().findAll(
+                0, 20, null, null, null, DocumentDetectionSort.OPPORTUNITY_SCORE
+        );
+
+        assertThat(response.content()).isEmpty();
+    }
+
     private DocumentDetectionQueryService service() {
         return new DocumentDetectionQueryService(detectionRepository, new ObjectMapper());
     }

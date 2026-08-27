@@ -86,6 +86,7 @@ export default function DocumentsPage() {
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
   const [priorityFilter, setPriorityFilter] = useState<'ALL' | OpportunityPriority>('ALL')
+  const [orderByOpportunityScore, setOrderByOpportunityScore] = useState(false)
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [appliedFrom, setAppliedFrom] = useState('')
@@ -115,6 +116,7 @@ export default function DocumentsPage() {
         appliedFrom || undefined,
         appliedTo || undefined,
         selectedRunId === 'ALL' ? undefined : selectedRunId,
+        orderByOpportunityScore ? 'OPPORTUNITY_SCORE' : 'LATEST',
       )
       setDocuments(data.content)
       setPages(data.totalPages)
@@ -124,7 +126,7 @@ export default function DocumentsPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, appliedFrom, appliedTo, selectedRunId])
+  }, [page, appliedFrom, appliedTo, selectedRunId, orderByOpportunityScore])
 
   useEffect(() => {
     void loadRuns()
@@ -230,6 +232,17 @@ export default function DocumentsPage() {
                 </button>
               ))}
             </div>
+            <label className="score-sort-option">
+              <input
+                type="checkbox"
+                checked={orderByOpportunityScore}
+                onChange={(event) => {
+                  setPage(0)
+                  setOrderByOpportunityScore(event.target.checked)
+                }}
+              />
+              <span>기회 점수 높은 순</span>
+            </label>
           </div>
           <div className="panel-actions">
             <div className="date-filter-menu">

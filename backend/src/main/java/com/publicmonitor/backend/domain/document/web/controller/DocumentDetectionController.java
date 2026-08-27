@@ -1,6 +1,7 @@
 package com.publicmonitor.backend.domain.document.web.controller;
 
 import com.publicmonitor.backend.domain.document.service.DocumentDetectionQueryService;
+import com.publicmonitor.backend.domain.document.service.DocumentDetectionSort;
 import com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionSummaryResponse;
 import com.publicmonitor.backend.global.config.OpenApiConfig;
 import com.publicmonitor.backend.global.response.PageResponse;
@@ -34,7 +35,7 @@ public class DocumentDetectionController {
         this.queryService = queryService;
     }
 
-    @Operation(summary = "감지 문서 목록 조회", description = "최근 확인 순서로 감지 문서를 조회합니다.")
+    @Operation(summary = "감지 문서 목록 조회", description = "최근 확인 순서 또는 기회 점수 순서로 감지 문서를 조회합니다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "감지 문서 조회 성공"),
             @ApiResponse(responseCode = "400", description = "잘못된 조회 일시 범위"),
@@ -48,10 +49,9 @@ public class DocumentDetectionController {
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
             @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
+            @RequestParam(defaultValue = "LATEST") DocumentDetectionSort sort
     ) {
-        return SuccessResponse.ok(runId == null
-                ? queryService.findAll(page, size, from, to)
-                : queryService.findAll(page, size, from, to, runId));
+        return SuccessResponse.ok(queryService.findAll(page, size, from, to, runId, sort));
     }
 }
