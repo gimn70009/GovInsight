@@ -326,16 +326,29 @@ def _normalize_urgency_score(candidate: AgentAnalysis) -> None:
 
 
 def _expected_urgency_score(reason: str) -> int | None:
-    remaining_days = re.search(r"남은\s*(\d+)\s*일", reason)
-    if remaining_days:
-        return _urgency_score(int(remaining_days.group(1)))
+    if _has_no_company_action(reason):
+        return 0
     if "마감 지남" in reason:
         return 0
     if "기한 미확인" in reason:
         return 10
     if any(keyword in reason for keyword in ("선착순", "예산 소진")):
         return 70
+    remaining_days = re.search(r"남은\s*(\d+)\s*일", reason)
+    if remaining_days:
+        return _urgency_score(int(remaining_days.group(1)))
     return None
+
+
+def _has_no_company_action(reason: str) -> bool:
+    if "회사 행동 없음" in reason:
+        return True
+    return bool(
+        re.search(
+            r"(?:수행해야|취해야|해야)\s*할?\s*행동[^.]{0,40}(?:없|않)",
+            reason,
+        )
+    )
 
 
 def _opportunity_reason_style_violations(candidate: AgentAnalysis) -> list[str]:

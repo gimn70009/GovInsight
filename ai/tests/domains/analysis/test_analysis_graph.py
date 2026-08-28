@@ -403,6 +403,38 @@ def test_graph_normalizes_urgency_score_when_it_does_not_match_remaining_days() 
     assert "남은 5일" in urgency.reason
 
 
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "마감일 없음(선정결과 공고)이며 회사 행동 없음입니다.",
+        (
+            "신청·제출 기한이나 회사가 수행해야 할 행동이 명시되어 있지 "
+            "않습니다. 남은 0일입니다."
+        ),
+    ],
+)
+def test_graph_normalizes_urgency_to_zero_when_company_has_no_action(
+    reason: str,
+) -> None:
+    runner = SequencedRunner(
+        [
+            analysis(
+                Favorability.NOT_APPLICABLE,
+                opportunity_assessment=opportunity(
+                    urgency=100,
+                    urgency_reason=reason,
+                ),
+            )
+        ]
+    )
+    workflow = DocumentAnalysisWorkflow(runner=runner, max_attempts=2)
+
+    result = asyncio.run(workflow.analyze(document()))
+
+    assert runner.call_count == 1
+    assert result.opportunity.dimensions[3].score == 0
+
+
 def test_graph_normalizes_internal_company_profile_field_without_retry() -> None:
     runner = SequencedRunner(
         [
