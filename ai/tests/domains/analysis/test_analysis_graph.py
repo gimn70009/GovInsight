@@ -4,7 +4,11 @@ from collections.abc import Sequence
 import pytest
 
 from app.domains.analysis.agent import SYSTEM_PROMPT, AgentAnalysis, _strategy_instruction
-from app.domains.analysis.graph import AnalysisWorkflowError, DocumentAnalysisWorkflow
+from app.domains.analysis.graph import (
+    AnalysisWorkflowError,
+    DocumentAnalysisWorkflow,
+    _urgency_score,
+)
 from app.domains.analysis.schemas.request import (
     AnalysisChangeType,
     AnalysisDocumentRequest,
@@ -47,7 +51,13 @@ def document(change_type: str = "NEW_DOCUMENT") -> AnalysisDocumentRequest:
     return AnalysisDocumentRequest.model_validate(payload)
 
 
-def opportunity(company_fit: int = 80) -> OpportunityAssessment:
+def opportunity(
+    company_fit: int = 80,
+    urgency: int = 90,
+    urgency_reason: str = (
+        "신청 마감까지 남은 5일이므로 즉시 참여 여부를 결정하고 제출을 준비할 필요가 있습니다."
+    ),
+) -> OpportunityAssessment:
     return OpportunityAssessment(
         dimensions=[
             OpportunityDimension(type=dimension_type, score=score, reason=reason)
@@ -55,27 +65,36 @@ def opportunity(company_fit: int = 80) -> OpportunityAssessment:
                 (
                     OpportunityDimensionType.COMPANY_FIT,
                     company_fit,
-                    "회사 산업 AI 기술과 공고 목적의 관련성이 높습니다.",
+                    (
+                        "회사의 산업 AI 역량과 수행 경험을 활용할 수 있지만 "
+                        "공고상 참여 자격은 추가 확인이 필요합니다."
+                    ),
                 ),
                 (
                     OpportunityDimensionType.BUSINESS_VALUE,
                     70,
-                    "사업 실적과 적용 사례 확보에 도움이 됩니다.",
+                    "회사가 신규 공공 레퍼런스를 확보하고 유사 사업으로 확장할 가능성이 있습니다.",
                 ),
                 (
                     OpportunityDimensionType.FEASIBILITY,
                     60,
-                    "지원 자격과 투입 인력을 추가로 확인해야 합니다.",
+                    (
+                        "회사의 기술 역량은 활용할 수 있지만 지원 자격과 투입 인력을 "
+                        "추가로 확인해야 합니다."
+                    ),
                 ),
                 (
                     OpportunityDimensionType.URGENCY,
-                    90,
-                    "신청 기한이 임박해 빠른 검토가 필요합니다.",
+                    urgency,
+                    urgency_reason,
                 ),
                 (
                     OpportunityDimensionType.EVIDENCE_CONFIDENCE,
                     65,
-                    "회사 규모 정보가 없어 일부 조건은 추가 확인이 필요합니다.",
+                    (
+                        "공식 원문과 회사 수행 사례는 확인되지만 "
+                        "기업 규모 증빙은 추가 확인이 필요합니다."
+                    ),
                 ),
             )
         ]
@@ -316,7 +335,11 @@ def test_graph_retries_high_importance_without_company_relevance() -> None:
 
 def test_system_prompt_calibrates_importance_and_opportunity_scores() -> None:
     assert "마감일이 임박했다는 사실만으로 HIGH" in SYSTEM_PROMPT
-    assert "21~40점 `키워드·산업 수준의 간접 접점`" in SYSTEM_PROMPT
+    assert "대상 산업: 직접 일치 35점" in SYSTEM_PROMPT
+    assert "직접 경제가치: 계약·지원 금액과 회사 수혜가 명시됨 35점" in SYSTEM_PROMPT
+    assert "신청·입찰 자격: 회사가 직접 충족함이 확인됨 30점" in SYSTEM_PROMPT
+    assert "3~5일: 90점" in SYSTEM_PROMPT
+    assert "공고 원문 완결성" in SYSTEM_PROMPT
     assert "범용 수요만 겹치면 COMPANY_FIT은 40점을 넘기지 않습니다" in SYSTEM_PROMPT
     assert "직접 일치와 구체적인 수행 과업의 일치" in SYSTEM_PROMPT
     assert "단순히 해당 기관이나 기업이 자산·설비를 보유한다는 이유" in SYSTEM_PROMPT
@@ -325,6 +348,83 @@ def test_system_prompt_calibrates_importance_and_opportunity_scores() -> None:
         in SYSTEM_PROMPT
     )
     assert "URGENCY는 대응까지 남은 시간만 평가" in SYSTEM_PROMPT
+
+
+@pytest.mark.parametrize(
+    ("remaining_days", "expected_score"),
+    [
+        (0, 100),
+        (2, 100),
+        (3, 90),
+        (5, 90),
+        (6, 80),
+        (7, 80),
+        (8, 65),
+        (14, 65),
+        (15, 50),
+        (21, 50),
+        (22, 35),
+        (30, 35),
+        (31, 20),
+        (45, 20),
+        (46, 10),
+    ],
+)
+def test_urgency_score_uses_remaining_day_rubric(
+    remaining_days: int,
+    expected_score: int,
+) -> None:
+    assert _urgency_score(remaining_days) == expected_score
+
+
+def test_graph_normalizes_urgency_score_when_it_does_not_match_remaining_days() -> None:
+    runner = SequencedRunner(
+        [
+            analysis(
+                Favorability.NOT_APPLICABLE,
+                opportunity_assessment=opportunity(
+                    urgency=40,
+                    urgency_reason=(
+                        "신청 마감까지 남은 5일이므로 "
+                        "즉시 참여 여부를 결정할 필요가 있습니다."
+                    ),
+                ),
+            )
+        ]
+    )
+    workflow = DocumentAnalysisWorkflow(runner=runner, max_attempts=2)
+
+    result = asyncio.run(workflow.analyze(document()))
+
+    urgency = result.opportunity.dimensions[3]
+    assert runner.call_count == 1
+    assert urgency.score == 90
+    assert "남은 5일" in urgency.reason
+
+
+def test_graph_retries_internal_company_profile_field_in_opportunity_reason() -> None:
+    runner = SequencedRunner(
+        [
+            analysis(
+                Favorability.NOT_APPLICABLE,
+                opportunity_assessment=opportunity(
+                    urgency_reason=(
+                        "마감까지 남은 5일이며 회사의 targetIndustries와 일치하지만 "
+                        "unknownFields는 확인이 필요합니다."
+                    )
+                ),
+            ),
+            analysis(Favorability.NOT_APPLICABLE),
+        ]
+    )
+    workflow = DocumentAnalysisWorkflow(runner=runner, max_attempts=2)
+
+    result = asyncio.run(workflow.analyze(document()))
+
+    assert runner.call_count == 2
+    assert "회사 관점의 자연스러운 문장" in (runner.feedbacks[1] or "")
+    assert result.opportunity.dimensions[3].score == 90
+
 
 def test_graph_stops_after_max_attempts() -> None:
     runner = SequencedRunner([RuntimeError("모델 호출 실패"), RuntimeError("모델 호출 실패")])
