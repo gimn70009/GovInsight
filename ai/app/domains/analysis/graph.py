@@ -1,3 +1,4 @@
+import re
 from typing import Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -151,7 +152,6 @@ class DocumentAnalysisWorkflow:
         if candidate is None:
             return {"error": "검증할 분석 결과가 없습니다."}
 
-        draft = AnalysisDraft.model_validate(candidate.draft.model_dump())
         violations = _business_rule_violations(
             state["path"],
             state["required_tools"],
@@ -164,6 +164,7 @@ class DocumentAnalysisWorkflow:
                 "feedback": feedback,
                 "error": feedback,
             }
+        draft = AnalysisDraft.model_validate(candidate.draft.model_dump())
         return {
             "candidate": AgentAnalysis(
                 draft=draft,
@@ -241,6 +242,7 @@ def _business_rule_violations(
     required_tools: list[str],
     candidate: AgentAnalysis,
 ) -> list[str]:
+    _normalize_urgency_score(candidate)
     violations = [
         f"필수 근거 도구 {tool_name}을 사용하지 않았습니다."
         for tool_name in required_tools
@@ -251,6 +253,17 @@ def _business_rule_violations(
         for dimension in candidate.draft.opportunity.dimensions
     }
     company_fit_score = dimension_scores.get(OpportunityDimensionType.COMPANY_FIT, 0)
+    violations.extend(_opportunity_reason_style_violations(candidate))
+    urgency = next(
+        (
+            dimension
+            for dimension in candidate.draft.opportunity.dimensions
+            if dimension.type == OpportunityDimensionType.URGENCY
+        ),
+        None,
+    )
+    if urgency is not None:
+        violations.extend(_urgency_score_violations(urgency.score, urgency.reason))
     if path == "new" and company_fit_score <= 40:
         expected_titles = ["핵심 판단", "도메인 불일치 근거", "재검토 조건", "현재 대응"]
     else:
@@ -283,6 +296,90 @@ def _business_rule_violations(
     if path == "unchanged" and favorability != Favorability.NEUTRAL:
         violations.append("변경 없는 문서의 favorable_or_not은 NEUTRAL이어야 합니다.")
     return violations
+
+
+def _urgency_score_violations(score: int, reason: str) -> list[str]:
+    if _expected_urgency_score(reason) == score:
+        return []
+    return [
+        "URGENCY 근거에는 마감일과 `남은 N일`, `마감 지남`, `기한 미확인` 또는 "
+        "선착순·예산 소진 조건을 명시해야 합니다."
+    ]
+
+
+def _normalize_urgency_score(candidate: AgentAnalysis) -> None:
+    urgency = next(
+        (
+            dimension
+            for dimension in candidate.draft.opportunity.dimensions
+            if dimension.type == OpportunityDimensionType.URGENCY
+        ),
+        None,
+    )
+    if urgency is None:
+        return
+    expected_score = _expected_urgency_score(urgency.reason)
+    if expected_score is None or urgency.score == expected_score:
+        return
+    urgency.score = expected_score
+
+
+def _expected_urgency_score(reason: str) -> int | None:
+    remaining_days = re.search(r"남은\s*(\d+)\s*일", reason)
+    if remaining_days:
+        return _urgency_score(int(remaining_days.group(1)))
+    if "마감 지남" in reason:
+        return 0
+    if "기한 미확인" in reason:
+        return 10
+    if any(keyword in reason for keyword in ("선착순", "예산 소진")):
+        return 70
+    return None
+
+
+def _opportunity_reason_style_violations(candidate: AgentAnalysis) -> list[str]:
+    forbidden_patterns = (
+        r"->",
+        r"→",
+        r"analysisDate",
+        r"targetIndustries",
+        r"services",
+        r"technologies",
+        r"relevantProjectTypes",
+        r"caseStudies",
+        r"verifiedFacts",
+        r"unknownFields",
+        r"evidenceLimitations",
+        r"sourceUrls",
+        r"총\s*\d{1,3}\s*점",
+        r"적용한 항목별 점수",
+    )
+    return [
+        (
+            f"{dimension.type} 근거는 내부 계산식을 나열하지 말고 "
+            "회사 관점의 자연스러운 문장으로 작성해야 합니다."
+        )
+        for dimension in candidate.draft.opportunity.dimensions
+        if any(re.search(pattern, dimension.reason) for pattern in forbidden_patterns)
+    ]
+
+
+def _urgency_score(remaining_days: int) -> int:
+    if remaining_days <= 2:
+        return 100
+    if remaining_days <= 5:
+        return 90
+    if remaining_days <= 7:
+        return 80
+    if remaining_days <= 14:
+        return 65
+    if remaining_days <= 21:
+        return 50
+    if remaining_days <= 30:
+        return 35
+    if remaining_days <= 45:
+        return 20
+    return 10
 
 
 def _safe_error(exception: Exception) -> str:
