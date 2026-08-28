@@ -179,6 +179,7 @@
 
 ## 후속 정리
 
+- [x] 회사 행동이 없는 문서의 긴급도 보정 우선순위 수정
 - [x] 감지 결과의 미사용 `DISPLAY_ORDER` 엔티티·저장·조회 의존성 제거
 - [ ] 기존 Oracle `DOCUMENT_DETECTIONS`의 `DISPLAY_ORDER` CHECK 제약조건과 컬럼 제거
 - [ ] 기존 DB의 잘못된 `EXTERNAL_DOCUMENT_ID` 데이터 정리
