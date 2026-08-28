@@ -335,13 +335,14 @@ def test_graph_retries_high_importance_without_company_relevance() -> None:
 
 def test_system_prompt_calibrates_importance_and_opportunity_scores() -> None:
     assert "마감일이 임박했다는 사실만으로 HIGH" in SYSTEM_PROMPT
-    assert "대상 산업: 직접 일치 35점" in SYSTEM_PROMPT
+    assert "핵심 산업: 반도체·디스플레이·철강과 직접 일치 40점" in SYSTEM_PROMPT
+    assert "단순 모니터링·관제·데이터 수집·시각화·플랫폼 통합·시스템 운영 0점" in SYSTEM_PROMPT
     assert "직접 경제가치: 계약·지원 금액과 회사 수혜가 명시됨 35점" in SYSTEM_PROMPT
     assert "신청·입찰 자격: 회사가 직접 충족함이 확인됨 30점" in SYSTEM_PROMPT
     assert "3~5일: 90점" in SYSTEM_PROMPT
     assert "공고 원문 완결성" in SYSTEM_PROMPT
-    assert "범용 수요만 겹치면 COMPANY_FIT은 40점을 넘기지 않습니다" in SYSTEM_PROMPT
-    assert "직접 일치와 구체적인 수행 과업의 일치" in SYSTEM_PROMPT
+    assert "AI 과업이 명시되지 않으면 COMPANY_FIT은 40점을 넘기지 않습니다" in SYSTEM_PROMPT
+    assert "핵심 산업의 직접 일치와 제조 AI 에이전트 과업" in SYSTEM_PROMPT
     assert "단순히 해당 기관이나 기업이 자산·설비를 보유한다는 이유" in SYSTEM_PROMPT
     assert (
         "COMPANY_FIT이 40점 이하이면 현재 문서를 사업화 기회로 확장하지 않습니다"
@@ -402,7 +403,7 @@ def test_graph_normalizes_urgency_score_when_it_does_not_match_remaining_days() 
     assert "남은 5일" in urgency.reason
 
 
-def test_graph_retries_internal_company_profile_field_in_opportunity_reason() -> None:
+def test_graph_normalizes_internal_company_profile_field_without_retry() -> None:
     runner = SequencedRunner(
         [
             analysis(
@@ -414,15 +415,18 @@ def test_graph_retries_internal_company_profile_field_in_opportunity_reason() ->
                     )
                 ),
             ),
-            analysis(Favorability.NOT_APPLICABLE),
         ]
     )
     workflow = DocumentAnalysisWorkflow(runner=runner, max_attempts=2)
 
     result = asyncio.run(workflow.analyze(document()))
 
-    assert runner.call_count == 2
-    assert "회사 관점의 자연스러운 문장" in (runner.feedbacks[1] or "")
+    assert runner.call_count == 1
+    reason = result.opportunity.dimensions[3].reason
+    assert "targetIndustries" not in reason
+    assert "unknownFields" not in reason
+    assert "회사의 대상 산업" in reason
+    assert "추가 확인이 필요한 회사 정보" in reason
     assert result.opportunity.dimensions[3].score == 90
 
 

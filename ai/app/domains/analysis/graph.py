@@ -243,6 +243,7 @@ def _business_rule_violations(
     candidate: AgentAnalysis,
 ) -> list[str]:
     _normalize_urgency_score(candidate)
+    _normalize_internal_field_names(candidate)
     violations = [
         f"필수 근거 도구 {tool_name}을 사용하지 않았습니다."
         for tool_name in required_tools
@@ -362,6 +363,24 @@ def _opportunity_reason_style_violations(candidate: AgentAnalysis) -> list[str]:
         for dimension in candidate.draft.opportunity.dimensions
         if any(re.search(pattern, dimension.reason) for pattern in forbidden_patterns)
     ]
+
+
+def _normalize_internal_field_names(candidate: AgentAnalysis) -> None:
+    replacements = {
+        "targetIndustries": "회사의 대상 산업",
+        "services": "제공 서비스",
+        "technologies": "보유 기술",
+        "relevantProjectTypes": "관련 수행 분야",
+        "caseStudies": "수행 사례",
+        "verifiedFacts": "확인된 회사 정보",
+        "unknownFields": "추가 확인이 필요한 회사 정보",
+        "evidenceLimitations": "회사 정보의 한계",
+        "sourceUrls": "정보 출처",
+        "analysisDate": "분석일",
+    }
+    for dimension in candidate.draft.opportunity.dimensions:
+        for internal_name, display_name in replacements.items():
+            dimension.reason = dimension.reason.replace(internal_name, display_name)
 
 
 def _urgency_score(remaining_days: int) -> int:
