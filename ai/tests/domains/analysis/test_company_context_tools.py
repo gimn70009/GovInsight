@@ -38,6 +38,9 @@ def test_company_profile_and_previous_analysis_are_available() -> None:
     assert any("중소기업확인서" in field for field in profile["unknownFields"])
     assert profile["targetIndustries"] == ["반도체", "디스플레이", "철강"]
     assert any("AI 에이전트" in service for service in profile["services"])
+    assert "제조 데이터 수집·통합" in profile["services"]
+    assert "시스템 통합 및 운영" in profile["services"]
+    assert "제조 데이터 플랫폼" in profile["relevantProjectTypes"]
     assert any(
         url.startswith("https://www.jobplanet.co.kr/companies/397061")
         for url in profile["sourceUrls"]

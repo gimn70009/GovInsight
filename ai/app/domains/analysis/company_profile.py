@@ -38,8 +38,9 @@ BISTELLIGENCE_PROFILE = CompanyProfile(
     ),
     services=(
         "제조 AI 에이전트 설계·개발", "AI 엔지니어링 컨설팅", "산업 AI 솔루션 구축",
-        "제조 데이터 기반 AI·ML 모델링", "AI 기반 설비 예지보전",
-        "AI 기반 품질·공정 최적화", "제조 의사결정 자동화",
+        "데이터 컨설팅", "제조 데이터 수집·통합", "제조 데이터 기반 AI·ML 모델링",
+        "AI 기반 설비 예지보전", "AI 기반 품질·공정 최적화", "제조 의사결정 자동화",
+        "제조 시스템 모니터링·자동화", "시스템 통합 및 운영",
     ),
     technologies=(
         "Artificial Intelligence", "Machine Learning", "Large Language Model", "AI Agent",
@@ -50,7 +51,9 @@ BISTELLIGENCE_PROFILE = CompanyProfile(
     relevant_project_types=(
         "제조 AI 에이전트 기술개발·사업화", "AI 기반 자율제조",
         "AI 기반 공정·품질 개선", "AI 기반 설비 예지보전",
-        "제조 의사결정 자동화",
+        "제조 의사결정 자동화", "AI 기술개발·사업화", "스마트공장·자율제조",
+        "제조 데이터 플랫폼", "공정·품질 개선", "설비 예지보전", "생산 모니터링",
+        "공공 스마트 인프라", "제조 시스템 통합·운영",
     ),
     case_studies=(
         "반도체 장비 OEE 시스템에서 로그 분석 자동화와 맞춤형 차트를 구축해 관리 효율 17% 증가",
