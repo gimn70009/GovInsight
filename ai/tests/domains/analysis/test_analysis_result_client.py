@@ -6,7 +6,11 @@ import httpx
 import pytest
 
 from app.domains.analysis.clients import AnalysisResultClient, AnalysisResultClientError
-from app.domains.analysis.schemas.delivery import AnalysisResultRequest
+from app.domains.analysis.schemas.delivery import (
+    AnalysisResultRequest,
+    ProposalResultRequest,
+    ProposalUpdateResult,
+)
 from app.domains.analysis.schemas.result import (
     DocumentAnalysisResult,
     DocumentImportance,
@@ -112,6 +116,9 @@ def test_send_analysis_result_in_camel_case() -> None:
     assert captured_body["runId"] == 10
     assert captured_body["results"][0]["detectionId"] == 20
     assert captured_body["results"][0]["proposal"]["sections"][0]["title"] == "핵심 판단"
+    assert captured_body["results"][0]["proposal"]["documentType"] == "REVIEW_REQUIRED"
+    assert captured_body["results"][0]["proposal"]["draftStatus"] == "NOT_APPLICABLE"
+    assert "document_type" not in captured_body["results"][0]["proposal"]
     assert captured_body["results"][0]["opportunity"]["dimensions"][0]["score"] == 80
     assert response.data.stored_analysis_count == 1
 
@@ -157,3 +164,48 @@ def test_do_not_retry_client_error() -> None:
         asyncio.run(client.send(analysis_request()))
 
     assert call_count == 1
+
+
+def test_send_proposal_update_to_separate_endpoint() -> None:
+    captured_path = ""
+    captured_body: dict[str, object] = {}
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal captured_path
+        captured_path = request.url.path
+        captured_body.update(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "isSuccess": True,
+                "code": "SUCCESS_200",
+                "httpStatus": 200,
+                "message": "요청에 성공했습니다.",
+                "data": {"runId": 10, "updatedProposalCount": 1},
+            },
+        )
+
+    analysis = analysis_request().results[0]
+    request = ProposalResultRequest(
+        run_id=10,
+        job_id=UUID("3ed1132b-8d61-45d9-bfab-06c1ed96f202"),
+        results=[
+            ProposalUpdateResult(
+                detection_id=analysis.detection_id,
+                document_id=analysis.document_id,
+                version_id=analysis.version_id,
+                proposal=analysis.proposal,
+                used_tools=["get_document_content", "build_proposal_preparation"],
+            )
+        ],
+    )
+    client = AnalysisResultClient(
+        base_url="http://spring.test",
+        transport=httpx.MockTransport(handle),
+    )
+
+    response = asyncio.run(client.send_proposals(request))
+
+    assert captured_path == "/internal/monitoring/proposal-results"
+    assert captured_body["results"][0]["proposal"]["sections"][0]["title"] == "핵심 판단"
+    assert response.data.updated_proposal_count == 1

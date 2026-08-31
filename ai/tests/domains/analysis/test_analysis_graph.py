@@ -21,6 +21,8 @@ from app.domains.analysis.schemas.result import (
     OpportunityAssessment,
     OpportunityDimension,
     OpportunityDimensionType,
+    ProposalDocumentType,
+    ProposalDraftStatus,
     ProposalSection,
     ProposalStrategy,
 )
@@ -345,8 +347,7 @@ def test_system_prompt_calibrates_importance_and_opportunity_scores() -> None:
     assert "핵심 산업의 직접 일치와 제조 AI 에이전트 과업" in SYSTEM_PROMPT
     assert "단순히 해당 기관이나 기업이 자산·설비를 보유한다는 이유" in SYSTEM_PROMPT
     assert (
-        "COMPANY_FIT이 40점 이하이면 현재 문서를 사업화 기회로 확장하지 않습니다"
-        in SYSTEM_PROMPT
+        "COMPANY_FIT이 40점 이하이면 현재 문서를 사업화 기회로 확장하지 않습니다" in SYSTEM_PROMPT
     )
     assert "URGENCY는 대응까지 남은 시간만 평가" in SYSTEM_PROMPT
 
@@ -386,8 +387,7 @@ def test_graph_normalizes_urgency_score_when_it_does_not_match_remaining_days() 
                 opportunity_assessment=opportunity(
                     urgency=40,
                     urgency_reason=(
-                        "신청 마감까지 남은 5일이므로 "
-                        "즉시 참여 여부를 결정할 필요가 있습니다."
+                        "신청 마감까지 남은 5일이므로 즉시 참여 여부를 결정할 필요가 있습니다."
                     ),
                 ),
             )
@@ -403,14 +403,33 @@ def test_graph_normalizes_urgency_score_when_it_does_not_match_remaining_days() 
     assert "남은 5일" in urgency.reason
 
 
+def test_graph_marks_expired_application_as_ineligible() -> None:
+    expired = analysis(
+        Favorability.NOT_APPLICABLE,
+        opportunity_assessment=opportunity(
+            urgency=20,
+            urgency_reason="신청 마감일은 2026년 4월 20일이며 현재는 마감 지남 상태입니다.",
+        ),
+    )
+    runner = SequencedRunner([expired])
+    workflow = DocumentAnalysisWorkflow(runner=runner, max_attempts=1)
+
+    result = asyncio.run(workflow.analyze(document()))
+
+    assert result.eligibility == Eligibility.INELIGIBLE
+    urgency = next(
+        dimension
+        for dimension in result.opportunity.dimensions
+        if dimension.type == OpportunityDimensionType.URGENCY
+    )
+    assert urgency.score == 0
+
+
 @pytest.mark.parametrize(
     "reason",
     [
         "마감일 없음(선정결과 공고)이며 회사 행동 없음입니다.",
-        (
-            "신청·제출 기한이나 회사가 수행해야 할 행동이 명시되어 있지 "
-            "않습니다. 남은 0일입니다."
-        ),
+        ("신청·제출 기한이나 회사가 수행해야 할 행동이 명시되어 있지 않습니다. 남은 0일입니다."),
     ],
 )
 def test_graph_normalizes_urgency_to_zero_when_company_has_no_action(
@@ -468,3 +487,100 @@ def test_graph_stops_after_max_attempts() -> None:
 
     with pytest.raises(AnalysisWorkflowError, match="모델 호출 실패"):
         asyncio.run(workflow.analyze(document()))
+
+
+def test_proposal_request_with_matching_company_and_template_accepts_draft() -> None:
+    draft = analysis(Favorability.NOT_APPLICABLE).draft
+    draft.proposal = ProposalStrategy(
+        sections=draft.proposal.sections,
+        document_type=ProposalDocumentType.PROPOSAL_REQUEST,
+        draft_status=ProposalDraftStatus.READY,
+        draft_reason="제안서 양식과 회사 핵심 산업 및 제조 AI 과업의 직접 연관성이 확인됩니다.",
+        source_attachment_names=["사업계획서 양식.hwpx"],
+        template_sections=["사업 개요", "추진 계획"],
+        draft_sections=[
+            ProposalSection(
+                title="사업 개요",
+                body="제조 현장의 의사결정을 지원하는 AI 에이전트 사업을 제안합니다.",
+            ),
+            ProposalSection(
+                title="추진 계획",
+                body="확인된 공고 일정에 맞춰 분석과 실증 단계를 순차적으로 수행합니다.",
+            ),
+        ],
+    )
+
+    validated = AnalysisDraft.model_validate(draft.model_dump())
+
+    assert validated.proposal.draft_status == ProposalDraftStatus.READY
+    assert validated.proposal.source_attachment_names == ["사업계획서 양식.hwpx"]
+
+
+def test_proposal_request_rejects_draft_title_outside_confirmed_outline() -> None:
+    draft = analysis(Favorability.NOT_APPLICABLE).draft
+    draft.proposal = ProposalStrategy(
+        sections=draft.proposal.sections,
+        document_type=ProposalDocumentType.PROPOSAL_REQUEST,
+        draft_status=ProposalDraftStatus.READY,
+        draft_reason="제안서 양식과 회사 핵심 산업 및 제조 AI 과업의 직접 연관성이 확인됩니다.",
+        source_attachment_names=["사업계획서 양식.hwpx"],
+        template_sections=["사업 개요", "추진 계획", "성과 활용"],
+        draft_sections=[
+            ProposalSection(
+                title="사업 개요", body="제조 AI 에이전트를 적용하는 사업을 제안합니다."
+            ),
+            ProposalSection(title="확정되지 않은 항목", body="분석과 실증을 수행합니다."),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="확정된 전체 목차"):
+        AnalysisDraft.model_validate(draft.model_dump())
+
+
+def test_proposal_request_rejects_internal_confirmation_marker() -> None:
+    draft = analysis(Favorability.NOT_APPLICABLE).draft
+    draft.proposal = ProposalStrategy(
+        sections=draft.proposal.sections,
+        document_type=ProposalDocumentType.PROPOSAL_REQUEST,
+        draft_status=ProposalDraftStatus.READY,
+        draft_reason="제안서 양식과 회사 핵심 산업 및 제조 AI 과업의 직접 연관성이 확인됩니다.",
+        source_attachment_names=["사업계획서 양식.hwpx"],
+        template_sections=["Ⅰ. 수행계획 > 1. 과제 개요 > 1) 산업 개요"],
+        draft_sections=[
+            ProposalSection(
+                title="Ⅰ. 수행계획 > 1. 과제 개요 > 1) 산업 개요",
+                body="반도체 제조 AI 사업을 제안합니다. [회사 확인 필요: 세부 목표 수치]",
+            )
+        ],
+    )
+
+    with pytest.raises(ValueError, match="자연스러운 확인 안내 문장"):
+        AnalysisDraft.model_validate(draft.model_dump())
+
+
+def test_proposal_request_rejects_draft_for_low_company_fit() -> None:
+    with pytest.raises(ValueError, match="제안서 작성을 권장할 수 없습니다"):
+        AnalysisDraft(
+            summary="회사 핵심 산업과 직접 관련성이 낮은 제안서 제출 사업 공고입니다.",
+            key_points=["사업계획서 양식을 제출해야 합니다."],
+            importance=DocumentImportance.LOW,
+            reason="회사의 핵심 산업과 제조 AI 에이전트 과업이 직접 일치하지 않습니다.",
+            eligibility=Eligibility.REVIEW_REQUIRED,
+            favorable_or_not=Favorability.NOT_APPLICABLE,
+            proposal=ProposalStrategy(
+                sections=[
+                    ProposalSection(
+                        title="핵심 판단", body="현재 회사와의 직접적인 사업 연관성이 낮습니다."
+                    )
+                ],
+                document_type=ProposalDocumentType.PROPOSAL_REQUEST,
+                draft_status=ProposalDraftStatus.READY,
+                draft_reason="첨부파일에 사업계획서 작성 양식이 포함되어 있습니다.",
+                source_attachment_names=["사업계획서.pdf"],
+                template_sections=["사업 개요"],
+                draft_sections=[
+                    ProposalSection(title="사업 개요", body="확인되지 않은 사업 초안입니다.")
+                ],
+            ),
+            opportunity=opportunity(company_fit=35),
+        )

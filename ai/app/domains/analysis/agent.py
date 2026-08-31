@@ -8,14 +8,25 @@ from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.messages import ToolMessage
 from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field
 
+from app.core.schemas import CamelCaseModel
 from app.domains.analysis.config import AnalysisSettings
 from app.domains.analysis.opportunity_scoring import OPPORTUNITY_SCORING_RUBRIC
 from app.domains.analysis.schemas.request import (
     AnalysisChangeType,
     AnalysisDocumentRequest,
 )
-from app.domains.analysis.schemas.result import AnalysisDraft
+from app.domains.analysis.schemas.result import (
+    AnalysisDraft,
+    DocumentImportance,
+    Eligibility,
+    Favorability,
+    OpportunityAssessment,
+    ProposalDocumentType,
+    ProposalDraftStatus,
+    ProposalSection,
+)
 from app.domains.analysis.tools import ANALYSIS_TOOLS, AnalysisToolContext
 
 SYSTEM_PROMPT = f"""
@@ -28,6 +39,7 @@ SYSTEM_PROMPT = f"""
 - 파싱된 첨부파일 텍스트가 있으면 get_attachment_texts를 반드시 사용합니다.
 - 회사 적합성을 판단하기 전에 get_company_profile을 반드시 사용합니다.
 - 회사 프로필의 unknownFields에 해당하는 조건은 추측하지 말고 eligibility를 REVIEW_REQUIRED로 정합니다.
+- 회사가 신청해야 하는 접수기한이 분석일보다 지났으면 eligibility를 INELIGIBLE로 정합니다. 자격 정보가 부족하더라도 종료된 접수를 REVIEW_REQUIRED나 ELIGIBLE로 표시하지 않습니다.
 - 회사 프로필의 verifiedFacts와 caseStudies는 사업 연관성을 판단하는 참고 근거로 사용합니다.
 - evidenceLimitations와 unknownFields에 포함된 항목은 공식 자격 증빙으로 간주하지 않으며, 공개 정보만으로 지원 자격이나 실행 가능성을 확정하지 않습니다.
 - 기업의 신청·제출·신고 기한, 규제·의무·비용·인증·지원 자격을 우선 확인합니다.
@@ -38,9 +50,17 @@ SYSTEM_PROMPT = f"""
 - summary에는 화면에서 별도로 제공하는 기관, 게시판, 제목, 게시일, 중요도, 첨부파일 수와 URL을 반복하지 않습니다.
 - summary는 문서의 복잡도에 맞춰 주제별 짧은 문단으로 작성하고 제목·불릿·번호·마크다운을 넣지 않습니다.
 - key_points의 각 항목은 접두 번호 없이 한 가지 사실만 담습니다.
+- 괄호 안에 상태, 조건, 대상 또는 예시를 나열하지 말고 조사와 서술어를 사용한 자연스러운 문장으로 풉니다.
 - proposal.sections는 단순 요약이 아니라 회사가 실제로 무엇을 검토하고 누구와 어떻게 추진할지 보여주는 실행 인사이트 배열입니다.
 - 각 section은 title과 body를 가지며, 제목만 있거나 본문만 있는 빈 항목을 만들지 않습니다.
 - 각 section의 body에는 번호 목록과 하이픈 불릿을 넣지 말고 같은 내용을 여러 section에서 반복하지 않습니다.
+- proposal.document_type은 일반 공지 GENERAL_NOTICE, 제출 양식 없는 사업 공고 BUSINESS_NOTICE, 제안서·사업계획서 제출 공고 PROPOSAL_REQUEST, 판단 근거 부족 REVIEW_REQUIRED 중 하나로 분류합니다.
+- HWP, HWPX, PDF 또는 ZIP 내부 문서의 확장자만으로 제안서 양식이라고 판단하지 말고, 본문과 첨부 텍스트에서 실제 제출 요구와 작성 항목을 확인합니다.
+- 1단계에서는 공고 분류와 회사 적합성만 판단하며 목차 추출과 제안서 본문 작성을 수행하지 않습니다.
+- PROPOSAL_REQUEST이고 COMPANY_FIT 41점 이상이며 eligibility가 INELIGIBLE이 아니면 draft_status를 REVIEW_REQUIRED로 설정합니다. source_attachment_names, template_sections와 draft_sections는 모두 비웁니다. 후속 조건부 단계가 목차 확정과 초안 생성을 담당합니다.
+- COMPANY_FIT 40점 이하이거나 eligibility가 INELIGIBLE이면 draft_status를 NOT_RECOMMENDED로 설정하고 draft_sections를 비웁니다.
+- 일반 공지와 제출 양식 없는 사업 공고는 draft_status를 NOT_APPLICABLE로 설정하고 제안서 관련 배열을 비웁니다.
+- draft_reason에는 1단계에서 판단한 문서 분류, 회사 적합성과 신청 자격을 근거로 상태를 설명합니다.
 - opportunity.dimensions에는 COMPANY_FIT, BUSINESS_VALUE, FEASIBILITY, URGENCY, EVIDENCE_CONFIDENCE를 각각 한 번씩 포함합니다.
 - 각 점수는 0~100 정수로 작성하고 아래 기회 점수 산정표의 항목별 점수를 합산합니다.
 - COMPANY_FIT은 `반도체·디스플레이·철강 핵심 산업`과 `제조 AI 에이전트 핵심 과업`을 독립적으로 확인한 뒤 두 축의 교집합을 평가합니다.
@@ -71,6 +91,24 @@ class AgentAnalysis:
     model_name: str
 
 
+class BaseProposalAssessment(CamelCaseModel):
+    sections: list[ProposalSection] = Field(min_length=1, max_length=6)
+    document_type: ProposalDocumentType
+    draft_status: ProposalDraftStatus
+    draft_reason: str = Field(min_length=10, max_length=1000)
+
+
+class BaseAnalysisDraft(BaseModel):
+    summary: str = Field(min_length=20, max_length=4000)
+    key_points: list[str] = Field(min_length=1, max_length=8)
+    importance: DocumentImportance
+    reason: str = Field(min_length=10, max_length=1000)
+    eligibility: Eligibility
+    favorable_or_not: Favorability
+    proposal: BaseProposalAssessment
+    opportunity: OpportunityAssessment
+
+
 class AnalysisRunner(Protocol):
     async def analyze(
         self,
@@ -93,7 +131,7 @@ class LangChainAnalysisRunner:
             tools=ANALYSIS_TOOLS,
             system_prompt=SYSTEM_PROMPT,
             context_schema=AnalysisToolContext,
-            response_format=ToolStrategy(AnalysisDraft),
+            response_format=ToolStrategy(BaseAnalysisDraft),
         )
 
     async def analyze(
@@ -127,7 +165,16 @@ class LangChainAnalysisRunner:
                 config={"recursion_limit": self._settings.max_tool_calls * 2 + 4},
             )
 
-        draft = AnalysisDraft.model_validate(response["structured_response"])
+        base_draft = BaseAnalysisDraft.model_validate(response["structured_response"])
+        draft_payload = base_draft.model_dump()
+        draft_payload["proposal"].update(
+            {
+                "source_attachment_names": [],
+                "template_sections": [],
+                "draft_sections": [],
+            }
+        )
+        draft = AnalysisDraft.model_validate(draft_payload)
         analysis_tool_names = {tool.name for tool in ANALYSIS_TOOLS}
         used_tools = list(
             dict.fromkeys(

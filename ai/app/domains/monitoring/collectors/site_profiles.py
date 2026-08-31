@@ -11,6 +11,7 @@ class SiteProfile:
     date_selectors: tuple[str, ...]
     document_id_query_keys: tuple[str, ...] = ()
     document_id_path_pattern: str | None = None
+    list_ready_selector: str | None = None
 
 # 전용 기관 프로필이 없는 사이트에 적용하는 공통 CSS 선택자
 DEFAULT_PROFILE = SiteProfile(
@@ -83,6 +84,17 @@ SITE_PROFILES = {
         date_selectors=(".bd_view_ul_info li:has-text('등록일') span",),
         document_id_query_keys=("idx", "ID"),
     ),
+
+    # 한국산업기술진흥원 사업공고
+    "kiat.or.kr": SiteProfile(
+        title_selectors=(".view_area .viewTypeA thead th",),
+        content_selectors=(".view_area .viewTypeA_contents",),
+        date_selectors=(
+            ".view_area .viewTypeA tbody tr:has(th:has-text('공고일')) td",
+        ),
+        document_id_query_keys=("contents_id",),
+        list_ready_selector="#contentsList a[href*='contentsView']",
+    ),
 }
 
 MOLIT_TENDER_PROFILE = SiteProfile(
@@ -111,6 +123,9 @@ MSIT_DOWNLOAD_PATTERN = re.compile(
 MCEE_DOWNLOAD_PATTERN = re.compile(
     r"ajaxFileDownLoad\(\s*['\"]?(\d+)['\"]?\s*,\s*['\"]?(\d+)['\"]?"
 )
+
+# 한국산업기술진흥원 contentsView(게시글 UUID) 링크
+KIAT_DETAIL_PATTERN = re.compile(r"contentsView\(['\"]([A-Za-z0-9_-]+)['\"]\)")
 
 
 # URL에 맞는 기관별 프로필을 반환하고, 없으면 기본 프로필을 사용
@@ -146,6 +161,22 @@ def resolve_link_target(href: str | None, onclick: str | None, list_url: str) ->
                 "sCode": query.get("sCode", ["user"])[0],
             }
             return f"{parsed.scheme}://{parsed.netloc}/bbs/view.do?{urlencode(detail_query)}"
+
+    # 한국산업기술진흥원 처리
+    if hostname == "kiat.or.kr":
+        match = KIAT_DETAIL_PATTERN.search(script)
+        if match:
+            parsed = urlparse(list_url)
+            query = parse_qs(parsed.query)
+            detail_query = {
+                "MenuId": query.get("MenuId", ["b159c9dac684471b87256f1e25404f5e"])[0],
+                "board_id": query.get("board_id", ["90"])[0],
+                "contents_id": match.group(1),
+            }
+            return (
+                f"{parsed.scheme}://{parsed.netloc}/front/board/boardContentsView.do?"
+                f"{urlencode(detail_query)}"
+            )
 
     if hostname == "molit.go.kr" and "/USR/tender/" in list_path:
         if href and "mng.jsp" in href and "ID=" in href.upper():
@@ -199,3 +230,12 @@ def resolve_download_url(
 # URL에서 www.를 제거한 소문자 도메인을 추출
 def _hostname(url: str) -> str:
     return (urlparse(url).hostname or "").lower().removeprefix("www.")
+
+
+def is_direct_document_url(url: str) -> bool:
+    parsed = urlparse(url)
+    return (
+        _hostname(url) == "kiat.or.kr"
+        and parsed.path.endswith("/front/board/boardContentsView.do")
+        and bool(parse_qs(parsed.query).get("contents_id"))
+    )

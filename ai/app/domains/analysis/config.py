@@ -14,6 +14,8 @@ class AnalysisSettings:
     api_key: str
     model_name: str
     timeout_seconds: float
+    proposal_model_name: str
+    proposal_timeout_seconds: float
     max_attempts: int
     max_tool_calls: int
     max_text_chars: int
@@ -31,8 +33,10 @@ class AnalysisSettings:
         return cls(
             api_key=api_key,
             model_name=os.getenv("OPENAI_MODEL", "gpt-5-mini").strip(),
-            timeout_seconds=_positive_float("ANALYSIS_TIMEOUT_SECONDS", 90.0),
-            max_attempts=_positive_int("ANALYSIS_MAX_ATTEMPTS", 3),
+            timeout_seconds=_positive_float("ANALYSIS_TIMEOUT_SECONDS", 180.0),
+            proposal_model_name=os.getenv("PROPOSAL_MODEL", "gpt-5-mini").strip(),
+            proposal_timeout_seconds=_positive_float("PROPOSAL_TIMEOUT_SECONDS", 180.0),
+            max_attempts=_positive_int("ANALYSIS_MAX_ATTEMPTS", 2),
             max_tool_calls=_positive_int("ANALYSIS_MAX_TOOL_CALLS", 6),
             max_text_chars=_positive_int("ANALYSIS_MAX_TEXT_CHARS", 40_000),
             result_delivery_max_attempts=_positive_int("ANALYSIS_RESULT_MAX_ATTEMPTS", 3),

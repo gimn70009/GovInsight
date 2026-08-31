@@ -12,8 +12,11 @@ from app.domains.analysis.schemas.result import (
     AnalysisDraft,
     DocumentAnalysisResult,
     DocumentImportance,
+    Eligibility,
     Favorability,
     OpportunityDimensionType,
+    ProposalDocumentType,
+    ProposalDraftStatus,
 )
 
 
@@ -244,6 +247,7 @@ def _business_rule_violations(
 ) -> list[str]:
     _normalize_urgency_score(candidate)
     _normalize_internal_field_names(candidate)
+    _normalize_expired_application(candidate)
     violations = [
         f"필수 근거 도구 {tool_name}을 사용하지 않았습니다."
         for tool_name in required_tools
@@ -297,6 +301,30 @@ def _business_rule_violations(
     if path == "unchanged" and favorability != Favorability.NEUTRAL:
         violations.append("변경 없는 문서의 favorable_or_not은 NEUTRAL이어야 합니다.")
     return violations
+
+
+def _normalize_expired_application(candidate: AgentAnalysis) -> None:
+    urgency = next(
+        (
+            dimension
+            for dimension in candidate.draft.opportunity.dimensions
+            if dimension.type == OpportunityDimensionType.URGENCY
+        ),
+        None,
+    )
+    if urgency is None or "마감 지남" not in urgency.reason:
+        return
+    candidate.draft.eligibility = Eligibility.INELIGIBLE
+    if candidate.draft.proposal.document_type != ProposalDocumentType.PROPOSAL_REQUEST:
+        return
+    candidate.draft.proposal.draft_status = ProposalDraftStatus.NOT_RECOMMENDED
+    candidate.draft.proposal.draft_reason = (
+        "신청 접수기한이 지나 신규 접수가 불가능하므로 제안서 작성을 권장하지 않습니다."
+    )
+    candidate.draft.proposal.source_attachment_names = []
+    candidate.draft.proposal.template_sections = []
+    candidate.draft.proposal.draft_sections = []
+    candidate.draft.proposal.preparation = None
 
 
 def _urgency_score_violations(score: int, reason: str) -> list[str]:
@@ -415,5 +443,7 @@ def _urgency_score(remaining_days: int) -> int:
 
 
 def _safe_error(exception: Exception) -> str:
+    if isinstance(exception, TimeoutError) and not str(exception).strip():
+        return "AI 모델 응답 시간이 초과되었습니다. 첨부파일 분량 또는 출력 항목을 확인하세요."
     message = str(exception).strip()
     return message[:500] if message else exception.__class__.__name__

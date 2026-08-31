@@ -5,6 +5,7 @@ import com.publicmonitor.backend.domain.analysis.client.dto.PythonAnalysisDocume
 import com.publicmonitor.backend.domain.analysis.client.dto.PythonAnalysisJobRequest;
 import com.publicmonitor.backend.domain.analysis.client.dto.PythonPreviousAnalysisRequest;
 import com.publicmonitor.backend.domain.analysis.client.dto.PythonPreviousVersionRequest;
+import com.publicmonitor.backend.domain.analysis.entity.DocumentAnalysis;
 import com.publicmonitor.backend.domain.analysis.repository.AnalysisDocumentDetectionRepository;
 import com.publicmonitor.backend.domain.analysis.repository.AnalysisDocumentVersionRepository;
 import com.publicmonitor.backend.domain.analysis.repository.DocumentAnalysisRepository;
@@ -44,8 +45,12 @@ public class AnalysisJobRequestService {
     }
 
     private boolean requiresAnalysis(DocumentDetection detection) {
-        return detection.getChangeType() != DocumentChangeType.UNCHANGED_DOCUMENT
-                || !analysisRepository.existsByDocumentVersionId(detection.getDocumentVersion().getId());
+        if (detection.getChangeType() != DocumentChangeType.UNCHANGED_DOCUMENT) {
+            return true;
+        }
+        return analysisRepository.findByDocumentVersionId(detection.getDocumentVersion().getId())
+                .map(DocumentAnalysis::requiresProposalSchemaUpgrade)
+                .orElse(true);
     }
 
     private PythonAnalysisDocumentRequest toRequest(DocumentDetection detection) {

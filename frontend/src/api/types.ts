@@ -113,8 +113,63 @@ export interface DocumentAnalysis {
   favorableOrNot: 'FAVORABLE' | 'UNFAVORABLE' | 'NEUTRAL' | 'NOT_APPLICABLE' | 'REVIEW_REQUIRED'
   proposal: {
     sections: Array<{ title: string; body: string }>
+    documentType: 'GENERAL_NOTICE' | 'BUSINESS_NOTICE' | 'PROPOSAL_REQUEST' | 'REVIEW_REQUIRED'
+    draftStatus: 'NOT_APPLICABLE' | 'READY' | 'REVIEW_REQUIRED' | 'NOT_RECOMMENDED' | 'GENERATING'
+    draftReason: string
+    sourceAttachmentNames: string[]
+    templateSections: string[]
+    draftSections: Array<{ title: string; body: string }>
+    preparationSchemaVersion?: number
+    preparation: {
+      meetingAgenda: string[]
+      eligibilityChecklist: ProposalPreparationItem[]
+      submissionDocuments: ProposalPreparationItem[]
+      companyInputs: ProposalPreparationItem[]
+      strategy: {
+        decision?: 'GO' | 'CONDITIONAL_GO' | 'HOLD' | 'NO_GO' | null
+        decisionReason?: string | null
+        recommendedProject?: string | null
+        recommendedParticipation?: string | null
+        alternativeParticipation?: string | null
+        capabilityMatches?: Array<{ confirmedFact: string; strategicInterpretation: string }> | null
+        criticalGaps?: Array<{ gap: string; nextAction: string; owner: string; targetTiming: string }> | null
+        stopCriteria?: Array<{ type: 'OFFICIAL_REQUIREMENT' | 'INTERNAL_RECOMMENDATION'; condition: string; rationale: string }> | null
+      }
+    } | null
   }
   opportunity: OpportunityAssessment | null
+}
+
+export interface ProposalPreparationItem {
+  title: string
+  status:
+    | 'READY'
+    | 'VERIFIED'
+    | 'LIKELY'
+    | 'ACTION_REQUIRED'
+    | 'NEEDS_CONFIRMATION'
+    | 'MISSING'
+    | 'INELIGIBLE'
+    | 'NOT_APPLICABLE'
+  detail: string
+  nextAction: string
+  requirementLevel?: 'MANDATORY' | 'CONDITIONAL' | 'OPTIONAL' | 'RECOMMENDED' | null
+  stage?: 'APPLICATION' | 'EVALUATION' | 'POST_SELECTION' | 'AGREEMENT' | 'EXECUTION' | 'REPORTING' | null
+  appliesTo?: string | null
+  source?: {
+    origin: 'NOTICE_BODY' | 'ATTACHMENT' | 'COMPANY_PROFILE' | 'COMPANY_INPUT' | 'AI_RECOMMENDATION'
+    attachmentName?: string | null
+    sectionTitle: string
+    location?: string | null
+    excerpt: string
+  } | null
+  companyEvidenceLevel?:
+    | 'OFFICIAL_DOCUMENT'
+    | 'USER_CONFIRMED'
+    | 'OFFICIAL_WEBSITE'
+    | 'PUBLIC_INFORMATION'
+    | 'UNKNOWN'
+    | null
 }
 
 export interface DocumentAttachment {

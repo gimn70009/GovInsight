@@ -1,3 +1,4 @@
+import json
 import re
 from datetime import datetime
 from urllib.parse import urljoin
@@ -7,6 +8,7 @@ from playwright.async_api import Browser, Error, Page, async_playwright
 from app.domains.monitoring.collectors.site_profiles import (
     DEFAULT_PROFILE,
     get_site_profile,
+    is_direct_document_url,
     resolve_download_url,
     resolve_link_target,
 )
@@ -55,15 +57,23 @@ class PlaywrightCollector:
         page.set_default_timeout(PAGE_TIMEOUT_MS)
         try:
             await page.goto(source.list_url, wait_until="domcontentloaded", timeout=PAGE_TIMEOUT_MS)
-            links = await page.locator("a[href], a[onclick]").evaluate_all(
-                """elements => elements.map(element => ({
+            if is_direct_document_url(source.list_url):
+                document = await self._extract_document(page, source.list_url)
+                return SourceCollectionResult(source_id=source.source_id, documents=[document])
+            list_profile = get_site_profile(source.list_url)
+            if list_profile.list_ready_selector:
+                await page.wait_for_selector(list_profile.list_ready_selector, state="attached")
+            links = json.loads(await page.evaluate(
+                """JSON.stringify(Array.from(
+                    document.querySelectorAll('a[href], a[onclick]')
+                ).map(element => ({
                     href: element.getAttribute('href'),
                     onclick: element.getAttribute('onclick'),
                     rowText: (
                         element.closest('tr, .toggle')?.textContent || ''
                     ).trim()
-                }))"""
-            )
+                })))"""
+            ))
             hrefs = []
             list_dates: dict[str, datetime] = {}
             for link in links:
@@ -180,8 +190,8 @@ def _parse_datetime(value: str | None) -> datetime | None:
 
 
 async def _collect_attachments(page: Page, page_url: str) -> list[CollectedAttachment]:
-    links = await page.locator("a[href]").evaluate_all(
-        """elements => elements.map(element => ({
+    links = json.loads(await page.evaluate(
+        """JSON.stringify(Array.from(document.querySelectorAll('a[href]')).map(element => ({
             href: element.getAttribute('href'),
             text: (element.textContent || '').trim(),
             download: element.getAttribute('download') || '',
@@ -189,8 +199,8 @@ async def _collect_attachments(page: Page, page_url: str) -> list[CollectedAttac
             relatedFileName: (
                 element.closest('li')?.querySelector('a[class*="ico_file_"]')?.textContent || ''
             ).trim()
-        }))"""
-    )
+        })))"""
+    ))
     attachments: list[CollectedAttachment] = []
     seen: set[str] = set()
     extensions = "|".join(ATTACHMENT_EXTENSIONS)

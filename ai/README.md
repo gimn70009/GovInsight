@@ -53,6 +53,7 @@ ai/
 - 기후에너지환경부
 - 고용노동부
 - 국토교통부
+- 한국산업기술진흥원
 
 기관별 프로필은 JavaScript 상세 이동 링크, 제목·본문·게시일 선택자와 첨부파일 링크 형식을 처리한다. 등록 시에는 해당 기관의 게시판 목록 URL과 상세 URL 포함 패턴을 사용한다. 사이트 개편으로 화면 구조가 바뀌면 프로필도 수정해야 하며, 첨부파일 중심 게시글은 본문이 비어 있을 수 있다.
 
@@ -108,7 +109,9 @@ set ZIP_MAX_UNCOMPRESSED_SIZE_BYTES=104857600
 ```ini
 OPENAI_API_KEY=발급받은_API_키
 OPENAI_MODEL=gpt-5-mini
-ANALYSIS_TIMEOUT_SECONDS=90
+ANALYSIS_TIMEOUT_SECONDS=180
+PROPOSAL_MODEL=gpt-5-mini
+PROPOSAL_TIMEOUT_SECONDS=180
 ANALYSIS_MAX_ATTEMPTS=2
 ANALYSIS_CONCURRENCY=2
 ANALYSIS_MAX_TOOL_CALLS=6
@@ -116,6 +119,8 @@ ANALYSIS_MAX_TEXT_CHARS=40000
 ```
 
 분석 에이전트는 LangChain 도구로 현재 게시글 본문, 첨부파일 추출 텍스트와 이전 버전 차이를 필요한 순서대로 조회한다. LangGraph는 문서별 분석 상태, 결과 검증과 제한된 재시도를 관리한다. 문서는 `ANALYSIS_CONCURRENCY` 값에 따라 기본 최대 2건씩 동시에 분석하며 결과 순서와 문서별 실패 격리를 유지한다. 분석 결과는 Spring Boot로 전달되어 Oracle에 저장된다.
+
+사업 제안 준비안은 조건부 2단계로 생성한다. 공고 분석 결과를 먼저 Spring Boot에 전달해 화면 저장과 보고서 생성을 시작한 뒤, 제안서 제출 공고, 회사 적합도 61점 이상, 신청 불가 아님, 파싱된 첨부 양식 보유 조건을 모두 만족한 문서만 별도 백그라운드 단계에서 후속 처리한다. 후속 단계는 같은 OpenAI API 키와 `PROPOSAL_MODEL` 모델을 사용하며 `PROPOSAL_TIMEOUT_SECONDS`의 기본 180초 제한을 적용한다. 생성이 끝나면 제안 결과만 별도 내부 API로 갱신한다. 후속 처리 실패는 기본 공고 분석과 보고서 생성을 지연시키지 않으며 사업 제안만 추가 검토 상태로 저장한다.
 
 문서별 분석 저장이 완료되면 Spring Boot가 `/internal/monitoring/report-jobs`로 보고서 생성을 요청한다. Python은 추가 OpenAI 호출 없이 문서별 요약과 중요도를 템플릿으로 조합해 기관·게시판별 전체 보고서 제목·요약을 생성하고 `/internal/monitoring/report-results`로 전달한다. 변경 없는 버전에 저장된 분석이 있으면 Spring Boot가 AI 재분석을 생략하고 같은 분석을 보고서에 재사용한다.
 

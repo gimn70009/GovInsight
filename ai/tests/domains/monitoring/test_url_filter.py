@@ -70,6 +70,10 @@ def test_extract_external_document_id_supports_institution_query_parameters() ->
     assert extract_external_document_id(
         "https://www.molit.go.kr/USR/BORD0201/DTL.jsp?idx=269284"
     ) == "269284"
+    assert extract_external_document_id(
+        "https://www.kiat.or.kr/front/board/boardContentsView.do?"
+        "contents_id=6cbbabc261de4a2dabe7fc1fdb226da2"
+    ) == "6cbbabc261de4a2dabe7fc1fdb226da2"
 
 
 def test_extract_external_document_id_never_returns_page_file_name() -> None:

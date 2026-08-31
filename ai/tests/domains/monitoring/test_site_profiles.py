@@ -1,5 +1,6 @@
 from app.domains.monitoring.collectors.site_profiles import (
     get_site_profile,
+    is_direct_document_url,
     resolve_download_url,
     resolve_link_target,
 )
@@ -104,3 +105,34 @@ def test_profiles_keep_document_id_rules_with_each_institution() -> None:
     assert get_site_profile("https://www.motir.go.kr/article/1/view").document_id_path_pattern == (
         r"/(\d+)/view/?$"
     )
+
+
+def test_resolve_kiat_contents_view_link() -> None:
+    result = resolve_link_target(
+        "javascript:contentsView('6cbbabc261de4a2dabe7fc1fdb226da2')",
+        None,
+        (
+            "https://www.kiat.or.kr/front/board/boardContentsListPage.do?"
+            "MenuId=b159c9dac684471b87256f1e25404f5e&board_id=90"
+        ),
+    )
+
+    assert result == (
+        "https://www.kiat.or.kr/front/board/boardContentsView.do?"
+        "MenuId=b159c9dac684471b87256f1e25404f5e&board_id=90&"
+        "contents_id=6cbbabc261de4a2dabe7fc1fdb226da2"
+    )
+
+
+def test_get_kiat_profile_and_direct_document_url() -> None:
+    url = (
+        "https://www.kiat.or.kr/front/board/boardContentsView.do?"
+        "board_id=90&contents_id=6cbbabc261de4a2dabe7fc1fdb226da2"
+    )
+
+    profile = get_site_profile(url)
+
+    assert profile.title_selectors == (".view_area .viewTypeA thead th",)
+    assert profile.document_id_query_keys == ("contents_id",)
+    assert profile.list_ready_selector == "#contentsList a[href*='contentsView']"
+    assert is_direct_document_url(url) is True
