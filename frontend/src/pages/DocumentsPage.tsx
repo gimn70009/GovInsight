@@ -692,9 +692,19 @@ function DocumentContent({ detail }: { detail: DocumentDetail }) {
                           ))}
                         </div>
                         <div className="strategy-gaps">
-                          <h6>지원 전 보완 행동</h6>
+                          <div className="strategy-gaps__header">
+                            <h6>지원 전 보완 행동</h6>
+                            <p>내부 완료 목표일은 공고 마감일이 아니라 지원 준비를 마치기 위한 권장 일정입니다.</p>
+                          </div>
                           {proposalDraft.preparation.strategy.criticalGaps?.map((item) => (
-                            <article key={item.gap}><strong>{readableSentence(item.gap)}</strong><p>{readableSentence(item.nextAction)}</p><small>{`담당자는 ${item.owner}이며 ${readableSentence(item.targetTiming)}`}</small></article>
+                            <article key={item.gap}>
+                              <strong>{readableSentence(item.gap)}</strong>
+                              <p>{readableSentence(item.nextAction)}</p>
+                              <div className="strategy-gap-meta">
+                                <span><b>담당 부서</b>{item.owner}</span>
+                                <span><b>내부 완료 목표일</b>{readableSentence(item.targetTiming)}</span>
+                              </div>
+                            </article>
                           ))}
                         </div>
                         <div className="strategy-stop">
