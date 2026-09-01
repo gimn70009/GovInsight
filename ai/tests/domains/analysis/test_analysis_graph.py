@@ -53,6 +53,18 @@ def document(change_type: str = "NEW_DOCUMENT") -> AnalysisDocumentRequest:
     return AnalysisDocumentRequest.model_validate(payload)
 
 
+def document_with_application_template() -> AnalysisDocumentRequest:
+    payload = document().model_dump(by_alias=True)
+    payload["attachments"] = [
+        {
+            "attachmentId": 1,
+            "fileName": "연구개발계획서 및 제출서식.zip",
+            "extractedText": "연구개발계획서를 작성해 제출해야 합니다.",
+        }
+    ]
+    return AnalysisDocumentRequest.model_validate(payload)
+
+
 def opportunity(
     company_fit: int = 80,
     urgency: int = 90,
@@ -149,6 +161,29 @@ class SequencedRunner:
         if isinstance(outcome, Exception):
             raise outcome
         return outcome
+
+
+def test_graph_normalizes_notice_with_application_template_as_proposal_request() -> None:
+    runner = SequencedRunner(
+        [
+            analysis(
+                Favorability.NOT_APPLICABLE,
+                used_tools=[
+                    "get_document_content",
+                    "get_attachment_texts",
+                    "get_company_profile",
+                ],
+            )
+        ]
+    )
+    workflow = DocumentAnalysisWorkflow(runner=runner, max_attempts=2)
+
+    result = asyncio.run(workflow.analyze(document_with_application_template()))
+
+    assert runner.call_count == 1
+    assert result.proposal.document_type == ProposalDocumentType.PROPOSAL_REQUEST
+    assert result.proposal.draft_status == ProposalDraftStatus.REVIEW_REQUIRED
+    assert "신청서식 또는 사업계획서 양식" in result.proposal.draft_reason
 
 
 def test_graph_retries_transient_failure_and_returns_new_document_result() -> None:

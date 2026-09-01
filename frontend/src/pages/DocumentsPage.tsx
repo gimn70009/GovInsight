@@ -602,7 +602,7 @@ function DocumentContent({ detail }: { detail: DocumentDetail }) {
   const changeImpact = analysis ? getChangeImpact(detail, analysis.favorableOrNot) : null
   const proposalSections = analysis?.proposal.sections ?? []
   const proposalDraft = analysis?.proposal
-  const showProposalTab = proposalDraft?.documentType === 'PROPOSAL_REQUEST'
+  const showProposalTab = Boolean(proposalDraft)
   const proposalSummary = proposalDraft?.draftSections.find((section) => isProposalSummary(section.title))
   const proposalWritingSections = proposalDraft?.draftSections.filter((section) => !isProposalSummary(section.title)) ?? []
   const proposalUnavailableReason = analysis && proposalDraft

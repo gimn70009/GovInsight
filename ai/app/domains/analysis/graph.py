@@ -186,6 +186,7 @@ class DocumentAnalysisWorkflow:
         if candidate is None:
             return {"error": "검증할 분석 결과가 없습니다."}
 
+        _normalize_proposal_document_type(state["document"], candidate)
         violations = _business_rule_violations(
             state["path"],
             state["required_tools"],
@@ -366,6 +367,40 @@ def _normalize_deterministic_business_fields(
             strict=True,
         ):
             section.title = title
+
+
+_PROPOSAL_TEMPLATE_PATTERN = re.compile(
+    r"(?:신청\s*서식|제출\s*(?:서류\s*)?서식|사업\s*계획서|연구개발\s*계획서|제안서\s*양식)",
+    re.IGNORECASE,
+)
+
+
+def _normalize_proposal_document_type(
+    document: AnalysisDocumentRequest,
+    candidate: AgentAnalysis,
+) -> None:
+    """Treat an explicitly attached application template as deterministic evidence."""
+    evidence_names = [
+        attachment.file_name
+        for attachment in document.attachments
+        if attachment.extracted_text and attachment.extracted_text.strip()
+    ]
+    has_template = any(_PROPOSAL_TEMPLATE_PATTERN.search(name) for name in evidence_names)
+    if not has_template:
+        return
+    proposal = candidate.draft.proposal
+    if proposal.document_type == ProposalDocumentType.PROPOSAL_REQUEST:
+        return
+    proposal.document_type = ProposalDocumentType.PROPOSAL_REQUEST
+    proposal.draft_status = ProposalDraftStatus.REVIEW_REQUIRED
+    proposal.draft_reason = (
+        "내용 분석이 완료된 신청서식 또는 사업계획서 양식이 확인되어 "
+        "사업 제안 검토 대상 공고로 분류했습니다."
+    )
+    proposal.source_attachment_names = []
+    proposal.template_sections = []
+    proposal.draft_sections = []
+    proposal.preparation = None
 
 
 def _normalize_expired_application(candidate: AgentAnalysis) -> None:

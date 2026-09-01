@@ -3,11 +3,13 @@ import json
 import logging
 import re
 import time
+from dataclasses import dataclass
 from typing import Protocol
 
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
+from app.core.schemas import CamelCaseModel
 from app.domains.analysis.config import AnalysisSettings
 from app.domains.analysis.context_tools import read_company_profile
 from app.domains.analysis.preparation_scoring import score_preparation
@@ -20,13 +22,16 @@ from app.domains.analysis.schemas.result import (
     OpportunityDimensionType,
     PreparationChecklistItem,
     PreparationStatus,
+    PreparationWorkType,
     ProposalDocumentType,
     ProposalDraftStatus,
     ProposalPreparation,
     RequirementLevel,
     RequirementSource,
     RequirementStage,
+    StrategyCapabilityMatch,
     StrategyDecision,
+    StrategyStopCriterion,
 )
 from app.domains.analysis.tools import AnalysisToolContext
 
@@ -111,15 +116,13 @@ DRAFT_PROMPT = """
   submissionDocuments에는 문서만 기록합니다.
 - 각 체크리스트의 detail은 현재 상태, nextAction은 담당자가 바로 수행할 행동으로 씁니다.
 - 공고의 최종 신청 마감일을 확인할 수 있으면 applicationDeadline에 YYYY-MM-DD로 기록합니다.
-- 각 체크리스트의 conditionScore는 현재 충족 정도를 0, 25, 50, 75, 100 중 하나로 기록합니다.
 - workType은 내부 확인 INTERNAL_CONFIRMATION, 외부 확인 EXTERNAL_CONFIRMATION,
   문서 발급 DOCUMENT_ISSUANCE, 인증 취득 CERTIFICATION, 서명·직인 SIGNATURE_SEAL,
   예산 검토 BUDGET_REVIEW, 제안서 작성 PROPOSAL_WRITING, 기술기획 TECHNICAL_PLANNING,
   국내 파트너 DOMESTIC_PARTNER, 해외 파트너 INTERNATIONAL_PARTNER,
   법무·계약 LEGAL_CONTRACT, 기타 OTHER 중 하나로 분류합니다.
-- estimatedBusinessDays는 모델이 판단하지 않으며 workType별 고정 정책을 코드가 적용합니다.
 - 컨소시엄처럼 회사 내부 증거가 없는 조건은 LIKELY로 추정하지 않고 NEEDS_CONFIRMATION으로 둡니다.
-- criticalGaps에도 workType을 기록하며 소요일과 목표일은 코드가 계산합니다.
+- criticalGaps에도 workType을 기록합니다. 소요일, 목표일, 점수와 산식 설명은 출력하지 않습니다.
 - nextAction은 `다음 행동`, 콜론, 가운데점 같은 접두어 없이
   주어와 서술어를 갖춘 완전한 한 문장으로 씁니다.
 - 괄호 안에 조건이나 설명을 덧붙이지 말고,
@@ -178,6 +181,54 @@ class ProposalDraftOutput(BaseModel):
     preparation: ProposalPreparation
 
 
+class ProposalChecklistModelOutput(CamelCaseModel):
+    """Semantic checklist fields the model decides; calculated fields stay in code."""
+
+    title: str = Field(min_length=2, max_length=150)
+    status: PreparationStatus
+    detail: str = Field(min_length=10, max_length=500)
+    next_action: str = Field(min_length=5, max_length=300)
+    requirement_level: RequirementLevel = RequirementLevel.RECOMMENDED
+    stage: RequirementStage = RequirementStage.APPLICATION
+    applies_to: str = Field(default="신청기관", min_length=2, max_length=200)
+    source: RequirementSource | None = None
+    company_evidence_level: CompanyEvidenceLevel = CompanyEvidenceLevel.UNKNOWN
+    work_type: PreparationWorkType = PreparationWorkType.OTHER
+
+
+class ProposalStrategyGapModelOutput(CamelCaseModel):
+    gap: str = Field(min_length=5, max_length=300)
+    next_action: str = Field(min_length=5, max_length=300)
+    owner: str = Field(min_length=2, max_length=100)
+    target_timing: str = Field(min_length=3, max_length=150)
+    work_type: PreparationWorkType = PreparationWorkType.OTHER
+
+
+class ProposalStrategyModelOutput(CamelCaseModel):
+    decision: StrategyDecision
+    decision_reason: str = Field(min_length=10, max_length=500)
+    recommended_project: str = Field(min_length=5, max_length=120)
+    recommended_participation: str = Field(min_length=10, max_length=500)
+    alternative_participation: str = Field(min_length=10, max_length=500)
+    capability_matches: list[StrategyCapabilityMatch] = Field(min_length=1, max_length=4)
+    critical_gaps: list[ProposalStrategyGapModelOutput] = Field(min_length=1, max_length=4)
+    stop_criteria: list[StrategyStopCriterion] = Field(min_length=1, max_length=4)
+
+
+class ProposalPreparationModelOutput(CamelCaseModel):
+    meeting_agenda: list[str] = Field(min_length=3, max_length=8)
+    eligibility_checklist: list[ProposalChecklistModelOutput] = Field(min_length=1, max_length=12)
+    submission_documents: list[ProposalChecklistModelOutput] = Field(min_length=1, max_length=15)
+    company_inputs: list[ProposalChecklistModelOutput] = Field(min_length=1, max_length=12)
+    application_deadline: str | None = Field(default=None, max_length=10)
+    strategy: ProposalStrategyModelOutput
+
+
+class ProposalModelOutput(BaseModel):
+    source_attachment_names: list[str] = Field(min_length=1, max_length=10)
+    preparation: ProposalPreparationModelOutput
+
+
 class BaseAnalysisWorkflow(Protocol):
     async def analyze(self, document: AnalysisDocumentRequest) -> DocumentAnalysisResult: ...
 
@@ -200,7 +251,7 @@ class LangChainProposalGenerationRunner:
             reasoning_effort="minimal",
             max_tokens=12_000,
         )
-        self._draft_model = model.with_structured_output(ProposalDraftOutput)
+        self._draft_model = model.with_structured_output(ProposalModelOutput, include_raw=True)
         self._settings = settings
 
     async def generate(
@@ -231,19 +282,62 @@ class LangChainProposalGenerationRunner:
             len(source_context),
         )
         async with asyncio.timeout(self._settings.proposal_timeout_seconds):
-            draft = await self._draft_model.ainvoke(draft_input)
+            response = await self._draft_model.ainvoke(draft_input)
+        draft, raw_response = _parse_model_response(response)
+        usage = _token_usage(raw_response)
         logger.info(
-            "사업 제안 모델 응답 완료. detection_id=%s elapsed_seconds=%.2f",
+            "사업 제안 모델 응답 완료. detection_id=%s elapsed_seconds=%.2f "
+            "prompt_tokens=%s completion_tokens=%s total_tokens=%s",
             document.detection_id,
             time.perf_counter() - started_at,
+            usage.get("input_tokens"),
+            usage.get("output_tokens"),
+            usage.get("total_tokens"),
         )
-        if not isinstance(draft, ProposalDraftOutput):
-            draft = ProposalDraftOutput.model_validate(draft)
         _retain_verified_source_references(draft, document)
         _normalize_preparation_structure(draft)
         _apply_strategy_eligibility_guardrails(draft)
         score_preparation(draft.preparation)
         return draft
+
+
+def _parse_model_response(response: object) -> tuple[ProposalDraftOutput, object | None]:
+    raw_response = None
+    parsed: object = response
+    if isinstance(response, dict) and "parsed" in response:
+        parsing_error = response.get("parsing_error")
+        if parsing_error is not None:
+            raise parsing_error
+        parsed = response.get("parsed")
+        raw_response = response.get("raw")
+    if isinstance(parsed, ProposalDraftOutput):
+        return parsed, raw_response
+    compact = (
+        parsed
+        if isinstance(parsed, ProposalModelOutput)
+        else ProposalModelOutput.model_validate(parsed)
+    )
+    return ProposalDraftOutput.model_validate(compact.model_dump()), raw_response
+
+
+def _token_usage(raw_response: object | None) -> dict[str, int | None]:
+    empty = {"input_tokens": None, "output_tokens": None, "total_tokens": None}
+    if raw_response is None:
+        return empty
+    usage = getattr(raw_response, "usage_metadata", None)
+    if isinstance(usage, dict):
+        return {
+            "input_tokens": usage.get("input_tokens"),
+            "output_tokens": usage.get("output_tokens"),
+            "total_tokens": usage.get("total_tokens"),
+        }
+    metadata = getattr(raw_response, "response_metadata", None)
+    token_usage = metadata.get("token_usage", {}) if isinstance(metadata, dict) else {}
+    return {
+        "input_tokens": token_usage.get("prompt_tokens"),
+        "output_tokens": token_usage.get("completion_tokens"),
+        "total_tokens": token_usage.get("total_tokens"),
+    }
 
 
 def _compact_analysis_context(analysis: DocumentAnalysisResult) -> str:
@@ -277,6 +371,23 @@ class TwoStageAnalysisWorkflow:
         result = await self._base_workflow.analyze(document)
         apply_proposal_generation_reason(result, document)
         if not _requires_proposal_generation(result, document):
+            company_fit = next(
+                dimension.score
+                for dimension in result.opportunity.dimensions
+                if dimension.type == OpportunityDimensionType.COMPANY_FIT
+            )
+            logger.info(
+                "사업 제안 생성 제외. detection_id=%s document_type=%s "
+                "company_fit=%s eligibility=%s has_attachment_text=%s",
+                document.detection_id,
+                result.proposal.document_type,
+                company_fit,
+                result.eligibility,
+                any(
+                    attachment.extracted_text and attachment.extracted_text.strip()
+                    for attachment in document.attachments
+                ),
+            )
             return result
 
         try:
@@ -404,6 +515,7 @@ def _retain_verified_source_references(
         document.content_text or "",
         attachment_texts,
     )
+    _supplement_missing_eligibility_requirements(draft, document)
     _supplement_missing_submission_files(draft, document)
     if not draft.preparation.eligibility_checklist:
         raise ValueError("원문에서 확인되는 지원 조건이 없습니다.")
@@ -440,6 +552,279 @@ _QUALIFICATION_STATE_TERMS = (
     "중복",
 )
 _SCHEDULE_ONLY_TERMS = ("접수 마감", "제출 마감", "신청 기한", "접수 기간")
+
+
+@dataclass(frozen=True)
+class _RequirementCandidate:
+    kind: str
+    excerpt: str
+    origin: EvidenceOrigin
+    attachment_name: str | None
+    location: str
+
+
+def _supplement_missing_eligibility_requirements(
+    draft: ProposalDraftOutput,
+    document: AnalysisDocumentRequest,
+) -> None:
+    items = draft.preparation.eligibility_checklist
+    candidates = sorted(
+        _extract_high_confidence_requirements(document),
+        key=lambda candidate: {
+            "CONSORTIUM": 0,
+            "SIMULTANEOUS_APPLICATION": 1,
+            "CERTIFICATION": 2,
+            "OPERATING_PERIOD": 3,
+        }[candidate.kind],
+    )
+    covered_count = 0
+    supplemented_count = 0
+    unresolved_count = 0
+    for candidate in candidates:
+        if _requirement_is_covered(candidate, items):
+            covered_count += 1
+            continue
+        if len(items) >= 12:
+            unresolved_count += 1
+            continue
+        items.append(_requirement_checklist_item(candidate))
+        supplemented_count += 1
+    logger.info(
+        "지원 조건 원문 대조 완료. detection_id=%s candidate_count=%s "
+        "covered_count=%s supplemented_count=%s unresolved_count=%s",
+        document.detection_id,
+        len(candidates),
+        covered_count,
+        supplemented_count,
+        unresolved_count,
+    )
+
+
+def _extract_high_confidence_requirements(
+    document: AnalysisDocumentRequest,
+) -> list[_RequirementCandidate]:
+    sources = [
+        (EvidenceOrigin.NOTICE_BODY, None, "게시글 본문", document.content_text or ""),
+        *(
+            (
+                EvidenceOrigin.ATTACHMENT,
+                attachment.file_name,
+                attachment.file_name,
+                attachment.extracted_text or "",
+            )
+            for attachment in document.attachments
+            if attachment.extracted_text and attachment.extracted_text.strip()
+        ),
+    ]
+    raw_candidates: list[_RequirementCandidate] = []
+    for origin, attachment_name, location, text in sources:
+        for clause in _requirement_clauses(text):
+            kind = _requirement_kind(clause)
+            if kind is None:
+                continue
+            raw_candidates.append(
+                _RequirementCandidate(
+                    kind=kind,
+                    excerpt=clause,
+                    origin=origin,
+                    attachment_name=attachment_name,
+                    location=location,
+                )
+            )
+    candidates = _deduplicate_requirement_candidates(raw_candidates)
+    logger.info(
+        "지원 조건 후보 중복 제거 완료. detection_id=%s raw_candidate_count=%s "
+        "deduplicated_candidate_count=%s",
+        document.detection_id,
+        len(raw_candidates),
+        len(candidates),
+    )
+    return candidates
+
+
+def _deduplicate_requirement_candidates(
+    candidates: list[_RequirementCandidate],
+) -> list[_RequirementCandidate]:
+    deduplicated: list[_RequirementCandidate] = []
+    for candidate in candidates:
+        if any(_same_requirement(candidate, existing) for existing in deduplicated):
+            continue
+        deduplicated.append(candidate)
+    return deduplicated
+
+
+def _same_requirement(
+    left: _RequirementCandidate,
+    right: _RequirementCandidate,
+) -> bool:
+    if left.kind != right.kind:
+        return False
+    left_normalized = _normalize_evidence(left.excerpt)
+    right_normalized = _normalize_evidence(right.excerpt)
+    if left_normalized == right_normalized:
+        return True
+    if sorted(re.findall(r"\d+", left.excerpt)) != sorted(
+        re.findall(r"\d+", right.excerpt)
+    ):
+        return False
+    left_shingles = _character_shingles(left_normalized)
+    right_shingles = _character_shingles(right_normalized)
+    return _jaccard(left_shingles, right_shingles) >= 0.72
+
+
+def _character_shingles(value: str, size: int = 3) -> set[str]:
+    if len(value) <= size:
+        return {value} if value else set()
+    return {value[index : index + size] for index in range(len(value) - size + 1)}
+
+
+def _jaccard(left: set[str], right: set[str]) -> float:
+    if not left or not right:
+        return 0.0
+    return len(left & right) / len(left | right)
+
+
+def _requirement_clauses(text: str) -> list[str]:
+    clauses: list[str] = []
+    for raw_clause in re.split(r"(?<=[.!?。])\s+|[\r\n]+", text):
+        clause = re.sub(r"^[\s○●■□▪·\-*]+", "", raw_clause).strip()
+        clause = re.sub(r"\s+", " ", clause)
+        if 15 <= len(clause) <= 300:
+            clauses.append(clause)
+    return clauses
+
+
+def _requirement_kind(clause: str) -> str | None:
+    normalized = re.sub(r"\s+", "", clause)
+    if any(
+        term in normalized
+        for term in ("선정후", "협약체결후", "평가결과확정", "사업종료후")
+    ):
+        return None
+    has_number = bool(re.search(r"\d+", normalized))
+    if (
+        has_number
+        and ("컨소시엄" in normalized or "기관" in normalized)
+        and any(term in normalized for term in ("구성", "참여"))
+        and any(term in normalized for term in ("최소", "이상", "형태", "개기관"))
+    ):
+        return "CONSORTIUM"
+    if (
+        "동시" in normalized
+        and any(term in normalized for term in ("신청", "제출", "접수"))
+        and any(term in normalized for term in ("양국", "국내", "해외", "상대국", "정부"))
+    ):
+        return "SIMULTANEOUS_APPLICATION"
+    if (
+        any(term in normalized for term in ("인정서", "인증서", "허가증"))
+        and any(term in normalized for term in ("보유", "필수", "하여야", "해야"))
+    ):
+        return "CERTIFICATION"
+    if (
+        has_number
+        and any(term in normalized for term in ("창업", "설립", "사업개시"))
+        and "년" in normalized
+        and any(term in normalized for term in ("이상", "경과", "이내", "미만"))
+    ):
+        return "OPERATING_PERIOD"
+    return None
+
+
+def _requirement_is_covered(
+    candidate: _RequirementCandidate,
+    items: list[PreparationChecklistItem],
+) -> bool:
+    candidate_evidence = _normalize_evidence(candidate.excerpt)
+    candidate_numbers = set(re.findall(r"\d+", candidate.excerpt))
+    for item in items:
+        source_excerpt = item.source.excerpt if item.source is not None else ""
+        source_evidence = _normalize_evidence(source_excerpt)
+        if source_evidence and (
+            candidate_evidence in source_evidence or source_evidence in candidate_evidence
+        ):
+            return True
+        visible = " ".join((item.title, item.detail, source_excerpt))
+        visible_tokens = _requirement_tokens(visible)
+        candidate_tokens = _requirement_tokens(candidate.excerpt)
+        overlap = len(candidate_tokens & visible_tokens) / max(1, len(candidate_tokens))
+        if overlap >= 0.65 and candidate_numbers <= set(re.findall(r"\d+", visible)):
+            return True
+    return False
+
+
+def _requirement_tokens(value: str) -> set[str]:
+    return {
+        token.casefold()
+        for token in re.findall(r"[가-힣A-Za-z0-9]+", value)
+        if len(token) >= 2 or token.isdigit()
+    }
+
+
+def _requirement_checklist_item(
+    candidate: _RequirementCandidate,
+) -> PreparationChecklistItem:
+    title, action, work_type = {
+        "CONSORTIUM": (
+            "공고에서 요구하는 컨소시엄 구성 여부",
+            "사업담당자가 요구된 기관 수와 유형을 기준으로 현재 컨소시엄 구성을 확인합니다.",
+            PreparationWorkType.INTERNATIONAL_PARTNER,
+        ),
+        "SIMULTANEOUS_APPLICATION": (
+            "복수 기관 또는 국가의 동시 신청 여부",
+            "사업담당자가 각 신청기관의 제출 일정과 최종 접수 완료 여부를 함께 확인합니다.",
+            PreparationWorkType.EXTERNAL_CONFIRMATION,
+        ),
+        "CERTIFICATION": (
+            "공고에서 요구하는 인정서 또는 인증서 보유 여부",
+            "담당 부서가 요구된 인정서 또는 인증서의 보유 여부와 유효기간을 확인합니다.",
+            PreparationWorkType.INTERNAL_CONFIRMATION,
+        ),
+        "OPERATING_PERIOD": (
+            "공고에서 요구하는 설립 또는 사업 운영 기간 충족 여부",
+            "경영지원팀이 사업자등록 정보로 공고에서 요구하는 운영 기간 충족 여부를 확인합니다.",
+            PreparationWorkType.INTERNAL_CONFIRMATION,
+        ),
+    }[candidate.kind]
+    if candidate.kind == "CONSORTIUM" and not _is_international_requirement(
+        candidate.excerpt
+    ):
+        work_type = PreparationWorkType.DOMESTIC_PARTNER
+    return PreparationChecklistItem(
+        title=title,
+        status=PreparationStatus.NEEDS_CONFIRMATION,
+        detail=(
+            f"공고 원문에 '{candidate.excerpt}' 조건이 있으나 현재 충족 여부는 "
+            "확인되지 않았습니다."
+        ),
+        next_action=action,
+        requirement_level=RequirementLevel.MANDATORY,
+        stage=RequirementStage.APPLICATION,
+        applies_to="신청기관 또는 컨소시엄",
+        source=RequirementSource(
+            origin=candidate.origin,
+            attachment_name=candidate.attachment_name,
+            section_title="신청자격 및 지원조건 자동 검수",
+            location=candidate.location,
+            excerpt=candidate.excerpt,
+        ),
+        company_evidence_level=CompanyEvidenceLevel.UNKNOWN,
+        work_type=work_type,
+    )
+
+
+def _is_international_requirement(excerpt: str) -> bool:
+    if any(term in excerpt for term in ("해외", "국외", "외국", "상대국", "양국")):
+        return True
+    labels = {
+        label.casefold()
+        for pattern in (
+            r"(?:^|[\s+,(])([가-힣A-Za-z]{2,12})(?=\s*(?:기관|기업|대학|연구기관))",
+            r"(?:^|[\s+,(])([가-힣A-Za-z]{2,12})\s*\d+\s*개\s*(?=기관|기업)",
+        )
+        for label in re.findall(pattern, excerpt)
+        if label not in {"국내", "주관", "공동", "참여", "연구개발"}
+    }
+    return len(labels) >= 2
 
 
 def _normalize_preparation_structure(draft: ProposalDraftOutput) -> None:
@@ -667,6 +1052,9 @@ def _build_proposal_source_context(
     notice_limit = min(PROPOSAL_NOTICE_SHARE, max_chars // 2)
     notice_excerpt = _relevant_excerpt(document.content_text or "", notice_limit)
     remaining = max(0, max_chars - len(notice_excerpt))
+    retained_blocks = _context_block_signatures(notice_excerpt)
+    raw_attachment_chars = 0
+    retained_attachment_chars = 0
     attachments = sorted(
         (
             attachment
@@ -684,8 +1072,21 @@ def _build_proposal_source_context(
         excerpt = _relevant_excerpt(attachment.extracted_text or "", attachment_limit)
         if not excerpt:
             continue
+        raw_attachment_chars += len(excerpt)
+        excerpt = _deduplicate_context_excerpt(excerpt, retained_blocks)
+        if not excerpt:
+            continue
+        retained_attachment_chars += len(excerpt)
         attachment_payload.append({"fileName": attachment.file_name, "excerpt": excerpt})
         remaining -= len(excerpt)
+    logger.info(
+        "사업 제안 입력 중복 제거 완료. detection_id=%s raw_attachment_chars=%s "
+        "retained_attachment_chars=%s removed_chars=%s",
+        document.detection_id,
+        raw_attachment_chars,
+        retained_attachment_chars,
+        raw_attachment_chars - retained_attachment_chars,
+    )
     return json.dumps(
         {
             "noticeExcerpt": notice_excerpt,
@@ -696,6 +1097,73 @@ def _build_proposal_source_context(
         },
         ensure_ascii=False,
     )
+
+
+@dataclass(frozen=True)
+class _ContextBlockSignature:
+    normalized: str
+    shingles: set[str]
+    numbers: tuple[str, ...]
+
+
+def _deduplicate_context_excerpt(
+    excerpt: str,
+    retained: list[_ContextBlockSignature],
+) -> str:
+    unique_blocks: list[str] = []
+    for block in _context_blocks(excerpt):
+        signature = _context_block_signature(block)
+        if signature is None:
+            unique_blocks.append(block)
+            continue
+        if any(_same_context_block(signature, existing) for existing in retained):
+            continue
+        retained.append(signature)
+        unique_blocks.append(block)
+    return "\n".join(unique_blocks)
+
+
+def _context_block_signatures(text: str) -> list[_ContextBlockSignature]:
+    return [
+        signature
+        for block in _context_blocks(text)
+        if (signature := _context_block_signature(block)) is not None
+    ]
+
+
+def _context_blocks(text: str) -> list[str]:
+    blocks = [
+        re.sub(r"\s+", " ", block).strip()
+        for block in re.split(r"(?:\r?\n){1,}|(?<=[.!?。])\s+", text)
+    ]
+    return [block for block in blocks if block]
+
+
+def _context_block_signature(block: str) -> _ContextBlockSignature | None:
+    normalized = _normalize_evidence(block)
+    if len(normalized) < 12:
+        return None
+    return _ContextBlockSignature(
+        normalized=normalized,
+        shingles=_character_shingles(normalized, size=5),
+        numbers=tuple(sorted(re.findall(r"\d+", block))),
+    )
+
+
+def _same_context_block(
+    left: _ContextBlockSignature,
+    right: _ContextBlockSignature,
+) -> bool:
+    if left.normalized == right.normalized:
+        return True
+    if left.numbers != right.numbers:
+        return False
+    length_ratio = min(len(left.normalized), len(right.normalized)) / max(
+        len(left.normalized), len(right.normalized)
+    )
+    if length_ratio < 0.8:
+        return False
+    return _jaccard(left.shingles, right.shingles) >= 0.88
 
 
 def _attachment_priority(file_name: str) -> tuple[int, str]:

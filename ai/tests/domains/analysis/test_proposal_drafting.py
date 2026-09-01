@@ -1,12 +1,16 @@
 import asyncio
+import json
 
 from app.domains.analysis.proposal_drafting import (
     CORE_PROPOSAL_SECTION_TITLES,
     ProposalDraftOutput,
+    ProposalModelOutput,
     TwoStageAnalysisWorkflow,
     _apply_strategy_eligibility_guardrails,
     _build_proposal_source_context,
+    _is_international_requirement,
     _normalize_preparation_structure,
+    _parse_model_response,
     _retain_verified_source_references,
     _safe_error,
 )
@@ -365,6 +369,23 @@ def test_builds_bounded_proposal_context_with_relevant_evidence() -> None:
     assert "붙임2. 제출서류 양식.zip" in context
 
 
+def test_removes_repeated_notice_blocks_from_attachment_model_context() -> None:
+    request = document()
+    repeated = "신청기관은 기업부설연구소 인정서를 보유하여야 합니다."
+    request.content_text = repeated
+    request.attachments[0].extracted_text = (
+        f"{repeated}\n사업계획서와 참여확인서를 제출해야 합니다."
+    )
+
+    context = json.loads(_build_proposal_source_context(request, 8_000))
+
+    assert repeated in context["noticeExcerpt"]
+    assert repeated not in context["attachmentExcerpts"][0]["excerpt"]
+    assert "사업계획서와 참여확인서를 제출해야 합니다." in (
+        context["attachmentExcerpts"][0]["excerpt"]
+    )
+
+
 def test_sanitizes_model_usage_details_from_generation_error() -> None:
     error = RuntimeError(
         "Could not parse response content as the length limit was reached "
@@ -372,6 +393,56 @@ def test_sanitizes_model_usage_details_from_generation_error() -> None:
     )
 
     assert _safe_error(error) == "모델 출력 한도에 도달했습니다."
+
+
+def test_model_output_schema_excludes_deterministic_calculation_fields() -> None:
+    schema = str(ProposalModelOutput.model_json_schema())
+
+    assert "readinessScore" not in schema
+    assert "conditionScore" not in schema
+    assert "evidenceScore" not in schema
+    assert "scheduleScore" not in schema
+    assert "estimatedBusinessDays" not in schema
+    assert "targetDate" not in schema
+    assert "scheduleBasis" not in schema
+    assert "scoreBasis" not in schema
+
+
+def test_compact_model_output_restores_api_defaults() -> None:
+    full = asyncio.run(ProposalRunner().generate(document(), result()))
+    payload = full.model_dump()
+    preparation = payload["preparation"]
+    for section_name in (
+        "eligibility_checklist",
+        "submission_documents",
+        "company_inputs",
+    ):
+        for item in preparation[section_name]:
+            for field_name in (
+                "readiness_score",
+                "condition_score",
+                "evidence_score",
+                "schedule_score",
+                "estimated_business_days",
+                "score_basis",
+            ):
+                item.pop(field_name)
+    for gap in preparation["strategy"]["critical_gaps"]:
+        for field_name in (
+            "estimated_business_days",
+            "target_date",
+            "schedule_basis",
+        ):
+            gap.pop(field_name)
+
+    compact = ProposalModelOutput.model_validate(payload)
+    restored, raw = _parse_model_response(
+        {"parsed": compact, "raw": None, "parsing_error": None}
+    )
+
+    assert raw is None
+    assert restored.preparation.eligibility_checklist[0].readiness_score == 0
+    assert restored.preparation.strategy.critical_gaps[0].target_date is None
 
 
 def test_normalizes_internal_terms_and_strategy_tone() -> None:
@@ -450,6 +521,96 @@ def test_supplements_submission_forms_omitted_by_model() -> None:
     )
     assert supplemented.status == PreparationStatus.NEEDS_CONFIRMATION
     assert supplemented.source.location == "붙임2. 제출서류 양식.zip"
+
+
+def test_supplements_high_confidence_eligibility_requirements_from_source() -> None:
+    proposal = asyncio.run(ProposalRunner().generate(document(), result()))
+    request = document()
+    request.content_text = (
+        "국내 2개 기관과 독일 2개 기관이 참여하여 최소 4개 기관으로 "
+        "컨소시엄을 구성하여야 합니다. "
+        "국내기관과 해외기관은 양국 정부에 동시에 과제를 신청해야 합니다. "
+        "국내기업은 창업 1년 이상 경과하여야 합니다. "
+        "기업부설연구소 인정서를 보유하여야 합니다."
+    )
+
+    _retain_verified_source_references(proposal, request)
+
+    titles = [item.title for item in proposal.preparation.eligibility_checklist]
+    assert "공고에서 요구하는 컨소시엄 구성 여부" in titles
+    assert "복수 기관 또는 국가의 동시 신청 여부" in titles
+    assert "공고에서 요구하는 설립 또는 사업 운영 기간 충족 여부" in titles
+    assert "공고에서 요구하는 인정서 또는 인증서 보유 여부" in titles
+    consortium = next(
+        item
+        for item in proposal.preparation.eligibility_checklist
+        if item.title == "공고에서 요구하는 컨소시엄 구성 여부"
+    )
+    assert "2개 기관" in consortium.source.excerpt
+    assert "최소 4개 기관" in consortium.detail
+    assert consortium.status == PreparationStatus.NEEDS_CONFIRMATION
+
+
+def test_does_not_duplicate_requirement_already_linked_to_source_excerpt() -> None:
+    proposal = asyncio.run(ProposalRunner().generate(document(), result()))
+    request = document()
+    requirement = "국내 2개 기관과 독일 2개 기관으로 최소 4개 기관을 구성하여야 합니다."
+    request.content_text = requirement
+    proposal.preparation.eligibility_checklist.append(
+        proposal.preparation.eligibility_checklist[0].model_copy(
+            update={
+                "title": "한독 컨소시엄 구성 요건",
+                "source": RequirementSource(
+                    origin=EvidenceOrigin.NOTICE_BODY,
+                    section_title="신청자격",
+                    excerpt=requirement,
+                ),
+            }
+        )
+    )
+
+    _retain_verified_source_references(proposal, request)
+
+    matching_items = [
+        item
+        for item in proposal.preparation.eligibility_checklist
+        if "컨소시엄" in item.title
+    ]
+    assert len(matching_items) == 1
+
+
+def test_detects_international_requirement_without_specific_country_rule() -> None:
+    assert _is_international_requirement(
+        "한국 2개 기관과 프랑스 2개 기관으로 컨소시엄을 구성합니다."
+    )
+    assert _is_international_requirement(
+        "일본기관과 캐나다기관이 공동으로 과제에 참여합니다."
+    )
+    assert not _is_international_requirement(
+        "국내 3개 기관으로 컨소시엄을 구성합니다."
+    )
+
+
+def test_merges_near_duplicate_requirements_across_notice_and_attachment() -> None:
+    proposal = asyncio.run(ProposalRunner().generate(document(), result()))
+    request = document()
+    request.content_text = (
+        "한국 2개 기관과 프랑스 2개 기관이 참여하여 최소 4개 기관으로 "
+        "컨소시엄을 구성하여야 합니다."
+    )
+    request.attachments[0].extracted_text = (
+        "한국 2개 기관 및 프랑스 2개 기관이 참여하여 최소 4개 기관의 "
+        "컨소시엄을 구성하여야 합니다. 사업계획서를 제출해야 합니다."
+    )
+
+    _retain_verified_source_references(proposal, request)
+
+    consortium_items = [
+        item
+        for item in proposal.preparation.eligibility_checklist
+        if item.title == "공고에서 요구하는 컨소시엄 구성 여부"
+    ]
+    assert len(consortium_items) == 1
 
 
 def test_normalizes_checklist_roles_and_removes_duplicates() -> None:
