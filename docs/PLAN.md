@@ -112,6 +112,7 @@
 - [x] Spring Boot 분석 결과 수신·검증·중복 방지·저장 API 구현
 - [x] 구조화된 결과 검증과 대체 객체 기반 테스트 작성
 - [x] Windows 애플리케이션 제어 정책을 위한 순수 Python UUIDv7 호환 처리
+- [x] Windows 애플리케이션 제어 정책에 차단되는 xxhash의 순수 Python 호환 처리
 
 ## 8단계: 조회와 보고서
 
