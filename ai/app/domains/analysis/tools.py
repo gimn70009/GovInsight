@@ -1,5 +1,6 @@
 import json
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from difflib import unified_diff
 
 from langchain.tools import ToolRuntime, tool
@@ -17,6 +18,11 @@ class AnalysisToolContext:
     document: AnalysisDocumentRequest
     max_text_chars: int
     company_profile: CompanyProfile = BISTELLIGENCE_PROFILE
+    result_cache: dict[str, str] = field(
+        default_factory=dict,
+        compare=False,
+        repr=False,
+    )
 
 
 def read_document_content(context: AnalysisToolContext) -> str:
@@ -86,30 +92,63 @@ def compare_with_previous_version(context: AnalysisToolContext) -> str:
 @tool
 def get_document_content(runtime: ToolRuntime[AnalysisToolContext]) -> str:
     """현재 게시글의 제목, 본문, 게시일, 기관, 게시판과 원문 URL을 조회한다."""
-    return read_document_content(runtime.context)
+    return _cached_result(
+        runtime.context,
+        "get_document_content",
+        lambda: read_document_content(runtime.context),
+    )
 
 
 @tool
 def get_attachment_texts(runtime: ToolRuntime[AnalysisToolContext]) -> str:
     """현재 문서 버전에 속한 첨부파일의 이름과 파싱 완료된 추출 텍스트를 조회한다."""
-    return read_attachment_texts(runtime.context)
+    return _cached_result(
+        runtime.context,
+        "get_attachment_texts",
+        lambda: read_attachment_texts(runtime.context),
+    )
 
 
 @tool
 def compare_previous_version(runtime: ToolRuntime[AnalysisToolContext]) -> str:
     """수정 문서의 바로 이전 버전과 현재 버전의 제목·본문 차이를 조회한다."""
-    return compare_with_previous_version(runtime.context)
+    return _cached_result(
+        runtime.context,
+        "compare_previous_version",
+        lambda: compare_with_previous_version(runtime.context),
+    )
 
 @tool
 def get_company_profile(runtime: ToolRuntime[AnalysisToolContext]) -> str:
     """회사 사업 분야, 서비스, 기술, 대상 산업과 확인되지 않은 정보를 조회한다."""
-    return read_company_profile(runtime.context)
+    return _cached_result(
+        runtime.context,
+        "get_company_profile",
+        lambda: read_company_profile(runtime.context),
+    )
 
 
 @tool
 def get_previous_analysis(runtime: ToolRuntime[AnalysisToolContext]) -> str:
     """수정 문서의 직전 버전에 저장된 AI 분석과 제안 방향을 조회한다."""
-    return read_previous_analysis(runtime.context)
+    return _cached_result(
+        runtime.context,
+        "get_previous_analysis",
+        lambda: read_previous_analysis(runtime.context),
+    )
+
+
+def _cached_result(
+    context: AnalysisToolContext,
+    key: str,
+    producer: Callable[[], str],
+) -> str:
+    cached = context.result_cache.get(key)
+    if cached is not None:
+        return cached
+    result = producer()
+    context.result_cache[key] = result
+    return result
 
 
 

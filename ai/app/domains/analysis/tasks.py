@@ -11,6 +11,7 @@ from app.domains.analysis.proposal_drafting import (
     LangChainProposalGenerationRunner,
     TwoStageAnalysisWorkflow,
     _requires_proposal_generation,
+    apply_proposal_generation_reason,
 )
 from app.domains.analysis.schemas.delivery import (
     AnalysisFailureResult,
@@ -66,6 +67,11 @@ async def run_analysis_job(job_id: UUID, request: AnalysisJobRequest) -> None:
         request.documents,
         settings.concurrency,
     )
+    documents_by_version = {document.version_id: document for document in request.documents}
+    for result in results:
+        document = documents_by_version.get(result.version_id)
+        if document is not None:
+            apply_proposal_generation_reason(result, document)
     _mark_generating_proposals(results, request.documents)
     for result in results:
         logger.info(
@@ -187,7 +193,7 @@ async def _generate_and_deliver_proposals(
         )
         async with semaphore:
             completed = await workflow.analyze(document)
-        if completed.proposal.preparation_schema_version != 6:
+        if completed.proposal.preparation_schema_version != 10:
             return None
         return ProposalUpdateResult(
             detection_id=document.detection_id,

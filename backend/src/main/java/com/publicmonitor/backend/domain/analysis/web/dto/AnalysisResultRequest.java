@@ -80,6 +80,7 @@ public record AnalysisResultRequest(
             @NotNull @Size(min = 1, max = 12) List<@Valid PreparationItem> eligibilityChecklist,
             @NotNull @Size(min = 1, max = 15) List<@Valid PreparationItem> submissionDocuments,
             @NotNull @Size(min = 1, max = 12) List<@Valid PreparationItem> companyInputs,
+            @Size(max = 10) String applicationDeadline,
             @NotNull @Valid StrategyOnePage strategy
     ) {
     }
@@ -93,7 +94,14 @@ public record AnalysisResultRequest(
             @Size(max = 40) String stage,
             @Size(max = 200) String appliesTo,
             @Valid RequirementSource source,
-            @Size(max = 40) String companyEvidenceLevel
+            @Size(max = 40) String companyEvidenceLevel,
+            @jakarta.validation.constraints.Min(0) @jakarta.validation.constraints.Max(100) Integer readinessScore,
+            @jakarta.validation.constraints.Min(0) @jakarta.validation.constraints.Max(100) Integer conditionScore,
+            @jakarta.validation.constraints.Min(0) @jakarta.validation.constraints.Max(100) Integer evidenceScore,
+            @jakarta.validation.constraints.Min(0) @jakarta.validation.constraints.Max(100) Integer scheduleScore,
+            @Size(max = 40) String workType,
+            @jakarta.validation.constraints.Min(1) @jakarta.validation.constraints.Max(120) Integer estimatedBusinessDays,
+            @Size(max = 4) List<@NotBlank @Size(max = 300) String> scoreBasis
     ) {
     }
 
@@ -128,7 +136,11 @@ public record AnalysisResultRequest(
             @NotBlank @Size(max = 300) String gap,
             @NotBlank @Size(max = 300) String nextAction,
             @NotBlank @Size(max = 100) String owner,
-            @NotBlank @Size(max = 150) String targetTiming
+            @NotBlank @Size(max = 150) String targetTiming,
+            @Size(max = 40) String workType,
+            @jakarta.validation.constraints.Min(1) @jakarta.validation.constraints.Max(120) Integer estimatedBusinessDays,
+            @Size(max = 10) String targetDate,
+            @Size(max = 300) String scheduleBasis
     ) {
     }
 

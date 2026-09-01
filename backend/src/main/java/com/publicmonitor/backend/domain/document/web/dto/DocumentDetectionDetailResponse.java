@@ -75,6 +75,7 @@ public record DocumentDetectionDetailResponse(
             List<PreparationItem> eligibilityChecklist,
             List<PreparationItem> submissionDocuments,
             List<PreparationItem> companyInputs,
+            String applicationDeadline,
             StrategyOnePage strategy
     ) {
     }
@@ -88,7 +89,14 @@ public record DocumentDetectionDetailResponse(
             String stage,
             String appliesTo,
             RequirementSource source,
-            String companyEvidenceLevel
+            String companyEvidenceLevel,
+            Integer readinessScore,
+            Integer conditionScore,
+            Integer evidenceScore,
+            Integer scheduleScore,
+            String workType,
+            Integer estimatedBusinessDays,
+            List<String> scoreBasis
     ) {
     }
 
@@ -125,7 +133,16 @@ public record DocumentDetectionDetailResponse(
     public record StrategyCapabilityMatch(String confirmedFact, String strategicInterpretation) {
     }
 
-    public record StrategyGap(String gap, String nextAction, String owner, String targetTiming) {
+    public record StrategyGap(
+            String gap,
+            String nextAction,
+            String owner,
+            String targetTiming,
+            String workType,
+            Integer estimatedBusinessDays,
+            String targetDate,
+            String scheduleBasis
+    ) {
     }
 
     public record StrategyStopCriterion(String type, String condition, String rationale) {

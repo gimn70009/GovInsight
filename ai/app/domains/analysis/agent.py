@@ -125,6 +125,7 @@ class LangChainAnalysisRunner:
             api_key=settings.api_key,
             timeout=settings.timeout_seconds,
             max_retries=0,
+            reasoning_effort="minimal",
         )
         self._agent = create_agent(
             model=model,
@@ -133,15 +134,19 @@ class LangChainAnalysisRunner:
             context_schema=AnalysisToolContext,
             response_format=ToolStrategy(BaseAnalysisDraft),
         )
+        self._context_cache: dict[int, AnalysisToolContext] = {}
 
     async def analyze(
         self,
         document: AnalysisDocumentRequest,
         feedback: str | None = None,
     ) -> AgentAnalysis:
-        context = AnalysisToolContext(
-            document=document,
-            max_text_chars=self._settings.max_text_chars,
+        context = self._context_cache.setdefault(
+            document.version_id,
+            AnalysisToolContext(
+                document=document,
+                max_text_chars=self._settings.max_text_chars,
+            ),
         )
         prompt_parts = [
             "다음 문서를 변경 유형에 맞는 전략으로 분석하세요.",

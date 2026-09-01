@@ -3,6 +3,7 @@ import json
 from app.domains.analysis.schemas.request import AnalysisDocumentRequest
 from app.domains.analysis.tools import (
     AnalysisToolContext,
+    _cached_result,
     compare_with_previous_version,
     read_attachment_texts,
     read_document_content,
@@ -58,3 +59,20 @@ def test_compare_previous_version() -> None:
     assert comparison["titleChanged"] is True
     assert "9월 20일" in comparison["contentDiff"]
     assert "9월 30일" in comparison["contentDiff"]
+
+
+def test_reuses_cached_tool_result_within_document_context() -> None:
+    context = AnalysisToolContext(document=document(), max_text_chars=10_000)
+    calls = 0
+
+    def produce() -> str:
+        nonlocal calls
+        calls += 1
+        return "cached evidence"
+
+    first = _cached_result(context, "test_tool", produce)
+    second = _cached_result(context, "test_tool", produce)
+
+    assert first == "cached evidence"
+    assert second == first
+    assert calls == 1

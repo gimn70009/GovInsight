@@ -125,6 +125,7 @@ export interface DocumentAnalysis {
       eligibilityChecklist: ProposalPreparationItem[]
       submissionDocuments: ProposalPreparationItem[]
       companyInputs: ProposalPreparationItem[]
+      applicationDeadline?: string | null
       strategy: {
         decision?: 'GO' | 'CONDITIONAL_GO' | 'HOLD' | 'NO_GO' | null
         decisionReason?: string | null
@@ -132,7 +133,16 @@ export interface DocumentAnalysis {
         recommendedParticipation?: string | null
         alternativeParticipation?: string | null
         capabilityMatches?: Array<{ confirmedFact: string; strategicInterpretation: string }> | null
-        criticalGaps?: Array<{ gap: string; nextAction: string; owner: string; targetTiming: string }> | null
+        criticalGaps?: Array<{
+          gap: string
+          nextAction: string
+          owner: string
+          targetTiming: string
+          workType?: ProposalWorkType | null
+          estimatedBusinessDays?: number | null
+          targetDate?: string | null
+          scheduleBasis?: string | null
+        }> | null
         stopCriteria?: Array<{ type: 'OFFICIAL_REQUIREMENT' | 'INTERNAL_RECOMMENDATION'; condition: string; rationale: string }> | null
       }
     } | null
@@ -170,7 +180,28 @@ export interface ProposalPreparationItem {
     | 'PUBLIC_INFORMATION'
     | 'UNKNOWN'
     | null
+  readinessScore?: number | null
+  conditionScore?: number | null
+  evidenceScore?: number | null
+  scheduleScore?: number | null
+  workType?: ProposalWorkType | null
+  estimatedBusinessDays?: number | null
+  scoreBasis?: string[] | null
 }
+
+export type ProposalWorkType =
+  | 'INTERNAL_CONFIRMATION'
+  | 'EXTERNAL_CONFIRMATION'
+  | 'DOCUMENT_ISSUANCE'
+  | 'CERTIFICATION'
+  | 'SIGNATURE_SEAL'
+  | 'BUDGET_REVIEW'
+  | 'PROPOSAL_WRITING'
+  | 'TECHNICAL_PLANNING'
+  | 'DOMESTIC_PARTNER'
+  | 'INTERNATIONAL_PARTNER'
+  | 'LEGAL_CONTRACT'
+  | 'OTHER'
 
 export interface DocumentAttachment {
   fileName: string

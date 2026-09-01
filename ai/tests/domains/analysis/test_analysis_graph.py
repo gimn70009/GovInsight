@@ -170,7 +170,7 @@ def test_graph_retries_transient_failure_and_returns_new_document_result() -> No
     assert len(result.opportunity.dimensions) == 5
 
 
-def test_graph_returns_business_rule_feedback_before_retrying_new_document() -> None:
+def test_graph_normalizes_new_document_favorability_without_retry() -> None:
     runner = SequencedRunner(
         [
             analysis(Favorability.FAVORABLE),
@@ -182,8 +182,7 @@ def test_graph_returns_business_rule_feedback_before_retrying_new_document() -> 
     result = asyncio.run(workflow.analyze(document()))
 
     assert result.favorable_or_not == Favorability.NOT_APPLICABLE
-    assert len(result.opportunity.dimensions) == 5
-    assert "신규 문서의 favorable_or_not" in (runner.feedbacks[1] or "")
+    assert runner.call_count == 1
 
 
 def test_updated_document_requires_comparison_tools_and_revises_plan() -> None:
@@ -265,7 +264,7 @@ def test_low_domain_fit_requires_conservative_proposal_sections() -> None:
     result = asyncio.run(workflow.analyze(document()))
 
     assert [section.title for section in result.proposal.sections] == conservative_titles
-    assert "회사 적합도에 맞는 제안 섹션" in (runner.feedbacks[1] or "")
+    assert runner.call_count == 1
 
 
 def test_unchanged_document_requires_neutral_impact() -> None:
@@ -317,22 +316,21 @@ def test_system_prompt_uses_consistent_polite_tone() -> None:
     assert "`~을 권장합니다`" in SYSTEM_PROMPT
 
 
-def test_graph_retries_high_importance_without_company_relevance() -> None:
+def test_graph_normalizes_high_importance_without_company_relevance() -> None:
     runner = SequencedRunner(
         [
             analysis(
                 Favorability.NOT_APPLICABLE,
                 opportunity_assessment=opportunity(company_fit=35),
             ),
-            analysis(Favorability.NOT_APPLICABLE),
         ]
     )
     workflow = DocumentAnalysisWorkflow(runner=runner, max_attempts=2)
 
     result = asyncio.run(workflow.analyze(document()))
 
-    assert result.importance == DocumentImportance.HIGH
-    assert "HIGH 중요도는 회사 관련성이 확인" in (runner.feedbacks[1] or "")
+    assert result.importance == DocumentImportance.NORMAL
+    assert runner.call_count == 1
 
 
 def test_system_prompt_calibrates_importance_and_opportunity_scores() -> None:

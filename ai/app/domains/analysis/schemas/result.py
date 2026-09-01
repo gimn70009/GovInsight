@@ -96,6 +96,21 @@ class StopCriterionType(StrEnum):
     INTERNAL_RECOMMENDATION = "INTERNAL_RECOMMENDATION"
 
 
+class PreparationWorkType(StrEnum):
+    INTERNAL_CONFIRMATION = "INTERNAL_CONFIRMATION"
+    EXTERNAL_CONFIRMATION = "EXTERNAL_CONFIRMATION"
+    DOCUMENT_ISSUANCE = "DOCUMENT_ISSUANCE"
+    CERTIFICATION = "CERTIFICATION"
+    SIGNATURE_SEAL = "SIGNATURE_SEAL"
+    BUDGET_REVIEW = "BUDGET_REVIEW"
+    PROPOSAL_WRITING = "PROPOSAL_WRITING"
+    TECHNICAL_PLANNING = "TECHNICAL_PLANNING"
+    DOMESTIC_PARTNER = "DOMESTIC_PARTNER"
+    INTERNATIONAL_PARTNER = "INTERNATIONAL_PARTNER"
+    LEGAL_CONTRACT = "LEGAL_CONTRACT"
+    OTHER = "OTHER"
+
+
 def _normalize_strategy_sentence(value: str) -> str:
     normalized = re.sub(r"\s*[;；]\s*", ", ", value.strip())
     normalized = re.sub(r"(?i)(?<![a-z])GO로", "지원 권장으로", normalized)
@@ -201,6 +216,13 @@ class PreparationChecklistItem(CamelCaseModel):
     applies_to: str = Field(default="신청기관", min_length=2, max_length=200)
     source: RequirementSource | None = None
     company_evidence_level: CompanyEvidenceLevel = CompanyEvidenceLevel.UNKNOWN
+    readiness_score: int = Field(default=0, ge=0, le=100)
+    condition_score: int | None = Field(default=None, ge=0, le=100)
+    evidence_score: int = Field(default=0, ge=0, le=100)
+    schedule_score: int = Field(default=0, ge=0, le=100)
+    work_type: PreparationWorkType = PreparationWorkType.OTHER
+    estimated_business_days: int = Field(default=3, ge=1, le=120)
+    score_basis: list[str] = Field(default_factory=list, max_length=4)
 
     @field_validator("title")
     @classmethod
@@ -242,6 +264,10 @@ class StrategyGap(CamelCaseModel):
     next_action: str = Field(min_length=5, max_length=300)
     owner: str = Field(min_length=2, max_length=100)
     target_timing: str = Field(min_length=3, max_length=150)
+    work_type: PreparationWorkType = PreparationWorkType.OTHER
+    estimated_business_days: int = Field(default=5, ge=1, le=120)
+    target_date: str | None = Field(default=None, max_length=10)
+    schedule_basis: str | None = Field(default=None, max_length=300)
 
     @field_validator("gap", "next_action", "target_timing")
     @classmethod
@@ -286,6 +312,7 @@ class ProposalPreparation(CamelCaseModel):
     eligibility_checklist: list[PreparationChecklistItem] = Field(min_length=1, max_length=12)
     submission_documents: list[PreparationChecklistItem] = Field(min_length=1, max_length=15)
     company_inputs: list[PreparationChecklistItem] = Field(min_length=1, max_length=12)
+    application_deadline: str | None = Field(default=None, max_length=10)
     strategy: StrategyOnePage
 
     @field_validator("meeting_agenda")
@@ -304,7 +331,7 @@ class ProposalStrategy(CamelCaseModel):
     template_sections: list[str] = Field(default_factory=list, max_length=30)
     draft_sections: list[ProposalSection] = Field(default_factory=list, max_length=8)
     preparation: ProposalPreparation | None = None
-    preparation_schema_version: int = Field(default=1, ge=1, le=6)
+    preparation_schema_version: int = Field(default=1, ge=1, le=10)
 
     @field_validator("draft_reason")
     @classmethod

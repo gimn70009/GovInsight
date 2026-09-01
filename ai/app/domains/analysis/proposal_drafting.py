@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.domains.analysis.config import AnalysisSettings
 from app.domains.analysis.context_tools import read_company_profile
+from app.domains.analysis.preparation_scoring import score_preparation
 from app.domains.analysis.schemas.request import AnalysisDocumentRequest
 from app.domains.analysis.schemas.result import (
     CompanyEvidenceLevel,
@@ -25,6 +26,7 @@ from app.domains.analysis.schemas.result import (
     RequirementLevel,
     RequirementSource,
     RequirementStage,
+    StrategyDecision,
 )
 from app.domains.analysis.tools import AnalysisToolContext
 
@@ -32,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 PROPOSAL_CONTEXT_MAX_CHARS = 32_000
 PROPOSAL_NOTICE_SHARE = 14_000
+PROPOSAL_GENERATION_MIN_COMPANY_FIT = 61
 PROPOSAL_EVIDENCE_KEYWORDS = (
     "신청",
     "접수",
@@ -97,7 +100,26 @@ DRAFT_PROMPT = """
   원문에 없는 자료를 필수 제출서류로 추가하지 않습니다.
 - submissionFormFiles에는 코드가 ZIP 내부에서 먼저 확인한 제출 양식 파일명이 들어 있습니다.
   각 파일을 submissionDocuments와 대조하고, 같은 서류가 이미 포함되지 않았다면 빠뜨리지 않습니다.
+- eligibilityChecklist에는 신청 자격, 결격 사유와 필수 보유 상태만 기록합니다.
+  접수 마감일 자체와 사업계획서, 확인서, 증명서, 확약서, 등기부등본 같은 제출 파일은 넣지 않습니다.
+- submissionDocuments에는 실제로 작성, 발급, 날인 또는 업로드할 문서만 기록합니다.
+  필수 제출 문서가 아직 제출 완료로 확인되지 않았다면 ACTION_REQUIRED로 둡니다.
+- companyInputs에는 회사 내부에서 확정할 수치, 인력, 실적, 역할과 계획만 기록합니다.
+  외부기관이 발급하는 확인서나 제출 파일을 넣지 않습니다.
+- 하나의 요건이나 문서를 여러 체크리스트에 반복하지 않습니다. 자격 요건과 그 증빙 문서를
+  모두 보여줘야 한다면 eligibilityChecklist에는 자격 상태만,
+  submissionDocuments에는 문서만 기록합니다.
 - 각 체크리스트의 detail은 현재 상태, nextAction은 담당자가 바로 수행할 행동으로 씁니다.
+- 공고의 최종 신청 마감일을 확인할 수 있으면 applicationDeadline에 YYYY-MM-DD로 기록합니다.
+- 각 체크리스트의 conditionScore는 현재 충족 정도를 0, 25, 50, 75, 100 중 하나로 기록합니다.
+- workType은 내부 확인 INTERNAL_CONFIRMATION, 외부 확인 EXTERNAL_CONFIRMATION,
+  문서 발급 DOCUMENT_ISSUANCE, 인증 취득 CERTIFICATION, 서명·직인 SIGNATURE_SEAL,
+  예산 검토 BUDGET_REVIEW, 제안서 작성 PROPOSAL_WRITING, 기술기획 TECHNICAL_PLANNING,
+  국내 파트너 DOMESTIC_PARTNER, 해외 파트너 INTERNATIONAL_PARTNER,
+  법무·계약 LEGAL_CONTRACT, 기타 OTHER 중 하나로 분류합니다.
+- estimatedBusinessDays는 모델이 판단하지 않으며 workType별 고정 정책을 코드가 적용합니다.
+- 컨소시엄처럼 회사 내부 증거가 없는 조건은 LIKELY로 추정하지 않고 NEEDS_CONFIRMATION으로 둡니다.
+- criticalGaps에도 workType을 기록하며 소요일과 목표일은 코드가 계산합니다.
 - nextAction은 `다음 행동`, 콜론, 가운데점 같은 접두어 없이
   주어와 서술어를 갖춘 완전한 한 문장으로 씁니다.
 - 괄호 안에 조건이나 설명을 덧붙이지 말고,
@@ -119,6 +141,13 @@ DRAFT_PROMPT = """
   제안하고 필요한 파트너 유형을 씁니다. 미확인 역량을 근거로 주관 역할을 단정하지 않습니다.
 - alternativeParticipation에는 추천 역할의 전제가 충족되지 않을 때 선택할
   현실적인 대안 역할을 씁니다.
+- 공고가 신청기업 명의의 승인, 허가, 인증 또는 지정과 사업 개시를 필수 자격으로 요구하면
+  파트너 확보나 외주용역으로 그 자격을 대신 충족할 수 있다고 제안하지 않습니다.
+- 공고가 기존 승인 제품이나 서비스의 사업화만 지원하고 회사의 해당 승인 품목이 공식 증빙으로
+  확인되지 않았다면 decision은 HOLD로 둡니다. recommendedProject에는 승인 제품 또는 서비스 확인 후
+  과제를 확정한다고 쓰며 회사의 일반 기술 역량만으로 구체적인 과제명을 만들지 않습니다.
+- 직접 신청 자격이 확인되지 않은 회사의 외주 수행 가능성은 이번 공고 신청의 대안 역할로 표현하지
+  않고 승인기업을 대상으로 한 별도 영업 기회라고 명확히 구분합니다.
 - capabilityMatches의 confirmedFact에는 공고 또는 회사 공개정보에서 확인된 사실만 적고,
   strategicInterpretation에는 그 사실이 참여 전략에 갖는 의미를 AI 판단으로 분리해 적습니다.
 - criticalGaps는 selectionRationale를 반복하지 않습니다. 각 항목에 부족한 정보, 바로 수행할 행동,
@@ -168,6 +197,8 @@ class LangChainProposalGenerationRunner:
             api_key=settings.api_key,
             timeout=settings.proposal_timeout_seconds,
             max_retries=0,
+            reasoning_effort="minimal",
+            max_tokens=12_000,
         )
         self._draft_model = model.with_structured_output(ProposalDraftOutput)
         self._settings = settings
@@ -188,7 +219,7 @@ class LangChainProposalGenerationRunner:
         draft_input = (
             f"{DRAFT_PROMPT}\n\n"
             f"공고 제목:\n{document.title}\n\n"
-            f"공고 분석:\n{analysis.model_dump_json()}\n\n"
+            f"공고 분석:\n{_compact_analysis_context(analysis)}\n\n"
             f"회사 프로필:\n{read_company_profile(context)}\n\n"
             f"공고와 첨부파일의 관련 원문:\n{source_context}"
         )
@@ -209,7 +240,28 @@ class LangChainProposalGenerationRunner:
         if not isinstance(draft, ProposalDraftOutput):
             draft = ProposalDraftOutput.model_validate(draft)
         _retain_verified_source_references(draft, document)
+        _normalize_preparation_structure(draft)
+        _apply_strategy_eligibility_guardrails(draft)
+        score_preparation(draft.preparation)
         return draft
+
+
+def _compact_analysis_context(analysis: DocumentAnalysisResult) -> str:
+    return json.dumps(
+        {
+            "summary": analysis.summary,
+            "eligibility": analysis.eligibility,
+            "eligibilityReason": analysis.reason,
+            "proposalSections": [
+                section.model_dump() for section in analysis.proposal.sections
+            ],
+            "opportunityDimensions": [
+                dimension.model_dump() for dimension in analysis.opportunity.dimensions
+            ],
+        },
+        ensure_ascii=False,
+        default=str,
+    )
 
 
 class TwoStageAnalysisWorkflow:
@@ -223,6 +275,7 @@ class TwoStageAnalysisWorkflow:
 
     async def analyze(self, document: AnalysisDocumentRequest) -> DocumentAnalysisResult:
         result = await self._base_workflow.analyze(document)
+        apply_proposal_generation_reason(result, document)
         if not _requires_proposal_generation(result, document):
             return result
 
@@ -241,7 +294,7 @@ class TwoStageAnalysisWorkflow:
                     "template_sections": expected_titles,
                     "draft_sections": [],
                     "preparation": draft.preparation,
-                    "preparation_schema_version": 6,
+                    "preparation_schema_version": 10,
                 }
             )
             result.used_tools = list(
@@ -267,7 +320,7 @@ class TwoStageAnalysisWorkflow:
                     "template_sections": [],
                     "draft_sections": [],
                     "preparation": None,
-                    "preparation_schema_version": 6,
+                    "preparation_schema_version": 10,
                 }
             )
         return DocumentAnalysisResult.model_validate(result.model_dump())
@@ -288,10 +341,49 @@ def _requires_proposal_generation(
     )
     return (
         result.proposal.document_type == ProposalDocumentType.PROPOSAL_REQUEST
-        and company_fit >= 61
+        and company_fit >= PROPOSAL_GENERATION_MIN_COMPANY_FIT
         and result.eligibility != Eligibility.INELIGIBLE
         and has_attachment_text
     )
+
+
+def apply_proposal_generation_reason(
+    result: DocumentAnalysisResult,
+    document: AnalysisDocumentRequest,
+) -> None:
+    """Replace model-written skip reasons with the actual deterministic gate result."""
+    if result.proposal.document_type != ProposalDocumentType.PROPOSAL_REQUEST:
+        return
+
+    company_fit = next(
+        dimension.score
+        for dimension in result.opportunity.dimensions
+        if dimension.type == OpportunityDimensionType.COMPANY_FIT
+    )
+    has_attachment_text = any(
+        attachment.extracted_text and attachment.extracted_text.strip()
+        for attachment in document.attachments
+    )
+    blockers: list[str] = []
+    if company_fit < PROPOSAL_GENERATION_MIN_COMPANY_FIT:
+        blockers.append(
+            f"회사 적합도는 {company_fit}점으로 사업 제안 준비안 생성 기준인 "
+            f"{PROPOSAL_GENERATION_MIN_COMPANY_FIT}점에 미달했습니다."
+        )
+    if result.eligibility == Eligibility.INELIGIBLE:
+        blockers.append(
+            "신청 자격 또는 접수기한 조건상 현재 회사가 신청할 수 없는 공고로 판정했습니다."
+        )
+    if not has_attachment_text:
+        blockers.append(
+            "내용 분석이 완료된 첨부 양식이 없어 제출 요구사항의 원문 근거를 확인할 수 없습니다."
+        )
+    if not blockers:
+        return
+    if result.eligibility == Eligibility.REVIEW_REQUIRED:
+        blockers.append("신청 자격은 회사의 공식 증빙으로 추가 확인해야 합니다.")
+    blockers.append("따라서 현재 확인된 조건으로는 사업 제안 준비안을 생성할 수 없습니다.")
+    result.proposal.draft_reason = " ".join(blockers)
 
 
 def _retain_verified_source_references(
@@ -317,6 +409,154 @@ def _retain_verified_source_references(
         raise ValueError("원문에서 확인되는 지원 조건이 없습니다.")
     if not draft.preparation.submission_documents:
         raise ValueError("원문에서 확인되는 제출 자료가 없습니다.")
+
+
+_SUBMISSION_DOCUMENT_TERMS = (
+    "사업계획서",
+    "확약서",
+    "등기부등본",
+    "사업자등록증",
+    "재무제표",
+    "감사보고서",
+    "활용계획서",
+    "견적서",
+    "동의서",
+    "참여확인서",
+    "인감증명서",
+    "납세증명서",
+    "확인서",
+    "증명서",
+    "스캔본",
+)
+_QUALIFICATION_STATE_TERMS = (
+    "자격",
+    "여부",
+    "충족",
+    "보유",
+    "승인",
+    "허가",
+    "개시",
+    "제한",
+    "중복",
+)
+_SCHEDULE_ONLY_TERMS = ("접수 마감", "제출 마감", "신청 기한", "접수 기간")
+
+
+def _normalize_preparation_structure(draft: ProposalDraftOutput) -> None:
+    preparation = draft.preparation
+    eligibility: list[PreparationChecklistItem] = []
+    documents = list(preparation.submission_documents)
+    company_inputs: list[PreparationChecklistItem] = []
+
+    for item in preparation.eligibility_checklist:
+        if _contains_any(item.title, _SCHEDULE_ONLY_TERMS):
+            continue
+        if _is_submission_document(item):
+            documents.append(item)
+        else:
+            eligibility.append(item)
+
+    for item in preparation.company_inputs:
+        if _is_submission_document(item):
+            documents.append(item)
+        else:
+            company_inputs.append(item)
+
+    for item in documents:
+        if (
+            item.requirement_level == RequirementLevel.MANDATORY
+            and item.status in {
+                PreparationStatus.MISSING,
+                PreparationStatus.NEEDS_CONFIRMATION,
+            }
+        ):
+            item.status = PreparationStatus.ACTION_REQUIRED
+
+    preparation.eligibility_checklist = _deduplicate_items(eligibility)
+    preparation.submission_documents = _deduplicate_items(documents)
+    used = {
+        _item_identity(item)
+        for item in (
+            *preparation.eligibility_checklist,
+            *preparation.submission_documents,
+        )
+    }
+    preparation.company_inputs = [
+        item
+        for item in _deduplicate_items(company_inputs)
+        if _item_identity(item) not in used
+    ]
+
+
+def _is_submission_document(item: PreparationChecklistItem) -> bool:
+    title = _normalize_evidence(item.title)
+    has_document_term = any(
+        _normalize_evidence(term) in title for term in _SUBMISSION_DOCUMENT_TERMS
+    )
+    describes_state = any(
+        _normalize_evidence(term) in title for term in _QUALIFICATION_STATE_TERMS
+    )
+    return has_document_term and not describes_state
+
+
+def _deduplicate_items(
+    items: list[PreparationChecklistItem],
+) -> list[PreparationChecklistItem]:
+    deduplicated: list[PreparationChecklistItem] = []
+    seen: set[str] = set()
+    for item in items:
+        identity = _item_identity(item)
+        if identity in seen:
+            continue
+        deduplicated.append(item)
+        seen.add(identity)
+    return deduplicated
+
+
+def _item_identity(item: PreparationChecklistItem) -> str:
+    title = _normalize_evidence(item.title)
+    document_terms = sorted(
+        _normalize_evidence(term)
+        for term in _SUBMISSION_DOCUMENT_TERMS
+        if _normalize_evidence(term) in title
+    )
+    return "|".join(document_terms) if document_terms else title
+
+
+def _contains_any(value: str, terms: tuple[str, ...]) -> bool:
+    normalized = _normalize_evidence(value)
+    return any(_normalize_evidence(term) in normalized for term in terms)
+
+
+def _apply_strategy_eligibility_guardrails(draft: ProposalDraftOutput) -> None:
+    approval_item = next(
+        (
+            item
+            for item in draft.preparation.eligibility_checklist
+            if _contains_any(item.title, ("규제특례", "실증특례", "임시허가"))
+            and _contains_any(item.title, ("승인", "허가", "보유", "개시"))
+        ),
+        None,
+    )
+    if approval_item is None or approval_item.status == PreparationStatus.VERIFIED:
+        return
+
+    strategy = draft.preparation.strategy
+    strategy.decision = StrategyDecision.HOLD
+    strategy.decision_reason = (
+        "회사 명의의 규제특례 승인 제품 또는 서비스와 사업 개시 사실이 공식 증빙으로 "
+        "확인되지 않아 현재는 지원 판단을 보류합니다."
+    )
+    strategy.recommended_project = (
+        "규제특례 승인 제품 또는 서비스 확인 후 사업화 과제를 확정합니다."
+    )
+    strategy.recommended_participation = (
+        "회사 명의의 규제특례 승인과 사업 개시 사실을 확인한 후 주관기관 신청 여부를 결정합니다."
+    )
+    strategy.alternative_participation = (
+        "직접 신청 자격이 확인되지 않으면 이번 공고 신청은 보류하고 승인기업 대상 외주 수행은 "
+        "별도의 영업 기회로 구분해 검토합니다."
+    )
 
 
 def _verified_items(
@@ -499,4 +739,8 @@ def _relevant_excerpt(text: str, limit: int) -> str:
 
 def _safe_error(exception: Exception) -> str:
     message = str(exception).strip()
+    if "length limit was reached" in message.casefold():
+        return "모델 출력 한도에 도달했습니다."
+    if "timed out" in message.casefold() or isinstance(exception, TimeoutError):
+        return "사업 제안 생성 제한 시간을 초과했습니다."
     return message[:500] if message else exception.__class__.__name__

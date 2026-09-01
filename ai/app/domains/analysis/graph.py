@@ -1,4 +1,6 @@
+import logging
 import re
+import time
 from typing import Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -22,6 +24,9 @@ from app.domains.analysis.schemas.result import (
 
 class AnalysisWorkflowError(RuntimeError):
     pass
+
+
+logger = logging.getLogger(__name__)
 
 
 AnalysisPath = Literal["new", "updated", "unchanged"]
@@ -129,10 +134,27 @@ class DocumentAnalysisWorkflow:
 
     async def _analyze_node(self, state: AnalysisGraphState) -> AnalysisGraphState:
         attempt = state.get("attempt", 0) + 1
+        document = state["document"]
+        started_at = time.perf_counter()
+        logger.info(
+            "공고 분석 시도 시작. detection_id=%s version_id=%s attempt=%s max_attempts=%s",
+            document.detection_id,
+            document.version_id,
+            attempt,
+            self._max_attempts,
+        )
         try:
             candidate = await self._runner.analyze(
-                state["document"],
+                document,
                 feedback=state.get("feedback") or None,
+            )
+            logger.info(
+                "공고 분석 시도 완료. detection_id=%s version_id=%s "
+                "attempt=%s elapsed_seconds=%.2f",
+                document.detection_id,
+                document.version_id,
+                attempt,
+                time.perf_counter() - started_at,
             )
             return {
                 "attempt": attempt,
@@ -142,6 +164,15 @@ class DocumentAnalysisWorkflow:
             }
         except Exception as exception:
             error = _safe_error(exception)
+            logger.warning(
+                "공고 분석 시도 실패. detection_id=%s version_id=%s "
+                "attempt=%s elapsed_seconds=%.2f error=%s",
+                document.detection_id,
+                document.version_id,
+                attempt,
+                time.perf_counter() - started_at,
+                error,
+            )
             return {
                 "attempt": attempt,
                 "candidate": None,
@@ -258,6 +289,7 @@ def _business_rule_violations(
         for dimension in candidate.draft.opportunity.dimensions
     }
     company_fit_score = dimension_scores.get(OpportunityDimensionType.COMPANY_FIT, 0)
+    _normalize_deterministic_business_fields(path, company_fit_score, candidate)
     violations.extend(_opportunity_reason_style_violations(candidate))
     urgency = next(
         (
@@ -301,6 +333,39 @@ def _business_rule_violations(
     if path == "unchanged" and favorability != Favorability.NEUTRAL:
         violations.append("변경 없는 문서의 favorable_or_not은 NEUTRAL이어야 합니다.")
     return violations
+
+
+def _normalize_deterministic_business_fields(
+    path: AnalysisPath,
+    company_fit_score: int,
+    candidate: AgentAnalysis,
+) -> None:
+    if path == "new":
+        candidate.draft.favorable_or_not = Favorability.NOT_APPLICABLE
+    elif path == "unchanged":
+        candidate.draft.favorable_or_not = Favorability.NEUTRAL
+
+    if (
+        candidate.draft.importance == DocumentImportance.HIGH
+        and company_fit_score < 50
+    ):
+        candidate.draft.importance = DocumentImportance.NORMAL
+
+    if path == "new" and company_fit_score <= 40:
+        expected_titles = ["핵심 판단", "도메인 불일치 근거", "재검토 조건", "현재 대응"]
+    else:
+        expected_titles = {
+            "new": ["핵심 판단", "활용·추진 방안", "필요 파트너·준비사항", "즉시 실행"],
+            "updated": ["변경 요약", "회사 영향", "대응 조정", "즉시 실행"],
+            "unchanged": ["현재 상태", "유지할 대응", "다음 확인"],
+        }[path]
+    if len(candidate.draft.proposal.sections) == len(expected_titles):
+        for section, title in zip(
+            candidate.draft.proposal.sections,
+            expected_titles,
+            strict=True,
+        ):
+            section.title = title
 
 
 def _normalize_expired_application(candidate: AgentAnalysis) -> None:

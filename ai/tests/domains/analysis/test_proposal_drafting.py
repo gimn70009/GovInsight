@@ -4,8 +4,11 @@ from app.domains.analysis.proposal_drafting import (
     CORE_PROPOSAL_SECTION_TITLES,
     ProposalDraftOutput,
     TwoStageAnalysisWorkflow,
+    _apply_strategy_eligibility_guardrails,
     _build_proposal_source_context,
+    _normalize_preparation_structure,
     _retain_verified_source_references,
+    _safe_error,
 )
 from app.domains.analysis.schemas.request import AnalysisDocumentRequest
 from app.domains.analysis.schemas.result import (
@@ -242,7 +245,7 @@ def test_generates_outline_then_draft_only_for_matching_proposal_request() -> No
     assert generated.proposal.preparation is not None
     assert generated.proposal.preparation.strategy.recommended_project.startswith("제조 현장")
     assert generated.proposal.source_attachment_names == ["신청서식.hwp"]
-    assert generated.proposal.preparation_schema_version == 6
+    assert generated.proposal.preparation_schema_version == 10
     assert "map_proposal_sources" in generated.used_tools
     assert "build_proposal_preparation" in generated.used_tools
 
@@ -271,6 +274,30 @@ def test_skips_second_stage_when_company_fit_is_below_generation_threshold() -> 
 
     assert proposal_runner.call_count == 0
     assert generated.proposal.draft_status == ProposalDraftStatus.REVIEW_REQUIRED
+    assert generated.proposal.draft_reason.startswith(
+        "회사 적합도는 60점으로 사업 제안 준비안 생성 기준인 61점에 미달했습니다."
+    )
+    assert "REVIEW_REQUIRED" not in generated.proposal.draft_reason
+
+
+def test_skip_reason_lists_missing_attachment_and_eligibility_confirmation() -> None:
+    proposal_runner = ProposalRunner()
+    workflow = TwoStageAnalysisWorkflow(
+        BaseWorkflow(result(company_fit=55)),
+        proposal_runner,
+    )
+
+    generated = asyncio.run(workflow.analyze(document(with_attachment=False)))
+
+    assert proposal_runner.call_count == 0
+    assert "회사 적합도는 55점" in generated.proposal.draft_reason
+    assert "내용 분석이 완료된 첨부 양식이 없어" in generated.proposal.draft_reason
+    assert "신청 자격은 회사의 공식 증빙으로 추가 확인해야 합니다." in (
+        generated.proposal.draft_reason
+    )
+    assert generated.proposal.draft_reason.endswith(
+        "따라서 현재 확인된 조건으로는 사업 제안 준비안을 생성할 수 없습니다."
+    )
 
 
 def test_proposal_stage_failure_preserves_base_analysis() -> None:
@@ -282,8 +309,8 @@ def test_proposal_stage_failure_preserves_base_analysis() -> None:
     assert generated.summary.startswith("산업 AI 실증")
     assert generated.proposal.draft_status == ProposalDraftStatus.REVIEW_REQUIRED
     assert generated.proposal.draft_sections == []
-    assert generated.proposal.preparation_schema_version == 6
-    assert "TimeoutError" in generated.proposal.draft_reason
+    assert generated.proposal.preparation_schema_version == 10
+    assert "사업 제안 생성 제한 시간을 초과했습니다." in generated.proposal.draft_reason
 
 
 def test_keeps_valid_items_and_accepts_zip_inner_document_name() -> None:
@@ -336,6 +363,15 @@ def test_builds_bounded_proposal_context_with_relevant_evidence() -> None:
     assert "신청 자격은 국내 기업입니다." in context
     assert "사업계획서와 참여확인서를 제출해야 합니다." in context
     assert "붙임2. 제출서류 양식.zip" in context
+
+
+def test_sanitizes_model_usage_details_from_generation_error() -> None:
+    error = RuntimeError(
+        "Could not parse response content as the length limit was reached "
+        "- CompletionUsage(completion_tokens=5000)"
+    )
+
+    assert _safe_error(error) == "모델 출력 한도에 도달했습니다."
 
 
 def test_normalizes_internal_terms_and_strategy_tone() -> None:
@@ -414,3 +450,61 @@ def test_supplements_submission_forms_omitted_by_model() -> None:
     )
     assert supplemented.status == PreparationStatus.NEEDS_CONFIRMATION
     assert supplemented.source.location == "붙임2. 제출서류 양식.zip"
+
+
+def test_normalizes_checklist_roles_and_removes_duplicates() -> None:
+    proposal = asyncio.run(ProposalRunner().generate(document(), result()))
+    preparation = proposal.preparation
+    document_item = preparation.submission_documents[0].model_copy(
+        update={
+            "title": "법인등기부등본 및 사업자등록증 사본 준비",
+            "status": PreparationStatus.NEEDS_CONFIRMATION,
+        }
+    )
+    preparation.eligibility_checklist.extend(
+        [
+            document_item,
+            preparation.eligibility_checklist[0].model_copy(
+                update={"title": "접수 마감일 확인"}
+            ),
+        ]
+    )
+    preparation.company_inputs.append(
+        document_item.model_copy(update={"title": "법인등기부등본 및 사업자등록증 사본"})
+    )
+
+    _normalize_preparation_structure(proposal)
+
+    eligibility_titles = [item.title for item in preparation.eligibility_checklist]
+    document_titles = [item.title for item in preparation.submission_documents]
+    assert "접수 마감일 확인" not in eligibility_titles
+    assert "법인등기부등본 및 사업자등록증 사본 준비" not in eligibility_titles
+    assert sum("법인등기부등본" in title for title in document_titles) == 1
+    moved = next(
+        item
+        for item in preparation.submission_documents
+        if "법인등기부등본" in item.title
+    )
+    assert moved.status == PreparationStatus.ACTION_REQUIRED
+    assert all("법인등기부등본" not in item.title for item in preparation.company_inputs)
+
+
+def test_holds_strategy_until_sandbox_approval_is_officially_verified() -> None:
+    proposal = asyncio.run(ProposalRunner().generate(document(), result()))
+    proposal.preparation.eligibility_checklist.append(
+        proposal.preparation.eligibility_checklist[0].model_copy(
+            update={
+                "title": "산업융합 규제샌드박스 실증특례 승인 및 사업 개시 여부",
+                "status": PreparationStatus.NEEDS_CONFIRMATION,
+                "company_evidence_level": CompanyEvidenceLevel.UNKNOWN,
+            }
+        )
+    )
+
+    _apply_strategy_eligibility_guardrails(proposal)
+
+    strategy = proposal.preparation.strategy
+    assert strategy.decision == StrategyDecision.HOLD
+    assert strategy.recommended_project.startswith("규제특례 승인 제품 또는 서비스 확인 후")
+    assert "별도의 영업 기회" in strategy.alternative_participation
+    assert "대안 역할" not in strategy.alternative_participation
