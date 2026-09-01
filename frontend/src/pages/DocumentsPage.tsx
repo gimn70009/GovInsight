@@ -204,23 +204,25 @@ function PreparationChecklist({
                 {appliesTo && <span>{appliesTo}</span>}
               </div>
             )}
-            <div className="preparation-checklist__judgement">
-              <span>현재 판단</span>
-              <p>{readableSentence(item.detail)}</p>
-            </div>
             <div className="preparation-checklist__action">
               <span>담당자 할 일</span>
               <p>{readableSentence(item.nextAction)}</p>
             </div>
-            {(evidenceSource || item.source?.excerpt) && (
-              <details className="preparation-checklist__evidence">
-                <summary>원문 근거 보기</summary>
+            <details className="preparation-checklist__details">
+              <summary>판단 및 근거 보기</summary>
+              <div className="preparation-checklist__judgement">
+                <span>현재 판단</span>
+                <p>{readableSentence(item.detail)}</p>
+              </div>
+              {(evidenceSource || item.source?.excerpt) && (
+                <div className="preparation-checklist__evidence">
                 <div>
                   {evidenceSource && <span className="preparation-checklist__source">{evidenceSource}</span>}
                   {item.source?.excerpt && <blockquote>{item.source.excerpt}</blockquote>}
                 </div>
-              </details>
-            )}
+                </div>
+              )}
+            </details>
           </article>
         )
       })}
@@ -610,6 +612,14 @@ function DocumentContent({ detail }: { detail: DocumentDetail }) {
     : ''
   const applicationDocuments = proposalDraft?.preparation?.submissionDocuments.filter((item) => !item.stage || item.stage === 'APPLICATION') ?? []
   const laterDocuments = proposalDraft?.preparation?.submissionDocuments.filter((item) => item.stage && item.stage !== 'APPLICATION') ?? []
+  const pendingPreparationItems = (items: ProposalPreparationItem[]) => items.filter((item) => item.status !== 'NOT_APPLICABLE' && !['READY', 'VERIFIED'].includes(item.status))
+  const preparation = proposalDraft?.preparation
+  const proposalSectionsOverview = preparation ? [
+    { id: 'proposal-agenda', label: '회의 안건', count: preparation.meetingAgenda.length, suffix: '건' },
+    { id: 'proposal-eligibility', label: '확인할 지원 조건', count: pendingPreparationItems(preparation.eligibilityChecklist).length, suffix: '건' },
+    { id: 'proposal-documents', label: '준비할 제출 서류', count: pendingPreparationItems(preparation.submissionDocuments).length, suffix: '건' },
+    { id: 'proposal-company', label: '회사 확인 정보', count: pendingPreparationItems(preparation.companyInputs).length, suffix: '건' },
+  ] : []
 
   useEffect(() => {
     setActiveDetailTab('ANALYSIS')
@@ -687,18 +697,22 @@ function DocumentContent({ detail }: { detail: DocumentDetail }) {
             <section className="detail-section proposal-draft-panel">
               {proposalDraft.preparation ? (
                 <div className="proposal-preparation">
-                  <section className="preparation-block">
-                    <div className="preparation-block__header"><span>02</span><div><h4>회의 안건</h4><p>제안서 작성 전에 관계자들과 먼저 결정할 내용입니다.</p></div></div>
+                  <nav className="proposal-section-nav" aria-label="사업 제안 섹션 바로가기">
+                    <div className="proposal-section-nav__title"><strong>준비 현황</strong><span>확인할 영역을 선택하면 해당 항목으로 이동합니다.</span></div>
+                    {proposalSectionsOverview.map((section) => <a href={`#${section.id}`} key={section.id}><span>{section.label}</span><strong>{section.count}<small>{section.suffix}</small></strong></a>)}
+                  </nav>
+                  <details className="preparation-block preparation-block--collapsible" id="proposal-agenda">
+                    <summary className="preparation-block__header"><span>02</span><div><h4>회의 안건</h4><p>제안서 작성 전에 관계자들과 먼저 결정할 내용입니다.</p></div><em>{proposalDraft.preparation.meetingAgenda.length}건 <ChevronDown size={16} /></em></summary>
                     <ol className="meeting-agenda">
                       {proposalDraft.preparation.meetingAgenda.map((agenda) => <li key={agenda}>{agenda}</li>)}
                     </ol>
-                  </section>
-                  <section className="preparation-block">
-                    <div className="preparation-block__header"><span>03</span><div><h4>지원 조건 체크리스트</h4><p>공고 요구사항과 현재 확인된 회사 상태를 비교합니다.</p></div></div>
+                  </details>
+                  <details className="preparation-block preparation-block--collapsible" id="proposal-eligibility">
+                    <summary className="preparation-block__header"><span>03</span><div><h4>지원 조건 체크리스트</h4><p>공고 요구사항과 현재 확인된 회사 상태를 비교합니다.</p></div><em>{pendingPreparationItems(proposalDraft.preparation.eligibilityChecklist).length}건 <ChevronDown size={16} /></em></summary>
                     <PreparationChecklist kind="eligibility" items={proposalDraft.preparation.eligibilityChecklist} applicationExpired={applicationExpired} />
-                  </section>
-                  <section className="preparation-block">
-                    <div className="preparation-block__header"><span>04</span><div><h4>제출 서류 체크리스트</h4><p>접수 전에 확보하거나 새로 작성해야 하는 자료입니다.</p></div></div>
+                  </details>
+                  <details className="preparation-block preparation-block--collapsible" id="proposal-documents">
+                    <summary className="preparation-block__header"><span>04</span><div><h4>제출 서류 체크리스트</h4><p>접수 전에 확보하거나 새로 작성해야 하는 자료입니다.</p></div><em>{pendingPreparationItems(proposalDraft.preparation.submissionDocuments).length}건 <ChevronDown size={16} /></em></summary>
                     <PreparationChecklist kind="document" items={applicationDocuments} sourceAttachmentNames={proposalDraft.sourceAttachmentNames} applicationExpired={applicationExpired} />
                     {laterDocuments.length > 0 && (
                       <div className="later-requirements">
@@ -707,12 +721,12 @@ function DocumentContent({ detail }: { detail: DocumentDetail }) {
                         <PreparationChecklist kind="document" items={laterDocuments} sourceAttachmentNames={proposalDraft.sourceAttachmentNames} />
                       </div>
                     )}
-                  </section>
-                  <section className="preparation-block">
-                    <div className="preparation-block__header"><span>05</span><div><h4>회사에서 확인·준비할 정보</h4><p>공고만으로 확인할 수 없어 회사 담당자가 직접 확인하거나 작성해야 하는 항목입니다.</p></div></div>
+                  </details>
+                  <details className="preparation-block preparation-block--collapsible" id="proposal-company">
+                    <summary className="preparation-block__header"><span>05</span><div><h4>회사에서 확인·준비할 정보</h4><p>공고만으로 확인할 수 없어 회사 담당자가 직접 확인하거나 작성해야 하는 항목입니다.</p></div><em>{pendingPreparationItems(proposalDraft.preparation.companyInputs).length}건 <ChevronDown size={16} /></em></summary>
                     <PreparationChecklist kind="company" items={proposalDraft.preparation.companyInputs} />
-                  </section>
-                  <section className="preparation-block strategy-one-page">
+                  </details>
+                  <section className="preparation-block strategy-one-page" id="proposal-strategy">
                     <div className="preparation-block__header"><span>01</span><div><h4>제안 전략 한 장 <em className="ai-recommendation-label">AI 제안</em></h4><p>공고 근거와 회사 정보를 바탕으로 제안한 방향이며 담당자 확정이 필요합니다.</p></div></div>
                     {proposalDraft.preparation.strategy.decision ? (
                       <>
@@ -727,12 +741,6 @@ function DocumentContent({ detail }: { detail: DocumentDetail }) {
                         <div className="strategy-roles">
                           <div><strong>추천 참여 방식</strong><p>{proposalDraft.preparation.strategy.recommendedParticipation}</p></div>
                           <div><strong>조건 미충족 시 대안</strong><p>{proposalDraft.preparation.strategy.alternativeParticipation}</p></div>
-                        </div>
-                        <div className="strategy-capabilities">
-                          <h6>공고와 연결되는 회사 역량</h6>
-                          {proposalDraft.preparation.strategy.capabilityMatches?.map((item) => (
-                            <div key={`${item.confirmedFact}-${item.strategicInterpretation}`}><p><span>확인된 사실</span>{item.confirmedFact}</p><p><span>AI 해석</span>{item.strategicInterpretation}</p></div>
-                          ))}
                         </div>
                         <div className="strategy-gaps">
                           <div className="strategy-gaps__header">
@@ -761,12 +769,21 @@ function DocumentContent({ detail }: { detail: DocumentDetail }) {
                             </article>
                           ))}
                         </div>
-                        <div className="strategy-stop">
-                          <h6>지원 중단 기준</h6>
-                          {proposalDraft.preparation.strategy.stopCriteria?.map((item) => (
-                            <article key={item.condition}><span>{item.type === 'OFFICIAL_REQUIREMENT' ? '공고 필수조건' : 'AI 내부 권장 기준'}</span><strong>{item.condition}</strong><p>{item.rationale}</p></article>
-                          ))}
-                        </div>
+                        <details className="strategy-supporting-details">
+                          <summary>회사 역량과 지원 중단 기준 보기 <ChevronDown size={15} /></summary>
+                          <div className="strategy-capabilities">
+                            <h6>공고와 연결되는 회사 역량</h6>
+                            {proposalDraft.preparation.strategy.capabilityMatches?.map((item) => (
+                              <div key={`${item.confirmedFact}-${item.strategicInterpretation}`}><p><span>확인된 사실</span>{item.confirmedFact}</p><p><span>AI 해석</span>{item.strategicInterpretation}</p></div>
+                            ))}
+                          </div>
+                          <div className="strategy-stop">
+                            <h6>지원 중단 기준</h6>
+                            {proposalDraft.preparation.strategy.stopCriteria?.map((item) => (
+                              <article key={item.condition}><span>{item.type === 'OFFICIAL_REQUIREMENT' ? '공고 필수조건' : 'AI 내부 권장 기준'}</span><strong>{item.condition}</strong><p>{item.rationale}</p></article>
+                            ))}
+                          </div>
+                        </details>
                       </>
                     ) : (
                       <p className="strategy-upgrade-notice">다음 모니터링 실행에서 참여 의사결정 중심의 새 전략으로 갱신됩니다.</p>
