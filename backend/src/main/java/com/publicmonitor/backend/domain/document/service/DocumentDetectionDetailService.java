@@ -83,7 +83,23 @@ public class DocumentDetectionDetailService {
                     new DocumentDetectionDetailResponse.Section("기존 제안 방향", normalized)
             ));
         }
-        return objectMapper.readValue(normalized, DocumentDetectionDetailResponse.Proposal.class);
+        DocumentDetectionDetailResponse.Proposal proposal = objectMapper.readValue(
+                normalized,
+                DocumentDetectionDetailResponse.Proposal.class
+        );
+        return new DocumentDetectionDetailResponse.Proposal(
+                proposal.sections() == null ? List.of() : proposal.sections(),
+                proposal.documentType() == null ? "REVIEW_REQUIRED" : proposal.documentType(),
+                proposal.draftStatus() == null ? "NOT_APPLICABLE" : proposal.draftStatus(),
+                proposal.draftReason() == null
+                        ? "기존 분석 결과에는 제안서 판정 정보가 없습니다."
+                        : proposal.draftReason(),
+                proposal.sourceAttachmentNames() == null ? List.of() : proposal.sourceAttachmentNames(),
+                proposal.templateSections() == null ? List.of() : proposal.templateSections(),
+                proposal.draftSections() == null ? List.of() : proposal.draftSections(),
+                proposal.preparation(),
+                proposal.preparationSchemaVersion() == null ? 1 : proposal.preparationSchemaVersion()
+        );
     }
 
     private DocumentDetectionDetailResponse.Opportunity parseOpportunity(DocumentAnalysis analysis) {

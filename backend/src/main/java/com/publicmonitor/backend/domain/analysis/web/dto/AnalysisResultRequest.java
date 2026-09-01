@@ -45,7 +45,109 @@ public record AnalysisResultRequest(
     }
 
     public record Proposal(
-            @NotNull @Size(min = 1, max = 6) List<@Valid Section> sections
+            @NotNull @Size(min = 1, max = 6) List<@Valid Section> sections,
+            @NotBlank @Size(max = 40) String documentType,
+            @NotBlank @Size(max = 40) String draftStatus,
+            @NotBlank @Size(max = 1000) String draftReason,
+            @NotNull @Size(max = 10) List<@NotBlank @Size(max = 500) String> sourceAttachmentNames,
+            @NotNull @Size(max = 30) List<@NotBlank @Size(max = 100) String> templateSections,
+            @NotNull @Size(max = 8) List<@Valid Section> draftSections,
+            @Valid Preparation preparation,
+            Integer preparationSchemaVersion
+    ) {
+        public Proposal(List<Section> sections) {
+            this(sections, "REVIEW_REQUIRED", "NOT_APPLICABLE",
+                    "기존 분석 결과에는 제안서 판정 정보가 없습니다.",
+                    List.of(), List.of(), List.of(), null, 1);
+        }
+
+        public Proposal(
+                List<Section> sections,
+                String documentType,
+                String draftStatus,
+                String draftReason,
+                List<String> sourceAttachmentNames,
+                List<String> templateSections,
+                List<Section> draftSections
+        ) {
+            this(sections, documentType, draftStatus, draftReason, sourceAttachmentNames,
+                    templateSections, draftSections, null, 1);
+        }
+    }
+
+    public record Preparation(
+            @NotNull @Size(min = 3, max = 8) List<@NotBlank @Size(max = 500) String> meetingAgenda,
+            @NotNull @Size(min = 1, max = 12) List<@Valid PreparationItem> eligibilityChecklist,
+            @NotNull @Size(min = 1, max = 15) List<@Valid PreparationItem> submissionDocuments,
+            @NotNull @Size(min = 1, max = 12) List<@Valid PreparationItem> companyInputs,
+            @Size(max = 10) String applicationDeadline,
+            @NotNull @Valid StrategyOnePage strategy
+    ) {
+    }
+
+    public record PreparationItem(
+            @NotBlank @Size(max = 150) String title,
+            @NotBlank @Size(max = 40) String status,
+            @NotBlank @Size(max = 500) String detail,
+            @NotBlank @Size(max = 300) String nextAction,
+            @Size(max = 40) String requirementLevel,
+            @Size(max = 40) String stage,
+            @Size(max = 200) String appliesTo,
+            @Valid RequirementSource source,
+            @Size(max = 40) String companyEvidenceLevel,
+            @jakarta.validation.constraints.Min(0) @jakarta.validation.constraints.Max(100) Integer readinessScore,
+            @jakarta.validation.constraints.Min(0) @jakarta.validation.constraints.Max(100) Integer conditionScore,
+            @jakarta.validation.constraints.Min(0) @jakarta.validation.constraints.Max(100) Integer evidenceScore,
+            @jakarta.validation.constraints.Min(0) @jakarta.validation.constraints.Max(100) Integer scheduleScore,
+            @Size(max = 40) String workType,
+            @jakarta.validation.constraints.Min(1) @jakarta.validation.constraints.Max(120) Integer estimatedBusinessDays,
+            @Size(max = 4) List<@NotBlank @Size(max = 300) String> scoreBasis
+    ) {
+    }
+
+    public record RequirementSource(
+            @Size(max = 40) String origin,
+            @Size(max = 500) String attachmentName,
+            @Size(max = 200) String sectionTitle,
+            @Size(max = 200) String location,
+            @Size(max = 300) String excerpt
+    ) {
+    }
+
+    public record StrategyOnePage(
+            @NotBlank @Size(max = 40) String decision,
+            @NotBlank @Size(max = 500) String decisionReason,
+            @NotBlank @Size(max = 120) String recommendedProject,
+            @NotBlank @Size(max = 500) String recommendedParticipation,
+            @NotBlank @Size(max = 500) String alternativeParticipation,
+            @NotNull @Size(min = 1, max = 4) List<@Valid StrategyCapabilityMatch> capabilityMatches,
+            @NotNull @Size(min = 1, max = 4) List<@Valid StrategyGap> criticalGaps,
+            @NotNull @Size(min = 1, max = 4) List<@Valid StrategyStopCriterion> stopCriteria
+    ) {
+    }
+
+    public record StrategyCapabilityMatch(
+            @NotBlank @Size(max = 500) String confirmedFact,
+            @NotBlank @Size(max = 500) String strategicInterpretation
+    ) {
+    }
+
+    public record StrategyGap(
+            @NotBlank @Size(max = 300) String gap,
+            @NotBlank @Size(max = 300) String nextAction,
+            @NotBlank @Size(max = 100) String owner,
+            @NotBlank @Size(max = 150) String targetTiming,
+            @Size(max = 40) String workType,
+            @jakarta.validation.constraints.Min(1) @jakarta.validation.constraints.Max(120) Integer estimatedBusinessDays,
+            @Size(max = 10) String targetDate,
+            @Size(max = 300) String scheduleBasis
+    ) {
+    }
+
+    public record StrategyStopCriterion(
+            @NotBlank @Size(max = 40) String type,
+            @NotBlank @Size(max = 400) String condition,
+            @NotBlank @Size(max = 400) String rationale
     ) {
     }
 

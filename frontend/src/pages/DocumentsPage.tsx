@@ -15,7 +15,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { api } from '../api/client'
-import type { ChangeType, DocumentAnalysis, DocumentDetail, DocumentDetection, MonitoringRun, OpportunityDimensionType, OpportunityPriority } from '../api/types'
+import type { ChangeType, DocumentAnalysis, DocumentDetail, DocumentDetection, MonitoringRun, OpportunityDimensionType, OpportunityPriority, ProposalPreparationItem } from '../api/types'
 import { Badge, EmptyState, InlineError, Loading, Pagination } from '../components/ui'
 
 const opportunityLabels: Record<OpportunityDimensionType, string> = {
@@ -39,7 +39,7 @@ const changeLabel: Record<ChangeType, string> = {
 }
 const eligibility = {
   ELIGIBLE: ['지원 가능', 'success'],
-  INELIGIBLE: ['지원 어려움', 'danger'],
+  INELIGIBLE: ['지원 불가능', 'danger'],
   REVIEW_REQUIRED: ['추가 검토 필요', 'warning'],
 } as const
 const favorability = {
@@ -75,6 +75,168 @@ function getChangeImpact(detail: DocumentDetail, value: NonNullable<DocumentDeta
 function proposalHeading() {
   return '회사 관점에서 정리했어요'
 }
+
+const preparationStatus = {
+  READY: ['충족', 'success'],
+  VERIFIED: ['충족', 'success'],
+  LIKELY: ['확인 필요', 'warning'],
+  ACTION_REQUIRED: ['확인 필요', 'warning'],
+  NEEDS_CONFIRMATION: ['확인 필요', 'warning'],
+  MISSING: ['확인 필요', 'warning'],
+  INELIGIBLE: ['충족 불가', 'danger'],
+  NOT_APPLICABLE: ['해당 없음', 'neutral'],
+} as const
+const documentPreparationStatus = {
+  READY: ['준비 완료', 'success'],
+  VERIFIED: ['준비 완료', 'success'],
+  LIKELY: ['확인 필요', 'warning'],
+  ACTION_REQUIRED: ['준비 필요', 'warning'],
+  NEEDS_CONFIRMATION: ['확인 필요', 'warning'],
+  MISSING: ['준비 필요', 'warning'],
+  INELIGIBLE: ['준비 필요', 'warning'],
+  NOT_APPLICABLE: ['해당 없음', 'neutral'],
+} as const
+const companyInputStatus = {
+  READY: ['확인 완료', 'success'],
+  VERIFIED: ['확인 완료', 'success'],
+  LIKELY: ['확인 필요', 'warning'],
+  ACTION_REQUIRED: ['준비 필요', 'warning'],
+  NEEDS_CONFIRMATION: ['확인 필요', 'warning'],
+  MISSING: ['준비 필요', 'warning'],
+  INELIGIBLE: ['준비 필요', 'warning'],
+  NOT_APPLICABLE: ['해당 없음', 'neutral'],
+} as const
+const strategyDecision = {
+  GO: ['지원 권장', 'success'],
+  CONDITIONAL_GO: ['조건부 지원 권장', 'warning'],
+  HOLD: ['판단 보류', 'warning'],
+  NO_GO: ['지원 비권장', 'danger'],
+} as const
+const strategyProjectHeading = {
+  GO: '추천 세부 과제',
+  CONDITIONAL_GO: '추천 세부 과제',
+  HOLD: '과제 확정 조건',
+  NO_GO: '재검토 조건',
+} as const
+
+const requirementLevelLabel = {
+  MANDATORY: '필수',
+  CONDITIONAL: '해당 시',
+  OPTIONAL: '선택',
+  RECOMMENDED: '내부 권장',
+} as const
+
+const requirementStageLabel = {
+  APPLICATION: '신청 단계',
+  EVALUATION: '평가 단계',
+  POST_SELECTION: '선정 이후',
+  AGREEMENT: '협약 단계',
+  EXECUTION: '수행 단계',
+  REPORTING: '결과보고',
+} as const
+
+const expiredDeadlinePattern = /(?:마감\s*(?:지남|경과)|접수(?:기한|기간|마감)[^.]{0,40}(?:지났|경과|종료|불가능))/u
+const formReferencePattern = /\s*[（(]\s*((?:양식|서식)\s*\d+)\s*[)）]\s*/gu
+const readableSentence = (value: string) => value.replace(/\s+·\s+/gu, ', ')
+const genericAppliesTo = new Set(['신청기관', '모든 신청기관', '전체 신청기관', '해당 기관', '참여기관'])
+const formatEvidenceSource = (parts: Array<string | null | undefined>) => {
+  const values = parts.filter((value): value is string => Boolean(value))
+  if (values.length === 0) return null
+  if (values.length === 1) return `출처는 ${values[0]}입니다.`
+  return `출처는 ${values.slice(0, -1).join(', ')}이며 위치는 ${values.at(-1)}입니다.`
+}
+
+function isExpiredApplication(detail: DocumentDetail) {
+  const urgencyReason = detail.analysis?.opportunity?.dimensions.find(({ type }) => type === 'URGENCY')?.reason ?? ''
+  return expiredDeadlinePattern.test(`${urgencyReason} ${detail.analysis?.summary ?? ''}`)
+}
+
+function PreparationChecklist({
+  items,
+  kind,
+  sourceAttachmentNames = [],
+  applicationExpired = false,
+}: {
+  items: ProposalPreparationItem[]
+  kind: 'eligibility' | 'document' | 'company'
+  sourceAttachmentNames?: string[]
+  applicationExpired?: boolean
+}) {
+  return (
+    <div className="preparation-checklist">
+      {items.filter((item) => item.status !== 'NOT_APPLICABLE').map((item) => {
+        const isExpiredDeadline = applicationExpired && /접수|신청|공고.*기한|마감/u.test(item.title)
+        const statusMap = kind === 'document'
+          ? documentPreparationStatus
+          : kind === 'company'
+            ? companyInputStatus
+            : preparationStatus
+        const status = isExpiredDeadline
+          ? kind === 'eligibility'
+            ? ['충족 불가', 'danger'] as const
+            : ['준비 필요', 'warning'] as const
+          : statusMap[item.status]
+        const formReference = item.title.match(formReferencePattern)?.[0]?.replace(/[（）()]/gu, '').trim()
+        const title = item.title.replace(formReferencePattern, ' ').replace(/\s+/gu, ' ').trim()
+        const source = formReference && sourceAttachmentNames.length === 1
+          ? `출처는 ${sourceAttachmentNames[0]}이며 해당 문서의 ${formReference}입니다.`
+          : null
+        const requirementLevel = item.requirementLevel ? requirementLevelLabel[item.requirementLevel] : null
+        const stage = item.stage ? requirementStageLabel[item.stage] : null
+        const appliesTo = item.appliesTo && !genericAppliesTo.has(item.appliesTo)
+          ? item.appliesTo
+          : null
+        const evidenceSource = item.source
+          ? formatEvidenceSource([item.source.attachmentName, item.source.sectionTitle, item.source.location])
+          : source
+        return (
+          <article key={item.title}>
+            <div className="preparation-checklist__title">
+              <strong>{title}</strong>
+              <div className="preparation-checklist__score">
+                <Badge tone={status[1]}>{status[0]}</Badge>
+              </div>
+            </div>
+            {(requirementLevel || stage || appliesTo) && (
+              <div className="preparation-checklist__meta">
+                {requirementLevel && <span>{requirementLevel}</span>}
+                {stage && <span>{stage}</span>}
+                {appliesTo && <span>{appliesTo}</span>}
+              </div>
+            )}
+            <div className="preparation-checklist__judgement">
+              <span>현재 판단</span>
+              <p>{readableSentence(item.detail)}</p>
+            </div>
+            <div className="preparation-checklist__action">
+              <span>담당자 할 일</span>
+              <p>{readableSentence(item.nextAction)}</p>
+            </div>
+            {(evidenceSource || item.source?.excerpt) && (
+              <details className="preparation-checklist__evidence">
+                <summary>원문 근거 보기</summary>
+                <div>
+                  {evidenceSource && <span className="preparation-checklist__source">{evidenceSource}</span>}
+                  {item.source?.excerpt && <blockquote>{item.source.excerpt}</blockquote>}
+                </div>
+              </details>
+            )}
+          </article>
+        )
+      })}
+    </div>
+  )
+}
+
+const isProposalSummary = (title: string) =>
+  /(?:^|[>·\s])(?:요약문|요약서|사업\s*요약|제안\s*요약)(?:$|[>·\s])/u.test(title)
+
+const formatProposalDraftBody = (body: string) =>
+  body.replace(
+    /['"]?\[회사 확인 필요:\s*(.*?)\]['"]?(?:\s*(?:으로|로)\s*보완하겠습니다)?/gu,
+    (_, item: string) => `${item.trim()}에 관한 내용은 회사 내부 검토 후 확정이 필요합니다.`,
+  )
+  .replace(/\.\s*\./gu, '.')
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<DocumentDetection[]>([])
   const [runs, setRuns] = useState<MonitoringRun[]>([])
@@ -349,6 +511,14 @@ function DocumentDrawer({ detectionId, onClose }: { detectionId: number; onClose
       .finally(() => setLoading(false))
   }, [detectionId])
 
+  useEffect(() => {
+    if (detail?.analysis?.proposal.draftStatus !== 'GENERATING') return
+    const timer = window.setInterval(() => {
+      api.getDocument(detectionId).then(setDetail).catch(() => undefined)
+    }, 3000)
+    return () => window.clearInterval(timer)
+  }, [detectionId, detail?.analysis?.proposal.draftStatus])
+
   return (
     <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <aside className="drawer">
@@ -423,10 +593,27 @@ function OpportunityScore({ opportunity }: { opportunity: NonNullable<DocumentAn
 }
 
 function DocumentContent({ detail }: { detail: DocumentDetail }) {
+  const [activeDetailTab, setActiveDetailTab] = useState<'ANALYSIS' | 'PROPOSAL'>('ANALYSIS')
   const analysis = detail.analysis
-  const eligible = analysis ? eligibility[analysis.eligibility] : null
+  const applicationExpired = isExpiredApplication(detail)
+  const eligible = analysis
+    ? applicationExpired ? ['지원 불가능', 'danger'] as const : eligibility[analysis.eligibility]
+    : null
   const changeImpact = analysis ? getChangeImpact(detail, analysis.favorableOrNot) : null
   const proposalSections = analysis?.proposal.sections ?? []
+  const proposalDraft = analysis?.proposal
+  const showProposalTab = Boolean(proposalDraft)
+  const proposalSummary = proposalDraft?.draftSections.find((section) => isProposalSummary(section.title))
+  const proposalWritingSections = proposalDraft?.draftSections.filter((section) => !isProposalSummary(section.title)) ?? []
+  const proposalUnavailableReason = analysis && proposalDraft
+    ? getProposalUnavailableReason(detail, analysis)
+    : ''
+  const applicationDocuments = proposalDraft?.preparation?.submissionDocuments.filter((item) => !item.stage || item.stage === 'APPLICATION') ?? []
+  const laterDocuments = proposalDraft?.preparation?.submissionDocuments.filter((item) => item.stage && item.stage !== 'APPLICATION') ?? []
+
+  useEffect(() => {
+    setActiveDetailTab('ANALYSIS')
+  }, [detail.detectionId])
 
   return (
     <div className="document-detail">
@@ -440,8 +627,17 @@ function DocumentContent({ detail }: { detail: DocumentDetail }) {
         </div>
       </header>
 
+      {analysis && showProposalTab && (
+        <nav className="detail-tabs" aria-label="문서 상세 보기">
+          <button className={activeDetailTab === 'ANALYSIS' ? 'active' : ''} onClick={() => setActiveDetailTab('ANALYSIS')}>공고 분석</button>
+          <button className={activeDetailTab === 'PROPOSAL' ? 'active' : ''} onClick={() => setActiveDetailTab('PROPOSAL')}>사업 제안</button>
+        </nav>
+      )}
+
       {analysis ? (
         <>
+          {activeDetailTab === 'ANALYSIS' ? (
+          <>
           <section className="analysis-hero">
             <div className="analysis-hero__title">
               <span><Sparkles size={18} /></span>
@@ -486,12 +682,131 @@ function DocumentContent({ detail }: { detail: DocumentDetail }) {
               </div>
             </div>
           </section>
+          </>
+          ) : proposalDraft ? (
+            <section className="detail-section proposal-draft-panel">
+              {proposalDraft.preparation ? (
+                <div className="proposal-preparation">
+                  <section className="preparation-block">
+                    <div className="preparation-block__header"><span>02</span><div><h4>회의 안건</h4><p>제안서 작성 전에 관계자들과 먼저 결정할 내용입니다.</p></div></div>
+                    <ol className="meeting-agenda">
+                      {proposalDraft.preparation.meetingAgenda.map((agenda) => <li key={agenda}>{agenda}</li>)}
+                    </ol>
+                  </section>
+                  <section className="preparation-block">
+                    <div className="preparation-block__header"><span>03</span><div><h4>지원 조건 체크리스트</h4><p>공고 요구사항과 현재 확인된 회사 상태를 비교합니다.</p></div></div>
+                    <PreparationChecklist kind="eligibility" items={proposalDraft.preparation.eligibilityChecklist} applicationExpired={applicationExpired} />
+                  </section>
+                  <section className="preparation-block">
+                    <div className="preparation-block__header"><span>04</span><div><h4>제출 서류 체크리스트</h4><p>접수 전에 확보하거나 새로 작성해야 하는 자료입니다.</p></div></div>
+                    <PreparationChecklist kind="document" items={applicationDocuments} sourceAttachmentNames={proposalDraft.sourceAttachmentNames} applicationExpired={applicationExpired} />
+                    {laterDocuments.length > 0 && (
+                      <div className="later-requirements">
+                        <h5>선정 이후 준비사항</h5>
+                        <p>신청서류와 구분해 선정·협약 이후 필요한 자료를 보여드립니다.</p>
+                        <PreparationChecklist kind="document" items={laterDocuments} sourceAttachmentNames={proposalDraft.sourceAttachmentNames} />
+                      </div>
+                    )}
+                  </section>
+                  <section className="preparation-block">
+                    <div className="preparation-block__header"><span>05</span><div><h4>회사에서 확인·준비할 정보</h4><p>공고만으로 확인할 수 없어 회사 담당자가 직접 확인하거나 작성해야 하는 항목입니다.</p></div></div>
+                    <PreparationChecklist kind="company" items={proposalDraft.preparation.companyInputs} />
+                  </section>
+                  <section className="preparation-block strategy-one-page">
+                    <div className="preparation-block__header"><span>01</span><div><h4>제안 전략 한 장 <em className="ai-recommendation-label">AI 제안</em></h4><p>공고 근거와 회사 정보를 바탕으로 제안한 방향이며 담당자 확정이 필요합니다.</p></div></div>
+                    {proposalDraft.preparation.strategy.decision ? (
+                      <>
+                        <div className="strategy-decision">
+                          <Badge tone={strategyDecision[proposalDraft.preparation.strategy.decision][1]}>{strategyDecision[proposalDraft.preparation.strategy.decision][0]}</Badge>
+                          <p>{proposalDraft.preparation.strategy.decisionReason}</p>
+                        </div>
+                        <div className="strategy-project">
+                          <small>{strategyProjectHeading[proposalDraft.preparation.strategy.decision]}</small>
+                          <h5>{proposalDraft.preparation.strategy.recommendedProject}</h5>
+                        </div>
+                        <div className="strategy-roles">
+                          <div><strong>추천 참여 방식</strong><p>{proposalDraft.preparation.strategy.recommendedParticipation}</p></div>
+                          <div><strong>조건 미충족 시 대안</strong><p>{proposalDraft.preparation.strategy.alternativeParticipation}</p></div>
+                        </div>
+                        <div className="strategy-capabilities">
+                          <h6>공고와 연결되는 회사 역량</h6>
+                          {proposalDraft.preparation.strategy.capabilityMatches?.map((item) => (
+                            <div key={`${item.confirmedFact}-${item.strategicInterpretation}`}><p><span>확인된 사실</span>{item.confirmedFact}</p><p><span>AI 해석</span>{item.strategicInterpretation}</p></div>
+                          ))}
+                        </div>
+                        <div className="strategy-gaps">
+                          <div className="strategy-gaps__header">
+                            <h6>우선 조치 항목</h6>
+                            <p>신청을 진행하기 위해 우선 처리해야 할 미확인·미완료 항목입니다.</p>
+                          </div>
+                          {proposalDraft.preparation.strategy.criticalGaps?.map((item) => (
+                            <article key={item.gap}>
+                              <strong>{readableSentence(item.gap)}</strong>
+                              <p>{readableSentence(item.nextAction)}</p>
+                              <div className="strategy-gap-meta">
+                                <span><b>담당 부서</b>{item.owner}</span>
+                                <span className="strategy-gap-deadline">
+                                  <b>내부 완료 목표일</b>
+                                  {item.targetDate ?? readableSentence(item.targetTiming)}
+                                  {item.scheduleBasis && (
+                                    <span className="strategy-gap-tooltip">
+                                      <button type="button" aria-label="내부 완료 목표일 계산 근거">
+                                        <CircleHelp size={12} aria-hidden="true" />
+                                      </button>
+                                      <span role="tooltip">{item.scheduleBasis}</span>
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                        <div className="strategy-stop">
+                          <h6>지원 중단 기준</h6>
+                          {proposalDraft.preparation.strategy.stopCriteria?.map((item) => (
+                            <article key={item.condition}><span>{item.type === 'OFFICIAL_REQUIREMENT' ? '공고 필수조건' : 'AI 내부 권장 기준'}</span><strong>{item.condition}</strong><p>{item.rationale}</p></article>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <p className="strategy-upgrade-notice">다음 모니터링 실행에서 참여 의사결정 중심의 새 전략으로 갱신됩니다.</p>
+                    )}
+                  </section>
+                </div>
+              ) : proposalDraft.draftSections.length > 0 ? (
+                <>
+                  {proposalSummary && (
+                    <article className="proposal-executive-summary">
+                      <small>PROPOSAL SUMMARY</small>
+                      <h4>제안 요약</h4>
+                      <p>{formatProposalDraftBody(proposalSummary.body)}</p>
+                    </article>
+                  )}
+                  {proposalWritingSections.length > 0 && (
+                    <div className="proposal-draft-sections">
+                      {proposalWritingSections.map((section, index) => (
+                        <article key={`${section.title}-${index}`}><span>{index + 1}</span><div><h4>{section.title}</h4><p>{formatProposalDraftBody(section.body)}</p></div></article>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="proposal-draft-empty">
+                  {applicationExpired
+                    ? '접수기한이 지나 제안 준비안을 생성하지 않았습니다. 향후 재공고 여부를 확인해 주세요.'
+                    : proposalDraft.draftStatus === 'GENERATING'
+                      ? '공고 분석은 완료되었습니다. 사업 제안을 별도로 준비하고 있으며 완료되면 이 화면이 자동으로 갱신됩니다.'
+                      : proposalUnavailableReason}
+                </p>
+              )}
+            </section>
+          ) : null}
         </>
       ) : (
         <EmptyState icon={<Sparkles />} title="AI 분석을 준비하고 있어요" description="분석이 완료되면 핵심 내용과 대응 방향을 여기에서 확인할 수 있어요." />
       )}
 
-      <section className="detail-section attachments">
+      {(!showProposalTab || activeDetailTab === 'ANALYSIS') && <section className="detail-section attachments">
         <div className="section-title-row"><h3>첨부파일</h3><Badge>{detail.attachments.length}개</Badge></div>
         {detail.attachments.length === 0 ? (
           <p className="muted">첨부된 파일이 없습니다.</p>
@@ -518,7 +833,43 @@ function DocumentContent({ detail }: { detail: DocumentDetail }) {
             </a>
           ))
         )}
-      </section>
+      </section>}
     </div>
   )
+}
+
+function getProposalUnavailableReason(detail: DocumentDetail, analysis: DocumentAnalysis) {
+  const proposal = analysis.proposal
+  if (proposal.documentType !== 'PROPOSAL_REQUEST') return proposal.draftReason
+
+  const companyFit = analysis.opportunity?.dimensions.find(
+    (dimension) => dimension.type === 'COMPANY_FIT',
+  )?.score
+  if (companyFit == null) return proposal.draftReason
+
+  const hasAnalyzedAttachment = detail.attachments.some(
+    (attachment) => attachment.parseStatus === 'COMPLETED',
+  )
+  const blockers: string[] = []
+  if (companyFit < 61) {
+    blockers.push(
+      `회사 적합도는 ${companyFit}점으로 사업 제안 준비안 생성 기준인 61점에 미달했습니다.`,
+    )
+  }
+  if (analysis.eligibility === 'INELIGIBLE') {
+    blockers.push(
+      '신청 자격 또는 접수기한 조건상 현재 회사가 신청할 수 없는 공고로 판정했습니다.',
+    )
+  }
+  if (!hasAnalyzedAttachment) {
+    blockers.push(
+      '내용 분석이 완료된 첨부 양식이 없어 제출 요구사항의 원문 근거를 확인할 수 없습니다.',
+    )
+  }
+  if (blockers.length === 0) return proposal.draftReason
+  if (analysis.eligibility === 'REVIEW_REQUIRED') {
+    blockers.push('신청 자격은 회사의 공식 증빙으로 추가 확인해야 합니다.')
+  }
+  blockers.push('따라서 현재 확인된 조건으로는 사업 제안 준비안을 생성할 수 없습니다.')
+  return blockers.join(' ')
 }

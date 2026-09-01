@@ -151,4 +151,50 @@ public class DocumentAnalysis extends BaseEntity {
                 analyzedAt
         );
     }
+
+    public boolean requiresProposalSchemaUpgrade() {
+        return proposalDirection != null
+                && proposalDirection.contains("\"documentType\":\"PROPOSAL_REQUEST\"")
+                && (!proposalDirection.contains("\"preparationSchemaVersion\":10")
+                || (proposalDirection.contains("\"draftStatus\":\"REVIEW_REQUIRED\"")
+                && proposalDirection.contains("확인 내용:")));
+    }
+
+    public void replaceAnalysis(
+            String summary,
+            String keyPoints,
+            DocumentImportance importance,
+            String reason,
+            AnalysisEligibility eligibility,
+            AnalysisFavorability favorableOrNot,
+            String proposalDirection,
+            Integer opportunityScore,
+            String opportunityAssessment,
+            String usedTools,
+            String modelName,
+            LocalDateTime analyzedAt
+    ) {
+        this.summary = summary;
+        this.keyPoints = keyPoints;
+        this.importance = importance;
+        this.reason = reason;
+        this.eligibility = eligibility;
+        this.favorableOrNot = favorableOrNot;
+        this.proposalDirection = proposalDirection;
+        this.opportunityScore = opportunityScore;
+        this.opportunityAssessment = opportunityAssessment;
+        this.usedTools = usedTools;
+        this.modelName = modelName;
+        this.analyzedAt = analyzedAt;
+    }
+
+    public void updateProposal(
+            String proposalDirection,
+            String usedTools,
+            LocalDateTime analyzedAt
+    ) {
+        this.proposalDirection = proposalDirection;
+        this.usedTools = usedTools;
+        this.analyzedAt = analyzedAt;
+    }
 }

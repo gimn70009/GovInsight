@@ -1,4 +1,6 @@
+import logging
 import re
+import time
 from typing import Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -12,13 +14,19 @@ from app.domains.analysis.schemas.result import (
     AnalysisDraft,
     DocumentAnalysisResult,
     DocumentImportance,
+    Eligibility,
     Favorability,
     OpportunityDimensionType,
+    ProposalDocumentType,
+    ProposalDraftStatus,
 )
 
 
 class AnalysisWorkflowError(RuntimeError):
     pass
+
+
+logger = logging.getLogger(__name__)
 
 
 AnalysisPath = Literal["new", "updated", "unchanged"]
@@ -126,10 +134,27 @@ class DocumentAnalysisWorkflow:
 
     async def _analyze_node(self, state: AnalysisGraphState) -> AnalysisGraphState:
         attempt = state.get("attempt", 0) + 1
+        document = state["document"]
+        started_at = time.perf_counter()
+        logger.info(
+            "공고 분석 시도 시작. detection_id=%s version_id=%s attempt=%s max_attempts=%s",
+            document.detection_id,
+            document.version_id,
+            attempt,
+            self._max_attempts,
+        )
         try:
             candidate = await self._runner.analyze(
-                state["document"],
+                document,
                 feedback=state.get("feedback") or None,
+            )
+            logger.info(
+                "공고 분석 시도 완료. detection_id=%s version_id=%s "
+                "attempt=%s elapsed_seconds=%.2f",
+                document.detection_id,
+                document.version_id,
+                attempt,
+                time.perf_counter() - started_at,
             )
             return {
                 "attempt": attempt,
@@ -139,6 +164,15 @@ class DocumentAnalysisWorkflow:
             }
         except Exception as exception:
             error = _safe_error(exception)
+            logger.warning(
+                "공고 분석 시도 실패. detection_id=%s version_id=%s "
+                "attempt=%s elapsed_seconds=%.2f error=%s",
+                document.detection_id,
+                document.version_id,
+                attempt,
+                time.perf_counter() - started_at,
+                error,
+            )
             return {
                 "attempt": attempt,
                 "candidate": None,
@@ -152,6 +186,7 @@ class DocumentAnalysisWorkflow:
         if candidate is None:
             return {"error": "검증할 분석 결과가 없습니다."}
 
+        _normalize_proposal_document_type(state["document"], candidate)
         violations = _business_rule_violations(
             state["path"],
             state["required_tools"],
@@ -244,6 +279,7 @@ def _business_rule_violations(
 ) -> list[str]:
     _normalize_urgency_score(candidate)
     _normalize_internal_field_names(candidate)
+    _normalize_expired_application(candidate)
     violations = [
         f"필수 근거 도구 {tool_name}을 사용하지 않았습니다."
         for tool_name in required_tools
@@ -254,6 +290,7 @@ def _business_rule_violations(
         for dimension in candidate.draft.opportunity.dimensions
     }
     company_fit_score = dimension_scores.get(OpportunityDimensionType.COMPANY_FIT, 0)
+    _normalize_deterministic_business_fields(path, company_fit_score, candidate)
     violations.extend(_opportunity_reason_style_violations(candidate))
     urgency = next(
         (
@@ -297,6 +334,97 @@ def _business_rule_violations(
     if path == "unchanged" and favorability != Favorability.NEUTRAL:
         violations.append("변경 없는 문서의 favorable_or_not은 NEUTRAL이어야 합니다.")
     return violations
+
+
+def _normalize_deterministic_business_fields(
+    path: AnalysisPath,
+    company_fit_score: int,
+    candidate: AgentAnalysis,
+) -> None:
+    if path == "new":
+        candidate.draft.favorable_or_not = Favorability.NOT_APPLICABLE
+    elif path == "unchanged":
+        candidate.draft.favorable_or_not = Favorability.NEUTRAL
+
+    if (
+        candidate.draft.importance == DocumentImportance.HIGH
+        and company_fit_score < 50
+    ):
+        candidate.draft.importance = DocumentImportance.NORMAL
+
+    if path == "new" and company_fit_score <= 40:
+        expected_titles = ["핵심 판단", "도메인 불일치 근거", "재검토 조건", "현재 대응"]
+    else:
+        expected_titles = {
+            "new": ["핵심 판단", "활용·추진 방안", "필요 파트너·준비사항", "즉시 실행"],
+            "updated": ["변경 요약", "회사 영향", "대응 조정", "즉시 실행"],
+            "unchanged": ["현재 상태", "유지할 대응", "다음 확인"],
+        }[path]
+    if len(candidate.draft.proposal.sections) == len(expected_titles):
+        for section, title in zip(
+            candidate.draft.proposal.sections,
+            expected_titles,
+            strict=True,
+        ):
+            section.title = title
+
+
+_PROPOSAL_TEMPLATE_PATTERN = re.compile(
+    r"(?:신청\s*서식|제출\s*(?:서류\s*)?서식|사업\s*계획서|연구개발\s*계획서|제안서\s*양식)",
+    re.IGNORECASE,
+)
+
+
+def _normalize_proposal_document_type(
+    document: AnalysisDocumentRequest,
+    candidate: AgentAnalysis,
+) -> None:
+    """Treat an explicitly attached application template as deterministic evidence."""
+    evidence_names = [
+        attachment.file_name
+        for attachment in document.attachments
+        if attachment.extracted_text and attachment.extracted_text.strip()
+    ]
+    has_template = any(_PROPOSAL_TEMPLATE_PATTERN.search(name) for name in evidence_names)
+    if not has_template:
+        return
+    proposal = candidate.draft.proposal
+    if proposal.document_type == ProposalDocumentType.PROPOSAL_REQUEST:
+        return
+    proposal.document_type = ProposalDocumentType.PROPOSAL_REQUEST
+    proposal.draft_status = ProposalDraftStatus.REVIEW_REQUIRED
+    proposal.draft_reason = (
+        "내용 분석이 완료된 신청서식 또는 사업계획서 양식이 확인되어 "
+        "사업 제안 검토 대상 공고로 분류했습니다."
+    )
+    proposal.source_attachment_names = []
+    proposal.template_sections = []
+    proposal.draft_sections = []
+    proposal.preparation = None
+
+
+def _normalize_expired_application(candidate: AgentAnalysis) -> None:
+    urgency = next(
+        (
+            dimension
+            for dimension in candidate.draft.opportunity.dimensions
+            if dimension.type == OpportunityDimensionType.URGENCY
+        ),
+        None,
+    )
+    if urgency is None or "마감 지남" not in urgency.reason:
+        return
+    candidate.draft.eligibility = Eligibility.INELIGIBLE
+    if candidate.draft.proposal.document_type != ProposalDocumentType.PROPOSAL_REQUEST:
+        return
+    candidate.draft.proposal.draft_status = ProposalDraftStatus.NOT_RECOMMENDED
+    candidate.draft.proposal.draft_reason = (
+        "신청 접수기한이 지나 신규 접수가 불가능하므로 제안서 작성을 권장하지 않습니다."
+    )
+    candidate.draft.proposal.source_attachment_names = []
+    candidate.draft.proposal.template_sections = []
+    candidate.draft.proposal.draft_sections = []
+    candidate.draft.proposal.preparation = None
 
 
 def _urgency_score_violations(score: int, reason: str) -> list[str]:
@@ -415,5 +543,7 @@ def _urgency_score(remaining_days: int) -> int:
 
 
 def _safe_error(exception: Exception) -> str:
+    if isinstance(exception, TimeoutError) and not str(exception).strip():
+        return "AI 모델 응답 시간이 초과되었습니다. 첨부파일 분량 또는 출력 항목을 확인하세요."
     message = str(exception).strip()
     return message[:500] if message else exception.__class__.__name__

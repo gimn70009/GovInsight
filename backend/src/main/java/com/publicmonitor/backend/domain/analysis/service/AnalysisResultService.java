@@ -8,6 +8,8 @@ import com.publicmonitor.backend.domain.analysis.repository.AnalysisDocumentDete
 import com.publicmonitor.backend.domain.analysis.repository.DocumentAnalysisRepository;
 import com.publicmonitor.backend.domain.analysis.web.dto.AnalysisResultRequest;
 import com.publicmonitor.backend.domain.analysis.web.dto.AnalysisResultResponse;
+import com.publicmonitor.backend.domain.analysis.web.dto.ProposalResultRequest;
+import com.publicmonitor.backend.domain.analysis.web.dto.ProposalResultResponse;
 import com.publicmonitor.backend.domain.document.entity.DocumentDetection;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRun;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRunStatus;
@@ -55,16 +57,36 @@ public class AnalysisResultService {
             DocumentDetection detection = validatedDetection(
                     request.runId(), result.detectionId(), result.documentId(), result.versionId()
             );
-            if (analysisRepository.existsByDocumentVersionId(result.versionId())) {
-                duplicateCount++;
-                continue;
-            }
             Map<OpportunityDimensionType, Integer> opportunityScores = result.opportunity().dimensions().stream()
                     .collect(Collectors.toMap(
                             AnalysisResultRequest.OpportunityDimension::type,
                             AnalysisResultRequest.OpportunityDimension::score
                     ));
             int opportunityScore = OpportunityScoreCalculator.calculate(opportunityScores);
+            var existingAnalysis = analysisRepository.findByDocumentVersionId(result.versionId());
+            if (existingAnalysis.isPresent()) {
+                DocumentAnalysis existing = existingAnalysis.orElseThrow();
+                if (!existing.requiresProposalSchemaUpgrade()) {
+                    duplicateCount++;
+                    continue;
+                }
+                existing.replaceAnalysis(
+                        result.summary().strip(),
+                        objectMapper.writeValueAsString(result.keyPoints()),
+                        result.importance(),
+                        result.reason().strip(),
+                        result.eligibility(),
+                        result.favorableOrNot(),
+                        objectMapper.writeValueAsString(result.proposal()),
+                        opportunityScore,
+                        objectMapper.writeValueAsString(result.opportunity()),
+                        objectMapper.writeValueAsString(result.usedTools()),
+                        result.modelName().strip(),
+                        analyzedAt
+                );
+                storedCount++;
+                continue;
+            }
             analysisRepository.save(DocumentAnalysis.create(
                     detection.getDocumentVersion(),
                     result.summary().strip(),
@@ -93,10 +115,47 @@ public class AnalysisResultService {
                 "AI 분석 결과 저장 완료. runId={} jobId={} storedCount={} duplicateCount={} failedCount={}",
                 request.runId(), request.jobId(), storedCount, duplicateCount, request.failures().size()
         );
-        eventPublisher.publishEvent(new AnalysisStoredEvent(request.runId()));
+        if (storedCount + duplicateCount > 0) {
+            eventPublisher.publishEvent(new AnalysisStoredEvent(request.runId()));
+        } else {
+            log.warn(
+                    "저장된 AI 분석 결과가 없어 보고서 생성을 요청하지 않습니다. runId={} jobId={} failedCount={}",
+                    request.runId(), request.jobId(), request.failures().size()
+            );
+        }
         return new AnalysisResultResponse(
                 request.runId(), storedCount, duplicateCount, request.failures().size()
         );
+    }
+
+    @Transactional
+    public ProposalResultResponse receiveProposal(ProposalResultRequest request) {
+        monitoringRunRepository.findById(request.runId())
+                .orElseThrow(() -> new AnalysisResultException(
+                        AnalysisResultResponseCode.RUN_NOT_FOUND
+                ));
+        LocalDateTime updatedAt = LocalDateTime.now(clock.withZone(SERVICE_ZONE));
+        int updatedCount = 0;
+        for (ProposalResultRequest.ProposalUpdate result : request.results()) {
+            validatedDetection(
+                    request.runId(), result.detectionId(), result.documentId(), result.versionId()
+            );
+            DocumentAnalysis analysis = analysisRepository.findByDocumentVersionId(result.versionId())
+                    .orElseThrow(() -> new AnalysisResultException(
+                            AnalysisResultResponseCode.ANALYSIS_NOT_FOUND
+                    ));
+            analysis.updateProposal(
+                    objectMapper.writeValueAsString(result.proposal()),
+                    objectMapper.writeValueAsString(result.usedTools()),
+                    updatedAt
+            );
+            updatedCount++;
+        }
+        log.info(
+                "사업 제안 결과 갱신 완료. runId={} jobId={} updatedCount={}",
+                request.runId(), request.jobId(), updatedCount
+        );
+        return new ProposalResultResponse(request.runId(), updatedCount);
     }
 
     private DocumentDetection validatedDetection(

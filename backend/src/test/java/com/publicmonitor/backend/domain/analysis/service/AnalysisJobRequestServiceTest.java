@@ -2,10 +2,12 @@ package com.publicmonitor.backend.domain.analysis.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
 
 import com.publicmonitor.backend.domain.analysis.repository.AnalysisDocumentDetectionRepository;
 import com.publicmonitor.backend.domain.analysis.repository.AnalysisDocumentVersionRepository;
 import com.publicmonitor.backend.domain.analysis.repository.DocumentAnalysisRepository;
+import com.publicmonitor.backend.domain.analysis.entity.DocumentAnalysis;
 import com.publicmonitor.backend.domain.document.entity.AttachmentParseStatus;
 import com.publicmonitor.backend.domain.document.entity.Document;
 import com.publicmonitor.backend.domain.document.entity.DocumentAttachment;
@@ -91,9 +93,25 @@ class AnalysisJobRequestServiceTest {
         DocumentDetection detection = detection(version, 300L, DocumentChangeType.UNCHANGED_DOCUMENT);
         given(detectionRepository.findAllByMonitoringRunSourceMonitoringRunIdOrderByIdAsc(10L))
                 .willReturn(List.of(detection));
-        given(analysisRepository.existsByDocumentVersionId(200L)).willReturn(true);
+        DocumentAnalysis analysis = mock(DocumentAnalysis.class);
+        given(analysis.requiresProposalSchemaUpgrade()).willReturn(false);
+        given(analysisRepository.findByDocumentVersionId(200L)).willReturn(Optional.of(analysis));
 
         assertThat(service.prepare(10L)).isEmpty();
+    }
+
+    @Test
+    void 근거_스키마가_없는_기존_사업제안은_한번_다시_분석한다() {
+        DocumentVersion version = version(1, 200L, "기존 사업공고", "게시글 본문");
+        DocumentDetection detection = detection(version, 300L, DocumentChangeType.UNCHANGED_DOCUMENT);
+        DocumentAnalysis analysis = mock(DocumentAnalysis.class);
+        given(analysis.requiresProposalSchemaUpgrade()).willReturn(true);
+        given(detectionRepository.findAllByMonitoringRunSourceMonitoringRunIdOrderByIdAsc(10L))
+                .willReturn(List.of(detection));
+        given(analysisRepository.findByDocumentVersionId(200L)).willReturn(Optional.of(analysis));
+        given(attachmentRepository.findAllByDocumentVersionId(200L)).willReturn(List.of());
+
+        assertThat(service.prepare(10L).orElseThrow().documents()).hasSize(1);
     }
 
     @Test
@@ -102,7 +120,7 @@ class AnalysisJobRequestServiceTest {
         DocumentDetection detection = detection(version, 300L, DocumentChangeType.UNCHANGED_DOCUMENT);
         given(detectionRepository.findAllByMonitoringRunSourceMonitoringRunIdOrderByIdAsc(10L))
                 .willReturn(List.of(detection));
-        given(analysisRepository.existsByDocumentVersionId(200L)).willReturn(false);
+        given(analysisRepository.findByDocumentVersionId(200L)).willReturn(Optional.empty());
         given(attachmentRepository.findAllByDocumentVersionId(200L)).willReturn(List.of());
 
         assertThat(service.prepare(10L).orElseThrow().documents())
