@@ -18,7 +18,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 		"app.jwt.secret=VGhpcy1pcy1hLXRlc3Qtc2VjcmV0LWtleS10aGF0LWlzLWxvbmc=",
 		"app.jwt.access-token-expiration=1h",
 		"app.local-admin.enabled=false",
-		"app.jpa-auditing.enabled=false"
+		"app.jpa-auditing.enabled=false",
+		"app.monitoring.schedule.enabled=false"
 })
 class BackendApplicationTests {
 

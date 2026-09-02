@@ -1,13 +1,17 @@
 package com.publicmonitor.backend.domain.monitoring.repository;
 
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRun;
+import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRunStatus;
 import com.publicmonitor.backend.domain.monitoring.web.dto.MonitoringRunSummaryResponse;
+import java.util.Collection;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
 public interface MonitoringRunRepository extends JpaRepository<MonitoringRun, Long> {
+
+    boolean existsByStatusIn(Collection<MonitoringRunStatus> statuses);
 
     @Query(
             value = """

@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Activity, Building2, CirclePlus, Clock3, Pencil, Play, RefreshCw, Search, X } from 'lucide-react'
+import { Activity, Building2, CalendarDays, CirclePlus, Clock3, Pencil, Play, RefreshCw, Save, Search, X } from 'lucide-react'
 import { api } from '../api/client'
-import type { MonitoringRun, MonitoringSource, MonitoringSourcePayload, RunStatus } from '../api/types'
+import type { MonitoringRun, MonitoringSchedule, MonitoringScheduleFrequency, MonitoringSource, MonitoringSourcePayload, RunStatus, Weekday } from '../api/types'
 import { Badge, EmptyState, InlineError, Loading, Pagination, Toast } from '../components/ui'
 
 const emptyForm: MonitoringSourcePayload = { organizationName: '', boardName: '', description: '', listUrl: '', urlIncludePattern: '', detailFetchCount: 3, enabled: true }
 const runLabel: Record<RunStatus, string> = { REQUESTED: '요청됨', ACCEPTED: '접수됨', COLLECTED: '수집 완료', COMPLETED: '완료', FAILED: '실패' }
 const runTone: Record<RunStatus, string> = { REQUESTED: 'info', ACCEPTED: 'info', COLLECTED: 'warning', COMPLETED: 'success', FAILED: 'danger' }
 const formatDate = (value: string) => new Intl.DateTimeFormat('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
+const weekdays: Array<{ value: Weekday; label: string }> = [
+  { value: 'MONDAY', label: '월' }, { value: 'TUESDAY', label: '화' }, { value: 'WEDNESDAY', label: '수' },
+  { value: 'THURSDAY', label: '목' }, { value: 'FRIDAY', label: '금' }, { value: 'SATURDAY', label: '토' }, { value: 'SUNDAY', label: '일' },
+]
+const defaultSchedule: MonitoringSchedule = { enabled: false, frequency: 'DAILY', executionTime: '09:00', customDays: [] }
 
 export default function MonitoringPage() {
   const [sources, setSources] = useState<MonitoringSource[]>([])
@@ -20,15 +25,26 @@ export default function MonitoringPage() {
   const [modal, setModal] = useState<{ open: boolean; source?: MonitoringSource }>({ open: false })
   const [running, setRunning] = useState(false)
   const [toast, setToast] = useState('')
+  const [schedule, setSchedule] = useState<MonitoringSchedule>(defaultSchedule)
+  const [savingSchedule, setSavingSchedule] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      const [sourceData, runData] = await Promise.all([api.getSources(), api.getRuns(runPage, 8)])
+      const [sourceData, runData, scheduleData] = await Promise.all([
+        api.getSources(),
+        api.getRuns(runPage, 8),
+        api.getMonitoringSchedule().catch(() => null),
+      ])
       setSources(sourceData)
       setRuns(runData.content)
       setRunPages(runData.totalPages)
+      if (scheduleData) {
+        setSchedule({ ...scheduleData, executionTime: scheduleData.executionTime.slice(0, 5) })
+      } else {
+        setError('자동 모니터링 설정을 불러오지 못했습니다. Backend를 최신 코드로 다시 시작해 주세요.')
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '모니터링 정보를 불러오지 못했습니다.')
     } finally {
@@ -37,6 +53,21 @@ export default function MonitoringPage() {
   }, [runPage])
 
   useEffect(() => { void load() }, [load])
+
+  useEffect(() => {
+    const refreshRuns = async () => {
+      if (document.visibilityState !== 'visible') return
+      try {
+        const runData = await api.getRuns(runPage, 8)
+        setRuns(runData.content)
+        setRunPages(runData.totalPages)
+      } catch {
+        // 최초 조회 오류는 기존 안내 영역에서 처리하고, 백그라운드 갱신 실패는 화면을 방해하지 않는다.
+      }
+    }
+    const intervalId = window.setInterval(() => { void refreshRuns() }, 5_000)
+    return () => window.clearInterval(intervalId)
+  }, [runPage])
 
   const filtered = useMemo(() => sources.filter((source) => `${source.organizationName} ${source.boardName}`.toLowerCase().includes(query.toLowerCase())), [sources, query])
   const activeCount = sources.filter((source) => source.enabled).length
@@ -60,6 +91,39 @@ export default function MonitoringPage() {
     finally { setRunning(false) }
   }
 
+  const changeFrequency = (frequency: MonitoringScheduleFrequency) => {
+    setSchedule((current) => ({
+      ...current,
+      frequency,
+      customDays: frequency === 'CUSTOM' && current.frequency !== 'CUSTOM'
+        ? ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY']
+        : current.customDays,
+    }))
+  }
+
+  const toggleDay = (day: Weekday) => {
+    setSchedule((current) => ({
+      ...current,
+      customDays: current.customDays.includes(day)
+        ? current.customDays.filter((item) => item !== day)
+        : [...current.customDays, day],
+    }))
+  }
+
+  const saveSchedule = async () => {
+    if (schedule.frequency === 'CUSTOM' && schedule.customDays.length === 0) {
+      setError('자동 실행할 요일을 하나 이상 선택해 주세요.')
+      return
+    }
+    setSavingSchedule(true); setError('')
+    try {
+      const updated = await api.updateMonitoringSchedule(schedule)
+      setSchedule({ ...updated, executionTime: updated.executionTime.slice(0, 5) })
+      setToast(updated.enabled ? '자동 모니터링 일정을 저장했어요.' : '자동 모니터링을 껐어요.')
+    } catch (cause) { setError(cause instanceof Error ? cause.message : '자동 모니터링 일정을 저장하지 못했습니다.') }
+    finally { setSavingSchedule(false) }
+  }
+
   return (
     <div className="page">
       <header className="page-header"><div><span className="eyebrow">MONITORING</span><h1>모니터링</h1><p>살펴볼 기관을 관리하고, 필요할 때 바로 모니터링을 시작하세요.</p></div><button className="button button--primary button--run" onClick={runNow} disabled={running || activeCount === 0}>{running ? <RefreshCw size={18} className="spin" /> : <Play size={18} fill="currentColor" />}{running ? '확인 중이에요' : '지금 모니터링 실행'}</button></header>
@@ -68,6 +132,16 @@ export default function MonitoringPage() {
         <article className="metric-card"><span className="metric-card__icon metric-card__icon--blue"><Building2 size={20} /></span><div><small>등록된 소스</small><strong>{sources.length}<em>개</em></strong><span>{activeCount}개가 확인 중이에요</span></div></article>
         <article className="metric-card"><span className="metric-card__icon metric-card__icon--green"><Activity size={20} /></span><div><small>최근 실행 상태</small><strong className="metric-card__status">{runs[0] ? runLabel[runs[0].status] : '기록 없음'}</strong><span>{runs[0] ? formatDate(runs[0].requestedAt) : '첫 실행을 기다리고 있어요'}</span></div></article>
         <article className="metric-card"><span className="metric-card__icon metric-card__icon--violet"><Clock3 size={20} /></span><div><small>최근 감지 문서</small><strong>{runs[0]?.detectedDocumentCount ?? 0}<em>건</em></strong><span>마지막 실행 기준</span></div></article>
+      </section>
+
+      <section className="panel schedule-panel">
+        <div className="panel-header"><div><h2>자동 모니터링</h2><p>한국 시간 기준으로 선택한 요일과 시각에 활성 소스를 자동으로 확인하고 Telegram 보고서를 보내요.</p></div><button className={`schedule-switch ${schedule.enabled ? 'schedule-switch--on' : ''}`} onClick={() => setSchedule((current) => ({ ...current, enabled: !current.enabled }))}><span>{schedule.enabled ? '사용 중' : '사용 안 함'}</span><i /></button></div>
+        <div className="schedule-panel__body">
+          <div className="schedule-field"><span><CalendarDays size={16} />실행 주기</span><div className="schedule-frequency">{([['DAILY', '매일'], ['WEEKDAYS', '평일'], ['CUSTOM', '요일 선택']] as Array<[MonitoringScheduleFrequency, string]>).map(([value, label]) => <button key={value} className={schedule.frequency === value ? 'active' : ''} onClick={() => changeFrequency(value)}>{label}</button>)}</div></div>
+          {schedule.frequency === 'CUSTOM' && <div className="schedule-field"><span>실행 요일</span><div className="weekday-picker">{weekdays.map((day) => <button key={day.value} className={schedule.customDays.includes(day.value) ? 'active' : ''} onClick={() => toggleDay(day.value)}>{day.label}</button>)}</div></div>}
+          <label className="schedule-field schedule-time"><span><Clock3 size={16} />실행 시각</span><input type="time" value={schedule.executionTime} onChange={(event) => setSchedule((current) => ({ ...current, executionTime: event.target.value }))} /></label>
+          <button className="button button--primary schedule-save" onClick={() => void saveSchedule()} disabled={savingSchedule}><Save size={16} />{savingSchedule ? '저장 중...' : '일정 저장'}</button>
+        </div>
       </section>
 
       <section className="panel">

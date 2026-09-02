@@ -5,6 +5,8 @@ import type {
   DocumentDetection,
   LoginResponse,
   MonitoringRun,
+  MonitoringSchedule,
+  MonitoringSchedulePayload,
   MonitoringSource,
   MonitoringSourcePayload,
   PageResponse,
@@ -62,6 +64,12 @@ export const api = {
   createRun: () => request<CreateMonitoringRunResponse>('/api/monitoring-runs', { method: 'POST' }),
   getRuns: (page = 0, size = 10) =>
     request<PageResponse<MonitoringRun>>(`/api/monitoring-runs?page=${page}&size=${size}`),
+  getMonitoringSchedule: () => request<MonitoringSchedule>('/api/monitoring-schedule'),
+  updateMonitoringSchedule: (payload: MonitoringSchedulePayload) =>
+    request<MonitoringSchedule>('/api/monitoring-schedule', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
   getDocuments: (
     page = 0,
     size = 20,
