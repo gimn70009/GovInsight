@@ -20,6 +20,11 @@ class SlowFailingWorkflow:
             self.active_count -= 1
 
 
+class UnexpectedFailingWorkflow:
+    async def analyze(self, document: AnalysisDocumentRequest) -> None:
+        raise ValueError(f"예상하지 못한 검증 오류 {document.detection_id}")
+
+
 def analysis_document(identifier: int) -> AnalysisDocumentRequest:
     return AnalysisDocumentRequest.model_validate(
         {
@@ -45,3 +50,17 @@ def test_analyze_documents_limits_concurrency_and_isolates_failures() -> None:
     assert results == []
     assert workflow.max_active_count == 2
     assert [failure.detection_id for failure in failures] == [1, 2, 3, 4]
+
+
+def test_analyze_documents_isolates_unexpected_document_errors() -> None:
+    workflow = UnexpectedFailingWorkflow()
+    documents = [analysis_document(identifier) for identifier in range(1, 4)]
+
+    results, failures = asyncio.run(_analyze_documents(workflow, documents, concurrency=2))
+
+    assert results == []
+    assert [failure.detection_id for failure in failures] == [1, 2, 3]
+    assert all(
+        failure.error_message == "AI 문서 분석 중 예상하지 못한 오류가 발생했습니다."
+        for failure in failures
+    )

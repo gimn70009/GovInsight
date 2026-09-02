@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft,
   CalendarDays,
@@ -8,14 +8,18 @@ import {
   ExternalLink,
   File,
   FileSearch2,
+  GitCompareArrows,
+  Lightbulb,
   Paperclip,
   RefreshCw,
   RotateCcw,
   Search,
   Sparkles,
+  ShieldCheck,
+  X,
 } from 'lucide-react'
 import { api } from '../api/client'
-import type { ChangeType, DocumentAnalysis, DocumentDetail, DocumentDetection, MonitoringRun, OpportunityDimensionType, OpportunityPriority, ProposalPreparationItem } from '../api/types'
+import type { ChangeType, DocumentAnalysis, DocumentDetail, DocumentDetection, MonitoringRun, OpportunityDimensionType, OpportunityPriority, ProposalPreparationItem, SimilarNoticeResult } from '../api/types'
 import { Badge, EmptyState, InlineError, Loading, Pagination } from '../components/ui'
 
 const opportunityLabels: Record<OpportunityDimensionType, string> = {
@@ -504,6 +508,9 @@ function DocumentDrawer({ detectionId, onClose }: { detectionId: number; onClose
   const [detail, setDetail] = useState<DocumentDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [similarNotices, setSimilarNotices] = useState<SimilarNoticeResult | null>(null)
+  const [similarLoading, setSimilarLoading] = useState(true)
+  const [comparisonExpanded, setComparisonExpanded] = useState(false)
 
   useEffect(() => {
     setLoading(true)
@@ -512,6 +519,15 @@ function DocumentDrawer({ detectionId, onClose }: { detectionId: number; onClose
       .catch((cause) => setError(cause instanceof Error ? cause.message : '상세 내용을 불러오지 못했습니다.'))
       .finally(() => setLoading(false))
   }, [detectionId])
+
+  useEffect(() => {
+    if (!detail?.analysis) return
+    setSimilarLoading(true)
+    api.getSimilarNotices(detectionId)
+      .then(setSimilarNotices)
+      .catch(() => setSimilarNotices(null))
+      .finally(() => setSimilarLoading(false))
+  }, [detectionId, Boolean(detail?.analysis)])
 
   useEffect(() => {
     if (detail?.analysis?.proposal.draftStatus !== 'GENERATING') return
@@ -523,12 +539,12 @@ function DocumentDrawer({ detectionId, onClose }: { detectionId: number; onClose
 
   return (
     <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <aside className="drawer">
+      <aside className={comparisonExpanded ? 'drawer drawer--comparison' : 'drawer'}>
         <div className="drawer__top">
           <button className="button button--subtle" onClick={onClose}><ArrowLeft size={17} />목록으로</button>
           {detail && <a className="button button--secondary" href={detail.originalUrl} target="_blank" rel="noreferrer">원문 보기<ExternalLink size={16} /></a>}
         </div>
-        {loading ? <Loading label="문서 내용을 정리하고 있어요" /> : error ? <InlineError message={error} /> : detail && <DocumentContent detail={detail} />}
+        {loading ? <Loading label="문서 내용을 정리하고 있어요" /> : error ? <InlineError message={error} /> : detail && <DocumentContent detail={detail} similarNotices={similarNotices} similarLoading={similarLoading} onComparisonModeChange={setComparisonExpanded} />}
       </aside>
     </div>
   )
@@ -594,8 +610,8 @@ function OpportunityScore({ opportunity }: { opportunity: NonNullable<DocumentAn
   )
 }
 
-function DocumentContent({ detail }: { detail: DocumentDetail }) {
-  const [activeDetailTab, setActiveDetailTab] = useState<'ANALYSIS' | 'PROPOSAL'>('ANALYSIS')
+function DocumentContent({ detail, similarNotices, similarLoading, onComparisonModeChange }: { detail: DocumentDetail; similarNotices: SimilarNoticeResult | null; similarLoading: boolean; onComparisonModeChange: (expanded: boolean) => void }) {
+  const [activeDetailTab, setActiveDetailTab] = useState<'ANALYSIS' | 'PROPOSAL' | 'SIMILAR'>('ANALYSIS')
   const analysis = detail.analysis
   const applicationExpired = isExpiredApplication(detail)
   const eligible = analysis
@@ -625,6 +641,11 @@ function DocumentContent({ detail }: { detail: DocumentDetail }) {
     setActiveDetailTab('ANALYSIS')
   }, [detail.detectionId])
 
+  useEffect(() => {
+    onComparisonModeChange(activeDetailTab === 'SIMILAR')
+    return () => onComparisonModeChange(false)
+  }, [activeDetailTab, onComparisonModeChange])
+
   return (
     <div className="document-detail">
       <header className="document-detail__header">
@@ -637,10 +658,11 @@ function DocumentContent({ detail }: { detail: DocumentDetail }) {
         </div>
       </header>
 
-      {analysis && showProposalTab && (
+      {analysis && (
         <nav className="detail-tabs" aria-label="문서 상세 보기">
           <button className={activeDetailTab === 'ANALYSIS' ? 'active' : ''} onClick={() => setActiveDetailTab('ANALYSIS')}>공고 분석</button>
-          <button className={activeDetailTab === 'PROPOSAL' ? 'active' : ''} onClick={() => setActiveDetailTab('PROPOSAL')}>사업 제안</button>
+          {showProposalTab && <button className={activeDetailTab === 'PROPOSAL' ? 'active' : ''} onClick={() => setActiveDetailTab('PROPOSAL')}>사업 제안</button>}
+          <button className={activeDetailTab === 'SIMILAR' ? 'active' : ''} onClick={() => setActiveDetailTab('SIMILAR')}>유사 공고 비교{!similarLoading && ` ${similarNotices?.similarNotices.length ?? 0}`}</button>
         </nav>
       )}
 
@@ -693,7 +715,7 @@ function DocumentContent({ detail }: { detail: DocumentDetail }) {
             </div>
           </section>
           </>
-          ) : proposalDraft ? (
+          ) : activeDetailTab === 'PROPOSAL' && proposalDraft ? (
             <section className="detail-section proposal-draft-panel">
               {proposalDraft.preparation ? (
                 <div className="proposal-preparation">
@@ -817,13 +839,15 @@ function DocumentContent({ detail }: { detail: DocumentDetail }) {
                 </p>
               )}
             </section>
+          ) : activeDetailTab === 'SIMILAR' ? (
+            <SimilarNoticeComparison result={similarNotices} loading={similarLoading} currentTitle={detail.title} currentOriginalUrl={detail.originalUrl} />
           ) : null}
         </>
       ) : (
         <EmptyState icon={<Sparkles />} title="AI 분석을 준비하고 있어요" description="분석이 완료되면 핵심 내용과 대응 방향을 여기에서 확인할 수 있어요." />
       )}
 
-      {(!showProposalTab || activeDetailTab === 'ANALYSIS') && <section className="detail-section attachments">
+      {activeDetailTab === 'ANALYSIS' && <section className="detail-section attachments">
         <div className="section-title-row"><h3>첨부파일</h3><Badge>{detail.attachments.length}개</Badge></div>
         {detail.attachments.length === 0 ? (
           <p className="muted">첨부된 파일이 없습니다.</p>
@@ -853,6 +877,96 @@ function DocumentContent({ detail }: { detail: DocumentDetail }) {
       </section>}
     </div>
   )
+}
+
+function SimilarNoticeComparison({ result, loading, currentTitle, currentOriginalUrl }: { result: SimilarNoticeResult | null; loading: boolean; currentTitle: string; currentOriginalUrl: string }) {
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const [expandedCell, setExpandedCell] = useState<{ title: string; content: string } | null>(null)
+  useEffect(() => { setSelectedIndex(0) }, [result])
+
+  if (loading) return <Loading label="기존 공고와 사업 목적과 수행 내용을 비교하고 있어요" />
+  if (!result || result.similarNotices.length === 0) {
+    return (
+      <section className="detail-section similar-notice-empty">
+        <span><Search size={22} /></span>
+        <h3>충분히 유사한 공고가 없습니다</h3>
+        <p>제목이나 일부 일반 단어만 비슷한 공고는 비교 대상에서 제외했어요.</p>
+      </section>
+    )
+  }
+
+  const selected = result.similarNotices[Math.min(selectedIndex, result.similarNotices.length - 1)]
+  const rows = [
+    { label: '기관', current: result.currentNotice.organizationName, similar: selected.comparison.organizationName },
+    { label: '사업 목적', current: result.currentNotice.purpose, similar: selected.comparison.purpose },
+    { label: '지원 규모', current: result.currentNotice.supportScale, similar: selected.comparison.supportScale },
+    { label: '접수 마감', current: result.currentNotice.applicationDeadline, similar: selected.comparison.applicationDeadline },
+    { label: '신청 자격', current: result.currentNotice.eligibility, similar: selected.comparison.eligibility },
+    { label: '필수 파트너', current: result.currentNotice.requiredPartner, similar: selected.comparison.requiredPartner },
+  ]
+
+  return (
+    <section className="detail-section similar-notice-panel">
+      <div className="similar-notice-panel__header">
+        <div><small>SIMILAR NOTICE</small><h3>유사 공고 비교</h3><p>사업 목적과 수행 내용이 모두 충분히 유사한 공고만 표시해요.</p></div>
+        <Badge tone="info">{selected.similarityScore >= 88 ? '의미 유사도 매우 높음' : '의미 유사도 높음'}</Badge>
+      </div>
+      {result.similarNotices.length > 1 && (
+        <label className="similar-notice-select"><span>비교할 공고</span><select value={selectedIndex} onChange={(event) => setSelectedIndex(Number(event.target.value))}>{result.similarNotices.map((notice, index) => <option key={notice.detectionId} value={index}>{notice.title}</option>)}</select></label>
+      )}
+      <div className="similar-comparison-table-wrap">
+        <table className="similar-comparison-table">
+          <thead><tr><th>비교 항목</th><th><ComparisonNoticeHeader label="현재 공고" title={currentTitle} url={currentOriginalUrl} /></th><th><ComparisonNoticeHeader label="유사 공고" title={selected.title} url={selected.originalUrl} /></th></tr></thead>
+          <tbody>{rows.map((row) => <tr key={row.label}><th>{row.label}</th><td><ExpandableComparisonCell content={row.current} onExpand={() => setExpandedCell({ title: ['현재 공고', row.label].join(' · '), content: row.current })} /></td><td><ExpandableComparisonCell content={row.similar} onExpand={() => setExpandedCell({ title: ['유사 공고', row.label].join(' · '), content: row.similar })} /></td></tr>)}</tbody>
+        </table>
+      </div>
+      <div className="similar-notice-insights">
+        <article className="similar-insight similar-insight--reason"><span><GitCompareArrows size={18} /></span><div><strong>유사한 이유</strong><p>{similarityReason(selected.commonPoints)}</p></div></article>
+        <article className="similar-insight similar-insight--reuse"><span><Lightbulb size={18} /></span><div><strong>활용 포인트</strong><p>{selected.proposalReuse}</p></div></article>
+        <article className="similar-insight similar-insight--caution"><span><ShieldCheck size={18} /></span><div><strong>확인할 사항</strong><p>{selected.caution}</p></div></article>
+      </div>
+      {expandedCell && <ComparisonCellDialog title={expandedCell.title} content={expandedCell.content} onClose={() => setExpandedCell(null)} />}
+    </section>
+  )
+}
+
+function ComparisonNoticeHeader({ label, title, url }: { label: string; title: string; url: string }) {
+  return <div className="comparison-notice-header"><small>{label}</small><strong>{title}</strong><a href={url} target="_blank" rel="noreferrer">원문 보기<ExternalLink size={13} /></a></div>
+}
+
+function ExpandableComparisonCell({ content, onExpand }: { content: string; onExpand: () => void }) {
+  const contentRef = useRef<HTMLParagraphElement>(null)
+  const [overflowing, setOverflowing] = useState(false)
+
+  useEffect(() => {
+    const element = contentRef.current
+    if (!element) return
+    const measure = () => setOverflowing(element.scrollHeight > element.clientHeight + 1)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [content])
+
+  return <div className="comparison-cell"><p ref={contentRef}>{content}</p>{overflowing && <button type="button" onClick={onExpand}>전체 보기</button>}</div>
+}
+
+function ComparisonCellDialog({ title, content, onClose }: { title: string; content: string; onClose: () => void }) {
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [onClose])
+
+  return <div className="comparison-dialog-backdrop" role="presentation" onMouseDown={onClose}><section className="comparison-dialog" role="dialog" aria-modal="true" aria-labelledby="comparison-dialog-title" onMouseDown={(event) => event.stopPropagation()}><header><div><small>전체 내용</small><h3 id="comparison-dialog-title">{title}</h3></div><button type="button" aria-label="닫기" onClick={onClose}><X size={20} /></button></header><div className="comparison-dialog__content">{content}</div><footer><button type="button" className="button button--primary" onClick={onClose}>확인</button></footer></section></div>
+}
+
+function similarityReason(commonPoints: string) {
+  const exposesInternalProfile = /proposal|request|business|notice|공고명|핵심어는|유형[, ]/i.test(commonPoints)
+  if (!commonPoints || exposesInternalProfile) {
+    return '두 공고는 사업 목적과 수행 방식이 유사하며 같은 유형의 지원사업으로 분류됐습니다.'
+  }
+  return commonPoints
 }
 
 function getProposalUnavailableReason(detail: DocumentDetail, analysis: DocumentAnalysis) {

@@ -40,7 +40,39 @@ public record AnalysisResultRequest(
             @NotNull @Valid Proposal proposal,
             @NotNull @Valid Opportunity opportunity,
             @NotNull @Size(max = 20) List<@NotBlank @Size(max = 100) String> usedTools,
-            @NotBlank @Size(max = 100) String modelName
+            @NotBlank @Size(max = 100) String modelName,
+            @Valid ComparisonSummary comparisonSummary,
+            @Size(max = 8000) String similarityProfile,
+            @Size(max = 3072) List<@NotNull Double> similarityEmbedding,
+            @Size(max = 100) String embeddingModelName
+    ) {
+        public AnalysisResult(
+                Long detectionId,
+                Long documentId,
+                Long versionId,
+                String summary,
+                List<String> keyPoints,
+                DocumentImportance importance,
+                String reason,
+                AnalysisEligibility eligibility,
+                AnalysisFavorability favorableOrNot,
+                Proposal proposal,
+                Opportunity opportunity,
+                List<String> usedTools,
+                String modelName
+        ) {
+            this(detectionId, documentId, versionId, summary, keyPoints, importance, reason,
+                    eligibility, favorableOrNot, proposal, opportunity, usedTools, modelName,
+                    null, null, null, null);
+        }
+    }
+
+    public record ComparisonSummary(
+            @NotBlank @Size(max = 1500) String purpose,
+            @NotBlank @Size(max = 500) String supportScale,
+            @NotBlank @Size(max = 300) String applicationDeadline,
+            @NotBlank @Size(max = 1000) String eligibility,
+            @NotBlank @Size(max = 1000) String requiredPartner
     ) {
     }
 

@@ -1,6 +1,7 @@
 import logging
 import re
 import time
+from datetime import date, datetime, timedelta, timezone
 from typing import Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -44,9 +45,17 @@ class AnalysisGraphState(TypedDict, total=False):
 
 
 class DocumentAnalysisWorkflow:
-    def __init__(self, runner: AnalysisRunner, max_attempts: int) -> None:
+    def __init__(
+        self,
+        runner: AnalysisRunner,
+        max_attempts: int,
+        analysis_date: date | None = None,
+    ) -> None:
         self._runner = runner
         self._max_attempts = max_attempts
+        self._analysis_date = analysis_date or datetime.now(
+            timezone(timedelta(hours=9))
+        ).date()
         self._graph = self._build_graph()
 
     async def analyze(self, document: AnalysisDocumentRequest) -> DocumentAnalysisResult:
@@ -191,6 +200,7 @@ class DocumentAnalysisWorkflow:
             state["path"],
             state["required_tools"],
             candidate,
+            self._analysis_date,
         )
         if violations:
             feedback = "다음 검증 문제를 모두 수정해서 다시 분석하세요: " + "; ".join(violations)
@@ -199,7 +209,25 @@ class DocumentAnalysisWorkflow:
                 "feedback": feedback,
                 "error": feedback,
             }
-        draft = AnalysisDraft.model_validate(candidate.draft.model_dump())
+        try:
+            draft = AnalysisDraft.model_validate(candidate.draft.model_dump())
+        except ValueError as exception:
+            feedback = (
+                "분석 결과가 정책 검증을 통과하지 못했습니다. "
+                "제안 상태와 회사 적합성 및 신청 자격을 일치시키세요."
+            )
+            logger.warning(
+                "공고 분석 정책 검증 실패. detection_id=%s version_id=%s attempt=%s error=%s",
+                state["document"].detection_id,
+                state["document"].version_id,
+                state["attempt"],
+                exception,
+            )
+            return {
+                "candidate": None,
+                "feedback": feedback,
+                "error": feedback,
+            }
         return {
             "candidate": AgentAnalysis(
                 draft=draft,
@@ -231,6 +259,7 @@ class DocumentAnalysisWorkflow:
                 opportunity=draft.opportunity,
                 used_tools=candidate.used_tools,
                 model_name=candidate.model_name,
+                comparison_summary=draft.comparison_summary,
             ),
             "error": "",
         }
@@ -276,8 +305,9 @@ def _business_rule_violations(
     path: AnalysisPath,
     required_tools: list[str],
     candidate: AgentAnalysis,
+    analysis_date: date | None = None,
 ) -> list[str]:
-    _normalize_urgency_score(candidate)
+    _normalize_urgency_score(candidate, analysis_date)
     _normalize_internal_field_names(candidate)
     _normalize_expired_application(candidate)
     violations = [
@@ -436,7 +466,10 @@ def _urgency_score_violations(score: int, reason: str) -> list[str]:
     ]
 
 
-def _normalize_urgency_score(candidate: AgentAnalysis) -> None:
+def _normalize_urgency_score(
+    candidate: AgentAnalysis,
+    analysis_date: date | None = None,
+) -> None:
     urgency = next(
         (
             dimension
@@ -447,10 +480,55 @@ def _normalize_urgency_score(candidate: AgentAnalysis) -> None:
     )
     if urgency is None:
         return
+    deadline = _deadline_from_reason(urgency.reason)
+    if deadline is not None:
+        today = analysis_date or datetime.now(timezone(timedelta(hours=9))).date()
+        remaining_days = (deadline - today).days
+        deadline_text = f"{deadline.year}년 {deadline.month}월 {deadline.day}일"
+        if remaining_days < 0:
+            urgency.score = 0
+            urgency.reason = (
+                f"신청 마감일은 {deadline_text}이며, "
+                f"{today.year}년 {today.month}월 {today.day}일 분석 기준 마감 지남 상태입니다."
+            )
+            return
+        urgency.score = _urgency_score(remaining_days)
+        if re.search(r"남은\s*\d+\s*일", urgency.reason):
+            urgency.reason = re.sub(
+                r"남은\s*\d+\s*일",
+                f"남은 {remaining_days}일",
+                urgency.reason,
+            )
+        else:
+            urgency.reason = (
+                f"신청 마감일은 {deadline_text}이며 분석일 기준 남은 {remaining_days}일입니다. "
+                f"{urgency.reason}"
+            )
+        return
     expected_score = _expected_urgency_score(urgency.reason)
     if expected_score is None or urgency.score == expected_score:
         return
     urgency.score = expected_score
+
+
+def _deadline_from_reason(reason: str) -> date | None:
+    matches = [
+        (int(year), int(month), int(day))
+        for year, month, day in re.findall(r"(20\d{2})[-./](\d{1,2})[-./](\d{1,2})", reason)
+    ]
+    matches.extend(
+        (int(year), int(month), int(day))
+        for year, month, day in re.findall(
+            r"(20\d{2})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일",
+            reason,
+        )
+    )
+    for year, month, day in matches:
+        try:
+            return date(year, month, day)
+        except ValueError:
+            continue
+    return None
 
 
 def _expected_urgency_score(reason: str) -> int | None:

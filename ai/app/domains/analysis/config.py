@@ -21,6 +21,7 @@ class AnalysisSettings:
     max_text_chars: int
     result_delivery_max_attempts: int
     concurrency: int
+    embedding_model_name: str
 
     @classmethod
     def from_env(cls) -> "AnalysisSettings":
@@ -41,6 +42,9 @@ class AnalysisSettings:
             max_text_chars=_positive_int("ANALYSIS_MAX_TEXT_CHARS", 40_000),
             result_delivery_max_attempts=_positive_int("ANALYSIS_RESULT_MAX_ATTEMPTS", 3),
             concurrency=_positive_int("ANALYSIS_CONCURRENCY", 2),
+            embedding_model_name=os.getenv(
+                "OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"
+            ).strip(),
         )
 
 

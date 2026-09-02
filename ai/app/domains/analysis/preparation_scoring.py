@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from app.domains.analysis.schemas.result import (
     CompanyEvidenceLevel,
@@ -65,7 +65,7 @@ _EVIDENCE_SCORES = {
 
 def score_preparation(preparation: ProposalPreparation, reference_date: date | None = None) -> None:
     """Apply one deterministic scoring and scheduling policy to every proposal."""
-    today = reference_date or date.today()
+    today = reference_date or datetime.now(timezone(timedelta(hours=9))).date()
     deadline = _parse_date(preparation.application_deadline)
     remaining_days = _business_days_between(today, deadline) if deadline else None
 
@@ -79,13 +79,27 @@ def score_preparation(preparation: ProposalPreparation, reference_date: date | N
     if deadline:
         for gap in preparation.strategy.critical_gaps:
             gap.estimated_business_days = WORK_TYPE_BUSINESS_DAYS[gap.work_type]
+            if deadline < today:
+                gap.target_date = None
+                gap.target_timing = "접수 마감일이 지나 신규 준비 일정을 제안하지 않습니다."
+                gap.schedule_basis = (
+                    f"공고 접수 마감일 {deadline.isoformat()}이 "
+                    f"분석일 {today.isoformat()}보다 이전이므로 목표일을 계산하지 않았습니다."
+                )
+                continue
             target = _subtract_business_days(deadline, gap.estimated_business_days + 5)
+            if target < today:
+                target = today
             gap.target_date = target.isoformat()
-            gap.target_timing = f"{target.isoformat()}까지 완료하는 것을 권장합니다."
+            gap.target_timing = (
+                "분석일 기준 즉시 착수하는 것을 권장합니다."
+                if target == today
+                else f"{target.isoformat()}까지 완료하는 것을 권장합니다."
+            )
             gap.schedule_basis = (
                 f"{WORK_TYPE_LABELS[gap.work_type]}에 {gap.estimated_business_days}일, "
                 "최종 검수와 제출에 5일이 필요한 것으로 보고 주말을 제외해 "
-                "공고 마감일에서 역산했습니다."
+                "공고 마감일에서 역산했습니다. 계산일이 이미 지난 경우 분석일로 조정했습니다."
             )
 
 

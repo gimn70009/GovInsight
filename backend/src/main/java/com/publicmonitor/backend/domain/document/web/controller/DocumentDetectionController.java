@@ -2,6 +2,8 @@ package com.publicmonitor.backend.domain.document.web.controller;
 
 import com.publicmonitor.backend.domain.document.service.DocumentDetectionQueryService;
 import com.publicmonitor.backend.domain.document.service.DocumentDetectionSort;
+import com.publicmonitor.backend.domain.document.service.SimilarNoticeService;
+import com.publicmonitor.backend.domain.document.web.dto.SimilarNoticeResponse;
 import com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionSummaryResponse;
 import com.publicmonitor.backend.global.config.OpenApiConfig;
 import com.publicmonitor.backend.global.response.PageResponse;
@@ -30,9 +32,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class DocumentDetectionController {
 
     private final DocumentDetectionQueryService queryService;
+    private final SimilarNoticeService similarNoticeService;
 
-    public DocumentDetectionController(@Lazy DocumentDetectionQueryService queryService) {
+    public DocumentDetectionController(
+            @Lazy DocumentDetectionQueryService queryService,
+            @Lazy SimilarNoticeService similarNoticeService
+    ) {
         this.queryService = queryService;
+        this.similarNoticeService = similarNoticeService;
     }
 
     @Operation(summary = "감지 문서 목록 조회", description = "최근 확인 순서 또는 기회 점수 순서로 감지 문서를 조회합니다.")
@@ -53,5 +60,13 @@ public class DocumentDetectionController {
             @RequestParam(defaultValue = "LATEST") DocumentDetectionSort sort
     ) {
         return SuccessResponse.ok(queryService.findAll(page, size, from, to, runId, sort));
+    }
+
+    @Operation(summary = "유사 공고 비교", description = "엄격한 제목·사업 내용 기준을 통과한 유사 공고를 최대 3건 비교합니다.")
+    @GetMapping("/{detectionId}/similar-notices")
+    public SuccessResponse<SimilarNoticeResponse> findSimilarNotices(
+            @org.springframework.web.bind.annotation.PathVariable @Min(1) Long detectionId
+    ) {
+        return SuccessResponse.ok(similarNoticeService.find(detectionId));
     }
 }

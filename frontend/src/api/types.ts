@@ -235,3 +235,26 @@ export interface DocumentDetail {
   analysis: DocumentAnalysis | null
   attachments: DocumentAttachment[]
 }
+
+export interface SimilarNoticeComparisonSide {
+  organizationName: string
+  purpose: string
+  supportScale: string
+  applicationDeadline: string
+  eligibility: string
+  requiredPartner: string
+}
+
+export interface SimilarNoticeResult {
+  currentNotice: SimilarNoticeComparisonSide
+  similarNotices: Array<{
+    detectionId: number
+    similarityScore: number
+    title: string
+    originalUrl: string
+    comparison: SimilarNoticeComparisonSide
+    commonPoints: string
+    proposalReuse: string
+    caution: string
+  }>
+}

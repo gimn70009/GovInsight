@@ -19,6 +19,7 @@ from app.domains.analysis.schemas.request import (
 )
 from app.domains.analysis.schemas.result import (
     AnalysisDraft,
+    ComparisonSummary,
     DocumentImportance,
     Eligibility,
     Favorability,
@@ -50,6 +51,13 @@ SYSTEM_PROMPT = f"""
 - summary에는 화면에서 별도로 제공하는 기관, 게시판, 제목, 게시일, 중요도, 첨부파일 수와 URL을 반복하지 않습니다.
 - summary는 문서의 복잡도에 맞춰 주제별 짧은 문단으로 작성하고 제목·불릿·번호·마크다운을 넣지 않습니다.
 - key_points의 각 항목은 접두 번호 없이 한 가지 사실만 담습니다.
+- comparison_summary는 유사 공고 비교표에서 사용자가 바로 읽는 문장입니다.
+- comparison_summary.purpose에는 사업 목적만 완전한 문장으로 작성하고 사업 구분, 추진체계나 세부 유형을 이어 붙이지 않습니다.
+- comparison_summary.support_scale에는 확인된 총액, 과제당 금액과 지원기간만 간결하게 작성합니다.
+- comparison_summary.application_deadline에는 회사가 실제로 지켜야 하는 접수 마감일과 시각을 작성합니다.
+- comparison_summary.eligibility에는 핵심 신청 자격만 자연스러운 문장으로 작성합니다.
+- comparison_summary.required_partner에는 필수 컨소시엄, 해외기관 또는 참여기관 조건만 작성합니다.
+- 해당 항목이 원문과 첨부파일에서 확인되지 않으면 추측하지 말고 '원문에서 확인하지 못했습니다.'라고 작성합니다.
 - 괄호 안에 상태, 조건, 대상 또는 예시를 나열하지 말고 조사와 서술어를 사용한 자연스러운 문장으로 풉니다.
 - proposal.sections는 단순 요약이 아니라 회사가 실제로 무엇을 검토하고 누구와 어떻게 추진할지 보여주는 실행 인사이트 배열입니다.
 - 각 section은 title과 body를 가지며, 제목만 있거나 본문만 있는 빈 항목을 만들지 않습니다.
@@ -107,6 +115,7 @@ class BaseAnalysisDraft(BaseModel):
     favorable_or_not: Favorability
     proposal: BaseProposalAssessment
     opportunity: OpportunityAssessment
+    comparison_summary: ComparisonSummary
 
 
 class AnalysisRunner(Protocol):

@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import Sequence
+from datetime import date
 
 import pytest
 
@@ -456,6 +457,33 @@ def test_graph_marks_expired_application_as_ineligible() -> None:
         if dimension.type == OpportunityDimensionType.URGENCY
     )
     assert urgency.score == 0
+
+
+def test_graph_recalculates_expired_deadline_instead_of_trusting_remaining_days() -> None:
+    expired = analysis(
+        Favorability.NOT_APPLICABLE,
+        opportunity_assessment=opportunity(
+            urgency=100,
+            urgency_reason="신청 마감일은 2026년 8월 27일이며 남은 0일이므로 즉시 대응합니다.",
+        ),
+    )
+    runner = SequencedRunner([expired])
+    workflow = DocumentAnalysisWorkflow(
+        runner=runner,
+        max_attempts=1,
+        analysis_date=date(2026, 9, 2),
+    )
+
+    result = asyncio.run(workflow.analyze(document()))
+
+    urgency = next(
+        dimension
+        for dimension in result.opportunity.dimensions
+        if dimension.type == OpportunityDimensionType.URGENCY
+    )
+    assert urgency.score == 0
+    assert "마감 지남" in urgency.reason
+    assert result.eligibility == Eligibility.INELIGIBLE
 
 
 @pytest.mark.parametrize(
