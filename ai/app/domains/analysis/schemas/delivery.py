@@ -52,7 +52,7 @@ class ProposalUpdateResult(CamelCaseModel):
 class ProposalResultRequest(CamelCaseModel):
     run_id: int = Field(gt=0)
     job_id: UUID
-    results: list[ProposalUpdateResult] = Field(min_length=1)
+    results: list[ProposalUpdateResult]
 
 
 class ProposalResultData(CamelCaseModel):

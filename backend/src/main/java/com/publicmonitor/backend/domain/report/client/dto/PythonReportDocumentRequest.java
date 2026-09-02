@@ -1,5 +1,6 @@
 package com.publicmonitor.backend.domain.report.client.dto;
 
+import com.publicmonitor.backend.domain.analysis.entity.AnalysisEligibility;
 import com.publicmonitor.backend.domain.analysis.entity.DocumentImportance;
 import com.publicmonitor.backend.domain.document.entity.DocumentChangeType;
 import java.time.LocalDateTime;
@@ -18,6 +19,9 @@ public record PythonReportDocumentRequest(
         String summary,
         List<String> keyPoints,
         DocumentImportance importance,
-        String reason
+        String reason,
+        AnalysisEligibility eligibility,
+        Integer opportunityScore,
+        Object proposal
 ) {
 }

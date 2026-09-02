@@ -72,6 +72,15 @@ public class MonitoringReport extends BaseEntity {
     @Column(name = "error_message", length = 2000)
     private String errorMessage;
 
+    @Column(name = "telegram_message_id")
+    private Long telegramMessageId;
+
+    @Column(name = "telegram_sent_at")
+    private LocalDateTime telegramSentAt;
+
+    @Column(name = "telegram_error_message", length = 2000)
+    private String telegramErrorMessage;
+
     private MonitoringReport(MonitoringRun monitoringRun) {
         this.monitoringRun = monitoringRun;
     }
@@ -100,6 +109,19 @@ public class MonitoringReport extends BaseEntity {
         this.errorMessage = null;
     }
 
+    public boolean isTelegramSent() {
+        return telegramSentAt != null;
+    }
+
+    public void completeTelegramDelivery(Long messageId, LocalDateTime sentAt) {
+        this.telegramMessageId = messageId;
+        this.telegramSentAt = sentAt;
+        this.telegramErrorMessage = null;
+    }
+
+    public void failTelegramDelivery(String errorMessage) {
+        this.telegramErrorMessage = errorMessage;
+    }
     public void fail(String errorMessage) {
         if (status == MonitoringReportStatus.COMPLETED) {
             throw new IllegalStateException("완료된 보고서는 실패로 변경할 수 없습니다.");

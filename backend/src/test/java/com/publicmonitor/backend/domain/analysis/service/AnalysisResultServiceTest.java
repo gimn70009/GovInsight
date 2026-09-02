@@ -28,7 +28,7 @@ import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRunStatus;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringSource;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringTriggerType;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunRepository;
-import com.publicmonitor.backend.domain.report.event.AnalysisStoredEvent;
+import com.publicmonitor.backend.domain.report.event.ProposalCompletedEvent;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -160,7 +160,7 @@ class AnalysisResultServiceTest {
 
         assertThat(response.storedAnalysisCount()).isZero();
         assertThat(response.failedAnalysisCount()).isEqualTo(1);
-        verify(eventPublisher, never()).publishEvent(any(AnalysisStoredEvent.class));
+        verify(eventPublisher, never()).publishEvent(any(ProposalCompletedEvent.class));
     }
 
     @Test
@@ -187,7 +187,7 @@ class AnalysisResultServiceTest {
         ProposalResultResponse response = service.receiveProposal(proposalRequest);
 
         verify(existing).updateProposal(any(), any(), any());
-        verify(eventPublisher, never()).publishEvent(any(AnalysisStoredEvent.class));
+        verify(eventPublisher).publishEvent(any(ProposalCompletedEvent.class));
         assertThat(response.updatedProposalCount()).isEqualTo(1);
     }
 

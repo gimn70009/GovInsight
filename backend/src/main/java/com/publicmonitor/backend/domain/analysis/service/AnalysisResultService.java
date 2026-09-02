@@ -14,7 +14,7 @@ import com.publicmonitor.backend.domain.document.entity.DocumentDetection;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRun;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRunStatus;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunRepository;
-import com.publicmonitor.backend.domain.report.event.AnalysisStoredEvent;
+import com.publicmonitor.backend.domain.report.event.ProposalCompletedEvent;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -115,11 +115,9 @@ public class AnalysisResultService {
                 "AI 분석 결과 저장 완료. runId={} jobId={} storedCount={} duplicateCount={} failedCount={}",
                 request.runId(), request.jobId(), storedCount, duplicateCount, request.failures().size()
         );
-        if (storedCount + duplicateCount > 0) {
-            eventPublisher.publishEvent(new AnalysisStoredEvent(request.runId()));
-        } else {
+        if (storedCount + duplicateCount == 0) {
             log.warn(
-                    "저장된 AI 분석 결과가 없어 보고서 생성을 요청하지 않습니다. runId={} jobId={} failedCount={}",
+                    "저장된 AI 분석 결과가 없습니다. runId={} jobId={} failedCount={}",
                     request.runId(), request.jobId(), request.failures().size()
             );
         }
@@ -130,10 +128,13 @@ public class AnalysisResultService {
 
     @Transactional
     public ProposalResultResponse receiveProposal(ProposalResultRequest request) {
-        monitoringRunRepository.findById(request.runId())
+        MonitoringRun run = monitoringRunRepository.findById(request.runId())
                 .orElseThrow(() -> new AnalysisResultException(
                         AnalysisResultResponseCode.RUN_NOT_FOUND
                 ));
+        if (run.getStatus() != MonitoringRunStatus.COLLECTED) {
+            throw new AnalysisResultException(AnalysisResultResponseCode.INVALID_RUN_STATUS);
+        }
         LocalDateTime updatedAt = LocalDateTime.now(clock.withZone(SERVICE_ZONE));
         int updatedCount = 0;
         for (ProposalResultRequest.ProposalUpdate result : request.results()) {
@@ -155,6 +156,7 @@ public class AnalysisResultService {
                 "사업 제안 결과 갱신 완료. runId={} jobId={} updatedCount={}",
                 request.runId(), request.jobId(), updatedCount
         );
+        eventPublisher.publishEvent(new ProposalCompletedEvent(request.runId()));
         return new ProposalResultResponse(request.runId(), updatedCount);
     }
 

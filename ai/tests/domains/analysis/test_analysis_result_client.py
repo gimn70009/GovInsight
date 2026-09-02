@@ -209,3 +209,11 @@ def test_send_proposal_update_to_separate_endpoint() -> None:
     assert captured_path == "/internal/monitoring/proposal-results"
     assert captured_body["results"][0]["proposal"]["sections"][0]["title"] == "핵심 판단"
     assert response.data.updated_proposal_count == 1
+def test_proposal_completion_allows_empty_updates() -> None:
+    request = ProposalResultRequest(
+        run_id=10,
+        job_id=UUID("3ed1132b-8d61-45d9-bfab-06c1ed96f202"),
+        results=[],
+    )
+
+    assert request.model_dump(by_alias=True)["results"] == []

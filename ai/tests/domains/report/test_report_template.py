@@ -1,3 +1,6 @@
+from types import SimpleNamespace
+
+from app.domains.analysis.schemas.result import StrategyDecision
 from app.domains.report.schemas.request import ReportJobRequest
 from app.domains.report.template import TemplateReportGenerator
 
@@ -6,6 +9,7 @@ def report_request() -> ReportJobRequest:
     return ReportJobRequest.model_validate(
         {
             "runId": 10,
+            "requestedAt": "2026-09-02T08:30:00",
             "totalSourceCount": 2,
             "detectedDocumentCount": 3,
             "warningCount": 1,
@@ -58,16 +62,42 @@ def report_request() -> ReportJobRequest:
 
 
 def test_generate_report_without_model_call() -> None:
-    draft = TemplateReportGenerator().generate(report_request())
+    request = report_request()
+    first = request.documents[0].model_copy(
+        update={
+            "opportunity_score": 82,
+            "proposal": SimpleNamespace(
+                preparation=SimpleNamespace(
+                    application_deadline="2026-09-30",
+                    strategy=SimpleNamespace(
+                        decision=StrategyDecision.CONDITIONAL_GO,
+                        critical_gaps=[
+                            SimpleNamespace(
+                                owner="사업개발팀",
+                                target_date="2026-09-05",
+                                target_timing="내부 검토 후",
+                                next_action="신청기업 자격을 확인합니다.",
+                            )
+                        ],
+                    ),
+                )
+            ),
+        }
+    )
+    request = request.model_copy(update={"documents": [first, *request.documents[1:]]})
 
-    assert draft.title == "산업통상부(사업공고) 외 1개 게시판 모니터링 보고서"
-    assert "모니터링 소스 2개에서 문서 3건" in draft.summary
-    assert "중요 1건 · 보통 1건 · 낮음 1건" in draft.summary
-    assert "중요 신규 지원사업 (신규)" in draft.summary
-    assert "수정된 지원사업 (수정)" in draft.summary
-    assert "변경 없는 안내 (변경 없음)" in draft.summary
-    assert draft.summary.index("중요 신규 지원사업") < draft.summary.index("변경 없는 안내")
+    draft = TemplateReportGenerator().generate(request)
 
+    assert draft.title == "[공공기관 모니터링] 9월 2일 보고서"
+    assert "신규 1건 │ 수정 1건 │ 변경 없음 1건" in draft.summary
+    assert "🔴 변경 없는 안내" in draft.summary
+    assert "문서 유형: 변경 없음" in draft.summary
+    assert "조건부 참여를 권장합니다. 기회 점수는 82점입니다." in draft.summary
+    assert "접수 마감: 2026년 9월 30일" in draft.summary
+    assert "우선 조치" in draft.summary
+    assert "사업개발팀: 2026년 9월 5일까지 신청기업 자격을 확인합니다" in draft.summary
+    assert "📎 원문\nhttps://example.go.kr/1" in draft.summary
+    assert len(draft.title + "\n\n" + draft.summary) <= 4_096
 
 def test_report_summary_stays_within_storage_limit() -> None:
     request = report_request()
