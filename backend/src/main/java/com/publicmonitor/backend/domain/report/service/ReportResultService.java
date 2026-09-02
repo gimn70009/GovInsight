@@ -5,6 +5,7 @@ import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRunStatus;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunRepository;
 import com.publicmonitor.backend.domain.report.entity.MonitoringReport;
 import com.publicmonitor.backend.domain.report.entity.MonitoringReportStatus;
+import com.publicmonitor.backend.domain.report.event.ReportCompletedEvent;
 import com.publicmonitor.backend.domain.report.exception.ReportException;
 import com.publicmonitor.backend.domain.report.exception.ReportResponseCode;
 import com.publicmonitor.backend.domain.report.repository.MonitoringReportRepository;
@@ -16,6 +17,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +33,7 @@ public class ReportResultService {
     private final MonitoringRunRepository runRepository;
     private final MonitoringReportRepository reportRepository;
     private final Clock clock;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public ReportResultResponse receive(ReportResultRequest request) {
@@ -69,6 +72,7 @@ public class ReportResultService {
         LocalDateTime completedAt = LocalDateTime.now(clock.withZone(SERVICE_ZONE));
         report.complete(request.title().strip(), request.summary().strip(), completedAt);
         run.completeReport(completedAt);
+        eventPublisher.publishEvent(new ReportCompletedEvent(run.getId()));
         log.info("모니터링 보고서 저장 완료. runId={} jobId={} reportId={}",
                 request.runId(), request.jobId(), report.getId());
         return new ReportResultResponse(run.getId(), report.getId(), report.getStatus(), false);

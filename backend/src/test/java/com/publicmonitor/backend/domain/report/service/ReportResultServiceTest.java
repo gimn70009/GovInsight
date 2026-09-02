@@ -1,7 +1,9 @@
 package com.publicmonitor.backend.domain.report.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
 
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRun;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRunStatus;
@@ -9,6 +11,7 @@ import com.publicmonitor.backend.domain.monitoring.entity.MonitoringTriggerType;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunRepository;
 import com.publicmonitor.backend.domain.report.entity.MonitoringReport;
 import com.publicmonitor.backend.domain.report.entity.MonitoringReportStatus;
+import com.publicmonitor.backend.domain.report.event.ReportCompletedEvent;
 import com.publicmonitor.backend.domain.report.repository.MonitoringReportRepository;
 import com.publicmonitor.backend.domain.report.web.dto.ReportResultRequest;
 import com.publicmonitor.backend.domain.report.web.dto.ReportResultResponse;
@@ -24,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -31,6 +35,7 @@ class ReportResultServiceTest {
 
     @Mock MonitoringRunRepository runRepository;
     @Mock MonitoringReportRepository reportRepository;
+    @Mock ApplicationEventPublisher eventPublisher;
 
     private ReportResultService service;
     private MonitoringRun run;
@@ -41,7 +46,8 @@ class ReportResultServiceTest {
         service = new ReportResultService(
                 runRepository,
                 reportRepository,
-                Clock.fixed(Instant.parse("2026-08-21T01:00:00Z"), ZoneOffset.UTC)
+                Clock.fixed(Instant.parse("2026-08-21T01:00:00Z"), ZoneOffset.UTC),
+                eventPublisher
         );
         run = MonitoringRun.create(MonitoringTriggerType.MANUAL, 1, LocalDateTime.now());
         ReflectionTestUtils.setField(run, "id", 10L);
@@ -68,6 +74,7 @@ class ReportResultServiceTest {
         assertThat(run.getStatus()).isEqualTo(MonitoringRunStatus.COMPLETED);
         assertThat(run.getCompletedAt()).isNotNull();
         assertThat(response.duplicate()).isFalse();
+        verify(eventPublisher).publishEvent(any(ReportCompletedEvent.class));
     }
 
     @Test

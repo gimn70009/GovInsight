@@ -210,8 +210,6 @@ async def _generate_and_deliver_proposals(
         )
         if update is not None
     ]
-    if not updates:
-        return
     response = await result_client.send_proposals(
         ProposalResultRequest(run_id=request.run_id, job_id=job_id, results=updates)
     )

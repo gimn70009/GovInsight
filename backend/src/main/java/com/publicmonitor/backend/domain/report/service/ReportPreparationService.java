@@ -78,6 +78,7 @@ public class ReportPreparationService {
 
         return Optional.of(new PythonReportJobRequest(
                 run.getId(),
+                run.getRequestedAt(),
                 run.getTotalSourceCount(),
                 run.getDetectedDocumentCount(),
                 run.getWarningCount(),
@@ -109,7 +110,10 @@ public class ReportPreparationService {
                 analysis.getSummary(),
                 parseKeyPoints(analysis.getKeyPoints()),
                 analysis.getImportance(),
-                analysis.getReason()
+                analysis.getReason(),
+                analysis.getEligibility(),
+                analysis.getOpportunityScore(),
+                objectMapper.readTree(analysis.getProposalDirection())
         );
     }
 

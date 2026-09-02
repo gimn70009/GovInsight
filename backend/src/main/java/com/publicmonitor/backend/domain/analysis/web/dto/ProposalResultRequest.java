@@ -11,7 +11,7 @@ import java.util.UUID;
 public record ProposalResultRequest(
         @NotNull @Positive Long runId,
         @NotNull UUID jobId,
-        @NotNull @Size(min = 1) List<@Valid ProposalUpdate> results
+        @NotNull List<@Valid ProposalUpdate> results
 ) {
 
     public record ProposalUpdate(

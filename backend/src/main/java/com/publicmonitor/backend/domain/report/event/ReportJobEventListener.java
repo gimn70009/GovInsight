@@ -18,7 +18,7 @@ public class ReportJobEventListener {
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    public void requestReport(AnalysisStoredEvent event) {
+    public void requestReport(ProposalCompletedEvent event) {
         try {
             reportJobRequestService.request(event.runId());
         } catch (RuntimeException exception) {
