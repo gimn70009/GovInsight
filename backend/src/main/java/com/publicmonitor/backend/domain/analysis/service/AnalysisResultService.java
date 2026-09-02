@@ -66,6 +66,8 @@ public class AnalysisResultService {
             var existingAnalysis = analysisRepository.findByDocumentVersionId(result.versionId());
             if (existingAnalysis.isPresent()) {
                 DocumentAnalysis existing = existingAnalysis.orElseThrow();
+                updateComparisonSummary(existing, result);
+                updateSimilarity(existing, result);
                 if (!existing.requiresProposalSchemaUpgrade()) {
                     duplicateCount++;
                     continue;
@@ -87,7 +89,7 @@ public class AnalysisResultService {
                 storedCount++;
                 continue;
             }
-            analysisRepository.save(DocumentAnalysis.create(
+            DocumentAnalysis analysis = DocumentAnalysis.create(
                     detection.getDocumentVersion(),
                     result.summary().strip(),
                     objectMapper.writeValueAsString(result.keyPoints()),
@@ -101,7 +103,10 @@ public class AnalysisResultService {
                     objectMapper.writeValueAsString(result.usedTools()),
                     result.modelName().strip(),
                     analyzedAt
-            ));
+            );
+            updateComparisonSummary(analysis, result);
+            updateSimilarity(analysis, result);
+            analysisRepository.save(analysis);
             storedCount++;
         }
 
@@ -176,5 +181,30 @@ public class AnalysisResultService {
             throw new AnalysisResultException(AnalysisResultResponseCode.RESULT_RELATION_MISMATCH);
         }
         return detection;
+    }
+
+    private void updateSimilarity(
+            DocumentAnalysis analysis,
+            AnalysisResultRequest.AnalysisResult result
+    ) {
+        if (result.similarityProfile() == null
+                || result.similarityEmbedding() == null
+                || result.similarityEmbedding().isEmpty()
+                || result.embeddingModelName() == null) {
+            return;
+        }
+        analysis.updateSimilarity(
+                result.similarityProfile().strip(),
+                objectMapper.writeValueAsString(result.similarityEmbedding()),
+                result.embeddingModelName().strip()
+        );
+    }
+
+    private void updateComparisonSummary(
+            DocumentAnalysis analysis,
+            AnalysisResultRequest.AnalysisResult result
+    ) {
+        if (result.comparisonSummary() == null) return;
+        analysis.updateComparisonSummary(objectMapper.writeValueAsString(result.comparisonSummary()));
     }
 }

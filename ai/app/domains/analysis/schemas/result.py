@@ -41,6 +41,14 @@ class ProposalDraftStatus(StrEnum):
     GENERATING = "GENERATING"
 
 
+class ComparisonSummary(CamelCaseModel):
+    purpose: str = Field(min_length=5, max_length=1500)
+    support_scale: str = Field(min_length=5, max_length=500)
+    application_deadline: str = Field(min_length=5, max_length=300)
+    eligibility: str = Field(min_length=5, max_length=1000)
+    required_partner: str = Field(min_length=5, max_length=1000)
+
+
 class PreparationStatus(StrEnum):
     READY = "READY"
     VERIFIED = "VERIFIED"
@@ -353,6 +361,15 @@ class AnalysisDraft(BaseModel):
     favorable_or_not: Favorability
     proposal: ProposalStrategy
     opportunity: OpportunityAssessment
+    comparison_summary: ComparisonSummary = Field(
+        default_factory=lambda: ComparisonSummary(
+            purpose="원문에서 확인하지 못했습니다.",
+            support_scale="원문에서 확인하지 못했습니다.",
+            application_deadline="원문에서 확인하지 못했습니다.",
+            eligibility="원문에서 확인하지 못했습니다.",
+            required_partner="원문에서 확인하지 못했습니다.",
+        )
+    )
 
     @field_validator("summary", "reason")
     @classmethod
@@ -444,3 +461,7 @@ class DocumentAnalysisResult(CamelCaseModel):
     opportunity: OpportunityAssessment
     used_tools: list[str]
     model_name: str
+    comparison_summary: ComparisonSummary | None = None
+    similarity_profile: str | None = None
+    similarity_embedding: list[float] | None = None
+    embedding_model_name: str | None = None

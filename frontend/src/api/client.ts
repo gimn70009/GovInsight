@@ -9,6 +9,7 @@ import type {
   MonitoringSchedulePayload,
   MonitoringSource,
   MonitoringSourcePayload,
+  SimilarNoticeResult,
   PageResponse,
 } from './types'
 
@@ -86,4 +87,6 @@ export const api = {
     return request<PageResponse<DocumentDetection>>(`/api/document-detections?${params}`)
   },
   getDocument: (detectionId: number) => request<DocumentDetail>(`/api/document-detections/${detectionId}`),
+  getSimilarNotices: (detectionId: number) =>
+    request<SimilarNoticeResult>(`/api/document-detections/${detectionId}/similar-notices`),
 }

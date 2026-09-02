@@ -109,6 +109,42 @@ def test_back_schedules_internal_target_from_application_deadline() -> None:
     assert "영업일" not in gap.schedule_basis
 
 
+def test_never_schedules_internal_target_before_analysis_date() -> None:
+    preparation = _preparation(
+        PreparationChecklistItem(
+            title="기업 자격",
+            status=PreparationStatus.NEEDS_CONFIRMATION,
+            detail="기업 자격을 확인해야 합니다.",
+            next_action="사업담당자가 기업 자격을 확인합니다.",
+        )
+    )
+    preparation.application_deadline = "2026-09-08"
+
+    score_preparation(preparation, date(2026, 9, 2))
+
+    gap = preparation.strategy.critical_gaps[0]
+    assert gap.target_date == "2026-09-02"
+    assert "즉시 착수" in gap.target_timing
+
+
+def test_does_not_schedule_new_actions_for_expired_notice() -> None:
+    preparation = _preparation(
+        PreparationChecklistItem(
+            title="기업 자격",
+            status=PreparationStatus.NEEDS_CONFIRMATION,
+            detail="기업 자격을 확인해야 합니다.",
+            next_action="사업담당자가 기업 자격을 확인합니다.",
+        )
+    )
+    preparation.application_deadline = "2026-08-27"
+
+    score_preparation(preparation, date(2026, 9, 2))
+
+    gap = preparation.strategy.critical_gaps[0]
+    assert gap.target_date is None
+    assert "마감일이 지나" in gap.target_timing
+
+
 def test_overrides_model_days_with_fixed_work_type_policy() -> None:
     item = PreparationChecklistItem(
         title="연구개발전담부서 인정서",

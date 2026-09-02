@@ -3,6 +3,8 @@ import logging
 from typing import Protocol
 from uuid import UUID
 
+from langchain_openai import OpenAIEmbeddings
+
 from app.domains.analysis.agent import LangChainAnalysisRunner
 from app.domains.analysis.clients import AnalysisResultClient, AnalysisResultClientError
 from app.domains.analysis.config import AnalysisConfigurationError, AnalysisSettings
@@ -67,6 +69,7 @@ async def run_analysis_job(job_id: UUID, request: AnalysisJobRequest) -> None:
         request.documents,
         settings.concurrency,
     )
+    await _attach_similarity_embeddings(results, request.documents, settings)
     documents_by_version = {document.version_id: document for document in request.documents}
     for result in results:
         document = documents_by_version.get(result.version_id)
@@ -162,6 +165,60 @@ def _mark_generating_proposals(
         )
 
 
+async def _attach_similarity_embeddings(
+    results: list[DocumentAnalysisResult],
+    documents: list[AnalysisDocumentRequest],
+    settings: AnalysisSettings,
+) -> None:
+    if not results:
+        return
+    documents_by_version = {document.version_id: document for document in documents}
+    profiles: list[str] = []
+    target_results: list[DocumentAnalysisResult] = []
+    for result in results:
+        document = documents_by_version.get(result.version_id)
+        if document is None:
+            continue
+        profile = _build_similarity_profile(document, result)
+        profiles.append(profile)
+        target_results.append(result)
+
+    if not profiles:
+        return
+    try:
+        embeddings = OpenAIEmbeddings(
+            model=settings.embedding_model_name,
+            api_key=settings.api_key,
+            max_retries=1,
+        )
+        vectors = await embeddings.aembed_documents(profiles)
+    except Exception as exception:
+        logger.warning(
+            "유사 공고 임베딩 생성 실패. document_count=%s reason=%s",
+            len(profiles),
+            type(exception).__name__,
+        )
+        return
+
+    for result, profile, vector in zip(target_results, profiles, vectors, strict=True):
+        result.similarity_profile = profile
+        result.similarity_embedding = vector
+        result.embedding_model_name = settings.embedding_model_name
+
+
+def _build_similarity_profile(
+    document: AnalysisDocumentRequest,
+    result: DocumentAnalysisResult,
+) -> str:
+    comparison = result.comparison_summary
+    return (
+        f"핵심 주제: {document.title}\n"
+        f"사업 목적: {comparison.purpose if comparison else result.summary}\n"
+        f"지원 대상: {comparison.eligibility if comparison else '확인되지 않음'}\n"
+        f"협력 구조: {comparison.required_partner if comparison else '확인되지 않음'}"
+    )[:3000]
+
+
 class _CompletedBaseWorkflow:
     def __init__(self, result: DocumentAnalysisResult) -> None:
         self._result = result
@@ -240,6 +297,18 @@ async def _analyze_documents(
                     document_id=document.document_id,
                     version_id=document.version_id,
                     error_message=str(exception),
+                )
+            except Exception:
+                logger.exception(
+                    "AI 문서 분석 중 예상하지 못한 오류. detection_id=%s version_id=%s",
+                    document.detection_id,
+                    document.version_id,
+                )
+                return None, AnalysisFailureResult(
+                    detection_id=document.detection_id,
+                    document_id=document.document_id,
+                    version_id=document.version_id,
+                    error_message="AI 문서 분석 중 예상하지 못한 오류가 발생했습니다.",
                 )
 
     outcomes = await asyncio.gather(*(analyze_one(document) for document in documents))

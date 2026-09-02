@@ -87,6 +87,18 @@ public class DocumentAnalysis extends BaseEntity {
     @Column(name = "model_name", length = 100)
     private String modelName;
 
+    @Column(name = "similarity_profile", columnDefinition = "CLOB")
+    private String similarityProfile;
+
+    @Column(name = "similarity_embedding", columnDefinition = "CLOB")
+    private String similarityEmbedding;
+
+    @Column(name = "embedding_model_name", length = 100)
+    private String embeddingModelName;
+
+    @Column(name = "comparison_summary", columnDefinition = "CLOB")
+    private String comparisonSummary;
+
     @Column(name = "analyzed_at", nullable = false)
     private LocalDateTime analyzedAt;
 
@@ -196,5 +208,19 @@ public class DocumentAnalysis extends BaseEntity {
         this.proposalDirection = proposalDirection;
         this.usedTools = usedTools;
         this.analyzedAt = analyzedAt;
+    }
+
+    public void updateSimilarity(
+            String similarityProfile,
+            String similarityEmbedding,
+            String embeddingModelName
+    ) {
+        this.similarityProfile = similarityProfile;
+        this.similarityEmbedding = similarityEmbedding;
+        this.embeddingModelName = embeddingModelName;
+    }
+
+    public void updateComparisonSummary(String comparisonSummary) {
+        this.comparisonSummary = comparisonSummary;
     }
 }
