@@ -67,6 +67,18 @@ export interface CreateMonitoringRunResponse {
   requestedAt: string
 }
 
+export type MonitoringScheduleFrequency = 'DAILY' | 'WEEKDAYS' | 'CUSTOM'
+export type Weekday = 'MONDAY' | 'TUESDAY' | 'WEDNESDAY' | 'THURSDAY' | 'FRIDAY' | 'SATURDAY' | 'SUNDAY'
+
+export interface MonitoringSchedule {
+  enabled: boolean
+  frequency: MonitoringScheduleFrequency
+  executionTime: string
+  customDays: Weekday[]
+}
+
+export type MonitoringSchedulePayload = MonitoringSchedule
+
 export type Importance = 'HIGH' | 'NORMAL' | 'LOW'
 export type OpportunityPriority = 'HIGH' | 'NORMAL' | 'LOW'
 export type ChangeType = 'NEW_DOCUMENT' | 'UPDATED_DOCUMENT' | 'UNCHANGED_DOCUMENT'

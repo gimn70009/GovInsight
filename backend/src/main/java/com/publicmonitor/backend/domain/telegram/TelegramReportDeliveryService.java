@@ -1,7 +1,6 @@
 package com.publicmonitor.backend.domain.telegram;
 
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRun;
-import com.publicmonitor.backend.domain.monitoring.entity.MonitoringTriggerType;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunRepository;
 import com.publicmonitor.backend.domain.report.entity.MonitoringReport;
 import com.publicmonitor.backend.domain.report.entity.MonitoringReportStatus;
@@ -34,9 +33,6 @@ public class TelegramReportDeliveryService {
     public void deliver(Long runId) {
         MonitoringRun run = runRepository.findById(runId)
                 .orElseThrow(() -> new IllegalArgumentException("모니터링 실행을 찾을 수 없습니다."));
-        if (run.getTriggerType() != MonitoringTriggerType.MANUAL) {
-            return;
-        }
         MonitoringReport report = reportRepository.findByMonitoringRunId(runId)
                 .orElseThrow(() -> new IllegalArgumentException("모니터링 보고서를 찾을 수 없습니다."));
         if (report.getStatus() != MonitoringReportStatus.COMPLETED || report.isTelegramSent()) {

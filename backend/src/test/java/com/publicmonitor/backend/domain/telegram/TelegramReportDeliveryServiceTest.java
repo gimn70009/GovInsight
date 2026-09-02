@@ -82,15 +82,18 @@ class TelegramReportDeliveryServiceTest {
     }
 
     @Test
-    void 자동_실행은_Telegram으로_전송하지_않는다() {
+    void 자동_실행의_최종_보고서도_Telegram으로_전송한다() {
         MonitoringRun scheduled = MonitoringRun.create(
                 MonitoringTriggerType.SCHEDULED, 1, LocalDateTime.now()
         );
         ReflectionTestUtils.setField(scheduled, "id", 10L);
         given(runRepository.findById(10L)).willReturn(Optional.of(scheduled));
+        given(reportRepository.findByMonitoringRunId(10L)).willReturn(Optional.of(report));
+        given(client.send(org.mockito.ArgumentMatchers.anyString())).willReturn(778L);
 
         service.deliver(10L);
 
-        verify(client, never()).send(org.mockito.ArgumentMatchers.anyString());
+        verify(client).send(org.mockito.ArgumentMatchers.contains("[공공기관 모니터링]"));
+        assertThat(report.getTelegramMessageId()).isEqualTo(778L);
     }
 }
