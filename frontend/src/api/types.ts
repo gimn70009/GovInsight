@@ -104,7 +104,6 @@ export type OpportunityDimensionType =
   | 'BUSINESS_VALUE'
   | 'FEASIBILITY'
   | 'URGENCY'
-  | 'EVIDENCE_CONFIDENCE'
 
 export interface OpportunityAssessment {
   totalScore: number

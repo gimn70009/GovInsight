@@ -12,6 +12,7 @@ import com.publicmonitor.backend.global.response.PageResponse;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Lazy;
@@ -92,10 +93,10 @@ public class DocumentDetectionQueryService {
                 StoredOpportunity.class
         );
         Map<OpportunityDimensionType, Integer> scores = stored.dimensions().stream()
-                .collect(Collectors.toMap(StoredDimension::type, StoredDimension::score));
-        int totalScore = row.opportunityScore() != null
-                ? row.opportunityScore()
-                : OpportunityScoreCalculator.calculate(scores);
+                .map(this::toScore)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toMap(DimensionScore::type, DimensionScore::score));
+        int totalScore = OpportunityScoreCalculator.calculate(scores);
         OpportunityPriority priority = OpportunityScoreCalculator.priority(
                 totalScore,
                 scores.getOrDefault(OpportunityDimensionType.COMPANY_FIT, 0),
@@ -111,10 +112,20 @@ public class DocumentDetectionQueryService {
     private record StoredOpportunity(List<StoredDimension> dimensions) {
     }
 
-    private record StoredDimension(
-            OpportunityDimensionType type,
-            Integer score,
-            String reason
-    ) {
+    private DimensionScore toScore(StoredDimension stored) {
+        try {
+            return new DimensionScore(
+                    OpportunityDimensionType.valueOf(stored.type()),
+                    stored.score()
+            );
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    private record DimensionScore(OpportunityDimensionType type, Integer score) {
+    }
+
+    private record StoredDimension(String type, Integer score, String reason) {
     }
 }

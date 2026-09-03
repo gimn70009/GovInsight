@@ -170,7 +170,6 @@ class OpportunityDimensionType(StrEnum):
     BUSINESS_VALUE = "BUSINESS_VALUE"
     FEASIBILITY = "FEASIBILITY"
     URGENCY = "URGENCY"
-    EVIDENCE_CONFIDENCE = "EVIDENCE_CONFIDENCE"
 
 
 class OpportunityDimension(BaseModel):
@@ -185,14 +184,14 @@ class OpportunityDimension(BaseModel):
 
 
 class OpportunityAssessment(BaseModel):
-    dimensions: list[OpportunityDimension] = Field(min_length=5, max_length=5)
+    dimensions: list[OpportunityDimension] = Field(min_length=4, max_length=4)
 
     @model_validator(mode="after")
     def validate_dimensions(self) -> "OpportunityAssessment":
         expected = set(OpportunityDimensionType)
         actual = {dimension.type for dimension in self.dimensions}
         if actual != expected:
-            raise ValueError("기회 점수의 다섯 평가 항목이 각각 한 번씩 필요합니다.")
+            raise ValueError("기회 점수의 네 평가 항목이 각각 한 번씩 필요합니다.")
         return self
 
 

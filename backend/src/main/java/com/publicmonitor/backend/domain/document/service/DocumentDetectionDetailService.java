@@ -15,6 +15,7 @@ import com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionDetail
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Lazy;
@@ -110,14 +111,17 @@ public class DocumentDetectionDetailService {
                 analysis.getOpportunityAssessment(),
                 StoredOpportunity.class
         );
-        Map<OpportunityDimensionType, Integer> scores = stored.dimensions().stream()
+        List<DocumentDetectionDetailResponse.OpportunityDimension> dimensions =
+                stored.dimensions().stream()
+                        .map(this::toOpportunityDimension)
+                        .filter(Objects::nonNull)
+                        .toList();
+        Map<OpportunityDimensionType, Integer> scores = dimensions.stream()
                 .collect(Collectors.toMap(
                         DocumentDetectionDetailResponse.OpportunityDimension::type,
                         DocumentDetectionDetailResponse.OpportunityDimension::score
                 ));
-        int totalScore = analysis.getOpportunityScore() != null
-                ? analysis.getOpportunityScore()
-                : OpportunityScoreCalculator.calculate(scores);
+        int totalScore = OpportunityScoreCalculator.calculate(scores);
         int companyFitScore = scores.getOrDefault(OpportunityDimensionType.COMPANY_FIT, 0);
         int feasibilityScore = scores.getOrDefault(OpportunityDimensionType.FEASIBILITY, 0);
         int urgencyScore = scores.getOrDefault(OpportunityDimensionType.URGENCY, 0);
@@ -129,13 +133,28 @@ public class DocumentDetectionDetailService {
                         feasibilityScore,
                         urgencyScore
                 ),
-                stored.dimensions()
+                dimensions
         );
     }
 
-    private record StoredOpportunity(
-            List<DocumentDetectionDetailResponse.OpportunityDimension> dimensions
+    private DocumentDetectionDetailResponse.OpportunityDimension toOpportunityDimension(
+            StoredDimension stored
     ) {
+        try {
+            return new DocumentDetectionDetailResponse.OpportunityDimension(
+                    OpportunityDimensionType.valueOf(stored.type()),
+                    stored.score(),
+                    stored.reason()
+            );
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    private record StoredOpportunity(List<StoredDimension> dimensions) {
+    }
+
+    private record StoredDimension(String type, Integer score, String reason) {
     }
 
     private DocumentDetectionDetailResponse.Attachment toAttachment(DocumentAttachment attachment) {

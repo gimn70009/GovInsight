@@ -7,11 +7,10 @@ import java.util.Map;
 public final class OpportunityScoreCalculator {
 
     private static final Map<OpportunityDimensionType, Double> WEIGHTS = Map.of(
-            OpportunityDimensionType.COMPANY_FIT, 0.40,
+            OpportunityDimensionType.COMPANY_FIT, 0.50,
             OpportunityDimensionType.BUSINESS_VALUE, 0.20,
             OpportunityDimensionType.FEASIBILITY, 0.20,
-            OpportunityDimensionType.URGENCY, 0.10,
-            OpportunityDimensionType.EVIDENCE_CONFIDENCE, 0.10
+            OpportunityDimensionType.URGENCY, 0.10
     );
 
     private OpportunityScoreCalculator() {

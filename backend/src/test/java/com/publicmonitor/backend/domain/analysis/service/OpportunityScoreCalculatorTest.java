@@ -15,11 +15,10 @@ class OpportunityScoreCalculatorTest {
                 OpportunityDimensionType.COMPANY_FIT, 80,
                 OpportunityDimensionType.BUSINESS_VALUE, 60,
                 OpportunityDimensionType.FEASIBILITY, 50,
-                OpportunityDimensionType.URGENCY, 40,
-                OpportunityDimensionType.EVIDENCE_CONFIDENCE, 50
+                OpportunityDimensionType.URGENCY, 40
         ));
 
-        assertThat(score).isEqualTo(63);
+        assertThat(score).isEqualTo(66);
     }
 
     @Test
@@ -28,8 +27,7 @@ class OpportunityScoreCalculatorTest {
                 OpportunityDimensionType.COMPANY_FIT, 40,
                 OpportunityDimensionType.BUSINESS_VALUE, 90,
                 OpportunityDimensionType.FEASIBILITY, 90,
-                OpportunityDimensionType.URGENCY, 90,
-                OpportunityDimensionType.EVIDENCE_CONFIDENCE, 90
+                OpportunityDimensionType.URGENCY, 90
         ));
 
         assertThat(score).isEqualTo(49);

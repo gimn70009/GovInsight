@@ -190,9 +190,9 @@ public record AnalysisResultRequest(
     }
 
     public record Opportunity(
-            @NotNull @Size(min = 5, max = 5) List<@Valid OpportunityDimension> dimensions
+            @NotNull @Size(min = 4, max = 4) List<@Valid OpportunityDimension> dimensions
     ) {
-        @AssertTrue(message = "기회 점수의 다섯 평가 항목이 각각 한 번씩 필요합니다.")
+        @AssertTrue(message = "기회 점수의 네 평가 항목이 각각 한 번씩 필요합니다.")
         public boolean hasAllDimensions() {
             return dimensions == null || dimensions.stream()
                     .map(OpportunityDimension::type)
