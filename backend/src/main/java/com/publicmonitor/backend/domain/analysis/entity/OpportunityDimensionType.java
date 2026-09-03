@@ -4,6 +4,5 @@ public enum OpportunityDimensionType {
     COMPANY_FIT,
     BUSINESS_VALUE,
     FEASIBILITY,
-    URGENCY,
-    EVIDENCE_CONFIDENCE
+    URGENCY
 }

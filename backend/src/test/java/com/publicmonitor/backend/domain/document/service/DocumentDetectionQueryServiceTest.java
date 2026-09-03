@@ -45,7 +45,7 @@ class DocumentDetectionQueryServiceTest {
         assertThat(response.content()).singleElement().satisfies(summary -> {
             assertThat(summary.runId()).isEqualTo(3L);
             assertThat(summary.importance()).isEqualTo(DocumentImportance.HIGH);
-            assertThat(summary.opportunityScore()).isEqualTo(59);
+            assertThat(summary.opportunityScore()).isEqualTo(60);
             assertThat(summary.opportunityPriority()).isEqualTo(OpportunityPriority.NORMAL);
             assertThat(summary.attachmentCount()).isEqualTo(2);
         });

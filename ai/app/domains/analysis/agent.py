@@ -69,7 +69,7 @@ SYSTEM_PROMPT = f"""
 - COMPANY_FIT 40점 이하이거나 eligibility가 INELIGIBLE이면 draft_status를 NOT_RECOMMENDED로 설정하고 draft_sections를 비웁니다.
 - 일반 공지와 제출 양식 없는 사업 공고는 draft_status를 NOT_APPLICABLE로 설정하고 제안서 관련 배열을 비웁니다.
 - draft_reason에는 1단계에서 판단한 문서 분류, 회사 적합성과 신청 자격을 근거로 상태를 설명합니다.
-- opportunity.dimensions에는 COMPANY_FIT, BUSINESS_VALUE, FEASIBILITY, URGENCY, EVIDENCE_CONFIDENCE를 각각 한 번씩 포함합니다.
+- opportunity.dimensions에는 COMPANY_FIT, BUSINESS_VALUE, FEASIBILITY, URGENCY를 각각 한 번씩 포함합니다.
 - 각 점수는 0~100 정수로 작성하고 아래 기회 점수 산정표의 항목별 점수를 합산합니다.
 - COMPANY_FIT은 `반도체·디스플레이·철강 핵심 산업`과 `제조 AI 에이전트 핵심 과업`을 독립적으로 확인한 뒤 두 축의 교집합을 평가합니다.
 - `모니터링`, `통합`, `플랫폼`, `데이터 수집`, `시각화`, `자동화`, `스마트팩토리`, `디지털 전환` 같은 범용 표현은 AI 모델 또는 AI 에이전트가 실제 산출물·수행 과업으로 명시되지 않으면 회사 서비스 일치 근거로 사용하지 않습니다.
@@ -80,10 +80,9 @@ SYSTEM_PROMPT = f"""
 - COMPANY_FIT이 40점 이하이면 현재 문서를 사업화 기회로 확장하지 않습니다. 대신 도메인 불일치 근거, 향후 재검토에 필요한 구체적인 공고 조건, 현재 필요한 최소 대응을 제시합니다.
 - COMPANY_FIT이 41점 이상이면 직접 또는 인접 도메인의 구체적인 수행 근거 범위 안에서만 활용·추진 방안을 제안합니다. 인접 도메인은 동일한 설비·공정 문제나 공개 수행 사례가 확인되어야 합니다.
 - 홍보·평판 가능성만 있는 경우 BUSINESS_VALUE는 40점을 넘기지 않습니다. 직접 신청 자격이나 필수 파트너가 불명확하면 FEASIBILITY는 45점을 넘기지 않습니다.
-- 판단에 필요한 회사 핵심 정보가 누락되면 EVIDENCE_CONFIDENCE는 50점을 넘기지 않습니다.
 - URGENCY는 대응까지 남은 시간만 평가합니다. 높은 URGENCY를 다른 지표나 문서 중요도를 높이는 근거로 재사용하지 않습니다.
-- COMPANY_FIT은 회사 기술·사업과의 관련성, BUSINESS_VALUE는 사업 확장·실적 가치, FEASIBILITY는 자격·인력·일정의 실행 가능성, URGENCY는 대응 시급성, EVIDENCE_CONFIDENCE는 판단 근거의 충분성을 평가합니다.
-- 확인되지 않은 회사 조건이 필요하면 관련 점수와 EVIDENCE_CONFIDENCE를 낮추고 추측으로 점수를 높이지 않습니다.
+- COMPANY_FIT은 회사 기술·사업과의 관련성, BUSINESS_VALUE는 사업 확장·실적 가치, FEASIBILITY는 자격·인력·일정의 실행 가능성, URGENCY는 대응 시급성를 평가합니다.
+- 확인되지 않은 회사 조건이 필요하면 관련 점수를 낮추고 확인 필요 상태로 표시하며 추측으로 점수를 높이지 않습니다.
 {OPPORTUNITY_SCORING_RUBRIC}
 - summary, key_points, reason, proposal의 body와 opportunity의 reason은 모두 정중한 `합니다체`로 작성합니다.
 - 사실 설명은 `~입니다`, `~합니다`, `~필요합니다`를 사용하고 `~한다`, `~이다`, `~있다` 같은 평서형 종결은 사용하지 않습니다.

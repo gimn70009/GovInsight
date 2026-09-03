@@ -103,14 +103,6 @@ def opportunity(
                     urgency,
                     urgency_reason,
                 ),
-                (
-                    OpportunityDimensionType.EVIDENCE_CONFIDENCE,
-                    65,
-                    (
-                        "공식 원문과 회사 수행 사례는 확인되지만 "
-                        "기업 규모 증빙은 추가 확인이 필요합니다."
-                    ),
-                ),
             )
         ]
     )
@@ -203,7 +195,7 @@ def test_graph_retries_transient_failure_and_returns_new_document_result() -> No
     assert result.detection_id == 10
     assert result.importance == DocumentImportance.HIGH
     assert result.favorable_or_not == Favorability.NOT_APPLICABLE
-    assert len(result.opportunity.dimensions) == 5
+    assert len(result.opportunity.dimensions) == 4
 
 
 def test_graph_normalizes_new_document_favorability_without_retry() -> None:
@@ -376,7 +368,6 @@ def test_system_prompt_calibrates_importance_and_opportunity_scores() -> None:
     assert "직접 경제가치: 계약·지원 금액과 회사 수혜가 명시됨 35점" in SYSTEM_PROMPT
     assert "신청·입찰 자격: 회사가 직접 충족함이 확인됨 30점" in SYSTEM_PROMPT
     assert "3~5일: 90점" in SYSTEM_PROMPT
-    assert "공고 원문 완결성" in SYSTEM_PROMPT
     assert "AI 과업이 명시되지 않으면 COMPANY_FIT은 40점을 넘기지 않습니다" in SYSTEM_PROMPT
     assert "핵심 산업의 직접 일치와 제조 AI 에이전트 과업" in SYSTEM_PROMPT
     assert "단순히 해당 기관이나 기업이 자산·설비를 보유한다는 이유" in SYSTEM_PROMPT

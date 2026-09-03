@@ -27,9 +27,13 @@ const opportunityLabels: Record<OpportunityDimensionType, string> = {
   BUSINESS_VALUE: '사업 매력도',
   FEASIBILITY: '실행 가능성',
   URGENCY: '긴급도',
-  EVIDENCE_CONFIDENCE: '정보 신뢰도',
 }
-const opportunityOrder = Object.keys(opportunityLabels) as OpportunityDimensionType[]
+const opportunityOrder: OpportunityDimensionType[] = [
+  'COMPANY_FIT',
+  'BUSINESS_VALUE',
+  'FEASIBILITY',
+  'URGENCY',
+]
 const opportunityPriority = {
   HIGH: ['우선 검토', 'danger'],
   NORMAL: ['검토 권장', 'warning'],
@@ -584,13 +588,12 @@ function OpportunityScore({ opportunity }: { opportunity: NonNullable<DocumentAn
       {showScoreGuide && (
         <div className="score-guide">
           <dl>
-            <div><dt>회사 적합도</dt><dd>40%</dd></div>
+            <div><dt>회사 적합도</dt><dd>50%</dd></div>
             <div><dt>사업 매력도</dt><dd>20%</dd></div>
             <div><dt>실행 가능성</dt><dd>20%</dd></div>
             <div><dt>긴급도</dt><dd>10%</dd></div>
-            <div><dt>정보 신뢰도</dt><dd>10%</dd></div>
           </dl>
-          <p>회사 적합도가 40점 이하이면 종합 점수는 최대 49점이에요.</p>
+          <p>화면에는 사업 기회 판단에 직접 사용하는 네 지표를 보여드려요. 회사 적합도가 40점 이하이면 종합 점수는 최대 49점이에요.</p>
         </div>
       )}
 

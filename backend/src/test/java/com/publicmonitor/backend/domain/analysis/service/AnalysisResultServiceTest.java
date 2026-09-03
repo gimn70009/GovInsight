@@ -106,9 +106,9 @@ class AnalysisResultServiceTest {
         assertThat(captor.getValue().getFavorableOrNot()).isEqualTo(AnalysisFavorability.NOT_APPLICABLE);
         assertThat(captor.getValue().getProposalDirection())
                 .contains("sections", "핵심 판단", "제조 AI");
-        assertThat(captor.getValue().getOpportunityScore()).isEqualTo(74);
+        assertThat(captor.getValue().getOpportunityScore()).isEqualTo(75);
         assertThat(captor.getValue().getOpportunityAssessment())
-                .contains("COMPANY_FIT", "EVIDENCE_CONFIDENCE");
+                .contains("COMPANY_FIT", "URGENCY");
         assertThat(response.storedAnalysisCount()).isEqualTo(1);
         assertThat(response.duplicateAnalysisCount()).isZero();
     }
@@ -226,8 +226,7 @@ class AnalysisResultServiceTest {
                                 opportunityDimension(OpportunityDimensionType.COMPANY_FIT, 80),
                                 opportunityDimension(OpportunityDimensionType.BUSINESS_VALUE, 70),
                                 opportunityDimension(OpportunityDimensionType.FEASIBILITY, 60),
-                                opportunityDimension(OpportunityDimensionType.URGENCY, 90),
-                                opportunityDimension(OpportunityDimensionType.EVIDENCE_CONFIDENCE, 65)
+                                opportunityDimension(OpportunityDimensionType.URGENCY, 90)
                         )),
                         List.of("get_document_content"),
                         "gpt-5-mini"

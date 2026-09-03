@@ -90,9 +90,9 @@ class DocumentDetectionDetailServiceTest {
         assertThat(response.attachments()).hasSize(1);
         assertThat(response.analysis().keyPoints()).containsExactly("신청 자격 확인", "제출 기한 확인");
         assertThat(response.analysis().eligibility()).isEqualTo(AnalysisEligibility.REVIEW_REQUIRED);
-        assertThat(response.analysis().opportunity().totalScore()).isEqualTo(74);
+        assertThat(response.analysis().opportunity().totalScore()).isEqualTo(75);
         assertThat(response.analysis().opportunity().priority().name()).isEqualTo("HIGH");
-        assertThat(response.analysis().opportunity().dimensions()).hasSize(5);
+        assertThat(response.analysis().opportunity().dimensions()).hasSize(4);
         assertThat(response.analysis().proposal().sections())
                 .singleElement()
                 .satisfies(section -> {

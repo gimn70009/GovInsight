@@ -111,11 +111,6 @@ def result(
                         "reason": "신청 자격은 추가 확인이 필요합니다.",
                     },
                     {"type": "URGENCY", "score": 50, "reason": "접수 마감까지 남은 20일입니다."},
-                    {
-                        "type": "EVIDENCE_CONFIDENCE",
-                        "score": 70,
-                        "reason": "공고와 첨부 양식이 확인되었습니다.",
-                    },
                 ]
             },
             "usedTools": ["get_document_content", "get_attachment_texts", "get_company_profile"],

@@ -69,11 +69,6 @@ def analysis_request() -> AnalysisResultRequest:
                             score=90,
                             reason="신청 기한이 임박해 빠른 검토가 필요합니다.",
                         ),
-                        OpportunityDimension(
-                            type=OpportunityDimensionType.EVIDENCE_CONFIDENCE,
-                            score=65,
-                            reason="회사 규모 정보가 없어 일부 조건은 추가 확인이 필요합니다.",
-                        ),
                     ]
                 ),
                 used_tools=["get_document_content"],
