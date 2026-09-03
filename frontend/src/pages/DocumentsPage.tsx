@@ -514,7 +514,6 @@ function DocumentDrawer({ detectionId, onClose }: { detectionId: number; onClose
   const [error, setError] = useState('')
   const [similarNotices, setSimilarNotices] = useState<SimilarNoticeResult | null>(null)
   const [similarLoading, setSimilarLoading] = useState(true)
-  const [comparisonExpanded, setComparisonExpanded] = useState(false)
 
   useEffect(() => {
     setLoading(true)
@@ -543,12 +542,12 @@ function DocumentDrawer({ detectionId, onClose }: { detectionId: number; onClose
 
   return (
     <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <aside className={comparisonExpanded ? 'drawer drawer--comparison' : 'drawer'}>
+      <aside className="drawer drawer--detail">
         <div className="drawer__top">
           <button className="button button--subtle" onClick={onClose}><ArrowLeft size={17} />목록으로</button>
           {detail && <a className="button button--secondary" href={detail.originalUrl} target="_blank" rel="noreferrer">원문 보기<ExternalLink size={16} /></a>}
         </div>
-        {loading ? <Loading label="문서 내용을 정리하고 있어요" /> : error ? <InlineError message={error} /> : detail && <DocumentContent detail={detail} similarNotices={similarNotices} similarLoading={similarLoading} onComparisonModeChange={setComparisonExpanded} />}
+        {loading ? <Loading label="문서 내용을 정리하고 있어요" /> : error ? <InlineError message={error} /> : detail && <DocumentContent detail={detail} similarNotices={similarNotices} similarLoading={similarLoading} />}
       </aside>
     </div>
   )
@@ -613,7 +612,7 @@ function OpportunityScore({ opportunity }: { opportunity: NonNullable<DocumentAn
   )
 }
 
-function DocumentContent({ detail, similarNotices, similarLoading, onComparisonModeChange }: { detail: DocumentDetail; similarNotices: SimilarNoticeResult | null; similarLoading: boolean; onComparisonModeChange: (expanded: boolean) => void }) {
+function DocumentContent({ detail, similarNotices, similarLoading }: { detail: DocumentDetail; similarNotices: SimilarNoticeResult | null; similarLoading: boolean }) {
   const [activeDetailTab, setActiveDetailTab] = useState<'ANALYSIS' | 'PROPOSAL' | 'SIMILAR'>('ANALYSIS')
   const analysis = detail.analysis
   const applicationExpired = isExpiredApplication(detail)
@@ -644,10 +643,6 @@ function DocumentContent({ detail, similarNotices, similarLoading, onComparisonM
     setActiveDetailTab('ANALYSIS')
   }, [detail.detectionId])
 
-  useEffect(() => {
-    onComparisonModeChange(activeDetailTab === 'SIMILAR')
-    return () => onComparisonModeChange(false)
-  }, [activeDetailTab, onComparisonModeChange])
 
   return (
     <div className="document-detail">
@@ -899,6 +894,25 @@ function SimilarNoticeComparison({ result, loading, currentTitle, currentOrigina
   }
 
   const selected = result.similarNotices[Math.min(selectedIndex, result.similarNotices.length - 1)]
+  const legalReview = selected.legalReview ?? {
+    overallStatus: 'REVIEW_REQUIRED' as const,
+    summary: '현재 저장된 비교 결과에는 법률 위험 분석이 없어 추가 확인이 필요합니다.',
+    checks: [
+      ['DUPLICATE_SUPPORT', '중복지원', '두 공고 담당기관에 동일·유사 과제의 중복 신청 가능 여부를 확인합니다.'],
+      ['COST_DOUBLE_COUNTING', '사업비·인건비 중복계상', '동일 인력·기간·비용이 두 과제에 중복 계상되는지 확인합니다.'],
+      ['RESULT_IP_REUSE', '성과물·지식재산 재사용', '기존 성과물의 소유권·사용권과 신규성 요구를 확인합니다.'],
+      ['CONFIDENTIALITY', '비밀정보·영업비밀', '기존 협약과 비공개 자료의 사용 권한을 확인합니다.'],
+      ['PROPOSAL_TEXT_REUSE', '제안서 문장·자료 재사용', '기존 제안서 문장·표·도표의 재사용 허용 범위를 확인합니다.'],
+    ].map(([type, label, action]) => ({
+      type,
+      label,
+      status: 'REVIEW_REQUIRED' as const,
+      finding: '원문 기반 분석 결과를 아직 확인하지 못했습니다.',
+      evidence: '',
+      action,
+    })),
+    disclaimer: '공고 원문 기반의 사전 위험 점검이며 법률 자문이 아닙니다. 최종 신청 전 공고 담당기관과 법무·재무 담당자의 확인이 필요합니다.',
+  }
   const rows = [
     { label: '기관', current: result.currentNotice.organizationName, similar: selected.comparison.organizationName },
     { label: '사업 목적', current: result.currentNotice.purpose, similar: selected.comparison.purpose },
@@ -926,8 +940,17 @@ function SimilarNoticeComparison({ result, loading, currentTitle, currentOrigina
       <div className="similar-notice-insights">
         <article className="similar-insight similar-insight--reason"><span><GitCompareArrows size={18} /></span><div><strong>유사한 이유</strong><p>{similarityReason(selected.commonPoints)}</p></div></article>
         <article className="similar-insight similar-insight--reuse"><span><Lightbulb size={18} /></span><div><strong>활용 포인트</strong><p>{selected.proposalReuse}</p></div></article>
-        <article className="similar-insight similar-insight--caution"><span><ShieldCheck size={18} /></span><div><strong>확인할 사항</strong><p>{selected.caution}</p></div></article>
       </div>
+      <section className="legal-review">
+        <header><span><ShieldCheck size={19} /></span><div><small>LEGAL RISK CHECK</small><h4>중복·재사용 위험 점검</h4></div></header>
+        <p className={`legal-review__overview${legalReview.overallStatus === 'HIGH' ? ' legal-review__overview--high' : ''}`}>{legalReview.summary}</p>
+        <div className="legal-review__check-list">{legalReview.checks.map((check) => {
+          const findings = splitLegalComparison(check.finding)
+          const evidence = splitLegalComparison(check.evidence)
+          return <details key={check.type}><summary><strong>{check.label}</strong><span aria-hidden="true"><ChevronDown size={15} /></span></summary><div className="legal-review__detail"><div className="legal-review__sources"><section><small>현재 공고</small><p>{findings.current}</p>{evidence.current && <blockquote><b>원문 근거</b>{evidence.current}</blockquote>}</section><section><small>유사 공고</small><p>{findings.similar}</p>{evidence.similar && <blockquote><b>원문 근거</b>{evidence.similar}</blockquote>}</section></div><div className="legal-review__action"><strong>신청 전 확인</strong><p>{check.action}</p></div></div></details>
+        })}</div>
+        <p className="legal-review__disclaimer">{legalReview.disclaimer}</p>
+      </section>
       {expandedCell && <ComparisonCellDialog title={expandedCell.title} content={expandedCell.content} onClose={() => setExpandedCell(null)} />}
     </section>
   )
@@ -964,6 +987,26 @@ function ComparisonCellDialog({ title, content, onClose }: { title: string; cont
   return <div className="comparison-dialog-backdrop" role="presentation" onMouseDown={onClose}><section className="comparison-dialog" role="dialog" aria-modal="true" aria-labelledby="comparison-dialog-title" onMouseDown={(event) => event.stopPropagation()}><header><div><small>전체 내용</small><h3 id="comparison-dialog-title">{title}</h3></div><button type="button" aria-label="닫기" onClick={onClose}><X size={20} /></button></header><div className="comparison-dialog__content">{content}</div><footer><button type="button" className="button button--primary" onClick={onClose}>확인</button></footer></section></div>
 }
 
+function splitLegalComparison(value: string) {
+  const normalized = value.trim().replace(/[“”]/g, '')
+  if (!normalized) return { current: '', similar: '' }
+  const currentPrefix = '현재 공고:'
+  const similarPrefix = '유사 공고:'
+  const similarIndex = normalized.indexOf(similarPrefix)
+  if (normalized.startsWith(currentPrefix) && similarIndex >= 0) {
+    return {
+      current: normalized.slice(currentPrefix.length, similarIndex).trim(),
+      similar: normalized.slice(similarIndex + similarPrefix.length).trim(),
+    }
+  }
+  if (normalized.startsWith(currentPrefix)) {
+    return { current: normalized.slice(currentPrefix.length).trim(), similar: '' }
+  }
+  if (normalized.startsWith(similarPrefix)) {
+    return { current: '', similar: normalized.slice(similarPrefix.length).trim() }
+  }
+  return { current: normalized, similar: '' }
+}
 function similarityReason(commonPoints: string) {
   const exposesInternalProfile = /proposal|request|business|notice|공고명|핵심어는|유형[, ]/i.test(commonPoints)
   if (!commonPoints || exposesInternalProfile) {

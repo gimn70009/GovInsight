@@ -46,7 +46,14 @@ class SimilarNoticeServiceTest {
                 "supportScale":"과제당 최대 5억 원을 지원합니다.",
                 "applicationDeadline":"2026년 9월 30일까지 신청해야 합니다.",
                 "eligibility":"제조 분야 중소·중견기업이 신청할 수 있습니다.",
-                "requiredPartner":"해외 연구기관과 컨소시엄을 구성해야 합니다."}
+                "requiredPartner":"해외 연구기관과 컨소시엄을 구성해야 합니다.",
+                "legalRisks":[
+                  {"type":"DUPLICATE_SUPPORT","status":"RESTRICTION_FOUND","summary":"동일 과제의 중복 신청은 제한됩니다.","evidenceExcerpt":"동일 과제 중복 신청 불가"},
+                  {"type":"COST_DOUBLE_COUNTING","status":"NOT_FOUND","summary":"원문에서 관련 제한을 확인하지 못했습니다."},
+                  {"type":"RESULT_IP_REUSE","status":"NOT_FOUND","summary":"원문에서 관련 제한을 확인하지 못했습니다."},
+                  {"type":"CONFIDENTIALITY","status":"NOT_FOUND","summary":"원문에서 관련 제한을 확인하지 못했습니다."},
+                  {"type":"PROPOSAL_TEXT_REUSE","status":"NOT_FOUND","summary":"원문에서 관련 제한을 확인하지 못했습니다."}
+                ]}
                 """);
         given(detectionRepository.findById(current.detection().getId())).willReturn(Optional.of(current.detection()));
         given(analysisRepository.findByDocumentVersionId(current.version().getId())).willReturn(Optional.of(current.analysis()));
@@ -66,6 +73,13 @@ class SimilarNoticeServiceTest {
                     .isEqualTo("제조기업의 AI 공정 최적화 실증과 사업화를 지원합니다.");
             assertThat(notice.comparison().requiredPartner())
                     .isEqualTo("해외 연구기관과 컨소시엄을 구성해야 합니다.");
+            assertThat(notice.legalReview().overallStatus()).isEqualTo("HIGH");
+            assertThat(notice.legalReview().checks()).hasSize(5);
+            assertThat(notice.legalReview().checks().getFirst().evidence())
+                    .contains("동일 과제 중복 신청 불가");
+            assertThat(notice.legalReview().summary()).contains("제조", "중복지원");
+            assertThat(notice.legalReview().checks().getFirst().action())
+                    .contains("제조", "동일 과제 중복 신청 불가", "목적·수행 범위·산출물");
         });
         assertThat(result.currentNotice().purpose())
                 .isEqualTo("제조 현장 데이터를 활용한 AI 공정 최적화 실증과 제조기업 사업화를 지원합니다.");
@@ -152,9 +166,13 @@ class SimilarNoticeServiceTest {
 
         var result = service().find(current.detection().getId());
 
-        assertThat(result.similarNotices()).singleElement().satisfies(notice ->
-                assertThat(notice.commonPoints()).contains("산업기술국제협력")
-        );
+        assertThat(result.similarNotices()).singleElement().satisfies(notice -> {
+            assertThat(notice.commonPoints()).contains("산업기술국제협력");
+            assertThat(notice.legalReview().overallStatus()).isEqualTo("REVIEW_REQUIRED");
+            assertThat(notice.legalReview().checks()).allSatisfy(check ->
+                    assertThat(check.finding()).contains("원문에서 관련 제한을 확인하지 못했습니다.")
+            );
+        });
     }
 
     private SimilarNoticeService service() {

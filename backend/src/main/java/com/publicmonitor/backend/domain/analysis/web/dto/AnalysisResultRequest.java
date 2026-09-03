@@ -72,10 +72,18 @@ public record AnalysisResultRequest(
             @NotBlank @Size(max = 500) String supportScale,
             @NotBlank @Size(max = 300) String applicationDeadline,
             @NotBlank @Size(max = 1000) String eligibility,
-            @NotBlank @Size(max = 1000) String requiredPartner
+            @NotBlank @Size(max = 1000) String requiredPartner,
+            @NotNull @Size(min = 5, max = 5) List<@Valid LegalRiskFinding> legalRisks
     ) {
     }
 
+    public record LegalRiskFinding(
+            @NotBlank @Size(max = 40) String type,
+            @NotBlank @Size(max = 40) String status,
+            @NotBlank @Size(max = 500) String summary,
+            @Size(max = 300) String evidenceExcerpt
+    ) {
+    }
     public record Proposal(
             @NotNull @Size(min = 1, max = 6) List<@Valid Section> sections,
             @NotBlank @Size(max = 40) String documentType,

@@ -57,6 +57,11 @@ SYSTEM_PROMPT = f"""
 - comparison_summary.application_deadline에는 회사가 실제로 지켜야 하는 접수 마감일과 시각을 작성합니다.
 - comparison_summary.eligibility에는 핵심 신청 자격만 자연스러운 문장으로 작성합니다.
 - comparison_summary.required_partner에는 필수 컨소시엄, 해외기관 또는 참여기관 조건만 작성합니다.
+- comparison_summary.legal_risks에는 DUPLICATE_SUPPORT, COST_DOUBLE_COUNTING, RESULT_IP_REUSE, CONFIDENTIALITY, PROPOSAL_TEXT_REUSE를 각각 정확히 한 번 포함합니다.
+- 각 법률 위험은 현재 공고 본문과 첨부파일에서 확인한 중복지원 제한, 동일 비용·인력의 중복계상 제한, 기존 성과물·지식재산 사용 조건, 비밀정보·영업비밀 취급 조건, 기존 제안서 문장·도표 재사용 조건만 정리합니다.
+- 명시적인 금지·제한·환수·제재 조건이 있으면 RESTRICTION_FOUND, 직접적인 금지는 아니지만 권리 확인이나 사전 승인이 필요하면 CAUTION, 관련 문구를 찾지 못하면 NOT_FOUND로 작성합니다.
+- 법률 위험의 evidence_excerpt에는 판단 근거가 된 원문 문구를 짧게 그대로 인용합니다. NOT_FOUND이면 evidence_excerpt를 비웁니다.
+- 위법·합법을 단정하거나 일반 법률지식을 원문 사실처럼 추가하지 않습니다.
 - 해당 항목이 원문과 첨부파일에서 확인되지 않으면 추측하지 말고 '원문에서 확인하지 못했습니다.'라고 작성합니다.
 - 괄호 안에 상태, 조건, 대상 또는 예시를 나열하지 말고 조사와 서술어를 사용한 자연스러운 문장으로 풉니다.
 - proposal.sections는 단순 요약이 아니라 회사가 실제로 무엇을 검토하고 누구와 어떻게 추진할지 보여주는 실행 인사이트 배열입니다.
