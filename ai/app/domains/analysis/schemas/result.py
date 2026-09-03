@@ -41,12 +41,40 @@ class ProposalDraftStatus(StrEnum):
     GENERATING = "GENERATING"
 
 
+class LegalRiskType(StrEnum):
+    DUPLICATE_SUPPORT = "DUPLICATE_SUPPORT"
+    COST_DOUBLE_COUNTING = "COST_DOUBLE_COUNTING"
+    RESULT_IP_REUSE = "RESULT_IP_REUSE"
+    CONFIDENTIALITY = "CONFIDENTIALITY"
+    PROPOSAL_TEXT_REUSE = "PROPOSAL_TEXT_REUSE"
+
+
+class LegalRiskStatus(StrEnum):
+    RESTRICTION_FOUND = "RESTRICTION_FOUND"
+    CAUTION = "CAUTION"
+    NOT_FOUND = "NOT_FOUND"
+
+
+class LegalRiskFinding(CamelCaseModel):
+    type: LegalRiskType
+    status: LegalRiskStatus
+    summary: str = Field(min_length=5, max_length=500)
+    evidence_excerpt: str | None = Field(default=None, max_length=300)
+
+
 class ComparisonSummary(CamelCaseModel):
     purpose: str = Field(min_length=5, max_length=1500)
     support_scale: str = Field(min_length=5, max_length=500)
     application_deadline: str = Field(min_length=5, max_length=300)
     eligibility: str = Field(min_length=5, max_length=1000)
     required_partner: str = Field(min_length=5, max_length=1000)
+    legal_risks: list[LegalRiskFinding] = Field(min_length=5, max_length=5)
+
+    @model_validator(mode="after")
+    def require_all_legal_risk_types(self) -> "ComparisonSummary":
+        if {finding.type for finding in self.legal_risks} != set(LegalRiskType):
+            raise ValueError("legal_risks must contain every legal risk type exactly once")
+        return self
 
 
 class PreparationStatus(StrEnum):
@@ -367,6 +395,14 @@ class AnalysisDraft(BaseModel):
             application_deadline="원문에서 확인하지 못했습니다.",
             eligibility="원문에서 확인하지 못했습니다.",
             required_partner="원문에서 확인하지 못했습니다.",
+            legal_risks=[
+                LegalRiskFinding(
+                    type=risk_type,
+                    status=LegalRiskStatus.NOT_FOUND,
+                    summary="원문에서 관련 제한을 확인하지 못했습니다.",
+                )
+                for risk_type in LegalRiskType
+            ],
         )
     )
 

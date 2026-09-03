@@ -254,6 +254,18 @@ export interface SimilarNoticeResult {
     comparison: SimilarNoticeComparisonSide
     commonPoints: string
     proposalReuse: string
-    caution: string
+    legalReview?: {
+      overallStatus: 'HIGH' | 'REVIEW_REQUIRED'
+      summary: string
+      checks: Array<{
+        type: 'DUPLICATE_SUPPORT' | 'COST_DOUBLE_COUNTING' | 'RESULT_IP_REUSE' | 'CONFIDENTIALITY' | 'PROPOSAL_TEXT_REUSE'
+        label: string
+        status: 'HIGH' | 'REVIEW_REQUIRED'
+        finding: string
+        evidence: string
+        action: string
+      }>
+      disclaimer: string
+    }
   }>
 }

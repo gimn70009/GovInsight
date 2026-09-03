@@ -14,7 +14,25 @@ public record SimilarNoticeResponse(
             ComparisonSide comparison,
             String commonPoints,
             String proposalReuse,
-            String caution
+            LegalReview legalReview
+    ) {
+    }
+
+    public record LegalReview(
+            String overallStatus,
+            String summary,
+            List<LegalRiskCheck> checks,
+            String disclaimer
+    ) {
+    }
+
+    public record LegalRiskCheck(
+            String type,
+            String label,
+            String status,
+            String finding,
+            String evidence,
+            String action
     ) {
     }
 
