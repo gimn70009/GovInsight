@@ -167,4 +167,10 @@ def _truncate(value: str | None, limit: int) -> str | None:
     normalized = value.strip()
     if len(normalized) <= limit:
         return normalized
-    return f"{normalized[:limit]}\n...[길이 제한으로 일부 생략]"
+    marker = "\n...[길이 제한으로 중간 부분 생략]...\n"
+    if limit <= len(marker):
+        return normalized[:limit]
+    available = limit - len(marker)
+    head_length = available * 7 // 10
+    tail_length = available - head_length
+    return f"{normalized[:head_length]}{marker}{normalized[-tail_length:]}"

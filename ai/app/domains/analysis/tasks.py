@@ -250,7 +250,7 @@ async def _generate_and_deliver_proposals(
         )
         async with semaphore:
             completed = await workflow.analyze(document)
-        if completed.proposal.preparation_schema_version != 10:
+        if completed.proposal.preparation_schema_version != 11:
             return None
         return ProposalUpdateResult(
             detection_id=document.detection_id,

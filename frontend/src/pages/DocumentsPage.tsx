@@ -84,36 +84,6 @@ function proposalHeading() {
   return '회사 관점에서 정리했어요'
 }
 
-const preparationStatus = {
-  READY: ['충족', 'success'],
-  VERIFIED: ['충족', 'success'],
-  LIKELY: ['확인 필요', 'warning'],
-  ACTION_REQUIRED: ['확인 필요', 'warning'],
-  NEEDS_CONFIRMATION: ['확인 필요', 'warning'],
-  MISSING: ['확인 필요', 'warning'],
-  INELIGIBLE: ['충족 불가', 'danger'],
-  NOT_APPLICABLE: ['해당 없음', 'neutral'],
-} as const
-const documentPreparationStatus = {
-  READY: ['준비 완료', 'success'],
-  VERIFIED: ['준비 완료', 'success'],
-  LIKELY: ['확인 필요', 'warning'],
-  ACTION_REQUIRED: ['준비 필요', 'warning'],
-  NEEDS_CONFIRMATION: ['확인 필요', 'warning'],
-  MISSING: ['준비 필요', 'warning'],
-  INELIGIBLE: ['준비 필요', 'warning'],
-  NOT_APPLICABLE: ['해당 없음', 'neutral'],
-} as const
-const companyInputStatus = {
-  READY: ['확인 완료', 'success'],
-  VERIFIED: ['확인 완료', 'success'],
-  LIKELY: ['확인 필요', 'warning'],
-  ACTION_REQUIRED: ['준비 필요', 'warning'],
-  NEEDS_CONFIRMATION: ['확인 필요', 'warning'],
-  MISSING: ['준비 필요', 'warning'],
-  INELIGIBLE: ['준비 필요', 'warning'],
-  NOT_APPLICABLE: ['해당 없음', 'neutral'],
-} as const
 const strategyDecision = {
   GO: ['지원 권장', 'success'],
   CONDITIONAL_GO: ['조건부 지원 권장', 'warning'],
@@ -161,29 +131,14 @@ function isExpiredApplication(detail: DocumentDetail) {
 
 function PreparationChecklist({
   items,
-  kind,
   sourceAttachmentNames = [],
-  applicationExpired = false,
 }: {
   items: ProposalPreparationItem[]
-  kind: 'eligibility' | 'document' | 'company'
   sourceAttachmentNames?: string[]
-  applicationExpired?: boolean
 }) {
   return (
     <div className="preparation-checklist">
-      {items.filter((item) => item.status !== 'NOT_APPLICABLE').map((item) => {
-        const isExpiredDeadline = applicationExpired && /접수|신청|공고.*기한|마감/u.test(item.title)
-        const statusMap = kind === 'document'
-          ? documentPreparationStatus
-          : kind === 'company'
-            ? companyInputStatus
-            : preparationStatus
-        const status = isExpiredDeadline
-          ? kind === 'eligibility'
-            ? ['충족 불가', 'danger'] as const
-            : ['준비 필요', 'warning'] as const
-          : statusMap[item.status]
+      {items.map((item) => {
         const formReference = item.title.match(formReferencePattern)?.[0]?.replace(/[（）()]/gu, '').trim()
         const title = item.title.replace(formReferencePattern, ' ').replace(/\s+/gu, ' ').trim()
         const source = formReference && sourceAttachmentNames.length === 1
@@ -201,9 +156,6 @@ function PreparationChecklist({
           <article key={item.title}>
             <div className="preparation-checklist__title">
               <strong>{title}</strong>
-              <div className="preparation-checklist__score">
-                <Badge tone={status[1]}>{status[0]}</Badge>
-              </div>
             </div>
             {(requirementLevel || stage || appliesTo) && (
               <div className="preparation-checklist__meta">
@@ -630,13 +582,12 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
     : ''
   const applicationDocuments = proposalDraft?.preparation?.submissionDocuments.filter((item) => !item.stage || item.stage === 'APPLICATION') ?? []
   const laterDocuments = proposalDraft?.preparation?.submissionDocuments.filter((item) => item.stage && item.stage !== 'APPLICATION') ?? []
-  const pendingPreparationItems = (items: ProposalPreparationItem[]) => items.filter((item) => item.status !== 'NOT_APPLICABLE' && !['READY', 'VERIFIED'].includes(item.status))
   const preparation = proposalDraft?.preparation
   const proposalSectionsOverview = preparation ? [
     { id: 'proposal-agenda', label: '회의 안건', count: preparation.meetingAgenda.length, suffix: '건' },
-    { id: 'proposal-eligibility', label: '확인할 지원 조건', count: pendingPreparationItems(preparation.eligibilityChecklist).length, suffix: '건' },
-    { id: 'proposal-documents', label: '준비할 제출 서류', count: pendingPreparationItems(preparation.submissionDocuments).length, suffix: '건' },
-    { id: 'proposal-company', label: '회사 확인 정보', count: pendingPreparationItems(preparation.companyInputs).length, suffix: '건' },
+    { id: 'proposal-eligibility', label: '확인할 지원 조건', count: preparation.eligibilityChecklist.length, suffix: '건' },
+    { id: 'proposal-documents', label: '준비할 제출 서류', count: preparation.submissionDocuments.length, suffix: '건' },
+    { id: 'proposal-company', label: '회사 확인 정보', count: preparation.companyInputs.length, suffix: '건' },
   ] : []
 
   useEffect(() => {
@@ -728,23 +679,23 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
                     </ol>
                   </details>
                   <details className="preparation-block preparation-block--collapsible" id="proposal-eligibility">
-                    <summary className="preparation-block__header"><span>03</span><div><h4>지원 조건 체크리스트</h4><p>공고 요구사항과 현재 확인된 회사 상태를 비교합니다.</p></div><em>{pendingPreparationItems(proposalDraft.preparation.eligibilityChecklist).length}건 <ChevronDown size={16} /></em></summary>
-                    <PreparationChecklist kind="eligibility" items={proposalDraft.preparation.eligibilityChecklist} applicationExpired={applicationExpired} />
+                    <summary className="preparation-block__header"><span>03</span><div><h4>지원 조건 체크리스트</h4><p>공고 요구사항과 현재 확인된 회사 상태를 비교합니다.</p></div><em>{proposalDraft.preparation.eligibilityChecklist.length}건 <ChevronDown size={16} /></em></summary>
+                    <PreparationChecklist items={proposalDraft.preparation.eligibilityChecklist} />
                   </details>
                   <details className="preparation-block preparation-block--collapsible" id="proposal-documents">
-                    <summary className="preparation-block__header"><span>04</span><div><h4>제출 서류 체크리스트</h4><p>접수 전에 확보하거나 새로 작성해야 하는 자료입니다.</p></div><em>{pendingPreparationItems(proposalDraft.preparation.submissionDocuments).length}건 <ChevronDown size={16} /></em></summary>
-                    <PreparationChecklist kind="document" items={applicationDocuments} sourceAttachmentNames={proposalDraft.sourceAttachmentNames} applicationExpired={applicationExpired} />
+                    <summary className="preparation-block__header"><span>04</span><div><h4>제출 서류 체크리스트</h4><p>접수 전에 확보하거나 새로 작성해야 하는 자료입니다.</p></div><em>{proposalDraft.preparation.submissionDocuments.length}건 <ChevronDown size={16} /></em></summary>
+                    <PreparationChecklist items={applicationDocuments} sourceAttachmentNames={proposalDraft.sourceAttachmentNames} />
                     {laterDocuments.length > 0 && (
                       <div className="later-requirements">
                         <h5>선정 이후 준비사항</h5>
                         <p>신청서류와 구분해 선정·협약 이후 필요한 자료를 보여드립니다.</p>
-                        <PreparationChecklist kind="document" items={laterDocuments} sourceAttachmentNames={proposalDraft.sourceAttachmentNames} />
+                        <PreparationChecklist items={laterDocuments} sourceAttachmentNames={proposalDraft.sourceAttachmentNames} />
                       </div>
                     )}
                   </details>
                   <details className="preparation-block preparation-block--collapsible" id="proposal-company">
-                    <summary className="preparation-block__header"><span>05</span><div><h4>회사에서 확인·준비할 정보</h4><p>공고만으로 확인할 수 없어 회사 담당자가 직접 확인하거나 작성해야 하는 항목입니다.</p></div><em>{pendingPreparationItems(proposalDraft.preparation.companyInputs).length}건 <ChevronDown size={16} /></em></summary>
-                    <PreparationChecklist kind="company" items={proposalDraft.preparation.companyInputs} />
+                    <summary className="preparation-block__header"><span>05</span><div><h4>회사에서 확인·준비할 정보</h4><p>공고만으로 확인할 수 없어 회사 담당자가 직접 확인하거나 작성해야 하는 항목입니다.</p></div><em>{proposalDraft.preparation.companyInputs.length}건 <ChevronDown size={16} /></em></summary>
+                    <PreparationChecklist items={proposalDraft.preparation.companyInputs} />
                   </details>
                   <section className="preparation-block strategy-one-page" id="proposal-strategy">
                     <div className="preparation-block__header"><span>01</span><div><h4>제안 전략 한 장 <em className="ai-recommendation-label">AI 제안</em></h4><p>공고 근거와 회사 정보를 바탕으로 제안한 방향이며 담당자 확정이 필요합니다.</p></div></div>

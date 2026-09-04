@@ -163,15 +163,6 @@ export interface DocumentAnalysis {
 
 export interface ProposalPreparationItem {
   title: string
-  status:
-    | 'READY'
-    | 'VERIFIED'
-    | 'LIKELY'
-    | 'ACTION_REQUIRED'
-    | 'NEEDS_CONFIRMATION'
-    | 'MISSING'
-    | 'INELIGIBLE'
-    | 'NOT_APPLICABLE'
   detail: string
   nextAction: string
   requirementLevel?: 'MANDATORY' | 'CONDITIONAL' | 'OPTIONAL' | 'RECOMMENDED' | null

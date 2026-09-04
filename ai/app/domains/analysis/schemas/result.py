@@ -77,17 +77,6 @@ class ComparisonSummary(CamelCaseModel):
         return self
 
 
-class PreparationStatus(StrEnum):
-    READY = "READY"
-    VERIFIED = "VERIFIED"
-    LIKELY = "LIKELY"
-    ACTION_REQUIRED = "ACTION_REQUIRED"
-    NEEDS_CONFIRMATION = "NEEDS_CONFIRMATION"
-    MISSING = "MISSING"
-    INELIGIBLE = "INELIGIBLE"
-    NOT_APPLICABLE = "NOT_APPLICABLE"
-
-
 class RequirementLevel(StrEnum):
     MANDATORY = "MANDATORY"
     CONDITIONAL = "CONDITIONAL"
@@ -243,7 +232,6 @@ class RequirementSource(CamelCaseModel):
 
 class PreparationChecklistItem(CamelCaseModel):
     title: str = Field(min_length=2, max_length=150)
-    status: PreparationStatus
     detail: str = Field(min_length=10, max_length=500)
     next_action: str = Field(min_length=5, max_length=300)
     requirement_level: RequirementLevel = RequirementLevel.RECOMMENDED
@@ -276,11 +264,6 @@ class PreparationChecklistItem(CamelCaseModel):
             and self.applies_to == "신청기관"
         ):
             self.applies_to = "적용 조건 확인 필요"
-        if self.status == PreparationStatus.VERIFIED and self.company_evidence_level not in {
-            CompanyEvidenceLevel.OFFICIAL_DOCUMENT,
-            CompanyEvidenceLevel.USER_CONFIRMED,
-        }:
-            self.status = PreparationStatus.LIKELY
         return self
 
 
@@ -366,7 +349,7 @@ class ProposalStrategy(CamelCaseModel):
     template_sections: list[str] = Field(default_factory=list, max_length=30)
     draft_sections: list[ProposalSection] = Field(default_factory=list, max_length=8)
     preparation: ProposalPreparation | None = None
-    preparation_schema_version: int = Field(default=1, ge=1, le=10)
+    preparation_schema_version: int = Field(default=1, ge=1, le=11)
 
     @field_validator("draft_reason")
     @classmethod
@@ -446,7 +429,7 @@ class AnalysisDraft(BaseModel):
             for dimension in self.opportunity.dimensions
             if dimension.type == OpportunityDimensionType.COMPANY_FIT
         )
-        if company_fit <= 40 or self.eligibility == Eligibility.INELIGIBLE:
+        if company_fit <= 60 or self.eligibility == Eligibility.INELIGIBLE:
             if proposal.draft_status != ProposalDraftStatus.NOT_RECOMMENDED:
                 raise ValueError(
                     "회사 부적합 또는 신청 불가 사업은 제안서 작성을 권장할 수 없습니다."

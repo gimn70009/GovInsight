@@ -5,10 +5,8 @@ from datetime import date, datetime, timedelta, timezone
 from app.domains.analysis.schemas.result import (
     CompanyEvidenceLevel,
     PreparationChecklistItem,
-    PreparationStatus,
     PreparationWorkType,
     ProposalPreparation,
-    RequirementLevel,
 )
 
 SCORING_VERSION = "1.1"
@@ -43,17 +41,6 @@ WORK_TYPE_LABELS = {
     PreparationWorkType.OTHER: "기타 준비",
 }
 
-_CONDITION_SCORES = {
-    PreparationStatus.VERIFIED: 100,
-    PreparationStatus.LIKELY: 75,
-    PreparationStatus.NEEDS_CONFIRMATION: 50,
-    PreparationStatus.ACTION_REQUIRED: 25,
-    PreparationStatus.READY: 75,
-    PreparationStatus.MISSING: 0,
-    PreparationStatus.INELIGIBLE: 0,
-    PreparationStatus.NOT_APPLICABLE: 100,
-}
-
 _EVIDENCE_SCORES = {
     CompanyEvidenceLevel.OFFICIAL_DOCUMENT: 100,
     CompanyEvidenceLevel.USER_CONFIRMED: 90,
@@ -71,10 +58,10 @@ def score_preparation(preparation: ProposalPreparation, reference_date: date | N
 
     for item in preparation.eligibility_checklist:
         item.estimated_business_days = WORK_TYPE_BUSINESS_DAYS[item.work_type]
-        _score_item(item, remaining_days, allow_likely=True)
+        _score_item(item, remaining_days)
     for item in (*preparation.submission_documents, *preparation.company_inputs):
         item.estimated_business_days = WORK_TYPE_BUSINESS_DAYS[item.work_type]
-        _score_item(item, remaining_days, allow_likely=False)
+        _score_item(item, remaining_days)
 
     if deadline:
         for gap in preparation.strategy.critical_gaps:
@@ -106,11 +93,10 @@ def score_preparation(preparation: ProposalPreparation, reference_date: date | N
 def _score_item(
     item: PreparationChecklistItem,
     remaining_days: int | None,
-    allow_likely: bool,
 ) -> None:
     condition = item.condition_score
     if condition is None:
-        condition = _CONDITION_SCORES[item.status]
+        condition = _EVIDENCE_SCORES[item.company_evidence_level]
     evidence = _EVIDENCE_SCORES[item.company_evidence_level]
     schedule = _schedule_score(remaining_days, item.estimated_business_days)
     readiness = round(condition * 0.8 + schedule * 0.2)
@@ -119,7 +105,6 @@ def _score_item(
     item.evidence_score = evidence
     item.schedule_score = schedule
     item.readiness_score = readiness
-    item.status = _status_for(item, condition, evidence, readiness, allow_likely)
     schedule_basis = (
         f"주말을 제외한 남은 {remaining_days}일과 준비 기간 "
         f"{item.estimated_business_days}일을 비교했습니다."
@@ -140,30 +125,6 @@ def _schedule_score(remaining_days: int | None, estimated_days: int) -> int:
     if remaining_days <= 0:
         return 0
     return min(100, round(remaining_days / estimated_days * 100))
-
-
-def _status_for(
-    item: PreparationChecklistItem,
-    condition: int,
-    evidence: int,
-    readiness: int,
-    allow_likely: bool,
-) -> PreparationStatus:
-    if item.status == PreparationStatus.NOT_APPLICABLE:
-        return PreparationStatus.NOT_APPLICABLE
-    if item.status == PreparationStatus.INELIGIBLE:
-        return PreparationStatus.INELIGIBLE
-    if item.status in {PreparationStatus.ACTION_REQUIRED, PreparationStatus.MISSING}:
-        return PreparationStatus.ACTION_REQUIRED
-    if evidence == 0 or item.status == PreparationStatus.NEEDS_CONFIRMATION:
-        return PreparationStatus.NEEDS_CONFIRMATION
-    if condition == 100 and evidence >= 90:
-        return PreparationStatus.VERIFIED
-    if allow_likely and readiness >= 70 and condition >= 75:
-        return PreparationStatus.LIKELY
-    if item.requirement_level == RequirementLevel.MANDATORY and condition < 100:
-        return PreparationStatus.ACTION_REQUIRED
-    return PreparationStatus.NEEDS_CONFIRMATION
 
 
 def _parse_date(value: str | None) -> date | None:

@@ -20,7 +20,6 @@ from app.domains.analysis.schemas.result import (
     DocumentAnalysisResult,
     EvidenceOrigin,
     PreparationChecklistItem,
-    PreparationStatus,
     ProposalDraftStatus,
     ProposalPreparation,
     RequirementLevel,
@@ -151,7 +150,6 @@ class ProposalRunner:
                     eligibility_checklist=[
                         PreparationChecklistItem(
                             title="산업 AI 공급기업 자격",
-                            status=PreparationStatus.NEEDS_CONFIRMATION,
                             detail="회사 서비스는 관련되지만 공식 증빙 확인이 필요합니다.",
                             next_action="관련 수행 실적 증빙을 확인합니다.",
                             requirement_level=RequirementLevel.MANDATORY,
@@ -170,7 +168,6 @@ class ProposalRunner:
                     submission_documents=[
                         PreparationChecklistItem(
                             title="사업계획서",
-                            status=PreparationStatus.READY,
                             detail="공고 첨부파일에서 제출 양식이 확인되었습니다.",
                             next_action="담당자를 지정해 작성을 시작합니다.",
                             requirement_level=RequirementLevel.MANDATORY,
@@ -189,7 +186,6 @@ class ProposalRunner:
                     company_inputs=[
                         PreparationChecklistItem(
                             title="세부 목표 KPI",
-                            status=PreparationStatus.MISSING,
                             detail="회사 내부 목표 수치가 확인되지 않았습니다.",
                             next_action="사업 책임자가 목표 수치를 확정합니다.",
                         )
@@ -244,7 +240,7 @@ def test_generates_outline_then_draft_only_for_matching_proposal_request() -> No
     assert generated.proposal.preparation is not None
     assert generated.proposal.preparation.strategy.recommended_project.startswith("제조 현장")
     assert generated.proposal.source_attachment_names == ["신청서식.hwp"]
-    assert generated.proposal.preparation_schema_version == 10
+    assert generated.proposal.preparation_schema_version == 11
     assert "map_proposal_sources" in generated.used_tools
     assert "build_proposal_preparation" in generated.used_tools
 
@@ -308,7 +304,7 @@ def test_proposal_stage_failure_preserves_base_analysis() -> None:
     assert generated.summary.startswith("산업 AI 실증")
     assert generated.proposal.draft_status == ProposalDraftStatus.REVIEW_REQUIRED
     assert generated.proposal.draft_sections == []
-    assert generated.proposal.preparation_schema_version == 10
+    assert generated.proposal.preparation_schema_version == 11
     assert "사업 제안 생성 제한 시간을 초과했습니다." in generated.proposal.draft_reason
 
 
@@ -455,7 +451,6 @@ def test_normalizes_internal_terms_and_strategy_tone() -> None:
 def test_normalizes_checklist_title_and_user_sentence() -> None:
    item = PreparationChecklistItem(
        title="(양식10) 외부기술도입비 현물산정 신청서",
-       status=PreparationStatus.NEEDS_CONFIRMATION,
        detail="재무팀 · 최신 증빙을 확인한다.",
        next_action="사업담당자 · 제출 여부를 확인한다.",
    )
@@ -469,7 +464,6 @@ def test_normalizes_checklist_title_and_user_sentence() -> None:
 
    item = PreparationChecklistItem(
        title="(양식10) 외부기술도입비 현물산정 신청서",
-       status=PreparationStatus.NEEDS_CONFIRMATION,
        detail="재무팀 · 최신 증빙을 확인한다.",
        next_action="사업담당자 · 제출 여부를 확인한다.",
    )
@@ -481,7 +475,6 @@ def test_normalizes_checklist_title_and_user_sentence() -> None:
    assert item.next_action.endswith("확인합니다.")
    item = PreparationChecklistItem(
        title="(양식10) 외부기술도입비 현물산정 신청서",
-       status=PreparationStatus.NEEDS_CONFIRMATION,
        detail="재무팀 · 최신 증빙을 확인한다.",
        next_action="사업담당자 · 제출 여부를 확인한다.",
    )
@@ -514,7 +507,6 @@ def test_supplements_submission_forms_omitted_by_model() -> None:
         for item in proposal.preparation.submission_documents
         if item.title == "참여확인서"
     )
-    assert supplemented.status == PreparationStatus.NEEDS_CONFIRMATION
     assert supplemented.source.location == "붙임2. 제출서류 양식.zip"
 
 
@@ -543,7 +535,6 @@ def test_supplements_high_confidence_eligibility_requirements_from_source() -> N
     )
     assert "2개 기관" in consortium.source.excerpt
     assert "최소 4개 기관" in consortium.detail
-    assert consortium.status == PreparationStatus.NEEDS_CONFIRMATION
 
 
 def test_does_not_duplicate_requirement_already_linked_to_source_excerpt() -> None:
@@ -614,7 +605,6 @@ def test_normalizes_checklist_roles_and_removes_duplicates() -> None:
     document_item = preparation.submission_documents[0].model_copy(
         update={
             "title": "법인등기부등본 및 사업자등록증 사본 준비",
-            "status": PreparationStatus.NEEDS_CONFIRMATION,
         }
     )
     preparation.eligibility_checklist.extend(
@@ -636,12 +626,11 @@ def test_normalizes_checklist_roles_and_removes_duplicates() -> None:
     assert "접수 마감일 확인" not in eligibility_titles
     assert "법인등기부등본 및 사업자등록증 사본 준비" not in eligibility_titles
     assert sum("법인등기부등본" in title for title in document_titles) == 1
-    moved = next(
+    next(
         item
         for item in preparation.submission_documents
         if "법인등기부등본" in item.title
     )
-    assert moved.status == PreparationStatus.ACTION_REQUIRED
     assert all("법인등기부등본" not in item.title for item in preparation.company_inputs)
 
 
@@ -651,7 +640,6 @@ def test_holds_strategy_until_sandbox_approval_is_officially_verified() -> None:
         proposal.preparation.eligibility_checklist[0].model_copy(
             update={
                 "title": "산업융합 규제샌드박스 실증특례 승인 및 사업 개시 여부",
-                "status": PreparationStatus.NEEDS_CONFIRMATION,
                 "company_evidence_level": CompanyEvidenceLevel.UNKNOWN,
             }
         )

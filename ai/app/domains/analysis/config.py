@@ -17,7 +17,6 @@ class AnalysisSettings:
     proposal_model_name: str
     proposal_timeout_seconds: float
     max_attempts: int
-    max_tool_calls: int
     max_text_chars: int
     result_delivery_max_attempts: int
     concurrency: int
@@ -38,7 +37,6 @@ class AnalysisSettings:
             proposal_model_name=os.getenv("PROPOSAL_MODEL", "gpt-5-mini").strip(),
             proposal_timeout_seconds=_positive_float("PROPOSAL_TIMEOUT_SECONDS", 240.0),
             max_attempts=_positive_int("ANALYSIS_MAX_ATTEMPTS", 2),
-            max_tool_calls=_positive_int("ANALYSIS_MAX_TOOL_CALLS", 6),
             max_text_chars=_positive_int("ANALYSIS_MAX_TEXT_CHARS", 40_000),
             result_delivery_max_attempts=_positive_int("ANALYSIS_RESULT_MAX_ATTEMPTS", 3),
             concurrency=_positive_int("ANALYSIS_CONCURRENCY", 2),
