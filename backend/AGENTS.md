@@ -10,7 +10,7 @@
 
 - Java 21과 현재 프로젝트에 설정된 Spring Boot 버전을 사용한다.
 - 빌드와 테스트는 Gradle Wrapper로 실행한다.
-- 데이터 접근은 Spring Data JPA와 PostgreSQL을 기준으로 한다.
+- 데이터 접근은 Spring Data JPA와 Oracle을 기준으로 한다.
 - 새로운 라이브러리는 기존 기능으로 해결하기 어려울 때만 추가한다.
 - 라이브러리를 추가할 때는 사용 목적을 `build.gradle`에서 알 수 있게 정리한다.
 
@@ -115,7 +115,7 @@ com.publicmonitor.backend
 - Repository의 복잡한 조회에는 데이터 계층 테스트를 작성한다.
 - Controller의 요청 검증과 응답 상태는 웹 계층 테스트로 확인한다.
 - 외부 API, AI 모듈, Telegram 호출은 기본 테스트에서 실제로 호출하지 않고 대체 객체를 사용한다.
-- 테스트가 로컬 PostgreSQL 비밀번호에 의존하지 않도록 테스트 전용 설정을 사용한다.
+- 테스트가 로컬 Oracle 계정과 비밀번호에 의존하지 않도록 테스트 전용 설정을 사용한다.
 - 변경 후 `backend/`에서 다음 명령을 실행한다.
 
 ```powershell

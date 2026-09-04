@@ -49,5 +49,5 @@ feat: Python 비동기 수집 작업 접수 기능 구현
 fix: 자동 스케줄 중복 실행 문제 수정
 refactor: 텔레그램 전송 로직을 별도 서비스로 분리
 test: 게시글 변경 감지 단위 테스트 추가
-build: PostgreSQL 테스트 의존성 추가
+build: Oracle JDBC 의존성 추가
 ```
