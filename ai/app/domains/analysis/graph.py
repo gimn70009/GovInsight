@@ -20,6 +20,7 @@ from app.domains.analysis.schemas.result import (
     OpportunityDimensionType,
     ProposalDocumentType,
     ProposalDraftStatus,
+    ProposalSection,
 )
 
 
@@ -309,7 +310,9 @@ def _business_rule_violations(
 ) -> list[str]:
     _normalize_urgency_score(candidate, analysis_date)
     _normalize_internal_field_names(candidate)
+    _normalize_opportunity_reason_style(candidate)
     _normalize_expired_application(candidate)
+    _normalize_proposal_recommendation(candidate)
     violations = [
         f"필수 근거 도구 {tool_name}을 사용하지 않았습니다."
         for tool_name in required_tools
@@ -321,48 +324,6 @@ def _business_rule_violations(
     }
     company_fit_score = dimension_scores.get(OpportunityDimensionType.COMPANY_FIT, 0)
     _normalize_deterministic_business_fields(path, company_fit_score, candidate)
-    violations.extend(_opportunity_reason_style_violations(candidate))
-    urgency = next(
-        (
-            dimension
-            for dimension in candidate.draft.opportunity.dimensions
-            if dimension.type == OpportunityDimensionType.URGENCY
-        ),
-        None,
-    )
-    if urgency is not None:
-        violations.extend(_urgency_score_violations(urgency.score, urgency.reason))
-    if path == "new" and company_fit_score <= 40:
-        expected_titles = ["핵심 판단", "도메인 불일치 근거", "재검토 조건", "현재 대응"]
-    else:
-        expected_titles = {
-            "new": ["핵심 판단", "활용·추진 방안", "필요 파트너·준비사항", "즉시 실행"],
-            "updated": ["변경 요약", "회사 영향", "대응 조정", "즉시 실행"],
-            "unchanged": ["현재 상태", "유지할 대응", "다음 확인"],
-        }[path]
-    actual_titles = [section.title for section in candidate.draft.proposal.sections]
-    if actual_titles != expected_titles:
-        violations.append(
-            "회사 적합도에 맞는 제안 섹션 제목과 순서는 "
-            + ", ".join(expected_titles)
-            + "이어야 합니다."
-        )
-    if (
-        candidate.draft.importance == DocumentImportance.HIGH
-        and company_fit_score < 50
-    ):
-        violations.append(
-            "HIGH 중요도는 회사 관련성이 확인되어야 합니다. "
-            "마감 임박만으로 높이지 말고 회사 적합도와 실제 대응 필요성을 다시 판단하세요."
-        )
-
-    favorability = candidate.draft.favorable_or_not
-    if path == "new" and favorability != Favorability.NOT_APPLICABLE:
-        violations.append("신규 문서의 favorable_or_not은 NOT_APPLICABLE이어야 합니다.")
-    if path == "updated" and favorability == Favorability.NOT_APPLICABLE:
-        violations.append("수정 문서는 변경 유불리를 판단해야 합니다.")
-    if path == "unchanged" and favorability != Favorability.NEUTRAL:
-        violations.append("변경 없는 문서의 favorable_or_not은 NEUTRAL이어야 합니다.")
     return violations
 
 
@@ -373,6 +334,8 @@ def _normalize_deterministic_business_fields(
 ) -> None:
     if path == "new":
         candidate.draft.favorable_or_not = Favorability.NOT_APPLICABLE
+    elif path == "updated" and candidate.draft.favorable_or_not == Favorability.NOT_APPLICABLE:
+        candidate.draft.favorable_or_not = Favorability.REVIEW_REQUIRED
     elif path == "unchanged":
         candidate.draft.favorable_or_not = Favorability.NEUTRAL
 
@@ -390,13 +353,44 @@ def _normalize_deterministic_business_fields(
             "updated": ["변경 요약", "회사 영향", "대응 조정", "즉시 실행"],
             "unchanged": ["현재 상태", "유지할 대응", "다음 확인"],
         }[path]
-    if len(candidate.draft.proposal.sections) == len(expected_titles):
-        for section, title in zip(
-            candidate.draft.proposal.sections,
-            expected_titles,
-            strict=True,
-        ):
-            section.title = title
+    sections = candidate.draft.proposal.sections[:len(expected_titles)]
+    while len(sections) < len(expected_titles):
+        sections.append(ProposalSection(
+            title=expected_titles[len(sections)],
+            body=(
+                "원문에서 구체적인 실행 근거를 확인하지 못했습니다. "
+                "담당자가 추가로 확인해야 합니다."
+            ),
+        ))
+    for section, title in zip(sections, expected_titles, strict=True):
+        section.title = title
+    candidate.draft.proposal.sections = sections
+
+
+def _normalize_proposal_recommendation(candidate: AgentAnalysis) -> None:
+    """Apply the deterministic 61-point proposal threshold before validation."""
+    proposal = candidate.draft.proposal
+    if proposal.document_type != ProposalDocumentType.PROPOSAL_REQUEST:
+        return
+    company_fit = next(
+        (
+            dimension.score
+            for dimension in candidate.draft.opportunity.dimensions
+            if dimension.type == OpportunityDimensionType.COMPANY_FIT
+        ),
+        0,
+    )
+    if company_fit > 60 and candidate.draft.eligibility != Eligibility.INELIGIBLE:
+        return
+    proposal.draft_status = ProposalDraftStatus.NOT_RECOMMENDED
+    proposal.draft_reason = (
+        "신청 자격이 없거나 회사 적합도가 제안 생성 기준인 61점에 미달하여 "
+        "제안 생성을 권장하지 않습니다."
+    )
+    proposal.source_attachment_names = []
+    proposal.template_sections = []
+    proposal.draft_sections = []
+    proposal.preparation = None
 
 
 _PROPOSAL_TEMPLATE_PATTERN = re.compile(
@@ -506,7 +500,14 @@ def _normalize_urgency_score(
             )
         return
     expected_score = _expected_urgency_score(urgency.reason)
-    if expected_score is None or urgency.score == expected_score:
+    if expected_score is None:
+        original_reason = urgency.reason.strip()
+        urgency.score = 10
+        urgency.reason = "원문에서 신청 기한을 확인하지 못해 기한 미확인 상태입니다."
+        if original_reason:
+            urgency.reason += f" {original_reason}"
+        return
+    if urgency.score == expected_score:
         return
     urgency.score = expected_score
 
@@ -582,6 +583,23 @@ def _opportunity_reason_style_violations(candidate: AgentAnalysis) -> list[str]:
         for dimension in candidate.draft.opportunity.dimensions
         if any(re.search(pattern, dimension.reason) for pattern in forbidden_patterns)
     ]
+
+
+def _normalize_opportunity_reason_style(candidate: AgentAnalysis) -> None:
+    replacements = {
+        "->": "에서",
+        "→": "에서",
+        "적용한 항목별 점수": "평가 근거",
+    }
+    for dimension in candidate.draft.opportunity.dimensions:
+        reason = dimension.reason
+        for source, target in replacements.items():
+            reason = reason.replace(source, target)
+        reason = re.sub(r"총\s*\d{1,3}\s*점", "종합 평가", reason)
+        reason = re.sub(r"\s+", " ", reason).strip()
+        if len(reason) < 10:
+            reason = "원문에서 구체적인 판단 근거를 확인하지 못했습니다."
+        dimension.reason = reason
 
 
 def _normalize_internal_field_names(candidate: AgentAnalysis) -> None:

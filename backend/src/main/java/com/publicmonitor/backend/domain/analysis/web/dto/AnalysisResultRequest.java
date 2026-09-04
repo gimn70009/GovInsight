@@ -127,7 +127,6 @@ public record AnalysisResultRequest(
 
     public record PreparationItem(
             @NotBlank @Size(max = 150) String title,
-            @NotBlank @Size(max = 40) String status,
             @NotBlank @Size(max = 500) String detail,
             @NotBlank @Size(max = 300) String nextAction,
             @Size(max = 40) String requirementLevel,

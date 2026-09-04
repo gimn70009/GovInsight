@@ -82,7 +82,6 @@ public record DocumentDetectionDetailResponse(
 
     public record PreparationItem(
             String title,
-            String status,
             String detail,
             String nextAction,
             String requirementLevel,

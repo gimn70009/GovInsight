@@ -4,7 +4,6 @@ from app.domains.analysis.preparation_scoring import score_preparation
 from app.domains.analysis.schemas.result import (
     CompanyEvidenceLevel,
     PreparationChecklistItem,
-    PreparationStatus,
     PreparationWorkType,
     ProposalPreparation,
     StopCriterionType,
@@ -23,7 +22,6 @@ def _preparation(item: PreparationChecklistItem) -> ProposalPreparation:
         submission_documents=[
             PreparationChecklistItem(
                 title="사업계획서",
-                status=PreparationStatus.ACTION_REQUIRED,
                 detail="사업계획서를 새로 작성해야 합니다.",
                 next_action="사업담당자가 사업계획서를 작성합니다.",
                 estimated_business_days=10,
@@ -32,7 +30,6 @@ def _preparation(item: PreparationChecklistItem) -> ProposalPreparation:
         company_inputs=[
             PreparationChecklistItem(
                 title="투입 인력",
-                status=PreparationStatus.NEEDS_CONFIRMATION,
                 detail="투입 인력 정보가 확인되지 않았습니다.",
                 next_action="사업담당자가 투입 인력을 확인합니다.",
             )
@@ -71,10 +68,9 @@ def _preparation(item: PreparationChecklistItem) -> ProposalPreparation:
     )
 
 
-def test_scores_items_with_common_formula_and_prevents_unverified_likely() -> None:
+def test_scores_unknown_company_evidence_conservatively() -> None:
     item = PreparationChecklistItem(
         title="컨소시엄 구성",
-        status=PreparationStatus.LIKELY,
         detail="공개정보만으로 파트너 확보 여부를 확인할 수 없습니다.",
         next_action="사업담당자가 참여기관의 의사를 확인합니다.",
         company_evidence_level=CompanyEvidenceLevel.UNKNOWN,
@@ -84,15 +80,14 @@ def test_scores_items_with_common_formula_and_prevents_unverified_likely() -> No
 
     score_preparation(preparation, date(2026, 9, 1))
 
-    assert item.readiness_score == 80
-    assert item.status == PreparationStatus.NEEDS_CONFIRMATION
-    assert item.score_basis[0].startswith("조건 충족도 75점")
+    assert item.readiness_score == 20
+    assert item.condition_score == 0
+    assert item.score_basis[0].startswith("조건 충족도 0점")
 
 
 def test_back_schedules_internal_target_from_application_deadline() -> None:
     item = PreparationChecklistItem(
         title="기업 자격",
-        status=PreparationStatus.VERIFIED,
         detail="공식 증빙에서 기업 자격을 확인했습니다.",
         next_action="사업담당자가 증빙 유효기간을 재확인합니다.",
         company_evidence_level=CompanyEvidenceLevel.OFFICIAL_DOCUMENT,
@@ -113,7 +108,6 @@ def test_never_schedules_internal_target_before_analysis_date() -> None:
     preparation = _preparation(
         PreparationChecklistItem(
             title="기업 자격",
-            status=PreparationStatus.NEEDS_CONFIRMATION,
             detail="기업 자격을 확인해야 합니다.",
             next_action="사업담당자가 기업 자격을 확인합니다.",
         )
@@ -131,7 +125,6 @@ def test_does_not_schedule_new_actions_for_expired_notice() -> None:
     preparation = _preparation(
         PreparationChecklistItem(
             title="기업 자격",
-            status=PreparationStatus.NEEDS_CONFIRMATION,
             detail="기업 자격을 확인해야 합니다.",
             next_action="사업담당자가 기업 자격을 확인합니다.",
         )
@@ -148,7 +141,6 @@ def test_does_not_schedule_new_actions_for_expired_notice() -> None:
 def test_overrides_model_days_with_fixed_work_type_policy() -> None:
     item = PreparationChecklistItem(
         title="연구개발전담부서 인정서",
-        status=PreparationStatus.NEEDS_CONFIRMATION,
         detail="인정서 보유 여부가 확인되지 않았습니다.",
         next_action="연구개발 담당자가 인정서 보유 여부를 확인합니다.",
         work_type=PreparationWorkType.CERTIFICATION,
@@ -161,10 +153,9 @@ def test_overrides_model_days_with_fixed_work_type_policy() -> None:
     assert item.estimated_business_days == 15
 
 
-def test_likely_is_only_kept_for_eligibility_items() -> None:
+def test_uses_company_evidence_level_without_deriving_a_status() -> None:
     item = PreparationChecklistItem(
         title="회사 기본정보",
-        status=PreparationStatus.LIKELY,
         detail="회사 공개정보에서 기본정보 일부가 확인됩니다.",
         next_action="사업담당자가 공식 증빙을 확인합니다.",
         company_evidence_level=CompanyEvidenceLevel.OFFICIAL_WEBSITE,
@@ -174,4 +165,6 @@ def test_likely_is_only_kept_for_eligibility_items() -> None:
 
     score_preparation(preparation, date(2026, 9, 1))
 
-    assert item.status == PreparationStatus.NEEDS_CONFIRMATION
+    assert item.condition_score == 65
+    assert item.evidence_score == 65
+    assert item.readiness_score == 72

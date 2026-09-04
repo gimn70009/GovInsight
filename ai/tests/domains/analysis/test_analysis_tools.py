@@ -1,9 +1,11 @@
 import json
 
-from app.domains.analysis.schemas.request import AnalysisDocumentRequest
+from app.domains.analysis.agent import _analysis_inputs, _default_analysis_plan
+from app.domains.analysis.schemas.request import AnalysisChangeType, AnalysisDocumentRequest
 from app.domains.analysis.tools import (
     AnalysisToolContext,
     _cached_result,
+    _truncate,
     compare_with_previous_version,
     read_attachment_texts,
     read_document_content,
@@ -36,6 +38,32 @@ def document() -> AnalysisDocumentRequest:
             },
         }
     )
+
+
+def test_analysis_inputs_include_required_sources_without_agent_loop() -> None:
+    context = AnalysisToolContext(document=document(), max_text_chars=10_000)
+
+    sections, used_tools = _analysis_inputs(context)
+
+    combined = "\n".join(sections)
+    assert "<current_document>" in combined
+    assert "<company_profile>" in combined
+    assert "<attachments>" in combined
+    assert "<previous_version_diff>" in combined
+    assert used_tools == [
+        "get_document_content",
+        "get_company_profile",
+        "get_attachment_texts",
+        "compare_previous_version",
+    ]
+
+
+def test_default_agent_plan_prioritizes_change_review_for_updated_document() -> None:
+    plan = _default_analysis_plan(AnalysisChangeType.UPDATED_DOCUMENT)
+
+    assert "change_review" in plan.focus_areas
+    assert "eligibility" in plan.focus_areas
+    assert "deadline" in plan.focus_areas
 
 
 def test_read_document_and_attachment_texts() -> None:
@@ -76,3 +104,15 @@ def test_reuses_cached_tool_result_within_document_context() -> None:
     assert first == "cached evidence"
     assert second == first
     assert calls == 1
+
+
+def test_truncate_preserves_both_start_and_end_within_same_budget() -> None:
+    value = "시작 조건 " + ("중간 내용 " * 100) + "최종 제출기한"
+
+    truncated = _truncate(value, 100)
+
+    assert truncated is not None
+    assert len(truncated) == 100
+    assert truncated.startswith("시작 조건")
+    assert truncated.endswith("최종 제출기한")
+    assert "중간 부분 생략" in truncated

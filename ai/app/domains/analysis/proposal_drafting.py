@@ -21,7 +21,6 @@ from app.domains.analysis.schemas.result import (
     EvidenceOrigin,
     OpportunityDimensionType,
     PreparationChecklistItem,
-    PreparationStatus,
     PreparationWorkType,
     ProposalDocumentType,
     ProposalDraftStatus,
@@ -81,12 +80,8 @@ DRAFT_PROMPT = """
 - 실제 근거로 사용한 첨부파일 이름을 sourceAttachmentNames에 기록하고,
   meetingAgenda, eligibilityChecklist, submissionDocuments, companyInputs와
   strategy를 모두 작성합니다.
-- 체크리스트 status는 공식 증빙으로 확인된 VERIFIED, 공개정보상 가능성이 높은 LIKELY,
-  새로 작성·발급·확보할 ACTION_REQUIRED, 추가 확인할 NEEDS_CONFIRMATION,
-  정보가 없는 MISSING, 명시적으로 충족하지 못한 INELIGIBLE,
-  해당 없는 NOT_APPLICABLE 중 하나를 사용합니다.
-- 기존 READY는 사용하지 않습니다.
-  공식 문서 또는 사용자 확인 없이 VERIFIED로 표시하지 않습니다.
+- 체크리스트의 충족·준비 상태는 판단하지 않습니다. 원문 요구사항, 현재 확인 가능한 사실과
+  담당자가 수행할 다음 행동만 작성합니다.
 - 모든 지원 조건과 제출 자료에는 source를 기록합니다. 게시글 본문이면 NOTICE_BODY,
   첨부 문서면 ATTACHMENT를 사용하고 실제 attachmentName, sectionTitle, location과
   입력 문서에 존재하는 원문을 그대로 옮긴 짧은 excerpt를 제공합니다.
@@ -108,7 +103,6 @@ DRAFT_PROMPT = """
 - eligibilityChecklist에는 신청 자격, 결격 사유와 필수 보유 상태만 기록합니다.
   접수 마감일 자체와 사업계획서, 확인서, 증명서, 확약서, 등기부등본 같은 제출 파일은 넣지 않습니다.
 - submissionDocuments에는 실제로 작성, 발급, 날인 또는 업로드할 문서만 기록합니다.
-  필수 제출 문서가 아직 제출 완료로 확인되지 않았다면 ACTION_REQUIRED로 둡니다.
 - companyInputs에는 회사 내부에서 확정할 수치, 인력, 실적, 역할과 계획만 기록합니다.
   외부기관이 발급하는 확인서나 제출 파일을 넣지 않습니다.
 - 하나의 요건이나 문서를 여러 체크리스트에 반복하지 않습니다. 자격 요건과 그 증빙 문서를
@@ -185,7 +179,6 @@ class ProposalChecklistModelOutput(CamelCaseModel):
     """Semantic checklist fields the model decides; calculated fields stay in code."""
 
     title: str = Field(min_length=2, max_length=150)
-    status: PreparationStatus
     detail: str = Field(min_length=10, max_length=500)
     next_action: str = Field(min_length=5, max_length=300)
     requirement_level: RequirementLevel = RequirementLevel.RECOMMENDED
@@ -405,7 +398,7 @@ class TwoStageAnalysisWorkflow:
                     "template_sections": expected_titles,
                     "draft_sections": [],
                     "preparation": draft.preparation,
-                    "preparation_schema_version": 10,
+                    "preparation_schema_version": 11,
                 }
             )
             result.used_tools = list(
@@ -431,7 +424,7 @@ class TwoStageAnalysisWorkflow:
                     "template_sections": [],
                     "draft_sections": [],
                     "preparation": None,
-                    "preparation_schema_version": 10,
+                    "preparation_schema_version": 11,
                 }
             )
         return DocumentAnalysisResult.model_validate(result.model_dump())
@@ -791,7 +784,6 @@ def _requirement_checklist_item(
         work_type = PreparationWorkType.DOMESTIC_PARTNER
     return PreparationChecklistItem(
         title=title,
-        status=PreparationStatus.NEEDS_CONFIRMATION,
         detail=(
             f"공고 원문에 '{candidate.excerpt}' 조건이 있으나 현재 충족 여부는 "
             "확인되지 않았습니다."
@@ -846,16 +838,6 @@ def _normalize_preparation_structure(draft: ProposalDraftOutput) -> None:
             documents.append(item)
         else:
             company_inputs.append(item)
-
-    for item in documents:
-        if (
-            item.requirement_level == RequirementLevel.MANDATORY
-            and item.status in {
-                PreparationStatus.MISSING,
-                PreparationStatus.NEEDS_CONFIRMATION,
-            }
-        ):
-            item.status = PreparationStatus.ACTION_REQUIRED
 
     preparation.eligibility_checklist = _deduplicate_items(eligibility)
     preparation.submission_documents = _deduplicate_items(documents)
@@ -923,7 +905,10 @@ def _apply_strategy_eligibility_guardrails(draft: ProposalDraftOutput) -> None:
         ),
         None,
     )
-    if approval_item is None or approval_item.status == PreparationStatus.VERIFIED:
+    if approval_item is None or approval_item.company_evidence_level in {
+        CompanyEvidenceLevel.OFFICIAL_DOCUMENT,
+        CompanyEvidenceLevel.USER_CONFIRMED,
+    }:
         return
 
     strategy = draft.preparation.strategy
@@ -1022,7 +1007,6 @@ def _supplement_missing_submission_files(
         documents.append(
             PreparationChecklistItem(
                 title=stem,
-                status=PreparationStatus.NEEDS_CONFIRMATION,
                 detail=(
                     f"{outer_name} 안에서 {inner_name} 파일을 확인했지만 "
                     "실제 제출 대상과 적용 조건은 추가 확인이 필요합니다."

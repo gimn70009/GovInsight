@@ -4,10 +4,17 @@ from datetime import date
 
 import pytest
 
-from app.domains.analysis.agent import SYSTEM_PROMPT, AgentAnalysis, _strategy_instruction
+from app.domains.analysis.agent import (
+    SYSTEM_PROMPT,
+    AgentAnalysis,
+    _normalize_base_proposal,
+    _strategy_instruction,
+)
 from app.domains.analysis.graph import (
     AnalysisWorkflowError,
     DocumentAnalysisWorkflow,
+    _normalize_proposal_document_type,
+    _normalize_proposal_recommendation,
     _urgency_score,
 )
 from app.domains.analysis.schemas.request import (
@@ -64,6 +71,80 @@ def document_with_application_template() -> AnalysisDocumentRequest:
         }
     ]
     return AnalysisDocumentRequest.model_validate(payload)
+
+
+def test_normalizes_non_proposal_draft_status_before_strict_validation() -> None:
+    payload = {
+        "eligibility": Eligibility.REVIEW_REQUIRED,
+        "proposal": {
+            "document_type": ProposalDocumentType.GENERAL_NOTICE,
+            "draft_status": ProposalDraftStatus.REVIEW_REQUIRED,
+        },
+        "opportunity": {"dimensions": []},
+    }
+
+    _normalize_base_proposal(payload)
+
+    assert payload["proposal"]["draft_status"] == ProposalDraftStatus.NOT_APPLICABLE
+
+
+def test_normalizes_below_draft_threshold_proposal_to_not_recommended() -> None:
+    payload = {
+        "eligibility": Eligibility.REVIEW_REQUIRED,
+        "proposal": {
+            "document_type": ProposalDocumentType.PROPOSAL_REQUEST,
+            "draft_status": ProposalDraftStatus.READY,
+        },
+        "opportunity": {
+            "dimensions": [{"type": "COMPANY_FIT", "score": 60}],
+        },
+    }
+
+    _normalize_base_proposal(payload)
+
+    assert payload["proposal"]["draft_status"] == ProposalDraftStatus.NOT_RECOMMENDED
+
+
+def test_normalizes_string_ineligible_and_clears_proposal_payload() -> None:
+    payload = {
+        "eligibility": "INELIGIBLE",
+        "proposal": {
+            "document_type": "PROPOSAL_REQUEST",
+            "draft_status": "READY",
+            "source_attachment_names": ["사업계획서.hwp"],
+            "template_sections": ["사업 개요"],
+            "draft_sections": [{"title": "사업 개요", "body": "초안입니다."}],
+            "preparation": {"meeting_agenda": []},
+        },
+        "opportunity": {
+            "dimensions": [{"type": "COMPANY_FIT", "score": 90}],
+        },
+    }
+
+    _normalize_base_proposal(payload)
+
+    assert payload["proposal"]["draft_status"] == ProposalDraftStatus.NOT_RECOMMENDED
+    assert payload["proposal"]["source_attachment_names"] == []
+    assert payload["proposal"]["template_sections"] == []
+    assert payload["proposal"]["draft_sections"] == []
+    assert payload["proposal"]["preparation"] is None
+
+
+def test_normalizes_recommendation_after_template_promotes_document_type() -> None:
+    draft = analysis(
+        Favorability.NOT_APPLICABLE,
+        opportunity_assessment=opportunity(company_fit=60),
+    ).draft
+    draft.proposal.document_type = ProposalDocumentType.GENERAL_NOTICE
+    draft.proposal.draft_status = ProposalDraftStatus.NOT_APPLICABLE
+    candidate = AgentAnalysis(draft=draft, used_tools=[], model_name="test")
+
+    _normalize_proposal_document_type(document_with_application_template(), candidate)
+    _normalize_proposal_recommendation(candidate)
+
+    assert candidate.draft.proposal.document_type == ProposalDocumentType.PROPOSAL_REQUEST
+    assert candidate.draft.proposal.draft_status == ProposalDraftStatus.NOT_RECOMMENDED
+    assert candidate.draft.proposal.preparation is None
 
 
 def opportunity(
@@ -244,11 +325,10 @@ def test_updated_document_requires_comparison_tools_and_revises_plan() -> None:
     assert "기존 제안 일정" in result.proposal.sections[0].body
 
 
-def test_graph_retries_when_proposal_sections_do_not_match_change_type() -> None:
+def test_graph_normalizes_proposal_sections_without_retry() -> None:
     runner = SequencedRunner(
         [
             analysis(Favorability.NOT_APPLICABLE, proposal_titles=["1. 접점", "7. 최종"]),
-            analysis(Favorability.NOT_APPLICABLE),
         ]
     )
     workflow = DocumentAnalysisWorkflow(runner=runner, max_attempts=2)
@@ -261,7 +341,31 @@ def test_graph_retries_when_proposal_sections_do_not_match_change_type() -> None
         "필요 파트너·준비사항",
         "즉시 실행",
     ]
-    assert "제안 섹션 제목과 순서" in (runner.feedbacks[1] or "")
+    assert runner.call_count == 1
+    assert "원문에서 구체적인 실행 근거를 확인하지 못했습니다." in (
+        result.proposal.sections[2].body
+    )
+
+
+def test_updated_document_normalizes_missing_favorability_without_retry() -> None:
+    runner = SequencedRunner([
+        analysis(
+            Favorability.NOT_APPLICABLE,
+            used_tools=[
+                "get_document_content",
+                "get_company_profile",
+                "compare_previous_version",
+                "get_previous_analysis",
+            ],
+            proposal_titles=["변경 요약", "회사 영향", "대응 조정", "즉시 실행"],
+        )
+    ])
+    workflow = DocumentAnalysisWorkflow(runner=runner, max_attempts=2)
+
+    result = asyncio.run(workflow.analyze(document("UPDATED_DOCUMENT")))
+
+    assert runner.call_count == 1
+    assert result.favorable_or_not == Favorability.REVIEW_REQUIRED
 
 
 def test_low_domain_fit_requires_conservative_proposal_sections() -> None:
@@ -426,6 +530,26 @@ def test_graph_normalizes_urgency_score_when_it_does_not_match_remaining_days() 
     assert runner.call_count == 1
     assert urgency.score == 90
     assert "남은 5일" in urgency.reason
+
+
+def test_graph_normalizes_urgency_when_deadline_marker_is_missing() -> None:
+    runner = SequencedRunner([
+        analysis(
+            Favorability.NOT_APPLICABLE,
+            opportunity_assessment=opportunity(
+                urgency=80,
+                urgency_reason="담당자가 공고 내용을 빠르게 검토해야 합니다.",
+            ),
+        )
+    ])
+    workflow = DocumentAnalysisWorkflow(runner=runner, max_attempts=2)
+
+    result = asyncio.run(workflow.analyze(document()))
+
+    urgency = result.opportunity.dimensions[3]
+    assert runner.call_count == 1
+    assert urgency.score == 10
+    assert "기한 미확인" in urgency.reason
 
 
 def test_graph_marks_expired_application_as_ineligible() -> None:
