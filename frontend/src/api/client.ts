@@ -78,14 +78,18 @@ export const api = {
     to?: string,
     runId?: number,
     sort: 'LATEST' | 'OPPORTUNITY_SCORE' = 'LATEST',
+    savedOnly = false,
   ) => {
     const params = new URLSearchParams({ page: String(page), size: String(size) })
     if (from) params.set('from', from)
     if (to) params.set('to', to)
     if (runId) params.set('runId', String(runId))
     params.set('sort', sort)
-    return request<PageResponse<DocumentDetection>>(`/api/document-detections?${params}`)
+    return request<PageResponse<DocumentDetection>>(`${savedOnly ? "/api/bookmarks/documents" : "/api/document-detections"}?${params}`)
   },
+  getBookmarkIds: () => request<number[]>('/api/bookmarks'),
+  setBookmark: (documentId: number, saved: boolean) =>
+    request<void>(`/api/bookmarks/${documentId}`, { method: saved ? 'PUT' : 'DELETE' }),
   getDocument: (detectionId: number) => request<DocumentDetail>(`/api/document-detections/${detectionId}`),
   getSimilarNotices: (detectionId: number) =>
     request<SimilarNoticeResult>(`/api/document-detections/${detectionId}/similar-notices`),

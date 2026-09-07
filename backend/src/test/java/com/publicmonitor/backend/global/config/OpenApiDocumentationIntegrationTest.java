@@ -52,6 +52,29 @@ class OpenApiDocumentationIntegrationTest {
     @MockitoBean
     private AnalysisResultService analysisResultService;
 
+    @MockitoBean
+    private com.publicmonitor.backend.domain.document.service.DocumentBookmarkService bookmarkService;
+
+    @Test
+    void bookmarkEndpointsUseAuthenticatedAccountAndRejectInvalidIds() throws Exception {
+        var account = com.publicmonitor.backend.domain.user.entity.User.create("bookmark-user", "test",
+                com.publicmonitor.backend.domain.user.entity.Role.ADMIN);
+        org.springframework.test.util.ReflectionTestUtils.setField(account, "id", 42L);
+        var principal = new com.publicmonitor.backend.global.security.CustomUserDetails(account);
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/bookmarks/7")
+                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user(principal)))
+                .andExpect(status().isOk());
+        org.mockito.Mockito.verify(bookmarkService).set(42L, 7L, true);
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/bookmarks/7")
+                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user(principal)))
+                .andExpect(status().isOk());
+        org.mockito.Mockito.verify(bookmarkService).set(42L, 7L, false);
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/bookmarks/0")
+                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user(principal)))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/bookmarks")).andExpect(status().isUnauthorized());
+    }
+
     @Test
     void 공개_API_OpenAPI_문서에_현재_엔드포인트와_JWT_스키마가_포함된다() throws Exception {
         mockMvc.perform(get("/v3/api-docs/public-api"))
