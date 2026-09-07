@@ -135,7 +135,6 @@ export interface DocumentAnalysis {
       meetingAgenda: string[]
       eligibilityChecklist: ProposalPreparationItem[]
       submissionDocuments: ProposalPreparationItem[]
-      companyInputs: ProposalPreparationItem[]
       applicationDeadline?: string | null
       strategy: {
         decision?: 'GO' | 'CONDITIONAL_GO' | 'HOLD' | 'NO_GO' | null
@@ -243,8 +242,6 @@ export interface SimilarNoticeResult {
     title: string
     originalUrl: string
     comparison: SimilarNoticeComparisonSide
-    commonPoints: string
-    proposalReuse: string
     legalReview?: {
       overallStatus: 'HIGH' | 'REVIEW_REQUIRED'
       summary: string
@@ -254,7 +251,6 @@ export interface SimilarNoticeResult {
         status: 'HIGH' | 'REVIEW_REQUIRED'
         finding: string
         evidence: string
-        action: string
       }>
       disclaimer: string
     }

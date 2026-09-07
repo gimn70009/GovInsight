@@ -324,6 +324,22 @@ def _business_rule_violations(
     }
     company_fit_score = dimension_scores.get(OpportunityDimensionType.COMPANY_FIT, 0)
     _normalize_deterministic_business_fields(path, company_fit_score, candidate)
+    for section in candidate.draft.proposal.sections:
+        if not re.search(r"[.!?。][\"'’”)]*$", section.body.rstrip()):
+            violations.append(
+                f"공고 포인트 '{section.title}'의 마지막 문장이 미완성이거나 종결 부호가 없습니다. "
+                "근거를 유지하여 1000자 이내의 완결된 합니다체 문장으로 다시 작성하세요. "
+                "끝에 마침표만 붙이지 말고 미완성 내용을 확인해 문장 전체를 완성하세요."
+            )
+        if re.search(
+            r"(?:^|[.!?]\s+|\n)\s*(?:핵심 판단|근거|공고 근거|회사 정보와의 관계|"
+            r"적용 범위의 한계|평가 우선순위와 준비사항|마감·제출 요건|미확인 조건)\s*[:：]",
+            section.body,
+        ):
+            violations.append(
+                f"공고 포인트 '{section.title}'의 라벨형 소제목을 제거하고 "
+                "근거와 의미를 자연스러운 합니다체 문단으로 연결해 다시 작성하세요."
+            )
     return violations
 
 
@@ -345,25 +361,17 @@ def _normalize_deterministic_business_fields(
     ):
         candidate.draft.importance = DocumentImportance.NORMAL
 
-    if path == "new" and company_fit_score <= 40:
-        expected_titles = ["핵심 판단", "도메인 불일치 근거", "재검토 조건", "현재 대응"]
-    else:
-        expected_titles = {
-            "new": ["핵심 판단", "활용·추진 방안", "필요 파트너·준비사항", "즉시 실행"],
-            "updated": ["변경 요약", "회사 영향", "대응 조정", "즉시 실행"],
-            "unchanged": ["현재 상태", "유지할 대응", "다음 확인"],
-        }[path]
-    sections = candidate.draft.proposal.sections[:len(expected_titles)]
-    while len(sections) < len(expected_titles):
-        sections.append(ProposalSection(
-            title=expected_titles[len(sections)],
-            body=(
-                "원문에서 구체적인 실행 근거를 확인하지 못했습니다. "
-                "담당자가 추가로 확인해야 합니다."
-            ),
-        ))
-    for section, title in zip(sections, expected_titles, strict=True):
-        section.title = title
+    # Match by meaning-bearing title; never relabel an old strategy as a notice insight.
+    expected_titles = ["우리 회사와 연결되는 부분", "이 공고에서 중요하게 볼 점"]
+    by_title = {section.title: section for section in candidate.draft.proposal.sections}
+    fallback_bodies = [
+        "회사와 공고의 연결점에 대한 분석이 충분히 생성되지 않았습니다.",
+        "공고의 주요 특징에 대한 분석이 충분히 생성되지 않았습니다.",
+    ]
+    sections = [
+        by_title.get(title) or ProposalSection(title=title, body=body)
+        for title, body in zip(expected_titles, fallback_bodies, strict=True)
+    ]
     candidate.draft.proposal.sections = sections
 
 

@@ -8,8 +8,6 @@ import {
   ExternalLink,
   File,
   FileSearch2,
-  GitCompareArrows,
-  Lightbulb,
   Paperclip,
   RefreshCw,
   RotateCcw,
@@ -81,7 +79,7 @@ function getChangeImpact(detail: DocumentDetail, value: NonNullable<DocumentDeta
 }
 
 function proposalHeading() {
-  return '회사 관점에서 정리했어요'
+  return '우리 회사가 주목할 공고 포인트'
 }
 
 const strategyDecision = {
@@ -572,7 +570,11 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
     ? applicationExpired ? ['지원 불가능', 'danger'] as const : eligibility[analysis.eligibility]
     : null
   const changeImpact = analysis ? getChangeImpact(detail, analysis.favorableOrNot) : null
-  const proposalSections = analysis?.proposal.sections ?? []
+  const proposalSections = (analysis?.proposal.sections ?? [])
+    .filter((section) => !['공고 해석', '현재 정보로 확인되지 않은 부분'].includes(section.title))
+  const insightTitles = ['우리 회사와 연결되는 부분', '이 공고에서 중요하게 볼 점']
+  const hasNoticeInsights = proposalSections.length === 2
+    && proposalSections.every((section, index) => section.title === insightTitles[index])
   const proposalDraft = analysis?.proposal
   const showProposalTab = Boolean(proposalDraft)
   const proposalSummary = proposalDraft?.draftSections.find((section) => isProposalSummary(section.title))
@@ -583,11 +585,11 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
   const applicationDocuments = proposalDraft?.preparation?.submissionDocuments.filter((item) => !item.stage || item.stage === 'APPLICATION') ?? []
   const laterDocuments = proposalDraft?.preparation?.submissionDocuments.filter((item) => item.stage && item.stage !== 'APPLICATION') ?? []
   const preparation = proposalDraft?.preparation
+  const highlights = selectPreparationHighlights(preparation)
   const proposalSectionsOverview = preparation ? [
     { id: 'proposal-agenda', label: '회의 안건', count: preparation.meetingAgenda.length, suffix: '건' },
     { id: 'proposal-eligibility', label: '확인할 지원 조건', count: preparation.eligibilityChecklist.length, suffix: '건' },
     { id: 'proposal-documents', label: '준비할 제출 서류', count: preparation.submissionDocuments.length, suffix: '건' },
-    { id: 'proposal-company', label: '회사 확인 정보', count: preparation.companyInputs.length, suffix: '건' },
   ] : []
 
   useEffect(() => {
@@ -645,14 +647,14 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
               <p>{changeImpact!.description}</p>
             </section>
           </div>
-          <section className="detail-section reason-box"><h3>이렇게 판단했어요</h3><p>{analysis.reason}</p></section>
-          <section className="detail-section proposal-box">
+          <section className="detail-section proposal-box notice-insights">
             <span className="proposal-box__icon"><Sparkles size={18} /></span>
             <div className="proposal-box__content">
               <h3>{proposalHeading()}</h3>
+              {!hasNoticeInsights && <p className="notice-insights__legacy-note">이전에 생성된 분석 내용입니다. 새 공고 포인트는 다음 분석부터 제공됩니다.</p>}
               <div className="proposal-steps">
                 {proposalSections.map((section, index) => (
-                  <article className="proposal-step" key={`${section.title ?? 'insight'}-${index}`}>
+                  <article className="proposal-step" key={`${section.title}-${index}`}>
                     <span>{index + 1}</span>
                     <div>
                       <h4>{section.title}</h4>
@@ -693,10 +695,6 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
                       </div>
                     )}
                   </details>
-                  <details className="preparation-block preparation-block--collapsible" id="proposal-company">
-                    <summary className="preparation-block__header"><span>05</span><div><h4>회사에서 확인·준비할 정보</h4><p>공고만으로 확인할 수 없어 회사 담당자가 직접 확인하거나 작성해야 하는 항목입니다.</p></div><em>{proposalDraft.preparation.companyInputs.length}건 <ChevronDown size={16} /></em></summary>
-                    <PreparationChecklist items={proposalDraft.preparation.companyInputs} />
-                  </details>
                   <section className="preparation-block strategy-one-page" id="proposal-strategy">
                     <div className="preparation-block__header"><span>01</span><div><h4>제안 전략 한 장 <em className="ai-recommendation-label">AI 제안</em></h4><p>공고 근거와 회사 정보를 바탕으로 제안한 방향이며 담당자 확정이 필요합니다.</p></div></div>
                     {proposalDraft.preparation.strategy.decision ? (
@@ -715,28 +713,17 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
                         </div>
                         <div className="strategy-gaps">
                           <div className="strategy-gaps__header">
-                            <h6>우선 조치 항목</h6>
-                            <p>신청을 진행하기 위해 우선 처리해야 할 미확인·미완료 항목입니다.</p>
+                            <h6>먼저 확인할 핵심 항목</h6>
+                            <p>세 목록에서 신청 단계의 필수 조건과 준비 자료를 우선해 최대 4개를 모았습니다.</p>
                           </div>
-                          {proposalDraft.preparation.strategy.criticalGaps?.map((item) => (
-                            <article key={item.gap}>
-                              <strong>{readableSentence(item.gap)}</strong>
-                              <p>{readableSentence(item.nextAction)}</p>
-                              <div className="strategy-gap-meta">
-                                <span><b>담당 부서</b>{item.owner}</span>
-                                <span className="strategy-gap-deadline">
-                                  <b>내부 완료 목표일</b>
-                                  {item.targetDate ?? readableSentence(item.targetTiming)}
-                                  {item.scheduleBasis && (
-                                    <span className="strategy-gap-tooltip">
-                                      <button type="button" aria-label="내부 완료 목표일 계산 근거">
-                                        <CircleHelp size={12} aria-hidden="true" />
-                                      </button>
-                                      <span role="tooltip">{item.scheduleBasis}</span>
-                                    </span>
-                                  )}
-                                </span>
-                              </div>
+                          {highlights.map((item) => (
+                            <article key={`${item.section}-${item.title}`}>
+                              <strong>{item.title}</strong>
+                              {item.action && <p>{item.action}</p>}
+                              <a href={`#${item.section}`} onClick={() => {
+                                const section = document.getElementById(item.section)
+                                if (section instanceof HTMLDetailsElement) section.open = true
+                              }}>{item.label}에서 보기</a>
                             </article>
                           ))}
                         </div>
@@ -849,18 +836,17 @@ function SimilarNoticeComparison({ result, loading, currentTitle, currentOrigina
     overallStatus: 'REVIEW_REQUIRED' as const,
     summary: '현재 저장된 비교 결과에는 법률 위험 분석이 없어 추가 확인이 필요합니다.',
     checks: [
-      ['DUPLICATE_SUPPORT', '중복지원', '두 공고 담당기관에 동일·유사 과제의 중복 신청 가능 여부를 확인합니다.'],
-      ['COST_DOUBLE_COUNTING', '사업비·인건비 중복계상', '동일 인력·기간·비용이 두 과제에 중복 계상되는지 확인합니다.'],
-      ['RESULT_IP_REUSE', '성과물·지식재산 재사용', '기존 성과물의 소유권·사용권과 신규성 요구를 확인합니다.'],
-      ['CONFIDENTIALITY', '비밀정보·영업비밀', '기존 협약과 비공개 자료의 사용 권한을 확인합니다.'],
-      ['PROPOSAL_TEXT_REUSE', '제안서 문장·자료 재사용', '기존 제안서 문장·표·도표의 재사용 허용 범위를 확인합니다.'],
-    ].map(([type, label, action]) => ({
+      ['DUPLICATE_SUPPORT', '중복지원'],
+      ['COST_DOUBLE_COUNTING', '사업비·인건비 중복계상'],
+      ['RESULT_IP_REUSE', '성과물·지식재산 재사용'],
+      ['CONFIDENTIALITY', '비밀정보·영업비밀'],
+      ['PROPOSAL_TEXT_REUSE', '제안서 문장·자료 재사용'],
+    ].map(([type, label]) => ({
       type,
       label,
       status: 'REVIEW_REQUIRED' as const,
       finding: '원문 기반 분석 결과를 아직 확인하지 못했습니다.',
       evidence: '',
-      action,
     })),
     disclaimer: '공고 원문 기반의 사전 위험 점검이며 법률 자문이 아닙니다. 최종 신청 전 공고 담당기관과 법무·재무 담당자의 확인이 필요합니다.',
   }
@@ -888,17 +874,14 @@ function SimilarNoticeComparison({ result, loading, currentTitle, currentOrigina
           <tbody>{rows.map((row) => <tr key={row.label}><th>{row.label}</th><td><ExpandableComparisonCell content={row.current} onExpand={() => setExpandedCell({ title: ['현재 공고', row.label].join(' · '), content: row.current })} /></td><td><ExpandableComparisonCell content={row.similar} onExpand={() => setExpandedCell({ title: ['유사 공고', row.label].join(' · '), content: row.similar })} /></td></tr>)}</tbody>
         </table>
       </div>
-      <div className="similar-notice-insights">
-        <article className="similar-insight similar-insight--reason"><span><GitCompareArrows size={18} /></span><div><strong>유사한 이유</strong><p>{similarityReason(selected.commonPoints)}</p></div></article>
-        <article className="similar-insight similar-insight--reuse"><span><Lightbulb size={18} /></span><div><strong>활용 포인트</strong><p>{selected.proposalReuse}</p></div></article>
-      </div>
+
       <section className="legal-review">
         <header><span><ShieldCheck size={19} /></span><div><small>LEGAL RISK CHECK</small><h4>중복·재사용 위험 점검</h4></div></header>
         <p className={`legal-review__overview${legalReview.overallStatus === 'HIGH' ? ' legal-review__overview--high' : ''}`}>{legalReview.summary}</p>
         <div className="legal-review__check-list">{legalReview.checks.map((check) => {
           const findings = splitLegalComparison(check.finding)
           const evidence = splitLegalComparison(check.evidence)
-          return <details key={check.type}><summary><strong>{check.label}</strong><span aria-hidden="true"><ChevronDown size={15} /></span></summary><div className="legal-review__detail"><div className="legal-review__sources"><section><small>현재 공고</small><p>{findings.current}</p>{evidence.current && <blockquote><b>원문 근거</b>{evidence.current}</blockquote>}</section><section><small>유사 공고</small><p>{findings.similar}</p>{evidence.similar && <blockquote><b>원문 근거</b>{evidence.similar}</blockquote>}</section></div><div className="legal-review__action"><strong>신청 전 확인</strong><p>{check.action}</p></div></div></details>
+          return <details key={check.type}><summary><strong>{check.label}</strong><span aria-hidden="true"><ChevronDown size={15} /></span></summary><div className="legal-review__detail"><div className="legal-review__sources"><section><small>현재 공고</small><p>{findings.current}</p>{evidence.current && <blockquote><b>원문 근거</b>{evidence.current}</blockquote>}</section><section><small>유사 공고</small><p>{findings.similar}</p>{evidence.similar && <blockquote><b>원문 근거</b>{evidence.similar}</blockquote>}</section></div></div></details>
         })}</div>
         <p className="legal-review__disclaimer">{legalReview.disclaimer}</p>
       </section>
@@ -958,13 +941,6 @@ function splitLegalComparison(value: string) {
   }
   return { current: normalized, similar: '' }
 }
-function similarityReason(commonPoints: string) {
-  const exposesInternalProfile = /proposal|request|business|notice|공고명|핵심어는|유형[, ]/i.test(commonPoints)
-  if (!commonPoints || exposesInternalProfile) {
-    return '두 공고는 사업 목적과 수행 방식이 유사하며 같은 유형의 지원사업으로 분류됐습니다.'
-  }
-  return commonPoints
-}
 
 function getProposalUnavailableReason(detail: DocumentDetail, analysis: DocumentAnalysis) {
   const proposal = analysis.proposal
@@ -1000,4 +976,24 @@ function getProposalUnavailableReason(detail: DocumentDetail, analysis: Document
   }
   blockers.push('따라서 현재 확인된 조건으로는 사업 제안 준비안을 생성할 수 없습니다.')
   return blockers.join(' ')
+}
+
+function selectPreparationHighlights(preparation: DocumentAnalysis['proposal']['preparation'] | undefined) {
+  if (!preparation) return []
+  const rank = (item: ProposalPreparationItem) =>
+    (item.stage && item.stage !== 'APPLICATION' ? 100 : 0)
+    + ({ MANDATORY: 0, CONDITIONAL: 10, RECOMMENDED: 20, OPTIONAL: 30 }[item.requirementLevel ?? 'RECOMMENDED'])
+    + (['OFFICIAL_DOCUMENT', 'USER_CONFIRMED'].includes(item.companyEvidenceLevel ?? '') ? 1 : 0)
+  const groups = [
+    { items: preparation.eligibilityChecklist, section: 'proposal-eligibility', label: '지원 조건 체크리스트' },
+    { items: preparation.submissionDocuments, section: 'proposal-documents', label: '제출 서류 체크리스트' },
+  ].map(group => [...group.items].sort((a, b) => rank(a) - rank(b)).map(item => ({
+    title: item.title, action: item.nextAction, section: group.section, label: group.label, rank: rank(item),
+  })))
+  const selected = groups.flatMap(group => group.slice(0, 1))
+  if (preparation.meetingAgenda.length) selected.push({
+    title: preparation.meetingAgenda[0], action: '', section: 'proposal-agenda', label: '회의 안건', rank: 0,
+  })
+  const remaining = groups.flatMap(group => group.slice(1)).sort((a, b) => a.rank - b.rank)
+  return [...selected, ...remaining].slice(0, 4)
 }

@@ -116,10 +116,9 @@ public record AnalysisResultRequest(
     }
 
     public record Preparation(
-            @NotNull @Size(min = 3, max = 8) List<@NotBlank @Size(max = 500) String> meetingAgenda,
+            @NotNull @Size(max = 20) List<@NotBlank @Size(max = 500) String> meetingAgenda,
             @NotNull @Size(min = 1, max = 12) List<@Valid PreparationItem> eligibilityChecklist,
             @NotNull @Size(min = 1, max = 15) List<@Valid PreparationItem> submissionDocuments,
-            @NotNull @Size(min = 1, max = 12) List<@Valid PreparationItem> companyInputs,
             @Size(max = 10) String applicationDeadline,
             @NotNull @Valid StrategyOnePage strategy
     ) {

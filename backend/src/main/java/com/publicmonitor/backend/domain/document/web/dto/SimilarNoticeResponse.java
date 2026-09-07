@@ -12,8 +12,6 @@ public record SimilarNoticeResponse(
             String title,
             String originalUrl,
             ComparisonSide comparison,
-            String commonPoints,
-            String proposalReuse,
             LegalReview legalReview
     ) {
     }
@@ -31,8 +29,7 @@ public record SimilarNoticeResponse(
             String label,
             String status,
             String finding,
-            String evidence,
-            String action
+            String evidence
     ) {
     }
 

@@ -140,8 +140,6 @@ public class SimilarNoticeService {
                 candidateVersion.getTitle(),
                 candidateVersion.getDocument().getOriginalUrl(),
                 side(candidateVersion, scored.analysis()),
-                commonPoints(scored.sharedTopics()),
-                "기존 공고에서 정리한 사업 목표, 기술 구성과 참여기관 역할을 참고할 수 있습니다. 신청 내용은 새 공고에 맞게 다시 작성해야 합니다.",
                 legalReview(currentAnalysis, scored.analysis(), scored.sharedTopics())
         );
     }
@@ -152,11 +150,11 @@ public class SimilarNoticeService {
             List<String> sharedTopics
     ) {
         List<SimilarNoticeResponse.LegalRiskCheck> checks = List.of(
-                legalRiskCheck("DUPLICATE_SUPPORT", "중복지원", currentAnalysis, candidateAnalysis, sharedTopics),
-                legalRiskCheck("COST_DOUBLE_COUNTING", "사업비·인건비 중복계상", currentAnalysis, candidateAnalysis, sharedTopics),
-                legalRiskCheck("RESULT_IP_REUSE", "성과물·지식재산 재사용", currentAnalysis, candidateAnalysis, sharedTopics),
-                legalRiskCheck("CONFIDENTIALITY", "비밀정보·영업비밀", currentAnalysis, candidateAnalysis, sharedTopics),
-                legalRiskCheck("PROPOSAL_TEXT_REUSE", "제안서 문장·자료 재사용", currentAnalysis, candidateAnalysis, sharedTopics)
+                legalRiskCheck("DUPLICATE_SUPPORT", "중복지원", currentAnalysis, candidateAnalysis),
+                legalRiskCheck("COST_DOUBLE_COUNTING", "사업비·인건비 중복계상", currentAnalysis, candidateAnalysis),
+                legalRiskCheck("RESULT_IP_REUSE", "성과물·지식재산 재사용", currentAnalysis, candidateAnalysis),
+                legalRiskCheck("CONFIDENTIALITY", "비밀정보·영업비밀", currentAnalysis, candidateAnalysis),
+                legalRiskCheck("PROPOSAL_TEXT_REUSE", "제안서 문장·자료 재사용", currentAnalysis, candidateAnalysis)
         );
         List<String> restrictedLabels = checks.stream()
                 .filter(check -> check.status().equals("HIGH"))
@@ -175,7 +173,7 @@ public class SimilarNoticeService {
 
     private SimilarNoticeResponse.LegalRiskCheck legalRiskCheck(
             String type, String label, DocumentAnalysis currentAnalysis,
-            DocumentAnalysis candidateAnalysis, List<String> sharedTopics
+            DocumentAnalysis candidateAnalysis
     ) {
         LegalFinding current = legalFinding(currentAnalysis, type);
         LegalFinding candidate = legalFinding(candidateAnalysis, type);
@@ -187,35 +185,8 @@ public class SimilarNoticeService {
         if (!candidate.evidence().isBlank()) evidenceParts.add("유사 공고: “" + candidate.evidence() + "”");
         return new SimilarNoticeResponse.LegalRiskCheck(
                 type, label, restrictionFound ? "HIGH" : "REVIEW_REQUIRED", finding,
-                String.join(" ", evidenceParts), pairAction(type, current, candidate, sharedTopics)
+                String.join(" ", evidenceParts)
         );
-    }
-
-    private String pairAction(String type, LegalFinding current, LegalFinding candidate, List<String> sharedTopics) {
-        String topic = topicPhrase(sharedTopics);
-        String basis = restrictionBasis(current, candidate);
-        return switch (type) {
-            case "DUPLICATE_SUPPORT" -> "두 신청서에서 " + topic + " 과제의 목적·수행 범위·산출물이 어떻게 다른지 표로 구분하고, " + basis + "에 해당하는지 양쪽 공고 담당기관에 문의합니다.";
-            case "COST_DOUBLE_COUNTING" -> topic + " 수행에 투입하는 인력·기간·장비·실증비를 사업별 산정표로 분리하고, " + basis + "에 저촉되는 비용이 없는지 재무 담당자와 확인합니다.";
-            case "RESULT_IP_REUSE" -> topic + " 관련 기존 성과물의 소유자와 사용권을 정리하고, 새 과제에서 재사용할 결과물과 새로 개발할 결과물을 구분해 " + basis + " 충족 여부를 확인합니다.";
-            case "CONFIDENTIALITY" -> topic + " 관련 제안서에 포함할 데이터·도면·실증 결과를 공개 가능 자료와 비공개 자료로 나누고, " + basis + "에 따라 사전 동의가 필요한 자료를 법무 담당자와 확인합니다.";
-            case "PROPOSAL_TEXT_REUSE" -> topic + " 관련 기존 제안서의 문장·표·도표별 권리자를 확인하고, 그대로 재사용하지 말고 새 공고의 목적과 평가항목에 맞게 다시 작성한 뒤 " + basis + " 충족 여부를 검토합니다.";
-            default -> "두 공고의 " + topic + " 관련 범위와 " + basis + "을 담당기관에 확인합니다.";
-        };
-    }
-
-    private String restrictionBasis(LegalFinding current, LegalFinding candidate) {
-        List<String> parts = new ArrayList<>();
-        if ("RESTRICTION_FOUND".equals(current.status())) parts.add("현재 공고의 " + findingReference(current));
-        if ("RESTRICTION_FOUND".equals(candidate.status())) parts.add("유사 공고의 " + findingReference(candidate));
-        if (!parts.isEmpty()) return String.join("과 ", parts);
-        if ("CAUTION".equals(current.status())) return "현재 공고의 사전 승인·권리 확인 조건";
-        if ("CAUTION".equals(candidate.status())) return "유사 공고의 사전 승인·권리 확인 조건";
-        return "원문에 별도로 기재된 세부 집행·권리 조건";
-    }
-
-    private String findingReference(LegalFinding finding) {
-        return finding.evidence().isBlank() ? "제한 조건" : "‘" + finding.evidence() + "’ 조항";
     }
 
     private String topicPhrase(List<String> sharedTopics) {
@@ -239,10 +210,6 @@ public class SimilarNoticeService {
             // 과거 또는 손상된 분석 데이터는 안전하게 추가 확인 상태로 처리합니다.
         }
         return LegalFinding.missing();
-    }
-    private String commonPoints(List<String> sharedTopics) {
-        String terms = String.join(", ", sharedTopics.stream().limit(3).toList());
-        return "두 공고는 " + terms + " 분야와 관련된 사업 목적 및 핵심 과업이 함께 확인됩니다.";
     }
 
     private List<String> sharedTopicTerms(

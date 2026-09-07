@@ -197,7 +197,7 @@ def analysis(
     opportunity_assessment: OpportunityAssessment | None = None,
     importance: DocumentImportance = DocumentImportance.HIGH,
 ) -> AgentAnalysis:
-    titles = proposal_titles or ["핵심 판단", "활용·추진 방안", "필요 파트너·준비사항", "즉시 실행"]
+    titles = proposal_titles or ["우리 회사와 연결되는 부분", "이 공고에서 중요하게 볼 점"]
     return AgentAnalysis(
         draft=AnalysisDraft(
             summary="중소기업을 대상으로 신청 기한이 정해진 지원사업 공고입니다.",
@@ -307,7 +307,7 @@ def test_updated_document_requires_comparison_tools_and_revises_plan() -> None:
             analysis(
                 Favorability.FAVORABLE,
                 used_tools=required_tools,
-                proposal_titles=["변경 요약", "회사 영향", "대응 조정", "즉시 실행"],
+                proposal_titles=["우리 회사와 연결되는 부분", "이 공고에서 중요하게 볼 점"],
                 proposal_body=(
                     "연장된 기한에 맞춰 기존 제안 일정을 조정하고 "
                     "파트너와 제출 자료를 재점검합니다."
@@ -336,14 +336,12 @@ def test_graph_normalizes_proposal_sections_without_retry() -> None:
     result = asyncio.run(workflow.analyze(document()))
 
     assert [section.title for section in result.proposal.sections] == [
-        "핵심 판단",
-        "활용·추진 방안",
-        "필요 파트너·준비사항",
-        "즉시 실행",
+        "우리 회사와 연결되는 부분",
+        "이 공고에서 중요하게 볼 점",
     ]
     assert runner.call_count == 1
-    assert "원문에서 구체적인 실행 근거를 확인하지 못했습니다." in (
-        result.proposal.sections[2].body
+    assert "공고의 주요 특징에 대한 분석이 충분히 생성되지 않았습니다." in (
+        result.proposal.sections[1].body
     )
 
 
@@ -357,7 +355,7 @@ def test_updated_document_normalizes_missing_favorability_without_retry() -> Non
                 "compare_previous_version",
                 "get_previous_analysis",
             ],
-            proposal_titles=["변경 요약", "회사 영향", "대응 조정", "즉시 실행"],
+            proposal_titles=["우리 회사와 연결되는 부분", "이 공고에서 중요하게 볼 점"],
         )
     ])
     workflow = DocumentAnalysisWorkflow(runner=runner, max_attempts=2)
@@ -370,10 +368,8 @@ def test_updated_document_normalizes_missing_favorability_without_retry() -> Non
 
 def test_low_domain_fit_requires_conservative_proposal_sections() -> None:
     conservative_titles = [
-        "핵심 판단",
-        "도메인 불일치 근거",
-        "재검토 조건",
-        "현재 대응",
+        "우리 회사와 연결되는 부분",
+        "이 공고에서 중요하게 볼 점",
     ]
     low_fit = opportunity(company_fit=35)
     runner = SequencedRunner(
@@ -404,7 +400,7 @@ def test_unchanged_document_requires_neutral_impact() -> None:
         [
             analysis(
                 Favorability.NEUTRAL,
-                proposal_titles=["현재 상태", "유지할 대응", "다음 확인"],
+                proposal_titles=["우리 회사와 연결되는 부분", "이 공고에서 중요하게 볼 점"],
             )
         ]
     )
@@ -421,15 +417,15 @@ def test_unchanged_document_requires_neutral_impact() -> None:
     [
         (
             AnalysisChangeType.NEW_DOCUMENT,
-            ("핵심 판단", "활용·추진 방안", "필요 파트너·준비사항", "즉시 실행"),
+            ("우리 회사와 연결되는 부분", "이 공고에서 중요하게 볼 점"),
         ),
         (
             AnalysisChangeType.UPDATED_DOCUMENT,
-            ("변경 요약", "회사 영향", "대응 조정", "즉시 실행"),
+            ("우리 회사와 연결되는 부분", "이 공고에서 중요하게 볼 점"),
         ),
         (
             AnalysisChangeType.UNCHANGED_DOCUMENT,
-            ("현재 상태", "유지할 대응", "다음 확인"),
+            ("우리 회사와 연결되는 부분", "이 공고에서 중요하게 볼 점"),
         ),
     ],
 )
@@ -760,3 +756,53 @@ def test_proposal_request_rejects_draft_for_low_company_fit() -> None:
             ),
             opportunity=opportunity(company_fit=35),
         )
+
+
+@pytest.mark.parametrize("include_unknowns", [False, True])
+def test_notice_insights_remove_unknowns_section_and_preserve_order(include_unknowns: bool) -> None:
+    titles = ["우리 회사와 연결되는 부분", "이 공고에서 중요하게 볼 점"]
+    input_titles = titles + (["현재 정보로 확인되지 않은 부분"] if include_unknowns else [])
+    candidate = analysis(Favorability.NOT_APPLICABLE, proposal_titles=list(reversed(input_titles)))
+    original_bodies = {section.title: section.body for section in candidate.draft.proposal.sections}
+    runner = SequencedRunner([candidate])
+    result = asyncio.run(DocumentAnalysisWorkflow(runner=runner, max_attempts=2).analyze(document()))
+    assert [section.title for section in result.proposal.sections] == titles
+    assert all(section.body == original_bodies[section.title] for section in result.proposal.sections)
+    assert runner.call_count == 1
+
+
+def test_notice_insights_do_not_relabel_legacy_strategy() -> None:
+    candidate = analysis(Favorability.NOT_APPLICABLE, proposal_titles=["핵심 판단", "즉시 실행"])
+    legacy_bodies = {section.body for section in candidate.draft.proposal.sections}
+    runner = SequencedRunner([candidate])
+    result = asyncio.run(DocumentAnalysisWorkflow(runner=runner, max_attempts=2).analyze(document()))
+    assert all(section.body not in legacy_bodies for section in result.proposal.sections)
+    assert len(result.proposal.sections) == 2
+
+
+def test_notice_insights_preserve_detailed_explanations_without_summary() -> None:
+    candidate = analysis(Favorability.NOT_APPLICABLE)
+    detailed = "회사에서 확인된 제조 데이터 분석 역량은 공고의 현장 데이터 처리 요구와 관련됩니다. " * 9
+    detailed += "\n\n다만 현장 적용 경험과 신청 자격은 별도로 확인해야 합니다."
+    candidate.draft.proposal.sections[0].body = detailed
+    candidate.draft.proposal.sections.append(ProposalSection(title="공고 해석", body="과거 형식의 상단 요약 문장입니다."))
+    runner = SequencedRunner([candidate])
+    result = asyncio.run(DocumentAnalysisWorkflow(runner=runner, max_attempts=2).analyze(document()))
+    assert len(detailed) > 260
+    assert result.proposal.sections[0].body == detailed
+    assert [section.title for section in result.proposal.sections] == ["우리 회사와 연결되는 부분", "이 공고에서 중요하게 볼 점"]
+
+
+@pytest.mark.parametrize("bad_body", [
+    "중요한 조건을 확인했습니다. 세부 산출 근거나 추",
+    "핵심 판단: 회사 기술과 연결됩니다. 공고 근거: 실증이 필요합니다.",
+])
+def test_notice_insights_retry_incomplete_or_labeled_text(bad_body: str) -> None:
+    invalid = analysis(Favorability.NOT_APPLICABLE)
+    invalid.draft.proposal.sections[1].body = bad_body
+    valid = analysis(Favorability.NOT_APPLICABLE)
+    runner = SequencedRunner([invalid, valid])
+    result = asyncio.run(DocumentAnalysisWorkflow(runner=runner, max_attempts=2).analyze(document()))
+    assert runner.call_count == 2
+    assert "공고 포인트" in runner.feedbacks[1]
+    assert result.proposal.sections[1].body == valid.draft.proposal.sections[1].body

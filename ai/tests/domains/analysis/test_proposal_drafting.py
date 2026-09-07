@@ -7,6 +7,7 @@ from app.domains.analysis.proposal_drafting import (
     ProposalModelOutput,
     TwoStageAnalysisWorkflow,
     _apply_strategy_eligibility_guardrails,
+    _build_preparation_highlights,
     _build_proposal_source_context,
     _is_international_requirement,
     _normalize_preparation_structure,
@@ -240,7 +241,7 @@ def test_generates_outline_then_draft_only_for_matching_proposal_request() -> No
     assert generated.proposal.preparation is not None
     assert generated.proposal.preparation.strategy.recommended_project.startswith("제조 현장")
     assert generated.proposal.source_attachment_names == ["신청서식.hwp"]
-    assert generated.proposal.preparation_schema_version == 11
+    assert generated.proposal.preparation_schema_version == 12
     assert "map_proposal_sources" in generated.used_tools
     assert "build_proposal_preparation" in generated.used_tools
 
@@ -304,7 +305,7 @@ def test_proposal_stage_failure_preserves_base_analysis() -> None:
     assert generated.summary.startswith("산업 AI 실증")
     assert generated.proposal.draft_status == ProposalDraftStatus.REVIEW_REQUIRED
     assert generated.proposal.draft_sections == []
-    assert generated.proposal.preparation_schema_version == 11
+    assert generated.proposal.preparation_schema_version == 12
     assert "사업 제안 생성 제한 시간을 초과했습니다." in generated.proposal.draft_reason
 
 
@@ -406,7 +407,6 @@ def test_compact_model_output_restores_api_defaults() -> None:
     for section_name in (
         "eligibility_checklist",
         "submission_documents",
-        "company_inputs",
     ):
         for item in preparation[section_name]:
             for field_name in (
@@ -433,7 +433,7 @@ def test_compact_model_output_restores_api_defaults() -> None:
 
     assert raw is None
     assert restored.preparation.eligibility_checklist[0].readiness_score == 0
-    assert restored.preparation.strategy.critical_gaps[0].target_date is None
+    assert restored.preparation.strategy.critical_gaps == []
 
 
 def test_normalizes_internal_terms_and_strategy_tone() -> None:
@@ -652,3 +652,45 @@ def test_holds_strategy_until_sandbox_approval_is_officially_verified() -> None:
     assert strategy.recommended_project.startswith("규제특례 승인 제품 또는 서비스 확인 후")
     assert "별도의 영업 기회" in strategy.alternative_participation
     assert "대안 역할" not in strategy.alternative_participation
+
+
+def test_model_does_not_generate_fourth_list_or_independent_highlights() -> None:
+    schema = json.dumps(ProposalModelOutput.model_json_schema())
+    assert "companyInputs" not in schema
+    assert "criticalGaps" not in schema
+
+
+def test_legacy_internal_information_moves_to_agenda_without_loss() -> None:
+    draft = asyncio.run(ProposalRunner().generate(document(), result()))
+    legacy = draft.preparation.company_inputs[0]
+    _normalize_preparation_structure(draft)
+    assert draft.preparation.company_inputs == []
+    assert any(legacy.title in agenda and legacy.detail in agenda
+               and legacy.next_action in agenda for agenda in draft.preparation.meeting_agenda)
+    assert "companyInputs" not in draft.preparation.model_dump(by_alias=True)
+
+
+def test_highlights_only_copy_existing_three_list_entries() -> None:
+    draft = asyncio.run(ProposalRunner().generate(document(), result()))
+    _normalize_preparation_structure(draft)
+    preparation = draft.preparation
+    _build_preparation_highlights(preparation)
+    allowed = {(item.title, item.next_action) for item in (
+        *preparation.eligibility_checklist, *preparation.submission_documents)}
+    allowed.update((agenda[:300], agenda[:300]) for agenda in preparation.meeting_agenda)
+    assert 1 <= len(preparation.strategy.critical_gaps) <= 4
+    assert all((gap.gap, gap.next_action) in allowed
+               for gap in preparation.strategy.critical_gaps)
+    assert preparation.strategy.critical_gaps[0].gap == preparation.eligibility_checklist[0].title
+    assert preparation.strategy.critical_gaps[1].gap == preparation.submission_documents[0].title
+
+
+def test_duplicate_documents_keep_distinct_stage_and_evidence() -> None:
+    draft = asyncio.run(ProposalRunner().generate(document(), result()))
+    item = draft.preparation.submission_documents[0]
+    later = item.model_copy(update={"stage": RequirementStage.AGREEMENT})
+    draft.preparation.submission_documents.extend([item.model_copy(), later])
+    _normalize_preparation_structure(draft)
+    matches = [row for row in draft.preparation.submission_documents if row.title == item.title]
+    assert len(matches) == 2
+    assert {row.stage for row in matches} == {item.stage, RequirementStage.AGREEMENT}

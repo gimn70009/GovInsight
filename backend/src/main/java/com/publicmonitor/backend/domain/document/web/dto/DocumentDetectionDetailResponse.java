@@ -74,7 +74,6 @@ public record DocumentDetectionDetailResponse(
             List<String> meetingAgenda,
             List<PreparationItem> eligibilityChecklist,
             List<PreparationItem> submissionDocuments,
-            List<PreparationItem> companyInputs,
             String applicationDeadline,
             StrategyOnePage strategy
     ) {

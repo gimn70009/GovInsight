@@ -85,7 +85,7 @@ public class DocumentDetectionDetailService {
             ));
         }
         DocumentDetectionDetailResponse.Proposal proposal = objectMapper.readValue(
-                normalized,
+                PreparationCompatibility.normalize(normalized, objectMapper),
                 DocumentDetectionDetailResponse.Proposal.class
         );
         return new DocumentDetectionDetailResponse.Proposal(

@@ -67,8 +67,6 @@ class SimilarNoticeServiceTest {
             assertThat(notice.title()).isEqualTo("제조 AI 실증 사업 공고");
             assertThat(notice.comparison().organizationName()).isEqualTo("산업통상부");
             assertThat(notice.similarityScore()).isGreaterThanOrEqualTo(78);
-            assertThat(notice.commonPoints()).contains("제조", "ai", "실증");
-            assertThat(notice.commonPoints()).doesNotContain("같은 유형의 지원사업");
             assertThat(notice.comparison().purpose())
                     .isEqualTo("제조기업의 AI 공정 최적화 실증과 사업화를 지원합니다.");
             assertThat(notice.comparison().requiredPartner())
@@ -78,8 +76,6 @@ class SimilarNoticeServiceTest {
             assertThat(notice.legalReview().checks().getFirst().evidence())
                     .contains("동일 과제 중복 신청 불가");
             assertThat(notice.legalReview().summary()).contains("제조", "중복지원");
-            assertThat(notice.legalReview().checks().getFirst().action())
-                    .contains("제조", "동일 과제 중복 신청 불가", "목적·수행 범위·산출물");
         });
         assertThat(result.currentNotice().purpose())
                 .isEqualTo("제조 현장 데이터를 활용한 AI 공정 최적화 실증과 제조기업 사업화를 지원합니다.");
@@ -167,7 +163,6 @@ class SimilarNoticeServiceTest {
         var result = service().find(current.detection().getId());
 
         assertThat(result.similarNotices()).singleElement().satisfies(notice -> {
-            assertThat(notice.commonPoints()).contains("산업기술국제협력");
             assertThat(notice.legalReview().overallStatus()).isEqualTo("REVIEW_REQUIRED");
             assertThat(notice.legalReview().checks()).allSatisfy(check ->
                     assertThat(check.finding()).contains("원문에서 관련 제한을 확인하지 못했습니다.")
