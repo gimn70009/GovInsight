@@ -12,15 +12,15 @@ import org.junit.jupiter.api.Test;
 
 class DocumentBookmarkServiceTest {
     private final DocumentBookmarkRepository bookmarks = mock(DocumentBookmarkRepository.class);
-    private final DocumentRepository documents = mock(DocumentRepository.class);
+    private final DocumentVersionRepository documents = mock(DocumentVersionRepository.class);
     private final UserRepository users = mock(UserRepository.class);
     private final DocumentBookmarkService service = new DocumentBookmarkService(bookmarks, documents,
             mock(DocumentDetectionRepository.class), users, mock(DocumentDetectionQueryService.class));
 
     @Test void repeatedSaveDoesNotInsertAgain() {
         when(users.findForBookmarkUpdate(1L)).thenReturn(Optional.of(mock(User.class)));
-        when(documents.findById(2L)).thenReturn(Optional.of(mock(Document.class)));
-        when(bookmarks.existsByUserIdAndDocumentId(1L, 2L)).thenReturn(false, true);
+        when(documents.findById(2L)).thenReturn(Optional.of(mock(DocumentVersion.class)));
+        when(bookmarks.existsByUserIdAndVersionId(1L, 2L)).thenReturn(false, true);
         service.set(1L, 2L, true);
         service.set(1L, 2L, true);
         verify(bookmarks, times(1)).save(any(DocumentBookmark.class));

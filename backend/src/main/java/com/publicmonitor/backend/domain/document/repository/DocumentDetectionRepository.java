@@ -70,9 +70,9 @@ public interface DocumentDetectionRepository extends JpaRepository<DocumentDetec
 
     String BOOKMARK_FILTER = """
               and exists (select b.id from DocumentBookmark b
-                          where b.user.id = :userId and b.document.id = detection.document.id)
+                          where b.user.id = :userId and b.version.id = detection.documentVersion.id)
               and not exists (select newer.id from DocumentDetection newer
-                              where newer.document.id = detection.document.id
+                              where newer.documentVersion.id = detection.documentVersion.id
                                 and (newer.detectedAt > detection.detectedAt
                                      or (newer.detectedAt = detection.detectedAt and newer.id > detection.id)))
             """;

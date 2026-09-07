@@ -6,8 +6,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
 public interface DocumentBookmarkRepository extends JpaRepository<DocumentBookmark, Long> {
-    boolean existsByUserIdAndDocumentId(Long userId, Long documentId);
-    void deleteByUserIdAndDocumentId(Long userId, Long documentId);
-    @Query("select b.document.id from DocumentBookmark b where b.user.id = :userId")
-    List<Long> findDocumentIds(Long userId);
+    boolean existsByUserIdAndVersionId(Long userId, Long versionId);
+    void deleteByUserIdAndVersionId(Long userId, Long versionId);
+    @Query("select b.version.id from DocumentBookmark b where b.user.id = :userId")
+    List<Long> findVersionIds(Long userId);
 }

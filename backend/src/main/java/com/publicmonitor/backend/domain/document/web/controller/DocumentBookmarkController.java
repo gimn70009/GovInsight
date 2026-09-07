@@ -25,29 +25,29 @@ public class DocumentBookmarkController {
     private final DocumentBookmarkService service;
     public DocumentBookmarkController(@Lazy DocumentBookmarkService service) { this.service = service; }
 
-    @Operation(summary = "내 북마크 문서 ID 목록")
-    @GetMapping
+    @Operation(summary = "내 북마크 버전 ID 목록")
+    @GetMapping("/versions")
     public SuccessResponse<List<Long>> ids(@AuthenticationPrincipal CustomUserDetails principal) {
         return SuccessResponse.ok(service.ids(principal.user().getId()));
     }
 
-    @Operation(summary = "게시글 북마크 저장", description = "로그인 계정에 문서 단위로 저장하며 반복 요청은 멱등입니다.")
-    @PutMapping("/{documentId}")
+    @Operation(summary = "게시글 북마크 저장", description = "로그인 계정에 내용 버전 단위로 저장하며 반복 요청은 멱등입니다.")
+    @PutMapping("/versions/{versionId}")
     public SuccessResponse<Void> save(@AuthenticationPrincipal CustomUserDetails principal,
-            @PathVariable @Min(1) Long documentId) {
-        service.set(principal.user().getId(), documentId, true);
+            @PathVariable @Min(1) Long versionId) {
+        service.set(principal.user().getId(), versionId, true);
         return SuccessResponse.empty();
     }
 
     @Operation(summary = "게시글 북마크 해제")
-    @DeleteMapping("/{documentId}")
+    @DeleteMapping("/versions/{versionId}")
     public SuccessResponse<Void> remove(@AuthenticationPrincipal CustomUserDetails principal,
-            @PathVariable @Min(1) Long documentId) {
-        service.set(principal.user().getId(), documentId, false);
+            @PathVariable @Min(1) Long versionId) {
+        service.set(principal.user().getId(), versionId, false);
         return SuccessResponse.empty();
     }
 
-    @Operation(summary = "저장한 게시글 조회", description = "전체 실행에서 문서별 최신 감지 결과를 한 번씩 조회합니다.")
+    @Operation(summary = "저장한 게시글 조회", description = "전체 실행에서 저장한 버전별 최신 감지 결과를 한 번씩 조회합니다.")
     @GetMapping("/documents")
     public SuccessResponse<PageResponse<DocumentDetectionSummaryResponse>> documents(
             @AuthenticationPrincipal CustomUserDetails principal,

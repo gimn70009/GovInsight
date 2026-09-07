@@ -20,26 +20,26 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class DocumentBookmarkService {
     private final DocumentBookmarkRepository bookmarks;
-    private final DocumentRepository documents;
+    private final DocumentVersionRepository versions;
     private final DocumentDetectionRepository detections;
     private final UserRepository users;
     private final DocumentDetectionQueryService queryService;
 
     @Transactional(readOnly = true)
     public List<Long> ids(Long userId) {
-        return bookmarks.findDocumentIds(userId);
+        return bookmarks.findVersionIds(userId);
     }
 
     @Transactional
-    public void set(Long userId, Long documentId, boolean saved) {
+    public void set(Long userId, Long versionId, boolean saved) {
         // Serialize writes per account so repeated PUTs remain idempotent.
         var user = users.findForBookmarkUpdate(userId).orElseThrow();
-        var document = documents.findById(documentId).orElseThrow(
+        var version = versions.findById(versionId).orElseThrow(
                 () -> new DocumentDetectionException(DocumentDetectionResponseCode.NOT_FOUND));
         if (!saved) {
-            bookmarks.deleteByUserIdAndDocumentId(userId, documentId);
-        } else if (!bookmarks.existsByUserIdAndDocumentId(userId, documentId)) {
-            bookmarks.save(DocumentBookmark.create(user, document));
+            bookmarks.deleteByUserIdAndVersionId(userId, versionId);
+        } else if (!bookmarks.existsByUserIdAndVersionId(userId, versionId)) {
+            bookmarks.save(DocumentBookmark.create(user, version));
         }
     }
 

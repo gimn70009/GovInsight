@@ -502,10 +502,12 @@ Frontend는 React, TypeScript와 Vite로 구성하고 Spring Boot의 `/api` 요�
 
 - 게시글 행 오른쪽의 북마크 버튼으로 저장·해제한다. 상세 열기 버튼과 별도 버튼으로 두어 클릭·키보드 동작이 겹치지 않으며 `aria-pressed`와 저장/해제 이름을 제공한다. 요청 중 중복 클릭을 막고 실패 시 상태를 변경하지 않는다.
 - `저장한 게시글` 필터는 전체 실행에서 로그인 사용자가 저장한 문서만 조회한다. 전환 시 검색·우선순위·기간·페이지를 초기화하고 실행 선택을 숨긴다. 기존 점수 정렬·기간·검색·우선순위 필터를 사용할 수 있다. 검색·우선순위는 기존과 동일한 현재 페이지 필터다.
-- 북마크는 감지 건이 아닌 문서 ID를 기준으로 저장한다. 여러 실행의 동일 문서는 감지 시각·ID 내림차순으로 최신 한 건만 표시한다. 페이지 개수도 중복 제거 후 계산한다. 저장 목록 마지막 페이지에서 마지막 항목을 해제하면 이전 페이지로 이동한다.
-- Oracle `DOCUMENT_BOOKMARKS`: `BOOKMARK_ID` PK, `USER_ID` → `APP_USERS`, `DOCUMENT_ID` → `DOCUMENTS`, `(USER_ID, DOCUMENT_ID)` UNIQUE, `DOCUMENT_BOOKMARKS_SEQUENCE` 사용. 계정 행 잠금으로 같은 계정의 저장·해제를 직렬화하여 반복 PUT을 멱등 처리한다.
-- API: `GET /api/bookmarks`는 내 문서 ID 배열, `PUT /api/bookmarks/{documentId}`는 저장, `DELETE /api/bookmarks/{documentId}`는 해제, `GET /api/bookmarks/documents?page=0&size=20&sort=LATEST`는 최신 감지 결과의 기존 페이지 응답을 반환한다. 목록은 선택적 `from`, `to`를 지원하며 실행 ID로 제한하지 않는다. 모든 API는 JWT 인증을 요구하고 계정 ID는 요청 값이 아닌 인증 정보에서 가져온다.
+- 북마크는 내용 버전 ID를 기준으로 저장한다. 변경 없는 재수집은 동일 버전이므로 저장 상태를 공유하고 감지 시각·ID 내림차순으로 한 건만 표시한다. 수정본은 별도 버전이므로 자동 저장하지 않는다. 이전 버전과 수정본을 각각 저장하면 둘 다 저장 목록에 표시하며 해제도 독립적이다. 페이지 개수도 중복 제거 후 계산한다. 저장 목록 마지막 페이지에서 마지막 항목을 해제하면 이전 페이지로 이동한다.
+- Oracle `DOCUMENT_BOOKMARKS`: `BOOKMARK_ID` PK, `USER_ID` → `APP_USERS`, `VERSION_ID` → `DOCUMENT_VERSIONS`, `(USER_ID, VERSION_ID)` UNIQUE, `DOCUMENT_BOOKMARKS_SEQUENCE` 사용. 계정 행 잠금으로 같은 계정의 저장·해제를 직렬화하여 반복 PUT을 멱등 처리한다.
+- API: `GET /api/bookmarks/versions`는 내 버전 ID 배열, `PUT /api/bookmarks/versions/{versionId}`는 저장, `DELETE /api/bookmarks/versions/{versionId}`는 해제, `GET /api/bookmarks/documents?page=0&size=20&sort=LATEST`는 최신 감지 결과의 기존 페이지 응답을 반환한다. 목록은 선택적 `from`, `to`를 지원하며 실행 ID로 제한하지 않는다. 모든 API는 JWT 인증을 요구하고 계정 ID는 요청 값이 아닌 인증 정보에서 가져온다.
 - 기존 DB에는 `docs/migrations/20260907_document_bookmarks.sql`을 한 번 적용한다. 데이터 보존을 위해 기존 DB에 `ddl-auto=create`로 재시작하지 않는다. 로컬 Oracle에 마이그레이션을 적용하고 로컬 비추적 설정의 `ddl-auto`를 `none`으로 변경하여 데이터를 보존한 상태로 백엔드를 재시작했다. 다른 환경에도 기존 데이터 보존 설정으로 적용한다.
 - H2 Oracle 모드에서 실제 JPA 저장·계정 격리·최신 결과 중복 제거·기간 필터·해제를 검증한다. 테스트용 H2만 추가하며 운영 DB 의존성은 그대로 유지한다.
 
-- 상세 화면 상단 원문 보기 옆에도 저장/저장됨 북마크 버튼을 제공한다. 목록과 동일한 상태·저장 함수를 공유하고 해제 후 저장 목록에서 항목이 빠져도 열린 상세의 문서 ID를 유지하여 다시 저장할 수 있다. 요청 중 중복 클릭을 막고 오류를 상세 화면에도 표시한다.
+- 상세 화면 상단 원문 보기 옆에도 저장/저장됨 북마크 버튼을 제공한다. 목록과 동일한 상태·저장 함수를 공유하고 해제 후 저장 목록에서 항목이 빠져도 열린 상세의 버전 ID를 유지하여 다시 저장할 수 있다. 요청 중 중복 클릭을 막고 오류를 상세 화면에도 표시한다.
+
+- 기존 문서 북마크에서 버전 북마크로 전환할 때 `docs/migrations/20260907_bookmark_versions.sql`을 서버 중지 상태에서 적용한다. 기존 저장 당시 버전 정보가 없으므로 전환 직전 저장 목록에 표시되던 최신 감지 버전에 연결한다. 기존 document_id 값은 감사용 nullable 열로 보존하고 새로운 행은 version_id만 사용한다. 구 API 경로는 제거하여 이전 화면이 문서 ID를 버전 ID로 잘못 저장하지 않게 한다.

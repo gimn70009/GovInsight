@@ -222,7 +222,7 @@ export default function DocumentsPage() {
   const [appliedTo, setAppliedTo] = useState('')
   const [showDateFilter, setShowDateFilter] = useState(false)
   const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null)
+  const [selectedVersionId, setSelectedVersionId] = useState<number | null>(null)
   const [bookmarkError, setBookmarkError] = useState('')
 
   const loadRuns = useCallback(async () => {
@@ -283,15 +283,15 @@ export default function DocumentsPage() {
     return () => { active = false }
   }, [])
 
-  const toggleBookmark = async (documentId: number) => {
-    if (!bookmarkReady || savingRef.current.has(documentId)) return
+  const toggleBookmark = async (versionId: number) => {
+    if (!bookmarkReady || savingRef.current.has(versionId)) return
     setBookmarkError('')
-    const saved = !bookmarkIds.includes(documentId)
-    savingRef.current.add(documentId)
+    const saved = !bookmarkIds.includes(versionId)
+    savingRef.current.add(versionId)
     setSavingIds([...savingRef.current])
     try {
-      await api.setBookmark(documentId, saved)
-      setBookmarkIds((ids) => saved ? [...new Set([...ids, documentId])] : ids.filter((id) => id !== documentId))
+      await api.setBookmark(versionId, saved)
+      setBookmarkIds((ids) => saved ? [...new Set([...ids, versionId])] : ids.filter((id) => id !== versionId))
       if (savedOnly && !saved) {
         if (documents.length === 1 && page > 0) setPage(page - 1)
         else await currentLoad.current()
@@ -301,7 +301,7 @@ export default function DocumentsPage() {
       setError(message)
       setBookmarkError(message)
     } finally {
-      savingRef.current.delete(documentId)
+      savingRef.current.delete(versionId)
       setSavingIds([...savingRef.current])
     }
   }
@@ -365,7 +365,7 @@ export default function DocumentsPage() {
             <span>{savedOnly ? '내 북마크' : '표시할 실행'}</span>
             <strong>{savedOnly ? '저장한 게시글' : selectedRunId === 'ALL' ? '전체 실행 결과' : '최근 실행 결과'}</strong>
             <small>
-              {savedOnly ? '전체 실행에서 저장한 게시글의 최신 내용을 모아 보여드려요.' : selectedRun
+              {savedOnly ? '저장한 모든 버전을 보여드려요. 변경 없이 다시 수집된 글은 한 번만 표시됩니다.' : selectedRun
                 ? `${formatDateTime(selectedRun.requestedAt)} · ${selectedRun.totalSourceCount}개 소스 · ${selectedRun.detectedDocumentCount}건`
                 : '모든 실행에서 감지한 게시글을 함께 보여드려요.'}
             </small>
@@ -475,7 +475,7 @@ export default function DocumentsPage() {
           <div className="document-list">
             {filtered.map((item) => (
               <div className="document-row-shell" key={item.detectionId}>
-              <button className="document-row" onClick={() => { setSelectedId(item.detectionId); setSelectedDocumentId(item.documentId); setBookmarkError('') }}>
+              <button className="document-row" onClick={() => { setSelectedId(item.detectionId); setSelectedVersionId(item.versionId); setBookmarkError('') }}>
                 <div className="document-row__org">
                   <span className="source-logo">{item.organizationName.slice(0, 1)}</span>
                   <span><strong>{item.organizationName}</strong><small>{item.boardName}</small></span>
@@ -501,13 +501,13 @@ export default function DocumentsPage() {
                 </div>
                 <time>{formatDateTime(item.lastCheckedAt)}</time>
               </button>
-              <button className={`bookmark-button${bookmarkIds.includes(item.documentId) ? ' active' : ''}`}
-                disabled={!bookmarkReady || savingIds.includes(item.documentId)}
-                aria-pressed={bookmarkIds.includes(item.documentId)}
-                aria-label={`${item.title} ${bookmarkIds.includes(item.documentId) ? '저장 해제' : '저장'}`}
-                title={bookmarkIds.includes(item.documentId) ? '저장 해제' : '게시글 저장'}
-                onClick={() => void toggleBookmark(item.documentId)}>
-                <Bookmark size={18} strokeWidth={1.7} fill={bookmarkIds.includes(item.documentId) ? 'currentColor' : 'none'} />
+              <button className={`bookmark-button${bookmarkIds.includes(item.versionId) ? ' active' : ''}`}
+                disabled={!bookmarkReady || savingIds.includes(item.versionId)}
+                aria-pressed={bookmarkIds.includes(item.versionId)}
+                aria-label={`${item.title} ${bookmarkIds.includes(item.versionId) ? '저장 해제' : '저장'}`}
+                title={bookmarkIds.includes(item.versionId) ? '저장 해제' : '게시글 저장'}
+                onClick={() => void toggleBookmark(item.versionId)}>
+                <Bookmark size={18} strokeWidth={1.7} fill={bookmarkIds.includes(item.versionId) ? 'currentColor' : 'none'} />
               </button>
               </div>
             ))}
@@ -516,9 +516,9 @@ export default function DocumentsPage() {
         <Pagination page={page} totalPages={pages} onChange={setPage} />
       </section>
 
-      {selectedId && selectedDocumentId && <DocumentDrawer detectionId={selectedId} onClose={() => setSelectedId(null)}
-        bookmarked={bookmarkIds.includes(selectedDocumentId)} bookmarkPending={!bookmarkReady || savingIds.includes(selectedDocumentId)}
-        bookmarkError={bookmarkError} onToggleBookmark={() => void toggleBookmark(selectedDocumentId)} />}
+      {selectedId && selectedVersionId && <DocumentDrawer detectionId={selectedId} onClose={() => setSelectedId(null)}
+        bookmarked={bookmarkIds.includes(selectedVersionId)} bookmarkPending={!bookmarkReady || savingIds.includes(selectedVersionId)}
+        bookmarkError={bookmarkError} onToggleBookmark={() => void toggleBookmark(selectedVersionId)} />}
     </div>
   )
 }

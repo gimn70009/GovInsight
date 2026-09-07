@@ -87,9 +87,9 @@ export const api = {
     params.set('sort', sort)
     return request<PageResponse<DocumentDetection>>(`${savedOnly ? "/api/bookmarks/documents" : "/api/document-detections"}?${params}`)
   },
-  getBookmarkIds: () => request<number[]>('/api/bookmarks'),
-  setBookmark: (documentId: number, saved: boolean) =>
-    request<void>(`/api/bookmarks/${documentId}`, { method: saved ? 'PUT' : 'DELETE' }),
+  getBookmarkIds: () => request<number[]>('/api/bookmarks/versions'),
+  setBookmark: (versionId: number, saved: boolean) =>
+    request<void>(`/api/bookmarks/versions/${versionId}`, { method: saved ? 'PUT' : 'DELETE' }),
   getDocument: (detectionId: number) => request<DocumentDetail>(`/api/document-detections/${detectionId}`),
   getSimilarNotices: (detectionId: number) =>
     request<SimilarNoticeResult>(`/api/document-detections/${detectionId}/similar-notices`),

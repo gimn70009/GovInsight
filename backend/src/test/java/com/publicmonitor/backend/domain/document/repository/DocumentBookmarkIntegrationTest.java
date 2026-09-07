@@ -42,19 +42,32 @@ class DocumentBookmarkIntegrationTest {
         var latest = addDetection(source, document, version, now);
         // A timestamp tie must still return exactly one row, using the greater ID.
         latest = addDetection(source, document, version, now);
-        bookmarks.save(DocumentBookmark.create(first, document));
+        bookmarks.save(DocumentBookmark.create(first, version));
         em.flush();
-        assertThat(bookmarks.findDocumentIds(second.getId())).isEmpty();
-        assertThat(bookmarks.findDocumentIds(first.getId())).containsExactly(document.getId());
+        assertThat(bookmarks.findVersionIds(second.getId())).isEmpty();
+        assertThat(bookmarks.findVersionIds(first.getId())).containsExactly(version.getId());
         var result = detections.findBookmarkedSummaries(first.getId(), null, null, null, false, PageRequest.of(0, 1));
         assertThat(result.getTotalElements()).isEqualTo(1);
         assertThat(result.getContent().getFirst().detectionId()).isEqualTo(latest.getId());
         assertThat(detections.findBookmarkedSummaries(second.getId(), null, null, null, true, PageRequest.of(0, 1))).isEmpty();
         assertThat(detections.findBookmarkedSummaries(first.getId(), null, null, now.minusHours(1), false, PageRequest.of(0, 1))).isEmpty();
-        bookmarks.deleteByUserIdAndDocumentId(second.getId(), document.getId());
-        assertThat(bookmarks.existsByUserIdAndDocumentId(first.getId(), document.getId())).isTrue();
-        bookmarks.deleteByUserIdAndDocumentId(first.getId(), document.getId());
-        assertThat(bookmarks.findDocumentIds(first.getId())).isEmpty();
+        var revision = DocumentVersion.create(document, 2, "수정된 공고", "새 본문", "b".repeat(64), now, 0, now);
+        em.persist(revision);
+        addDetection(source, document, revision, now.plusDays(1));
+        em.flush();
+        assertThat(bookmarks.existsByUserIdAndVersionId(first.getId(), revision.getId())).isFalse();
+        assertThat(detections.findBookmarkedSummaries(first.getId(), null, null, null, false, PageRequest.of(0, 20))
+                .getContent()).extracting(row -> row.versionId()).containsExactly(version.getId());
+        bookmarks.save(DocumentBookmark.create(first, revision));
+        em.flush();
+        var both = detections.findBookmarkedSummaries(first.getId(), null, null, null, false, PageRequest.of(0, 1));
+        assertThat(both.getTotalElements()).isEqualTo(2);
+        assertThat(both.getTotalPages()).isEqualTo(2);
+        assertThat(both.getContent().getFirst().versionId()).isEqualTo(revision.getId());
+        bookmarks.deleteByUserIdAndVersionId(second.getId(), version.getId());
+        assertThat(bookmarks.existsByUserIdAndVersionId(first.getId(), version.getId())).isTrue();
+        bookmarks.deleteByUserIdAndVersionId(first.getId(), version.getId());
+        assertThat(bookmarks.findVersionIds(first.getId())).containsExactly(revision.getId());
     }
 
     private DocumentDetection addDetection(MonitoringSource source, Document document, DocumentVersion version, LocalDateTime at) {

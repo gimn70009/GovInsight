@@ -61,18 +61,18 @@ class OpenApiDocumentationIntegrationTest {
                 com.publicmonitor.backend.domain.user.entity.Role.ADMIN);
         org.springframework.test.util.ReflectionTestUtils.setField(account, "id", 42L);
         var principal = new com.publicmonitor.backend.global.security.CustomUserDetails(account);
-        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/bookmarks/7")
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/bookmarks/versions/7")
                 .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user(principal)))
                 .andExpect(status().isOk());
         org.mockito.Mockito.verify(bookmarkService).set(42L, 7L, true);
-        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/bookmarks/7")
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/bookmarks/versions/7")
                 .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user(principal)))
                 .andExpect(status().isOk());
         org.mockito.Mockito.verify(bookmarkService).set(42L, 7L, false);
-        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/bookmarks/0")
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/bookmarks/versions/0")
                 .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user(principal)))
                 .andExpect(status().isBadRequest());
-        mockMvc.perform(get("/api/bookmarks")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/bookmarks/versions")).andExpect(status().isUnauthorized());
     }
 
     @Test

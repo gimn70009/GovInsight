@@ -8,7 +8,7 @@ import lombok.NoArgsConstructor;
 
 @Getter
 @Entity
-@Table(name = "document_bookmarks", uniqueConstraints = @UniqueConstraint(name = "uk_bookmark_user_document", columnNames = {"user_id", "document_id"}))
+@Table(name = "document_bookmarks", uniqueConstraints = @UniqueConstraint(name = "uk_bookmark_user_version", columnNames = {"user_id", "version_id"}))
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class DocumentBookmark {
     @Id
@@ -20,13 +20,13 @@ public class DocumentBookmark {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "document_id", nullable = false)
-    private Document document;
+    @JoinColumn(name = "version_id", nullable = false)
+    private DocumentVersion version;
 
-    public static DocumentBookmark create(User user, Document document) {
+    public static DocumentBookmark create(User user, DocumentVersion version) {
         DocumentBookmark bookmark = new DocumentBookmark();
         bookmark.user = user;
-        bookmark.document = document;
+        bookmark.version = version;
         return bookmark;
     }
 }
