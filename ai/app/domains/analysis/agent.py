@@ -10,14 +10,21 @@ from pydantic import BaseModel, Field
 
 from app.core.schemas import CamelCaseModel
 from app.domains.analysis.config import AnalysisSettings
-from app.domains.analysis.context_tools import read_company_profile, read_previous_analysis
+from app.domains.analysis.context_tools import (
+    COMPANY_CONTEXT_INSTRUCTIONS,
+    NOTICE_APPLICABILITY_INSTRUCTIONS,
+    normalize_company_narrative,
+    read_company_profile,
+    read_previous_analysis,
+    uses_demo_profile,
+)
 from app.domains.analysis.legal_risks import (
-    LegalRiskAssessment,
+    LegalRiskModelResponse,
+    apply_document_coverage,
+    assess_with_repair,
     fallback_legal_risks,
     find_legal_risk_candidates,
-    legal_risk_prompt,
     no_candidate_legal_risks,
-    validate_legal_risk_assessment,
 )
 from app.domains.analysis.opportunity_scoring import OPPORTUNITY_SCORING_RUBRIC
 from app.domains.analysis.schemas.request import (
@@ -53,7 +60,7 @@ SYSTEM_PROMPT = f"""
 - current_document에서 현재 게시글을 확인합니다.
 - attachments가 있으면 첨부파일 텍스트를 함께 확인합니다.
 - company_profile에서 회사 적합성 근거를 확인합니다.
-- 회사 프로필의 unknownFields에 해당하는 조건은 추측하지 말고 eligibility를 REVIEW_REQUIRED로 정합니다.
+- 적용되는 회사 조건이 두 프로필 모두에서 확인되지 않으면 추측하지 말고 eligibility를 REVIEW_REQUIRED로 정합니다. 프로필의 서류 보유 정보는 원본 증빙 검증 완료와 구분합니다.
 - 회사가 신청해야 하는 접수기한이 분석일보다 지났으면 eligibility를 INELIGIBLE로 정합니다. 자격 정보가 부족하더라도 종료된 접수를 REVIEW_REQUIRED나 ELIGIBLE로 표시하지 않습니다.
 - 회사 프로필의 verifiedFacts와 caseStudies는 사업 연관성을 판단하는 참고 근거로 사용합니다.
 - evidenceLimitations와 unknownFields에 포함된 항목은 공식 자격 증빙으로 간주하지 않으며, 공개 정보만으로 지원 자격이나 실행 가능성을 확정하지 않습니다.
@@ -188,7 +195,7 @@ class LangChainAnalysisRunner:
             max_tokens=6_000,
         )
         self._legal_risk_model = legal_risk_model.with_structured_output(
-            LegalRiskAssessment
+            LegalRiskModelResponse, include_raw=True
         )
         self._legal_risk_cache: dict[int, list[LegalRiskFinding]] = {}
         self._plan_cache: dict[int, AnalysisPlan] = {}
@@ -240,7 +247,7 @@ class LangChainAnalysisRunner:
         try:
             async with asyncio.timeout(self._settings.timeout_seconds):
                 response = await self._analysis_model.ainvoke([
-                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "system", "content": SYSTEM_PROMPT + "\n" + COMPANY_CONTEXT_INSTRUCTIONS + "\n" + NOTICE_APPLICABILITY_INSTRUCTIONS},
                     {"role": "user", "content": prompt},
                 ])
         except BaseException:
@@ -259,6 +266,7 @@ class LangChainAnalysisRunner:
         _normalize_base_proposal(draft_payload)
         draft_payload["proposal"].update(
             {
+                "uses_demo_profile": uses_demo_profile(context),
                 "source_attachment_names": [],
                 "template_sections": [],
                 "draft_sections": [],
@@ -267,6 +275,16 @@ class LangChainAnalysisRunner:
         draft_payload["comparison_summary"]["legal_risks"] = [
             risk.model_dump() for risk in legal_risks
         ]
+        if uses_demo_profile(context):
+            for field in ("summary", "reason"):
+                draft_payload[field] = normalize_company_narrative(draft_payload[field])
+            draft_payload["key_points"] = [
+                normalize_company_narrative(point) for point in draft_payload["key_points"]
+            ]
+            for section in draft_payload["proposal"]["sections"]:
+                section["body"] = normalize_company_narrative(section["body"])
+            for dimension in draft_payload["opportunity"]["dimensions"]:
+                dimension["reason"] = normalize_company_narrative(dimension["reason"])
         draft = AnalysisDraft.model_validate(draft_payload)
         return AgentAnalysis(
             draft=draft,
@@ -310,6 +328,17 @@ class LangChainAnalysisRunner:
         self._plan_cache[document.version_id] = plan
         return plan
 
+    async def review_legal_only(self, document: AnalysisDocumentRequest) -> list[LegalRiskFinding]:
+        candidates = find_legal_risk_candidates(document)
+        requested = set(document.legal_review_types or [])
+        if requested:
+            candidates = [item for item in candidates if item.type in requested]
+        findings = await assess_with_repair(
+            self._legal_risk_model, candidates, min(self._settings.timeout_seconds, 60.0)
+        ) if candidates else no_candidate_legal_risks()
+        findings = apply_document_coverage(findings, document)
+        return [item for item in findings if not requested or item.type in requested]
+
     async def _assess_legal_risks(
         self,
         document: AnalysisDocumentRequest,
@@ -319,20 +348,12 @@ class LangChainAnalysisRunner:
             return cached
         candidates = find_legal_risk_candidates(document)
         if not candidates:
-            result = no_candidate_legal_risks()
+            result = apply_document_coverage(no_candidate_legal_risks(), document)
             self._legal_risk_cache[document.version_id] = result
             return result
         try:
-            async with asyncio.timeout(min(self._settings.timeout_seconds, 60.0)):
-                output = await self._legal_risk_model.ainvoke(
-                    legal_risk_prompt(candidates)
-                )
-            assessment = (
-                output
-                if isinstance(output, LegalRiskAssessment)
-                else LegalRiskAssessment.model_validate(output)
-            )
-            result = validate_legal_risk_assessment(assessment, candidates)
+            result = await assess_with_repair(
+                self._legal_risk_model, candidates, min(self._settings.timeout_seconds, 60.0))
         except Exception as exception:
             logger.warning(
                 "법률 위험 후보 의미 판정 실패. detection_id=%s reason=%s detail=%s",
@@ -341,7 +362,9 @@ class LangChainAnalysisRunner:
                 _safe_exception_detail(exception),
             )
             result = fallback_legal_risks(candidates)
-        self._legal_risk_cache[document.version_id] = result
+        result = apply_document_coverage(result, document)
+        if not any(item.status.value == "ASSESSMENT_INCOMPLETE" or item.failure_reason for item in result):
+            self._legal_risk_cache[document.version_id] = result
         return result
 
 
@@ -447,6 +470,8 @@ def _strategy_instruction(change_type: AnalysisChangeType) -> str:
 - 각 body는 핵심 판단으로 시작하고 공고 근거, 회사 정보와의 관계, 그 의미와 한계를 충분히 설명합니다. 짧은 요약 1~2문장이나 260자에 맞춰 압축하지 않습니다. 문장 수·접점 수를 고정하지 않고 실제 근거의 양과 복잡성에 맞춰 작성합니다. 기존 스키마의 항목당 1000자 상한 안에서 설명하며 분량을 채우기 위한 반복·추측은 금지합니다.
 - 본문은 표제 없는 자연스러운 설명문으로 통일합니다. `핵심 판단:`, `근거:`, `공고 근거:`, `회사 정보와의 관계:`, `적용 범위의 한계:` 같은 라벨·콜론식 소제목을 붙이지 않습니다. 관련 내용을 짧은 문단으로 묶고 주제가 달라지면 빈 줄로 구분합니다. 번호·불릿·마크다운 없이 정중한 합니다체로 작성합니다. 모든 문단은 완결된 문장과 마침표로 끝냅니다. 1000자 상한에 가까우면 덜 중요한 설명을 완전한 문장 단위로 줄여 다시 쓰고 단어나 문장을 중간에서 끊지 않습니다.
 - `우리 회사와 연결되는 부분`은 확인된 회사 기술·제품·산업·수행 사례가 실제 공고의 어떤 요구와 연결되는지 구체적으로 설명하고, 왜 관련 있는지와 적용 범위의 한계를 밝힙니다. 기술명을 나열하는 데 그치거나 기술 연관성을 수행 실적·신청 자격 충족으로 확대하지 않습니다. 관련성이 낮거나 회사 정보가 부족하면 그 이유와 분석 한계를 명시하며 억지 접점을 만들지 않습니다.
+- 접수가 종료된 공고는 두 번째 항목의 첫 문장에서 종료 사실과 현재 신규 신청 불가를 밝힙니다. 지난 평가의 준비를 권하거나 미래 일정처럼 설명하지 않습니다.
+- 기술명 나열보다 현재 고객 업무·자원 수요·인력 여력이 실제 공고 조건과 만나는 구체적인 접점과 제약을 선별합니다.
 - `이 공고에서 중요하게 볼 점`은 실제 지원 목적·개발 범위·실증 환경·자격·평가 기준 등 회사 판단에 중요한 조건을 선별하고 각 조건의 의미와 회사에 미치는 영향을 설명합니다. 금액·마감 등 기본정보는 해석에 필요한 경우만 포함합니다. 조건 이름만 나열하지 말고 왜 중요한지 설명합니다.
 - 지원 판단에 중요한 미확인 조건과 명확한 자격 불일치는 두 번째 항목에서 근거와 함께 설명하고 첫 번째 항목과 반복하지 않습니다. 회사 정보 누락은 '현재 회사 정보에서 확인되지 않습니다', 공고의 미명시는 '공고에 명시되지 않았습니다'로 구분합니다. 정보 부재를 미충족으로 단정하거나 모든 조건 충족을 선언하지 않습니다.
 - 활용·추진 방안, 파트너 섭외, 컨소시엄 권고, 준비물 목록, 담당자 지정, 실행 일정, 다음 행동은 작성하지 않습니다. 사업 제안 탭이 담당하는 전략과 체크리스트를 반복하지 않습니다.

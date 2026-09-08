@@ -4,6 +4,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Protocol
 
 from langchain_openai import ChatOpenAI
@@ -11,7 +12,13 @@ from pydantic import BaseModel, Field
 
 from app.core.schemas import CamelCaseModel
 from app.domains.analysis.config import AnalysisSettings
-from app.domains.analysis.context_tools import read_company_profile
+from app.domains.analysis.context_tools import (
+    COMPANY_CONTEXT_INSTRUCTIONS,
+    NOTICE_APPLICABILITY_INSTRUCTIONS,
+    normalize_company_narrative,
+    read_company_profile,
+    uses_demo_profile,
+)
 from app.domains.analysis.preparation_scoring import score_preparation
 from app.domains.analysis.schemas.request import AnalysisDocumentRequest
 from app.domains.analysis.schemas.result import (
@@ -173,6 +180,7 @@ DRAFT_PROMPT = """
 
 
 class ProposalDraftOutput(BaseModel):
+    uses_demo_profile: bool = False
     source_attachment_names: list[str] = Field(min_length=1, max_length=10)
     preparation: ProposalPreparation
 
@@ -253,7 +261,8 @@ class LangChainProposalGenerationRunner:
             min(self._settings.max_text_chars, PROPOSAL_CONTEXT_MAX_CHARS),
         )
         draft_input = (
-            f"{DRAFT_PROMPT}\n\n"
+            f"{DRAFT_PROMPT}\n{COMPANY_CONTEXT_INSTRUCTIONS}\n{NOTICE_APPLICABILITY_INSTRUCTIONS}\n\n"
+            f"분석 기준일: {datetime.now(timezone(timedelta(hours=9))).date().isoformat()}\n\n"
             f"공고 제목:\n{document.title}\n\n"
             f"공고 분석:\n{_compact_analysis_context(analysis)}\n\n"
             f"회사 프로필:\n{read_company_profile(context)}\n\n"
@@ -269,6 +278,21 @@ class LangChainProposalGenerationRunner:
         async with asyncio.timeout(self._settings.proposal_timeout_seconds):
             response = await self._draft_model.ainvoke(draft_input)
         draft, raw_response = _parse_model_response(response)
+        draft.uses_demo_profile = uses_demo_profile(context)
+        if draft.uses_demo_profile:
+            preparation = draft.preparation
+            preparation.meeting_agenda = [
+                normalize_company_narrative(item) for item in preparation.meeting_agenda
+            ]
+            for item in preparation.eligibility_checklist + preparation.submission_documents:
+                item.detail = normalize_company_narrative(item.detail)
+                item.next_action = normalize_company_narrative(item.next_action)
+            strategy = preparation.strategy
+            for field in (
+                "decision_reason", "recommended_project", "recommended_participation",
+                "alternative_participation",
+            ):
+                setattr(strategy, field, normalize_company_narrative(getattr(strategy, field)))
         usage = _token_usage(raw_response)
         logger.info(
             "사업 제안 모델 응답 완료. detection_id=%s elapsed_seconds=%.2f "
@@ -391,6 +415,9 @@ class TwoStageAnalysisWorkflow:
                     "template_sections": expected_titles,
                     "draft_sections": [],
                     "preparation": draft.preparation,
+                    "uses_demo_profile": (
+                        result.proposal.uses_demo_profile or draft.uses_demo_profile
+                    ),
                     "preparation_schema_version": 12,
                 }
             )

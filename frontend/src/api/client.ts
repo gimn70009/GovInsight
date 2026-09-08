@@ -10,6 +10,7 @@ import type {
   MonitoringSource,
   MonitoringSourcePayload,
   SimilarNoticeResult,
+  LegalPairResult,
   PageResponse,
 } from './types'
 
@@ -91,6 +92,8 @@ export const api = {
   setBookmark: (versionId: number, saved: boolean) =>
     request<void>(`/api/bookmarks/versions/${versionId}`, { method: saved ? 'PUT' : 'DELETE' }),
   getDocument: (detectionId: number) => request<DocumentDetail>(`/api/document-detections/${detectionId}`),
+  compareLegalPair: (currentId: number, similarId: number, signal?: AbortSignal) =>
+    request<LegalPairResult>(`/api/document-detections/${currentId}/similar-notices/${similarId}/legal-review`, { method: 'POST', signal }),
   getSimilarNotices: (detectionId: number) =>
     request<SimilarNoticeResult>(`/api/document-detections/${detectionId}/similar-notices`),
 }

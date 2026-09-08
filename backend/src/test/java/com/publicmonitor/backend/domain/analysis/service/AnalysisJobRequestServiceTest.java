@@ -79,7 +79,10 @@ class AnalysisJobRequestServiceTest {
             assertThat(item.detectionId()).isEqualTo(300L);
             assertThat(item.changeType()).isEqualTo(DocumentChangeType.NEW_DOCUMENT);
             assertThat(item.organizationName()).isEqualTo("과학기술정보통신부");
-            assertThat(item.attachments()).singleElement().satisfies(attachment -> {
+            assertThat(item.attachments()).hasSize(2);
+            assertThat(item.attachments().get(1).attachmentId()).isEqualTo(401L);
+            assertThat(item.attachments().get(1).extractedText()).isNull();
+            assertThat(item.attachments().getFirst()).satisfies(attachment -> {
                 assertThat(attachment.attachmentId()).isEqualTo(400L);
                 assertThat(attachment.extractedText()).isEqualTo("첨부 본문");
             });
@@ -88,7 +91,7 @@ class AnalysisJobRequestServiceTest {
     }
 
     @Test
-    void 기존_분석이_있는_변경없는_문서는_다시_요청하지_않는다() {
+    void 법률_결과가_누락된_변경없는_문서는_다시_요청한다() {
         DocumentVersion version = version(1, 200L, "기존 공고", "게시글 본문");
         DocumentDetection detection = detection(version, 300L, DocumentChangeType.UNCHANGED_DOCUMENT);
         given(detectionRepository.findAllByMonitoringRunSourceMonitoringRunIdOrderByIdAsc(10L))
@@ -97,7 +100,9 @@ class AnalysisJobRequestServiceTest {
         given(analysis.requiresProposalSchemaUpgrade()).willReturn(false);
         given(analysisRepository.findByDocumentVersionId(200L)).willReturn(Optional.of(analysis));
 
-        assertThat(service.prepare(10L)).isEmpty();
+        var prepared = service.prepare(10L).orElseThrow().documents().getFirst();
+        assertThat(prepared.analysisScope()).isEqualTo("LEGAL_ONLY");
+        assertThat(prepared.legalReviewTypes()).containsExactlyElementsOf(LegalReviewPolicy.TYPES);
     }
 
     @Test

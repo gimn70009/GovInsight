@@ -4,12 +4,18 @@ from enum import StrEnum
 from pydantic import Field, model_validator
 
 from app.core.schemas import CamelCaseModel
+from app.domains.analysis.schemas.result import LegalRiskType
 
 
 class AnalysisChangeType(StrEnum):
     NEW_DOCUMENT = "NEW_DOCUMENT"
     UPDATED_DOCUMENT = "UPDATED_DOCUMENT"
     UNCHANGED_DOCUMENT = "UNCHANGED_DOCUMENT"
+
+
+class AnalysisScope(StrEnum):
+    FULL = "FULL"
+    LEGAL_ONLY = "LEGAL_ONLY"
 
 
 class AnalysisAttachmentRequest(CamelCaseModel):
@@ -37,6 +43,8 @@ class AnalysisDocumentRequest(CamelCaseModel):
     document_id: int = Field(gt=0)
     version_id: int = Field(gt=0)
     change_type: AnalysisChangeType
+    analysis_scope: AnalysisScope = AnalysisScope.FULL
+    legal_review_types: list[LegalRiskType] | None = Field(default=None, min_length=1, max_length=5)
     organization_name: str = Field(min_length=1, max_length=100)
     board_name: str = Field(min_length=1, max_length=100)
     title: str = Field(min_length=1, max_length=500)

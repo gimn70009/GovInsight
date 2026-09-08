@@ -130,6 +130,7 @@ export interface DocumentAnalysis {
     sourceAttachmentNames: string[]
     templateSections: string[]
     draftSections: Array<{ title: string; body: string }>
+    usesDemoProfile?: boolean
     preparationSchemaVersion?: number
     preparation: {
       meetingAgenda: string[]
@@ -238,21 +239,35 @@ export interface SimilarNoticeResult {
   currentNotice: SimilarNoticeComparisonSide
   similarNotices: Array<{
     detectionId: number
-    similarityScore: number
+    similarityScore: number | null
+    matchBasis?: 'HYBRID' | 'LEXICAL' | 'SEMANTIC' | 'LEXICAL_ONLY'
     title: string
     originalUrl: string
     comparison: SimilarNoticeComparisonSide
     legalReview?: {
-      overallStatus: 'HIGH' | 'REVIEW_REQUIRED'
+      overallStatus: 'HIGH' | 'REVIEW_REQUIRED' | 'RESTRICTION_FOUND' | 'DATA_INSUFFICIENT' | 'ASSESSMENT_INCOMPLETE' | 'NOT_FOUND'
       summary: string
       checks: Array<{
         type: 'DUPLICATE_SUPPORT' | 'COST_DOUBLE_COUNTING' | 'RESULT_IP_REUSE' | 'CONFIDENTIALITY' | 'PROPOSAL_TEXT_REUSE'
         label: string
-        status: 'HIGH' | 'REVIEW_REQUIRED'
+        status: 'HIGH' | 'REVIEW_REQUIRED' | 'RESTRICTION_FOUND' | 'DATA_INSUFFICIENT' | 'ASSESSMENT_INCOMPLETE' | 'NOT_FOUND'
         finding: string
         evidence: string
       }>
       disclaimer: string
     }
+  }>
+}
+
+export interface LegalPairResult {
+  usesDemoProfile?: boolean
+  status: 'COMPLETED' | 'UNAVAILABLE' | 'NEEDS_EVIDENCE'
+  message: string
+  insights: Array<{
+    type: string
+    comparison: string
+    implication: string
+    verification: string
+    evidenceIds: number[]
   }>
 }

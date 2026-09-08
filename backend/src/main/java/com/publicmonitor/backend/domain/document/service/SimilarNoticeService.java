@@ -8,11 +8,12 @@ import com.publicmonitor.backend.domain.document.exception.DocumentDetectionExce
 import com.publicmonitor.backend.domain.document.exception.DocumentDetectionResponseCode;
 import com.publicmonitor.backend.domain.document.repository.DocumentDetectionRepository;
 import com.publicmonitor.backend.domain.document.web.dto.SimilarNoticeResponse;
+import java.text.Normalizer;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -29,12 +30,12 @@ import tools.jackson.databind.ObjectMapper;
 public class SimilarNoticeService {
 
     private static final int MAX_RESULTS = 3;
-    private static final double MIN_COSINE_SIMILARITY = 0.78;
     private static final Set<String> GENERIC_TOPIC_TERMS = Set.of(
             "공고", "사업", "지원", "지원사업", "프로그램", "과제", "대상", "기업", "기관",
             "시행", "시행계획", "계획", "신청", "참여", "모집", "선정", "정부", "산업",
             "기술", "개발", "구축", "혁신", "사업화", "연구개발", "중소기업", "중견기업",
-            "연도", "년도", "신규", "하반기", "상반기"
+            "연도", "년도", "신규", "하반기", "상반기", "ai",
+            "접수", "안내", "통합", "위한", "통한", "수행", "목적", "내용", "확인", "합니다", "용역"
     );
     private static final Set<String> GENERIC_TOPIC_PREFIXES = Set.of(
             "공고", "사업", "지원", "프로그램", "과제", "대상", "신청", "참여", "모집", "선정"
@@ -59,6 +60,42 @@ public class SimilarNoticeService {
     private final DocumentAnalysisRepository analysisRepository;
     private final ObjectMapper objectMapper;
 
+    private volatile SearchSnapshot searchSnapshot;
+
+    private record SearchEntry(Long versionId, Long documentId, String model,
+            double[] vector, Set<String> title, Set<String> purpose) {}
+    private record SearchSnapshot(String revision, long builtAt, List<SearchEntry> entries) {}
+
+    private List<SearchEntry> searchEntries() {
+        var revision = analysisRepository.similarityRevision();
+        String signature = revision == null ? null
+                : revision.getTotal() + ":" + revision.getLastId() + ":" + revision.getChangedAt();
+        SearchSnapshot cached = searchSnapshot;
+        if (signature != null && cached != null && signature.equals(cached.revision())
+                && System.nanoTime() - cached.builtAt() < 60_000_000_000L) return cached.entries();
+        return rebuildSearchEntries(signature);
+    }
+
+    private synchronized List<SearchEntry> rebuildSearchEntries(String signature) {
+        SearchSnapshot cached = searchSnapshot;
+        if (signature != null && cached != null && signature.equals(cached.revision())
+                && System.nanoTime() - cached.builtAt() < 60_000_000_000L) return cached.entries();
+        var entries = new ArrayList<SearchEntry>();
+        for (DocumentAnalysis analysis : analysisRepository.findLatestSimilarityCandidates(0L)) {
+            var version = analysis.getDocumentVersion();
+            String organization = version.getDocument().getMonitoringSource().getOrganizationName();
+            entries.add(new SearchEntry(version.getId(), version.getDocument().getId(),
+                    analysis.getEmbeddingModelName(), unitVector(embedding(analysis)),
+                    Set.copyOf(topicTerms(version.getTitle(), organization)),
+                    Set.copyOf(topicTerms(purpose(version.getContentText() == null ? "" : version.getContentText(), analysis), organization))));
+        }
+        List<SearchEntry> snapshot = List.copyOf(entries);
+        // Cache derived values only, never JPA entities or legal/source documents.
+        searchSnapshot = signature != null && entries.size() <= 5000
+                ? new SearchSnapshot(signature, System.nanoTime(), snapshot) : null;
+        return snapshot;
+    }
+
     @Transactional(readOnly = true)
     public SimilarNoticeResponse find(Long detectionId) {
         DocumentDetection detection = detectionRepository.findById(detectionId)
@@ -70,78 +107,55 @@ public class SimilarNoticeService {
         if (currentAnalysis == null) {
             return new SimilarNoticeResponse(currentSide, List.of());
         }
-        List<Double> currentEmbedding = embedding(currentAnalysis);
-        if (currentEmbedding.isEmpty()) {
-            return new SimilarNoticeResponse(currentSide, List.of());
+        double[] currentEmbedding = unitVector(embedding(currentAnalysis));
+        String organization = currentVersion.getDocument().getMonitoringSource().getOrganizationName();
+        Set<String> queryTitle = topicTerms(currentVersion.getTitle(), organization);
+        Set<String> queryPurpose = topicTerms(purpose(currentVersion.getContentText() == null ? "" : currentVersion.getContentText(), currentAnalysis), organization);
+        Set<String> queryTerms = new LinkedHashSet<>(queryTitle);
+        queryTerms.addAll(queryPurpose);
+        var inputs = new ArrayList<HybridNoticeRanker.Candidate>();
+        var scored = new java.util.HashMap<Long, ScoredCandidate>();
+        for (SearchEntry candidate : searchEntries()) {
+            if (candidate.documentId().equals(currentVersion.getDocument().getId())) continue;
+            boolean comparable = currentEmbedding.length > 0
+                    && candidate.vector().length == currentEmbedding.length
+                    && currentAnalysis.getEmbeddingModelName() != null
+                    && !currentAnalysis.getEmbeddingModelName().isBlank()
+                    && currentAnalysis.getEmbeddingModelName().equals(candidate.model());
+            double similarity = comparable ? dot(currentEmbedding, candidate.vector()) : Double.NaN;
+            Set<String> candidateTerms = new LinkedHashSet<>(candidate.title());
+            candidateTerms.addAll(candidate.purpose());
+            List<String> sharedTopics = sharedTopicTerms(queryTerms, candidateTerms);
+            inputs.add(new HybridNoticeRanker.Candidate(candidate.versionId(), similarity,
+                    candidate.title(), candidate.purpose(), sharedTopics));
+            scored.put(candidate.versionId(), new ScoredCandidate(candidate.versionId(), similarity, sharedTopics));
         }
 
-        List<DocumentAnalysis> latestAnalyses = analysisRepository.findAll().stream()
-                .filter(candidate -> !candidate.getDocumentVersion().getDocument().getId()
-                        .equals(currentVersion.getDocument().getId()))
-                .collect(java.util.stream.Collectors.toMap(
-                        candidate -> candidate.getDocumentVersion().getDocument().getId(),
-                        candidate -> candidate,
-                        (left, right) -> left.getDocumentVersion().getVersionNo()
-                                >= right.getDocumentVersion().getVersionNo() ? left : right
-                )).values().stream().toList();
-
-        List<ScoredCandidate> scored = new ArrayList<>();
-        for (DocumentAnalysis candidate : latestAnalyses) {
-            List<Double> candidateEmbedding = embedding(candidate);
-            if (!sameEmbeddingModel(currentAnalysis, candidate)
-                    || candidateEmbedding.size() != currentEmbedding.size()) {
-                continue;
-            }
-            double similarity = cosine(currentEmbedding, candidateEmbedding);
-            List<String> sharedTopics = sharedTopicTerms(
-                    currentVersion,
-                    currentAnalysis,
-                    candidate.getDocumentVersion(),
-                    candidate
-            );
-            List<String> sharedTitleTopics = sharedTitleTopicTerms(
-                    currentVersion,
-                    candidate.getDocumentVersion()
-            );
-            boolean strongTitleMatch = sharedTitleTopics.stream()
-                    .anyMatch(term -> term.length() >= 6);
-            if (!sharedTopics.isEmpty()
-                    && (similarity >= MIN_COSINE_SIMILARITY || strongTitleMatch)) {
-                List<String> reasons = strongTitleMatch ? sharedTitleTopics : sharedTopics;
-                int score = (int) Math.round(similarity * 100);
-                scored.add(new ScoredCandidate(
-                        candidate,
-                        strongTitleMatch ? Math.max(score, 85) : score,
-                        reasons
-                ));
-            }
-        }
-
-        List<SimilarNoticeResponse.SimilarNotice> matches = scored.stream()
-                .sorted(Comparator.comparingInt(ScoredCandidate::score).reversed())
+        List<SimilarNoticeResponse.SimilarNotice> matches = HybridNoticeRanker.rank(queryTitle, queryPurpose, inputs).stream()
+                .flatMap(match -> toResponse(currentAnalysis, scored.get(match.id()), match.basis()).stream())
                 .limit(MAX_RESULTS)
-                .map(candidate -> toResponse(currentVersion, currentAnalysis, candidate))
                 .toList();
         return new SimilarNoticeResponse(currentSide, matches);
     }
 
-    private SimilarNoticeResponse.SimilarNotice toResponse(
-            DocumentVersion currentVersion,
+    private Optional<SimilarNoticeResponse.SimilarNotice> toResponse(
             DocumentAnalysis currentAnalysis,
-            ScoredCandidate scored
+            ScoredCandidate scored, String matchBasis
     ) {
-        DocumentVersion candidateVersion = scored.analysis().getDocumentVersion();
-        DocumentDetection latestDetection = detectionRepository
-                .findTopByDocumentIdOrderByDetectedAtDescIdDesc(candidateVersion.getDocument().getId())
-                .orElseThrow(() -> new DocumentDetectionException(DocumentDetectionResponseCode.NOT_FOUND));
-        return new SimilarNoticeResponse.SimilarNotice(
-                latestDetection.getId(),
-                scored.score(),
-                candidateVersion.getTitle(),
-                candidateVersion.getDocument().getOriginalUrl(),
-                side(candidateVersion, scored.analysis()),
-                legalReview(currentAnalysis, scored.analysis(), scored.sharedTopics())
-        );
+        DocumentAnalysis candidateAnalysis = analysisRepository.findByDocumentVersionId(scored.versionId()).orElse(null);
+        if (candidateAnalysis == null) return Optional.empty();
+        DocumentVersion candidateVersion = candidateAnalysis.getDocumentVersion();
+        return detectionRepository
+                .findTopByDocumentVersionIdOrderByDetectedAtDescIdDesc(candidateVersion.getId())
+                .map(latestDetection -> new SimilarNoticeResponse.SimilarNotice(
+                        latestDetection.getId(),
+                        Double.isFinite(scored.similarity()) ? (int) Math.round(scored.similarity() * 100) : null,
+                        candidateVersion.getTitle(),
+                        candidateVersion.getDocument().getOriginalUrl(),
+                        side(candidateVersion, candidateAnalysis),
+                        legalReview(currentAnalysis, candidateAnalysis, scored.sharedTopics()),
+                        matchBasis
+                ));
     }
 
     private SimilarNoticeResponse.LegalReview legalReview(
@@ -157,16 +171,16 @@ public class SimilarNoticeService {
                 legalRiskCheck("PROPOSAL_TEXT_REUSE", "제안서 문장·자료 재사용", currentAnalysis, candidateAnalysis)
         );
         List<String> restrictedLabels = checks.stream()
-                .filter(check -> check.status().equals("HIGH"))
+                .filter(check -> check.status().equals("RESTRICTION_FOUND"))
                 .map(SimilarNoticeResponse.LegalRiskCheck::label)
                 .toList();
         String topic = topicPhrase(sharedTopics);
         String summary = restrictedLabels.isEmpty()
-                ? "두 공고의 " + topic + " 관련 원문에서 명시적인 중복·재사용 제한을 확인하지 못했습니다. 제한이 없다는 뜻은 아니므로 실제 신청 범위는 담당기관에 확인해야 합니다."
-                : "두 공고의 " + topic + " 관련 원문을 비교한 결과, "
-                        + String.join(", ", restrictedLabels) + " 항목에서 명시적인 제한을 확인했습니다.";
+                ? "두 공고의 " + topic + " 관련 제한 조항과 자료 확인 상태를 아래에서 확인하세요. 조항 미발견은 제한 없음이나 동시 신청 가능을 뜻하지 않습니다."
+                : "두 공고의 " + topic + " 관련 원문 중 "
+                        + String.join(", ", restrictedLabels) + " 항목의 제한 조항을 발견했습니다. 실제 신청 과제·비용·성과물의 중복 여부는 확인되지 않아 두 사업의 충돌을 확정할 수 없습니다.";
         return new SimilarNoticeResponse.LegalReview(
-                restrictedLabels.isEmpty() ? "REVIEW_REQUIRED" : "HIGH", summary, checks,
+                restrictedLabels.isEmpty() ? "REVIEW_REQUIRED" : "RESTRICTION_FOUND", summary, checks,
                 "공고 원문 기반의 사전 위험 점검이며 법률 자문이 아닙니다. 최종 신청 전 공고 담당기관과 법무·재무 담당자의 확인이 필요합니다."
         );
     }
@@ -183,9 +197,22 @@ public class SimilarNoticeService {
         List<String> evidenceParts = new ArrayList<>();
         if (!current.evidence().isBlank()) evidenceParts.add("현재 공고: “" + current.evidence() + "”");
         if (!candidate.evidence().isBlank()) evidenceParts.add("유사 공고: “" + candidate.evidence() + "”");
+        List<SimilarNoticeResponse.VerifiedLegalEvidence> verifiedEvidence = new ArrayList<>();
+        if (Set.of("RESTRICTION_FOUND", "CAUTION").contains(current.status()) && !current.evidence().isBlank()) {
+            verifiedEvidence.add(new SimilarNoticeResponse.VerifiedLegalEvidence("현재 공고", current.summary(), current.evidence()));
+        }
+        if (Set.of("RESTRICTION_FOUND", "CAUTION").contains(candidate.status()) && !candidate.evidence().isBlank()) {
+            verifiedEvidence.add(new SimilarNoticeResponse.VerifiedLegalEvidence("유사 공고", candidate.summary(), candidate.evidence()));
+        }
         return new SimilarNoticeResponse.LegalRiskCheck(
-                type, label, restrictionFound ? "HIGH" : "REVIEW_REQUIRED", finding,
-                String.join(" ", evidenceParts)
+                type, label, restrictionFound ? "RESTRICTION_FOUND"
+                        : "ASSESSMENT_INCOMPLETE".equals(current.status()) || "ASSESSMENT_INCOMPLETE".equals(candidate.status())
+                        ? "ASSESSMENT_INCOMPLETE"
+                        : "DATA_INSUFFICIENT".equals(current.status()) || "DATA_INSUFFICIENT".equals(candidate.status())
+                        ? "DATA_INSUFFICIENT"
+                        : "NOT_FOUND".equals(current.status()) && "NOT_FOUND".equals(candidate.status())
+                        ? "NOT_FOUND" : "REVIEW_REQUIRED", finding,
+                String.join(" ", evidenceParts), List.copyOf(verifiedEvidence)
         );
     }
 
@@ -212,36 +239,7 @@ public class SimilarNoticeService {
         return LegalFinding.missing();
     }
 
-    private List<String> sharedTopicTerms(
-            DocumentVersion currentVersion,
-            DocumentAnalysis currentAnalysis,
-            DocumentVersion candidateVersion,
-            DocumentAnalysis candidateAnalysis
-    ) {
-        Set<String> current = topicTerms(currentVersion, currentAnalysis);
-        Set<String> candidate = topicTerms(candidateVersion, candidateAnalysis);
-        Set<String> shared = new LinkedHashSet<>();
-        for (String currentTerm : current) {
-            for (String candidateTerm : candidate) {
-                String common = sharedTopicTerm(currentTerm, candidateTerm);
-                if (common != null) shared.add(common);
-                if (shared.size() == 5) return List.copyOf(shared);
-            }
-        }
-        return List.copyOf(shared);
-    }
-
-    private List<String> sharedTitleTopicTerms(
-            DocumentVersion currentVersion,
-            DocumentVersion candidateVersion
-    ) {
-        return sharedTerms(
-                topicTerms(currentVersion.getTitle(), ""),
-                topicTerms(candidateVersion.getTitle(), "")
-        );
-    }
-
-    private List<String> sharedTerms(Set<String> current, Set<String> candidate) {
+    private List<String> sharedTopicTerms(Set<String> current, Set<String> candidate) {
         Set<String> shared = new LinkedHashSet<>();
         for (String currentTerm : current) {
             for (String candidateTerm : candidate) {
@@ -261,27 +259,34 @@ public class SimilarNoticeService {
         return null;
     }
 
-    private Set<String> topicTerms(DocumentVersion version, DocumentAnalysis analysis) {
-        ComparisonFields fields = comparisonFields(analysis);
-        String content = version.getContentText() == null ? "" : version.getContentText();
-        String purpose = fields == null ? purpose(content, analysis) : fields.purpose();
-        String organization = version.getDocument().getMonitoringSource().getOrganizationName();
-        return topicTerms(version.getTitle() + " " + purpose, organization);
-    }
-
     private Set<String> topicTerms(String value, String organization) {
         String source = (organization == null || organization.isBlank()
                 ? value
                 : value.replace(organization, " ")).toLowerCase(Locale.ROOT);
+        source = Normalizer.normalize(source, Normalizer.Form.NFKC)
+                .replaceAll("인공\\s*지능|artificial\\s+intelligence", "ai")
+                .replaceAll("예지\\s*보전|예측\\s*정비", "예지보전")
+                .replaceAll("결함\\s*탐지|불량\\s*검출", "결함탐지")
+                .replaceAll("스마트\\s*팩토리|스마트\\s*공장|지능형\\s*공장", "스마트공장")
+                .replaceAll("국제\\s*공동\\s*연구|해외\\s*공동\\s*연구", "국제공동연구");
         Set<String> terms = new LinkedHashSet<>();
         for (String raw : source.split("[^0-9a-z가-힣]+")) {
-            String term = canonicalTopicTerm(raw);
-            if (term.length() >= 2 && !term.matches("20[0-9]{2}(?:년|년도)?")
+            String term = canonicalTopicTerm(stripParticle(raw));
+            if (term.length() >= 2 && !term.matches("[0-9]+(?:년|년도|차|회)?")
                     && !isGenericTopicTerm(term)) {
                 terms.add(term);
             }
         }
         return terms;
+    }
+
+    private String stripParticle(String term) {
+        for (String suffix : List.of("에서는", "으로", "에서", "에게", "와", "과", "을", "를", "은", "는", "의")) {
+            if (term.endsWith(suffix) && term.length() - suffix.length() >= 2) {
+                return term.substring(0, term.length() - suffix.length());
+            }
+        }
+        return term;
     }
 
     private String canonicalTopicTerm(String term) {
@@ -336,6 +341,14 @@ public class SimilarNoticeService {
     }
 
     private String purpose(String content, DocumentAnalysis analysis) {
+        if (analysis != null && analysis.getComparisonSummary() != null) {
+            try {
+                String savedPurpose = objectMapper.readTree(analysis.getComparisonSummary()).path("purpose").asText().strip();
+                if (!savedPurpose.isBlank()) return savedPurpose;
+            } catch (RuntimeException ignored) {
+                // Fall back to the source when legacy comparison JSON cannot be read.
+            }
+        }
         Matcher inlineSection = INLINE_PURPOSE_SECTION.matcher(normalizeText(content));
         if (inlineSection.find()) return cleanSourceLine(inlineSection.group(1));
 
@@ -427,30 +440,39 @@ public class SimilarNoticeService {
             JsonNode values = objectMapper.readTree(analysis.getSimilarityEmbedding());
             if (!values.isArray()) return List.of();
             List<Double> result = new ArrayList<>();
-            for (JsonNode value : values) result.add(value.asDouble());
+            boolean nonzero = false;
+            for (JsonNode value : values) {
+                if (!value.isNumber()) return List.of();
+                double number = value.asDouble();
+                if (!Double.isFinite(number)) return List.of();
+                nonzero |= number != 0;
+                result.add(number);
+            }
+            if (!nonzero) return List.of();
             return result;
         } catch (RuntimeException exception) {
             return List.of();
         }
     }
 
-    private boolean sameEmbeddingModel(DocumentAnalysis left, DocumentAnalysis right) {
-        return left.getEmbeddingModelName() != null
-                && left.getEmbeddingModelName().equals(right.getEmbeddingModelName());
+    private double[] unitVector(List<Double> values) {
+        double scale = values.stream().mapToDouble(Math::abs).max().orElse(0);
+        if (scale == 0) return new double[0];
+        double[] vector = new double[values.size()];
+        double norm = 0;
+        for (int i = 0; i < vector.length; i++) {
+            vector[i] = values.get(i) / scale;
+            norm += vector[i] * vector[i];
+        }
+        norm = Math.sqrt(norm);
+        for (int i = 0; i < vector.length; i++) vector[i] /= norm;
+        return vector;
     }
 
-    private double cosine(List<Double> left, List<Double> right) {
-        double dot = 0;
-        double leftNorm = 0;
-        double rightNorm = 0;
-        for (int index = 0; index < left.size(); index++) {
-            double leftValue = left.get(index);
-            double rightValue = right.get(index);
-            dot += leftValue * rightValue;
-            leftNorm += leftValue * leftValue;
-            rightNorm += rightValue * rightValue;
-        }
-        return leftNorm == 0 || rightNorm == 0 ? 0 : dot / Math.sqrt(leftNorm * rightNorm);
+    private double dot(double[] left, double[] right) {
+        double value = 0;
+        for (int i = 0; i < left.length; i++) value += left[i] * right[i];
+        return Math.max(-1, Math.min(1, value));
     }
 
     private String firstMatch(Pattern pattern, String value, String fallback) {
@@ -463,15 +485,15 @@ public class SimilarNoticeService {
     }
 
     private record ScoredCandidate(
-            DocumentAnalysis analysis,
-            int score,
+            Long versionId,
+            double similarity,
             List<String> sharedTopics
     ) {
     }
 
     private record LegalFinding(String status, String summary, String evidence) {
         private static LegalFinding missing() {
-            return new LegalFinding("NOT_FOUND", "원문에서 관련 제한을 확인하지 못했습니다.", "");
+            return new LegalFinding("ASSESSMENT_INCOMPLETE", "저장된 분석이 없거나 읽을 수 없어 판정이 미완료입니다.", "");
         }
     }
     private record ComparisonFields(

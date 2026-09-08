@@ -1,8 +1,11 @@
 import asyncio
 import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from app.domains.analysis.proposal_drafting import (
     CORE_PROPOSAL_SECTION_TITLES,
+    LangChainProposalGenerationRunner,
     ProposalDraftOutput,
     ProposalModelOutput,
     TwoStageAnalysisWorkflow,
@@ -694,3 +697,37 @@ def test_duplicate_documents_keep_distinct_stage_and_evidence() -> None:
     matches = [row for row in draft.preparation.submission_documents if row.title == item.title]
     assert len(matches) == 2
     assert {row.stage for row in matches} == {item.stage, RequirementStage.AGREEMENT}
+
+
+def test_proposal_generation_reads_both_profiles_and_persists_demo_usage() -> None:
+    async def scenario():
+        runner = LangChainProposalGenerationRunner.__new__(LangChainProposalGenerationRunner)
+        runner._settings = SimpleNamespace(max_text_chars=20_000, proposal_timeout_seconds=5)
+        draft = await ProposalRunner().generate(document(), result())
+        draft.preparation.eligibility_checklist[0].detail = (
+            "데모 가정에서는 회사에 관련 역량이 있지만 원본 증빙 확인이 필요합니다."
+        )
+        original_source = draft.preparation.eligibility_checklist[0].source.model_dump()
+        runner._draft_model = AsyncMock()
+        runner._draft_model.ainvoke.return_value = draft
+        workflow = TwoStageAnalysisWorkflow(BaseWorkflow(result()), runner)
+        generated = await workflow.analyze(document())
+        prompt = runner._draft_model.ainvoke.call_args.args[0]
+        assert "BISTelligence" in prompt
+        assert "SYNTHETIC_DEMO" in prompt and "DEMO-NEED-GPU" in prompt
+        assert generated.proposal.uses_demo_profile is True
+        checklist = generated.proposal.preparation.eligibility_checklist[0]
+        assert "데모 가정" not in checklist.detail
+        assert checklist.source.model_dump() == original_source
+        assert generated.model_dump(by_alias=True)["proposal"]["usesDemoProfile"] is True
+
+    asyncio.run(scenario())
+
+
+def test_skipped_or_failed_proposal_keeps_base_analysis_demo_usage() -> None:
+    for document_type, fail in [("BUSINESS_NOTICE", False), ("PROPOSAL_REQUEST", True)]:
+        base = result(document_type=document_type)
+        base.proposal.uses_demo_profile = True
+        workflow = TwoStageAnalysisWorkflow(BaseWorkflow(base), ProposalRunner(fail=fail))
+        generated = asyncio.run(workflow.analyze(document()))
+        assert generated.proposal.uses_demo_profile is True

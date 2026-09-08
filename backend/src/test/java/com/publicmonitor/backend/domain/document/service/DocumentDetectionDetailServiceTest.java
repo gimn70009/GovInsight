@@ -40,6 +40,32 @@ class DocumentDetectionDetailServiceTest {
     @Mock DocumentAttachmentRepository attachmentRepository;
 
     @Test
+    void 데모_사용_표시는_저장_JSON을_거쳐_유지되고_기존_결과는_미사용으로_표시한다() {
+        ObjectMapper mapper = new ObjectMapper();
+        var incoming = mapper.readValue(
+                "{\"sections\":[],\"usesDemoProfile\":true}",
+                com.publicmonitor.backend.domain.analysis.web.dto.AnalysisResultRequest.Proposal.class
+        );
+        String stored = mapper.writeValueAsString(incoming);
+        com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionDetailResponse.Proposal parsed =
+                ReflectionTestUtils.invokeMethod(service(), "parseProposal", stored);
+        assertThat(parsed.usesDemoProfile()).isTrue();
+        com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionDetailResponse.Proposal legacy =
+                ReflectionTestUtils.invokeMethod(service(), "parseProposal", "{\"sections\":[]}");
+        assertThat(legacy.usesDemoProfile()).isFalse();
+        var legacyInput = mapper.readValue(
+                "{\"sections\":[]}",
+                com.publicmonitor.backend.domain.analysis.web.dto.AnalysisResultRequest.Proposal.class
+        );
+        assertThat(legacyInput.usesDemoProfile()).isFalse();
+        var pair = mapper.readValue(
+                "{\"status\":\"COMPLETED\",\"insights\":[],\"message\":null,\"usesDemoProfile\":true}",
+                com.publicmonitor.backend.domain.document.web.dto.LegalPairResponse.class
+        );
+        assertThat(pair.usesDemoProfile()).isTrue();
+    }
+
+    @Test
     void 프론트가_바로_사용할_수_있는_구조화된_상세를_반환한다() {
         LocalDateTime now = LocalDateTime.of(2026, 8, 24, 9, 0);
         MonitoringSource source = MonitoringSource.create(

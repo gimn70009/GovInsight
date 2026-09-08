@@ -8,11 +8,12 @@ public record SimilarNoticeResponse(
 ) {
     public record SimilarNotice(
             Long detectionId,
-            int similarityScore,
+            Integer similarityScore,
             String title,
             String originalUrl,
             ComparisonSide comparison,
-            LegalReview legalReview
+            LegalReview legalReview,
+            String matchBasis
     ) {
     }
 
@@ -29,9 +30,12 @@ public record SimilarNoticeResponse(
             String label,
             String status,
             String finding,
-            String evidence
+            String evidence,
+            List<VerifiedLegalEvidence> verifiedEvidence
     ) {
     }
+
+    public record VerifiedLegalEvidence(String side, String interpretation, String excerpt) {}
 
     public record ComparisonSide(
             String organizationName,

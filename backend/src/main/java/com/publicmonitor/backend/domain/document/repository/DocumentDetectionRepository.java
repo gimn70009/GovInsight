@@ -41,7 +41,7 @@ public interface DocumentDetectionRepository extends JpaRepository<DocumentDetec
 
     boolean existsByMonitoringRunSourceIdAndDocumentId(Long runSourceId, Long documentId);
 
-    Optional<DocumentDetection> findTopByDocumentIdOrderByDetectedAtDescIdDesc(Long documentId);
+    Optional<DocumentDetection> findTopByDocumentVersionIdOrderByDetectedAtDescIdDesc(Long versionId);
 
     @Query(value = SUMMARY_QUERY + " order by detection.detectedAt desc, detection.id desc", countQuery = SUMMARY_COUNT_QUERY)
     Page<DocumentDetectionSummaryRow> findSummaries(

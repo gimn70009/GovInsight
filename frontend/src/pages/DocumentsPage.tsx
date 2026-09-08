@@ -538,20 +538,31 @@ function DocumentDrawer({ detectionId, onClose, bookmarked, bookmarkPending, boo
   const [similarLoading, setSimilarLoading] = useState(true)
 
   useEffect(() => {
+    let active = true
     setLoading(true)
+    setError('')
+    setDetail(null)
+    setSimilarNotices(null)
     api.getDocument(detectionId)
-      .then(setDetail)
-      .catch((cause) => setError(cause instanceof Error ? cause.message : '상세 내용을 불러오지 못했습니다.'))
-      .finally(() => setLoading(false))
+      .then((value) => { if (active) setDetail(value) })
+      .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : '상세 내용을 불러오지 못했습니다.') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
   }, [detectionId])
 
   useEffect(() => {
-    if (!detail?.analysis) return
+    let active = true
+    setSimilarNotices(null)
+    if (!detail?.analysis) {
+      setSimilarLoading(false)
+      return
+    }
     setSimilarLoading(true)
     api.getSimilarNotices(detectionId)
-      .then(setSimilarNotices)
-      .catch(() => setSimilarNotices(null))
-      .finally(() => setSimilarLoading(false))
+      .then((value) => { if (active) setSimilarNotices(value) })
+      .catch(() => { if (active) setSimilarNotices(null) })
+      .finally(() => { if (active) setSimilarLoading(false) })
+    return () => { active = false }
   }, [detectionId, Boolean(detail?.analysis)])
 
   useEffect(() => {
@@ -690,11 +701,12 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
         </div>
       </header>
 
+      {analysis?.proposal.usesDemoProfile && <p className="company-context-note">실제 회사 소개와 데모 가정을 함께 참고한 결과입니다. 고객 프로젝트·자원·인력·서류 정보에는 가상 설정이 포함됩니다.</p>}
       {analysis && (
         <nav className="detail-tabs" aria-label="문서 상세 보기">
           <button className={activeDetailTab === 'ANALYSIS' ? 'active' : ''} onClick={() => setActiveDetailTab('ANALYSIS')}>공고 분석</button>
           {showProposalTab && <button className={activeDetailTab === 'PROPOSAL' ? 'active' : ''} onClick={() => setActiveDetailTab('PROPOSAL')}>사업 제안</button>}
-          <button className={activeDetailTab === 'SIMILAR' ? 'active' : ''} onClick={() => setActiveDetailTab('SIMILAR')}>유사 공고 비교{!similarLoading && ` ${similarNotices?.similarNotices.length ?? 0}`}</button>
+          <button className={activeDetailTab === 'SIMILAR' ? 'active' : ''} onClick={() => setActiveDetailTab('SIMILAR')}>유사 공고 비교{!similarLoading && similarNotices && ` ${similarNotices.similarNotices.length}`}</button>
         </nav>
       )}
 
@@ -857,7 +869,7 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
               )}
             </section>
           ) : activeDetailTab === 'SIMILAR' ? (
-            <SimilarNoticeComparison result={similarNotices} loading={similarLoading} currentTitle={detail.title} currentOriginalUrl={detail.originalUrl} />
+            <SimilarNoticeComparison currentId={detail.detectionId} result={similarNotices} loading={similarLoading} currentTitle={detail.title} currentOriginalUrl={detail.originalUrl} />
           ) : null}
         </>
       ) : (
@@ -896,18 +908,19 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
   )
 }
 
-function SimilarNoticeComparison({ result, loading, currentTitle, currentOriginalUrl }: { result: SimilarNoticeResult | null; loading: boolean; currentTitle: string; currentOriginalUrl: string }) {
+function SimilarNoticeComparison({ currentId, result, loading, currentTitle, currentOriginalUrl }: { currentId: number; result: SimilarNoticeResult | null; loading: boolean; currentTitle: string; currentOriginalUrl: string }) {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [expandedCell, setExpandedCell] = useState<{ title: string; content: string } | null>(null)
   useEffect(() => { setSelectedIndex(0) }, [result])
 
   if (loading) return <Loading label="기존 공고와 사업 목적과 수행 내용을 비교하고 있어요" />
-  if (!result || result.similarNotices.length === 0) {
+  if (!result) return <InlineError message="비교 결과를 불러오지 못했습니다. 분석 완료 여부를 확인하고 문서를 다시 열어주세요." />
+  if (result.similarNotices.length === 0) {
     return (
       <section className="detail-section similar-notice-empty">
         <span><Search size={22} /></span>
-        <h3>충분히 유사한 공고가 없습니다</h3>
-        <p>제목이나 일부 일반 단어만 비슷한 공고는 비교 대상에서 제외했어요.</p>
+        <h3>현재 비교 기준을 충족하는 공고가 없습니다</h3>
+        <p>분석된 공고 중 하이브리드 검색과 최종 선택 기준을 충족하는 결과가 없습니다.</p>
       </section>
     )
   }
@@ -943,8 +956,8 @@ function SimilarNoticeComparison({ result, loading, currentTitle, currentOrigina
   return (
     <section className="detail-section similar-notice-panel">
       <div className="similar-notice-panel__header">
-        <div><small>SIMILAR NOTICE</small><h3>유사 공고 비교</h3><p>사업 목적과 수행 내용이 모두 충분히 유사한 공고만 표시해요.</p></div>
-        <Badge tone="info">{selected.similarityScore >= 88 ? '의미 유사도 매우 높음' : '의미 유사도 높음'}</Badge>
+        <div><small>SIMILAR NOTICE</small><h3>유사 공고 비교</h3><p>의미 검색과 제목·사업 목적의 어휘 검색을 결합한 비교 후보입니다.</p></div>
+        <Badge tone="info">{selected.matchBasis === 'LEXICAL_ONLY' ? '사업 목적·어휘 일치 후보' : selected.matchBasis === 'LEXICAL' ? '어휘 근거 중심 후보' : selected.matchBasis === 'SEMANTIC' ? '의미 근거 중심 후보' : '의미·어휘 비교 후보'}</Badge>
       </div>
       {result.similarNotices.length > 1 && (
         <label className="similar-notice-select"><span>비교할 공고</span><select value={selectedIndex} onChange={(event) => setSelectedIndex(Number(event.target.value))}>{result.similarNotices.map((notice, index) => <option key={notice.detectionId} value={index}>{notice.title}</option>)}</select></label>
@@ -957,12 +970,11 @@ function SimilarNoticeComparison({ result, loading, currentTitle, currentOrigina
       </div>
 
       <section className="legal-review">
-        <header><span><ShieldCheck size={19} /></span><div><small>LEGAL RISK CHECK</small><h4>중복·재사용 위험 점검</h4></div></header>
-        <p className={`legal-review__overview${legalReview.overallStatus === 'HIGH' ? ' legal-review__overview--high' : ''}`}>{legalReview.summary}</p>
+        <LegalPairInsightPanel key={`${currentId}-${selected.detectionId}`} currentId={currentId} similarId={selected.detectionId} review={selected.legalReview} />
         <div className="legal-review__check-list">{legalReview.checks.map((check) => {
-          const findings = splitLegalComparison(check.finding)
+          const findings = splitLegalComparison(formatLegalFinding(check.finding))
           const evidence = splitLegalComparison(check.evidence)
-          return <details key={check.type}><summary><strong>{check.label}</strong><span aria-hidden="true"><ChevronDown size={15} /></span></summary><div className="legal-review__detail"><div className="legal-review__sources"><section><small>현재 공고</small><p>{findings.current}</p>{evidence.current && <blockquote><b>원문 근거</b>{evidence.current}</blockquote>}</section><section><small>유사 공고</small><p>{findings.similar}</p>{evidence.similar && <blockquote><b>원문 근거</b>{evidence.similar}</blockquote>}</section></div></div></details>
+          return <details key={check.type}><summary><strong>{check.label}</strong><span aria-hidden="true"><ChevronDown size={15} /></span></summary><div className="legal-review__detail"><div className="legal-review__sources"><section><small>현재 공고</small><p>{findings.current}</p>{evidence.current && <blockquote><b>관련 원문</b><ExpandableComparisonCell content={evidence.current} onExpand={() => setExpandedCell({ title: '현재 공고 원문 근거', content: evidence.current })} /></blockquote>}</section><section><small>유사 공고</small><p>{findings.similar}</p>{evidence.similar && <blockquote><b>관련 원문</b><ExpandableComparisonCell content={evidence.similar} onExpand={() => setExpandedCell({ title: '유사 공고 원문 근거', content: evidence.similar })} /></blockquote>}</section></div></div></details>
         })}</div>
         <p className="legal-review__disclaimer">{legalReview.disclaimer}</p>
       </section>
@@ -1000,6 +1012,88 @@ function ComparisonCellDialog({ title, content, onClose }: { title: string; cont
   }, [onClose])
 
   return <div className="comparison-dialog-backdrop" role="presentation" onMouseDown={onClose}><section className="comparison-dialog" role="dialog" aria-modal="true" aria-labelledby="comparison-dialog-title" onMouseDown={(event) => event.stopPropagation()}><header><div><small>전체 내용</small><h3 id="comparison-dialog-title">{title}</h3></div><button type="button" aria-label="닫기" onClick={onClose}><X size={20} /></button></header><div className="comparison-dialog__content">{content}</div><footer><button type="button" className="button button--primary" onClick={onClose}>확인</button></footer></section></div>
+}
+
+function LegalPairInsightPanel({ currentId, similarId, review }: { currentId: number; similarId: number; review: unknown }) {
+  const [result, setResult] = useState<Awaited<ReturnType<typeof api.compareLegalPair>> | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const active = useRef<AbortController | null>(null)
+  useEffect(() => {
+    setResult(null)
+    setLoading(false)
+    setError('')
+    return () => active.current?.abort()
+  }, [review])
+  const labels: Record<string, string> = {
+    DUPLICATE_SUPPORT: '중복지원', COST_DOUBLE_COUNTING: '사업비·인건비 중복계상',
+    RESULT_IP_REUSE: '성과물·지식재산 재사용', CONFIDENTIALITY: '비밀정보·영업비밀',
+    PROPOSAL_TEXT_REUSE: '제안서 문장·자료 재사용',
+  }
+  const unavailableMessage = '요약을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요. 아래 공고별 내용은 바로 확인할 수 있습니다.'
+  const statusMessage = loading
+    ? '공고에 적힌 조건을 비교하고 있습니다. 잠시만 기다려 주세요.'
+    : error || (result?.status === 'NEEDS_EVIDENCE'
+      ? '비교에 필요한 조항이 부족해 요약을 만들지 못했습니다. 아래 항목을 펼쳐 공고별 내용과 관련 원문을 확인해 주세요.'
+      : result?.status === 'UNAVAILABLE' ? unavailableMessage : '')
+  const canCompare = !result || result.status === 'UNAVAILABLE'
+  const retrying = Boolean(error) || result?.status === 'UNAVAILABLE'
+
+  async function compare() {
+    active.current?.abort()
+    const controller = new AbortController()
+    active.current = controller
+    setLoading(true)
+    setError('')
+    try {
+      const response = await api.compareLegalPair(currentId, similarId, controller.signal)
+      if (!controller.signal.aborted) setResult(response)
+    } catch {
+      if (!controller.signal.aborted) setError(unavailableMessage)
+    } finally {
+      if (!controller.signal.aborted) setLoading(false)
+    }
+  }
+  return <div className="legal-pair-insight">
+    <div className="legal-pair-insight__header">
+      <div className="legal-pair-insight__heading">
+        <span className="legal-pair-insight__icon" aria-hidden="true"><ShieldCheck size={19} /></span>
+        <div>
+          <h4>함께 신청할 때 주의할 점</h4>
+          <p className="legal-pair-insight__description">두 공고의 중복지원 제한, 비용 중복 청구, 제안서 재사용 조건을 비교합니다.</p>
+        </div>
+      </div>
+      {canCompare && <button type="button" className="legal-pair-insight__button" disabled={loading} onClick={compare}>
+        {loading ? <RefreshCw size={14} className="legal-pair-insight__spinner" aria-hidden="true" /> : <Sparkles size={14} aria-hidden="true" />}
+        {loading ? '요약 중…' : retrying ? '다시 시도' : '주의사항 요약'}
+      </button>}
+    </div>
+    <div role="status" aria-live="polite" aria-atomic="true">
+      {statusMessage && <p className="legal-pair-insight__status">{statusMessage}</p>}
+      {result?.status === 'COMPLETED' && <p className="legal-pair-insight__status">확인된 조항을 바탕으로 정리한 주의사항입니다. 자세한 원문은 아래 항목에서 확인할 수 있습니다.</p>}
+    </div>
+    {result?.status === 'COMPLETED' && result.usesDemoProfile && <p className="company-context-note">이 비교는 실제 회사 소개와 데모 가정을 함께 참고했습니다.</p>}
+    {result?.status === 'COMPLETED' && <div className="legal-pair-insight__results">
+      {result.insights.map((item) => <article key={item.type}>
+        <h5>{labels[item.type] ?? '신청 조건'}</h5>
+        <dl>
+          <dt>공고별 조건</dt><dd>{item.comparison}</dd>
+          <dt>주의할 점</dt><dd>{item.implication}</dd>
+          <dt>직접 확인할 내용</dt><dd>{item.verification}</dd>
+        </dl>
+      </article>)}
+    </div>}
+  </div>
+}
+
+function formatLegalFinding(value: string) {
+  return value
+    .replace(/\s*첨부\s*\d+개의\s*추출\s*텍스트가 없어 전체 자료 확인은 미완료입니다\./g, '')
+    .replaceAll('자동 분석에서 이 항목의 검토 결과가 반환되지 않았습니다.', '검토가 완료되지 않았습니다. 원문을 확인해 주세요.')
+    .replaceAll('자동 분석 중 오류가 발생하여 검토를 완료하지 못했습니다.', '검토 중 문제가 발생했습니다. 원문을 확인해 주세요.')
+    .replaceAll('분석 결과의 근거를 원문과 대조하지 못해 판단을 보류했습니다.', '판단의 근거를 확인하지 못했습니다. 원문 확인이 필요합니다.')
+    .replaceAll('관련 후보 문구를 찾았으나 의미를 자동 확정하지 못했습니다.', '관련 문구가 있으나, 제한 여부는 추가 확인이 필요합니다.')
+    .trim()
 }
 
 function splitLegalComparison(value: string) {

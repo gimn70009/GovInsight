@@ -324,6 +324,8 @@ def _business_rule_violations(
     }
     company_fit_score = dimension_scores.get(OpportunityDimensionType.COMPANY_FIT, 0)
     _normalize_deterministic_business_fields(path, company_fit_score, candidate)
+    _add_expired_notice_context(candidate)
+    violations.extend(_expired_narrative_violations(candidate))
     for section in candidate.draft.proposal.sections:
         if not re.search(r"[.!?。][\"'’”)]*$", section.body.rstrip()):
             violations.append(
@@ -392,6 +394,8 @@ def _normalize_proposal_recommendation(candidate: AgentAnalysis) -> None:
         return
     proposal.draft_status = ProposalDraftStatus.NOT_RECOMMENDED
     proposal.draft_reason = (
+        "신청 접수기한이 지나 신규 접수가 불가능하므로 제안서 작성을 권장하지 않습니다."
+        if _application_expired(candidate) else
         "신청 자격이 없거나 회사 적합도가 제안 생성 기준인 61점에 미달하여 "
         "제안 생성을 권장하지 않습니다."
     )
@@ -459,6 +463,76 @@ def _normalize_expired_application(candidate: AgentAnalysis) -> None:
     candidate.draft.proposal.preparation = None
 
 
+
+def _application_expired(candidate: AgentAnalysis) -> bool:
+    return any(
+        item.type == OpportunityDimensionType.URGENCY and "마감 지남" in item.reason
+        for item in candidate.draft.opportunity.dimensions
+    )
+
+
+def _comparison_deadline(candidate: AgentAnalysis) -> date | None:
+    text = candidate.draft.comparison_summary.application_deadline
+    # A date range has an end; unrelated multiple dates are ambiguous and stay unparsed.
+    date_pattern = r"20\d{2}(?:[-./]\d{1,2}[-./]\d{1,2}|\s*년\s*\d{1,2}\s*월\s*\d{1,2}\s*일)"
+    matches = re.findall(date_pattern, text)
+    if len(matches) == 1:
+        # Do not mistake a start date followed by a yearless end date for the deadline.
+        if re.search(r"[~∼～]|부터", text):
+            return None
+        return _deadline_from_reason(matches[0])
+    if len(matches) == 2 and re.search(r"[~∼～]|부터", text):
+        return _deadline_from_reason(matches[-1])
+    return None
+
+
+def _add_expired_notice_context(candidate: AgentAnalysis) -> None:
+    if not _application_expired(candidate):
+        return
+    note = "접수가 종료된 공고로 현재 신규 신청은 불가능합니다."
+    for section in candidate.draft.proposal.sections:
+        if section.title != "이 공고에서 중요하게 볼 점":
+            continue
+        if re.search(r"접수[^.]{0,25}(?:종료|지났|불가)", section.body):
+            return
+        if len(note) + len(section.body) + 2 <= 1000:
+            section.body = note + "\n\n" + section.body
+        # Oversized output is handled by the existing bounded repair path below.
+
+
+def _expired_narrative_violations(candidate: AgentAnalysis) -> list[str]:
+    if not _application_expired(candidate):
+        return []
+    violations = []
+    text_fields = [candidate.draft.summary, *candidate.draft.key_points]
+    text_fields.extend(section.body for section in candidate.draft.proposal.sections)
+    for text in text_fields:
+        # Keep dates such as 2026.4.23 intact; Korean sentence ends carry a final verb.
+        for sentence in re.split(r"(?<=[다요][.!?])\s+|\n+", text):
+            if re.search(r"차년도|차기|다음\s*(?:회차|공고)|후속\s*(?:공고|모집)", sentence):
+                continue
+            if re.search(
+                r"예정이었습니다|예정이었으|예정이었고|불가능|불가|권장하지|필요하지|"
+                r"진행하지|준비하지|요구되지|없습니다|않습니다", sentence,
+            ):
+                continue
+            if re.search(
+                r"(?:신청|접수|제출|발표|평가).{0,90}"
+                r"(?:준비.{0,25}(?:중요|필요|권장)|(?:신청|접수|제출).{0,10}(?:권장|가능)|예정|서둘러|해야\s*합니다)",
+                sentence,
+            ):
+                violations.append(
+                    "접수 종료 공고에 현재 신청·제출·발표 준비 또는 "
+                    "지난 평가를 예정으로 안내했습니다. "
+                    "지난 회차의 사실과 현재 가능한 행동을 구분해 공고 포인트를 다시 작성하세요."
+                )
+                break
+    sections = candidate.draft.proposal.sections
+    if not any(re.search(r"접수[^.]{0,25}(?:종료|지났|불가)", item.body) for item in sections):
+        violations.append("공고 포인트에 접수 종료와 현재 신규 신청 불가를 첫 문장으로 명시하세요.")
+    return list(dict.fromkeys(violations))
+
+
 def _urgency_score_violations(score: int, reason: str) -> list[str]:
     if _expected_urgency_score(reason) == score:
         return []
@@ -482,7 +556,7 @@ def _normalize_urgency_score(
     )
     if urgency is None:
         return
-    deadline = _deadline_from_reason(urgency.reason)
+    deadline = _comparison_deadline(candidate) or _deadline_from_reason(urgency.reason)
     if deadline is not None:
         today = analysis_date or datetime.now(timezone(timedelta(hours=9))).date()
         remaining_days = (deadline - today).days

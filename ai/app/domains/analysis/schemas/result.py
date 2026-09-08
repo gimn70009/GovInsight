@@ -53,13 +53,16 @@ class LegalRiskStatus(StrEnum):
     RESTRICTION_FOUND = "RESTRICTION_FOUND"
     CAUTION = "CAUTION"
     NOT_FOUND = "NOT_FOUND"
+    DATA_INSUFFICIENT = "DATA_INSUFFICIENT"
+    ASSESSMENT_INCOMPLETE = "ASSESSMENT_INCOMPLETE"
 
 
 class LegalRiskFinding(CamelCaseModel):
     type: LegalRiskType
     status: LegalRiskStatus
     summary: str = Field(min_length=5, max_length=500)
-    evidence_excerpt: str | None = Field(default=None, max_length=300)
+    evidence_excerpt: str | None = Field(default=None, max_length=3000)
+    failure_reason: str | None = Field(default=None, max_length=40)
 
 
 class ComparisonSummary(CamelCaseModel):
@@ -339,6 +342,7 @@ class ProposalPreparation(CamelCaseModel):
         return [_normalize_user_sentence(value) for value in values]
 
 class ProposalStrategy(CamelCaseModel):
+    uses_demo_profile: bool = False
     sections: list[ProposalSection] = Field(min_length=1, max_length=6)
     document_type: ProposalDocumentType = ProposalDocumentType.REVIEW_REQUIRED
     draft_status: ProposalDraftStatus = ProposalDraftStatus.NOT_APPLICABLE

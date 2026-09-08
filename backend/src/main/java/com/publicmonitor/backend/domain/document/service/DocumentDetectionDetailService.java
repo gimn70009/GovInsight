@@ -99,7 +99,8 @@ public class DocumentDetectionDetailService {
                 proposal.templateSections() == null ? List.of() : proposal.templateSections(),
                 proposal.draftSections() == null ? List.of() : proposal.draftSections(),
                 proposal.preparation(),
-                proposal.preparationSchemaVersion() == null ? 1 : proposal.preparationSchemaVersion()
+                proposal.preparationSchemaVersion() == null ? 1 : proposal.preparationSchemaVersion(),
+                proposal.usesDemoProfile()
         );
     }
 

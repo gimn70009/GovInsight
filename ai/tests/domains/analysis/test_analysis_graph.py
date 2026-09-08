@@ -1,12 +1,16 @@
 import asyncio
 from collections.abc import Sequence
 from datetime import date
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
 from app.domains.analysis.agent import (
     SYSTEM_PROMPT,
     AgentAnalysis,
+    LangChainAnalysisRunner,
+    _default_analysis_plan,
     _normalize_base_proposal,
     _strategy_instruction,
 )
@@ -806,3 +810,113 @@ def test_notice_insights_retry_incomplete_or_labeled_text(bad_body: str) -> None
     assert runner.call_count == 2
     assert "공고 포인트" in runner.feedbacks[1]
     assert result.proposal.sections[1].body == valid.draft.proposal.sections[1].body
+
+
+def test_general_analysis_reads_both_profiles_and_final_result_retains_demo_flag() -> None:
+    runner = LangChainAnalysisRunner.__new__(LangChainAnalysisRunner)
+    runner._settings = SimpleNamespace(
+        max_text_chars=20_000, timeout_seconds=5, model_name="mock-model",
+    )
+    runner._plan_analysis = AsyncMock(return_value=_default_analysis_plan(document().change_type))
+    draft = analysis(Favorability.NOT_APPLICABLE).draft
+    draft.proposal.sections[0].body = (
+        "데모 가정에서는 우리 회사는 GPU 한 대를 두 팀이 공유하고 있습니다."
+    )
+    runner._assess_legal_risks = AsyncMock(return_value=draft.comparison_summary.legal_risks)
+    runner._analysis_model = AsyncMock()
+    runner._analysis_model.ainvoke.return_value = draft.model_dump()
+    workflow = DocumentAnalysisWorkflow(runner=runner, max_attempts=1)
+
+    generated = asyncio.run(workflow.analyze(document()))
+
+    messages = runner._analysis_model.ainvoke.call_args.args[0]
+    assert "BISTelligence" in messages[1]["content"]
+    assert "SYNTHETIC_DEMO" in messages[1]["content"]
+    assert "DEMO-NEED-GPU" in messages[1]["content"]
+    assert generated.proposal.uses_demo_profile is True
+    assert generated.proposal.sections[0].body == (
+        "우리 회사는 GPU 한 대를 두 팀이 공유하고 있습니다."
+    )
+    assert generated.model_dump(by_alias=True)["proposal"]["usesDemoProfile"] is True
+
+
+@pytest.mark.parametrize("deadline", ["2026-04-20 11:00", "2026-03-19~2026-04-20"])
+def test_comparison_deadline_closes_notice_even_when_urgency_omits_date(deadline) -> None:
+    candidate = analysis(Favorability.NOT_APPLICABLE)
+    candidate.draft.comparison_summary.application_deadline = deadline
+    candidate.draft.proposal.document_type = ProposalDocumentType.PROPOSAL_REQUEST
+    runner = SequencedRunner([candidate])
+    generated = asyncio.run(DocumentAnalysisWorkflow(
+        runner=runner, max_attempts=1, analysis_date=date(2026, 9, 8),
+    ).analyze(document()))
+    assert generated.eligibility == Eligibility.INELIGIBLE
+    assert generated.proposal.draft_status == ProposalDraftStatus.NOT_RECOMMENDED
+    assert "접수기한이 지나" in generated.proposal.draft_reason
+    assert generated.proposal.sections[1].body.startswith("접수가 종료된 공고")
+    assert runner.call_count == 1
+
+
+@pytest.mark.parametrize("body", [
+    "연구책임자 발표가 2026.4.23 예정이므로 발표 준비와 증빙 확보가 중요합니다.",
+    "회사는 마감까지 신청서류를 제출해야 합니다.",
+    "현재 접수가 가능하므로 신청 준비가 필요합니다.",
+])
+def test_expired_notice_repairs_current_application_and_presentation_advice(body) -> None:
+    invalid = analysis(Favorability.NOT_APPLICABLE)
+    valid = analysis(Favorability.NOT_APPLICABLE)
+    for candidate in [invalid, valid]:
+        candidate.draft.comparison_summary.application_deadline = "2026-04-20 11:00"
+    invalid.draft.proposal.sections[1].body = body
+    valid.draft.proposal.sections[1].body = (
+        "접수가 종료되어 현재 신규 신청은 불가능합니다. "
+        "우리 회사는 GPU 한 대를 공유하지만 이 사업은 GPU 대여 지원 공고가 아닙니다."
+    )
+    runner = SequencedRunner([invalid, valid])
+    generated = asyncio.run(DocumentAnalysisWorkflow(
+        runner=runner, max_attempts=2, analysis_date=date(2026, 9, 8),
+    ).analyze(document()))
+    assert runner.call_count == 2
+    assert "접수 종료" in runner.feedbacks[1]
+    assert generated.proposal.sections[1].body == valid.draft.proposal.sections[1].body
+
+
+@pytest.mark.parametrize("body", [
+    "발표평가는 2026.4.23에 진행될 예정이었습니다. 현재 신규 신청은 불가능합니다.",
+    "차년도 공고가 확인되면 신청 준비 범위를 다시 판단할 필요가 있습니다.",
+    "현재 접수가 종료되어 발표 준비는 필요하지 않습니다.",
+])
+def test_expired_notice_keeps_historical_or_explicitly_future_round_context(body) -> None:
+    candidate = analysis(Favorability.NOT_APPLICABLE)
+    candidate.draft.comparison_summary.application_deadline = "2026-04-20"
+    candidate.draft.proposal.sections[1].body = body
+    runner = SequencedRunner([candidate])
+    generated = asyncio.run(DocumentAnalysisWorkflow(
+        runner=runner, max_attempts=1, analysis_date=date(2026, 9, 8),
+    ).analyze(document()))
+    assert generated.eligibility == Eligibility.INELIGIBLE
+    assert runner.call_count == 1
+
+
+def test_open_notice_keeps_current_preparation_advice() -> None:
+    candidate = analysis(Favorability.NOT_APPLICABLE)
+    candidate.draft.comparison_summary.application_deadline = "2026-11-04"
+    body = "발표 준비와 증빙 확보가 중요합니다."
+    candidate.draft.proposal.sections[1].body = body
+    generated = asyncio.run(DocumentAnalysisWorkflow(
+        runner=SequencedRunner([candidate]), max_attempts=1, analysis_date=date(2026, 9, 8),
+    ).analyze(document()))
+    assert generated.eligibility != Eligibility.INELIGIBLE
+    assert generated.proposal.sections[1].body == body
+
+
+def test_expired_bad_advice_is_not_published_when_repair_budget_is_exhausted() -> None:
+    candidate = analysis(Favorability.NOT_APPLICABLE)
+    candidate.draft.comparison_summary.application_deadline = "2026-04-20"
+    candidate.draft.proposal.sections[1].body = "발표 준비가 중요합니다."
+    runner = SequencedRunner([candidate, candidate])
+    workflow = DocumentAnalysisWorkflow(
+        runner=runner, max_attempts=2, analysis_date=date(2026, 9, 8),
+    )
+    with pytest.raises(AnalysisWorkflowError):
+        asyncio.run(workflow.analyze(document()))
+    assert runner.call_count == 2
