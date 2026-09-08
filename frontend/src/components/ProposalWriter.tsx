@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Copy, FilePenLine, RefreshCw, Sparkles } from 'lucide-react'
+import { Check, Copy, FilePenLine, RefreshCw, Sparkles, X } from 'lucide-react'
 import { api } from '../api/client'
 import type { ProposalSource, ProposalWrittenDraft } from '../api/types'
 
@@ -15,7 +15,6 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
   const [drafts, setDrafts] = useState<Record<string, ProposalWrittenDraft>>({})
   const [writing, setWriting] = useState(false)
   const [error, setError] = useState('')
-  const [copied, setCopied] = useState('')
   const pending = useRef<AbortController | null>(null)
   const mounted = useRef(true)
   const current = sources.find((source) => sourceKey(source) === selected)
@@ -48,7 +47,6 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
     pending.current = controller
     setWriting(true)
     setError('')
-    setCopied('')
     try {
       const response = await api.writeProposal(detectionId, current.attachmentId, current.partIndex, controller.signal)
       if (controller.signal.aborted || !mounted.current) return
@@ -61,15 +59,6 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
         pending.current = null
         if (mounted.current) setWriting(false)
       }
-    }
-  }
-
-  async function copy(text: string, label: string) {
-    try {
-      await navigator.clipboard.writeText(text)
-      if (mounted.current) setCopied(label)
-    } catch {
-      if (mounted.current) setCopied('복사하지 못했습니다. 본문을 선택해 복사해 주세요.')
     }
   }
 
@@ -88,7 +77,7 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
         <div className="proposal-writer__controls">
           <div><label htmlFor="proposal-template">작성할 첨부 양식</label>
             <select id="proposal-template" value={selected} disabled={writing || !loaded}
-              onChange={(event) => { setSelected(event.target.value); setError(''); setCopied('') }}>
+              onChange={(event) => { setSelected(event.target.value); setError('') }}>
               <option value="">제안서 또는 사업계획서 양식을 선택해 주세요</option>
               {sources.map((source) => <option key={sourceKey(source)} value={sourceKey(source)} disabled={!source.available}>
                 {source.attachmentName !== source.fileName ? `${source.attachmentName} › ` : ''}{source.fileName}{!source.available ? ' (본문 확인 불가)' : ''}
@@ -105,22 +94,62 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
       </details>}
       {writing && <p role="status" className="proposal-writer__notice">실제 양식의 항목을 확인하고 회사 정보와 연결해 본문을 작성하고 있습니다. 최대 3분 정도 걸릴 수 있습니다.</p>}
       {error && <p role="alert" className="proposal-writer__error">{error}</p>}
-      {draft && <div className="proposal-writer__result">
+      {draft && <div className="proposal-writer__result" key={selected}>
         <div className="proposal-writer__result-heading"><div><strong>{draft.sections.length}개 항목 초안</strong><span>{draft.fileName}</span></div>
-          <button type="button" onClick={() => copy(draft.sections.map((item) => `${item.title}\n\n${item.body}`).join('\n\n'), '전체 본문을 복사했습니다.')}><Copy size={15} /> 전체 복사</button>
+          <ProposalCopyButton text={draft.sections.map((item) => `${item.title}\n\n${item.body}`).join('\n\n')} label="전체 복사" />
         </div>
         {draft.usesDemoProfile && <p className="proposal-writer__notice">실제 회사 소개와 데모 운영 정보를 바탕으로 작성했습니다. 데모의 고객·자원·인력 정보는 가상 설정이므로 제출 전에 실제 내용으로 확인해 주세요.</p>}
         {draft.message && <p className="proposal-writer__notice">{draft.message}</p>}
         {draft.sections.map((section, index) => <article className="proposal-writer__section" key={section.title}>
           <div className="proposal-writer__section-heading"><h4><span>{String(index + 1).padStart(2, '0')}</span>{section.title}</h4>
-            <button type="button" aria-label={`${section.title} 본문 복사`} onClick={() => copy(section.body, `${index + 1}번 항목을 복사했습니다.`)}><Copy size={15} /> 복사</button></div>
+            <ProposalCopyButton text={section.body} label="복사" accessibleLabel={`${section.title} 본문 복사`} /></div>
           <p className="proposal-writer__body">{section.body}</p>
           {section.confirmationItems.length > 0 && <div className="proposal-writer__confirm"><strong>제출 전 확인할 내용</strong><ul>{section.confirmationItems.map((item, i) => <li key={i}>{item}</li>)}</ul></div>}
           <details className="proposal-writer__evidence"><summary>양식 원문</summary><p>{section.selectionReason}</p><blockquote>{section.sourceQuote}</blockquote></details>
         </article>)}
         <p className="proposal-writer__footnote">초안은 현재 화면에서 확인할 수 있습니다. 보관하려면 본문을 복사해 주세요.</p>
       </div>}
-      <p className="proposal-writer__copy-status" role="status" aria-live="polite">{copied}</p>
     </section>
+  )
+}
+
+function ProposalCopyButton({ text, label, accessibleLabel = label }: {
+  text: string
+  label: string
+  accessibleLabel?: string
+}) {
+  const [status, setStatus] = useState<'idle' | 'copying' | 'copied' | 'failed'>('idle')
+  const mounted = useRef(true)
+
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
+
+  useEffect(() => {
+    if (status !== 'copied' && status !== 'failed') return
+    const timer = window.setTimeout(() => setStatus('idle'), 2000)
+    return () => window.clearTimeout(timer)
+  }, [status])
+
+  async function copy() {
+    setStatus('copying')
+    try {
+      await navigator.clipboard.writeText(text)
+      if (mounted.current) setStatus('copied')
+    } catch {
+      if (mounted.current) setStatus('failed')
+    }
+  }
+
+  const feedback = status === 'copied' ? '복사됨' : status === 'failed' ? '복사 실패' : status === 'copying' ? '복사 중' : label
+  return (
+    <button type="button" className="proposal-writer__copy-button" data-status={status}
+      disabled={status === 'copying'} onClick={copy} aria-live="polite"
+      aria-label={status === 'idle' ? accessibleLabel : `${accessibleLabel}: ${feedback}`}
+      title={status === 'failed' ? '다시 누르거나 본문을 선택해 복사해 주세요.' : undefined}>
+      {status === 'copied' ? <Check size={15} /> : status === 'failed' ? <X size={15} /> : <Copy size={15} />}
+      {feedback}
+    </button>
   )
 }

@@ -670,6 +670,8 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
     && proposalSections.every((section, index) => section.title === insightTitles[index])
   const proposalDraft = analysis?.proposal
   const showProposalTab = Boolean(proposalDraft)
+  const showProposalWriter = proposalDraft?.draftStatus === 'READY'
+    && Boolean(proposalDraft.preparation || proposalDraft.draftSections.length > 0)
   const proposalSummary = proposalDraft?.draftSections.find((section) => isProposalSummary(section.title))
   const proposalWritingSections = proposalDraft?.draftSections.filter((section) => !isProposalSummary(section.title)) ?? []
   const proposalUnavailableReason = analysis && proposalDraft
@@ -702,7 +704,6 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
         </div>
       </header>
 
-      {analysis?.proposal.usesDemoProfile && <p className="company-context-note">실제 회사 소개와 데모 가정을 함께 참고한 결과입니다. 고객 프로젝트·자원·인력·서류 정보에는 가상 설정이 포함됩니다.</p>}
       {analysis && (
         <nav className="detail-tabs" aria-label="문서 상세 보기">
           <button className={activeDetailTab === 'ANALYSIS' ? 'active' : ''} onClick={() => setActiveDetailTab('ANALYSIS')}>공고 분석</button>
@@ -877,7 +878,7 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
         <EmptyState icon={<Sparkles />} title="AI 분석을 준비하고 있어요" description="분석이 완료되면 핵심 내용과 대응 방향을 여기에서 확인할 수 있어요." />
       )}
 
-      {analysis && <ProposalWriter key={detail.detectionId} detectionId={detail.detectionId} active={activeDetailTab === 'PROPOSAL'} expired={applicationExpired} />}
+      {showProposalWriter && <ProposalWriter key={detail.detectionId} detectionId={detail.detectionId} active={activeDetailTab === 'PROPOSAL'} expired={applicationExpired} />}
 
       {activeDetailTab === 'ANALYSIS' && <section className="detail-section attachments">
         <div className="section-title-row"><h3>첨부파일</h3><Badge>{detail.attachments.length}개</Badge></div>
