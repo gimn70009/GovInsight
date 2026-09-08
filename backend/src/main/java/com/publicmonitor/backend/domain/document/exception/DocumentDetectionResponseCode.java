@@ -14,6 +14,10 @@ public enum DocumentDetectionResponseCode implements BaseResponseCode {
             HttpStatus.BAD_REQUEST.value(),
             "조회 시작 일시는 종료 일시보다 늦을 수 없습니다."
     ),
+    PROPOSAL_SOURCE_NOT_FOUND("DOCUMENT_DETECTION_404_2", HttpStatus.NOT_FOUND.value(),
+            "이 문서 버전에 속한 첨부 양식을 찾을 수 없습니다."),
+    PROPOSAL_SOURCE_UNAVAILABLE("DOCUMENT_DETECTION_400_2", HttpStatus.BAD_REQUEST.value(),
+            "선택한 첨부파일의 본문을 초안 작성에 사용할 수 없습니다."),
     NOT_FOUND("DOCUMENT_DETECTION_404_1", HttpStatus.NOT_FOUND.value(), "감지 문서를 찾을 수 없습니다.");
 
     private final String code;

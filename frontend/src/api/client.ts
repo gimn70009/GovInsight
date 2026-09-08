@@ -1,5 +1,7 @@
 import type {
   ApiResponse,
+  ProposalSource,
+  ProposalWrittenDraft,
   CreateMonitoringRunResponse,
   DocumentDetail,
   DocumentDetection,
@@ -94,6 +96,12 @@ export const api = {
   getDocument: (detectionId: number) => request<DocumentDetail>(`/api/document-detections/${detectionId}`),
   compareLegalPair: (currentId: number, similarId: number, signal?: AbortSignal) =>
     request<LegalPairResult>(`/api/document-detections/${currentId}/similar-notices/${similarId}/legal-review`, { method: 'POST', signal }),
+  getProposalSources: (detectionId: number, signal?: AbortSignal) =>
+    request<ProposalSource[]>(`/api/document-detections/${detectionId}/proposal-sources`, { signal }),
+  writeProposal: (detectionId: number, attachmentId: number, partIndex: number, signal?: AbortSignal) =>
+    request<ProposalWrittenDraft>(`/api/document-detections/${detectionId}/proposal-draft`, {
+      method: 'POST', body: JSON.stringify({ attachmentId, partIndex }), signal,
+    }),
   getSimilarNotices: (detectionId: number) =>
     request<SimilarNoticeResult>(`/api/document-detections/${detectionId}/similar-notices`),
 }

@@ -271,3 +271,27 @@ export interface LegalPairResult {
     evidenceIds: number[]
   }>
 }
+
+export interface ProposalSource {
+  attachmentId: number
+  partIndex: number
+  fileName: string
+  attachmentName: string
+  available: boolean
+  reason: string
+}
+
+export interface ProposalWrittenDraft {
+  status: 'COMPLETED' | 'NEEDS_TEMPLATE' | 'UNAVAILABLE'
+  fileName: string
+  usesDemoProfile: boolean
+  message: string
+  sections: Array<{
+    title: string
+    body: string
+    sourceQuote: string
+    selectionReason: string
+    companyEvidence: string[]
+    confirmationItems: string[]
+  }>
+}

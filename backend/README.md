@@ -62,3 +62,11 @@ OpenAPI 통합 테스트에서는 다음 항목을 확인한다.
 - JWT Bearer 인증 스키마가 생성되는지
 - Swagger UI와 OpenAPI JSON에 인증 없이 접근할 수 있는지
 - 기존 보호 API가 토큰 없이 호출되지 않는지
+
+
+## 첨부 양식 선택형 초안 API
+
+- `GET /api/document-detections/{detectionId}/proposal-sources`: 현재 감지 버전의 첨부와 ZIP 내부 문서, 사용 가능 여부를 조회한다.
+- `POST /api/document-detections/{detectionId}/proposal-draft`: `{attachmentId, partIndex}`로 선택한 양식의 핵심 항목 최대 4개를 생성한다. 두 API 모두 JWT 인증이 필요하다.
+- Spring은 첨부 소속과 본문을 검증하고 DB 트랜잭션을 종료한 뒤 Python의 `/internal/monitoring/proposal-write`를 호출한다. 응답 대기는 최대 190초이며 실패는 안전한 안내로 반환한다.
+- 새 테이블·영구 초안 저장은 추가하지 않는다. 상세 응답 계약과 제한은 `docs/DESIGN.md`에 기록한다.

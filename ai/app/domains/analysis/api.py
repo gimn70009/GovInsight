@@ -1,6 +1,11 @@
 from fastapi import APIRouter, BackgroundTasks, status
 
 from app.domains.analysis.legal_pair import LegalPairRequest, LegalPairResponse, pair_reviewer
+from app.domains.analysis.proposal_writer import (
+    ProposalWriteRequest,
+    ProposalWriteResponse,
+    proposal_writer,
+)
 from app.domains.analysis.schemas.request import AnalysisJobRequest
 from app.domains.analysis.schemas.response import AnalysisJobAcceptedResponse
 from app.domains.analysis.service import accept_analysis_job
@@ -28,3 +33,8 @@ def create_analysis_job(
 @router.post("/legal-pair-review", response_model=LegalPairResponse)
 async def compare_legal_pair(request: LegalPairRequest) -> LegalPairResponse:
     return await pair_reviewer.review(request)
+
+
+@router.post("/proposal-write", response_model=ProposalWriteResponse)
+async def write_proposal(request: ProposalWriteRequest) -> ProposalWriteResponse:
+    return await proposal_writer.write(request)

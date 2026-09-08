@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react'
 import { api } from '../api/client'
+import { ProposalWriter } from '../components/ProposalWriter'
 import type { ChangeType, DocumentAnalysis, DocumentDetail, DocumentDetection, MonitoringRun, OpportunityDimensionType, OpportunityPriority, ProposalPreparationItem, SimilarNoticeResult } from '../api/types'
 import { Badge, EmptyState, InlineError, Loading, Pagination } from '../components/ui'
 
@@ -875,6 +876,8 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
       ) : (
         <EmptyState icon={<Sparkles />} title="AI 분석을 준비하고 있어요" description="분석이 완료되면 핵심 내용과 대응 방향을 여기에서 확인할 수 있어요." />
       )}
+
+      {analysis && <ProposalWriter key={detail.detectionId} detectionId={detail.detectionId} active={activeDetailTab === 'PROPOSAL'} expired={applicationExpired} />}
 
       {activeDetailTab === 'ANALYSIS' && <section className="detail-section attachments">
         <div className="section-title-row"><h3>첨부파일</h3><Badge>{detail.attachments.length}개</Badge></div>

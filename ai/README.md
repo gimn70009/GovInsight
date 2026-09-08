@@ -138,3 +138,8 @@ python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 python -m pytest
 python -m ruff check .
 ```
+
+
+### 첨부 양식 선택형 초안
+
+`POST /internal/monitoring/proposal-write`는 Spring이 전달한 `title, noticeText, fileName, templateText`를 받아 실제 양식의 핵심 항목 최대 4개를 작성한다. 저장 본문만 사용하며 URL 다운로드는 하지 않는다. `PROPOSAL_MODEL`과 회사 프로필의 기존 데모 사용 설정을 재사용한다. 선택 양식 80,000자, 공고 본문 16,000자, 전체 최대 180초, 동시 생성 2건이며 제목·인용 검증과 본문 형식 보완을 포함해 모델 호출은 최대 3회다. 완료 결과만 1시간 메모리에 재사용하며 재시작 시 사라진다. 상세 계약은 `docs/DESIGN.md`의 첨부 양식 선택형 제안서 본문 작성을 참고한다.
