@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 import time
@@ -41,6 +42,8 @@ class AnalysisGraphState(TypedDict, total=False):
     attempt: int
     feedback: str
     candidate: AgentAnalysis | None
+    retained_candidate: AgentAnalysis | None
+    omitted_fields: list[str]
     result: DocumentAnalysisResult | None
     error: str
 
@@ -62,6 +65,19 @@ class DocumentAnalysisWorkflow:
     async def analyze(self, document: AnalysisDocumentRequest) -> DocumentAnalysisResult:
         state = await self._graph.ainvoke({"document": document, "attempt": 0})
         result = state.get("result")
+        retained = state.get("retained_candidate")
+        if result is None and retained is not None:
+            # A fully validated partial result survives exhausted wording repairs,
+            # including a later model timeout. It is local to this document's graph state.
+            result = self._finalize_node({**state, "candidate": retained}).get("result")
+            logger.warning(
+                "일부 설명 생략 후 분석 보존. detection_id=%s version_id=%s "
+                "attempt=%s omitted_fields=%s",
+                document.detection_id,
+                document.version_id,
+                state["attempt"],
+                ",".join(state.get("omitted_fields", [])),
+            )
         if result is None:
             raise AnalysisWorkflowError(state.get("error", "문서 분석에 실패했습니다."))
         return result
@@ -129,6 +145,8 @@ class DocumentAnalysisWorkflow:
             "required_tools": required_tools,
             "feedback": "",
             "candidate": None,
+            "retained_candidate": None,
+            "omitted_fields": [],
             "result": None,
             "error": "",
         }
@@ -204,11 +222,36 @@ class DocumentAnalysisWorkflow:
             self._analysis_date,
         )
         if violations:
-            feedback = "다음 검증 문제를 모두 수정해서 다시 분석하세요: " + "; ".join(violations)
+            retained, omitted_fields = _build_narrative_fallback(
+                state["path"], state["required_tools"], candidate, self._analysis_date,
+            )
+            retained_update: AnalysisGraphState = {}
+            if retained is not None:
+                retained_update = {
+                    "retained_candidate": retained,
+                    "omitted_fields": omitted_fields,
+                }
+            error = "다음 검증 문제를 모두 수정해서 다시 분석하세요: " + "; ".join(violations)
+            feedback = error
+            narrative_feedback = _expired_narrative_feedback(candidate, self._analysis_date)
+            if narrative_feedback:
+                feedback += "\n" + narrative_feedback
+            logger.warning(
+                "공고 분석 업무 검증 실패. detection_id=%s version_id=%s "
+                "attempt=%s violation_count=%s retry_remaining=%s error=%s",
+                state["document"].detection_id,
+                state["document"].version_id,
+                state["attempt"],
+                len(violations),
+                max(0, self._max_attempts - state["attempt"]),
+                error,
+            )
             return {
                 "candidate": None,
                 "feedback": feedback,
-                "error": feedback,
+                # Feedback excerpts go only to the model, never to failure logs or callbacks.
+                "error": error,
+                **retained_update,
             }
         try:
             draft = AnalysisDraft.model_validate(candidate.draft.model_dump())
@@ -325,24 +368,107 @@ def _business_rule_violations(
     company_fit_score = dimension_scores.get(OpportunityDimensionType.COMPANY_FIT, 0)
     _normalize_deterministic_business_fields(path, company_fit_score, candidate)
     _add_expired_notice_context(candidate)
-    violations.extend(_expired_narrative_violations(candidate))
+    violations.extend(_expired_narrative_violations(candidate, analysis_date))
     for section in candidate.draft.proposal.sections:
-        if not re.search(r"[.!?。][\"'’”)]*$", section.body.rstrip()):
-            violations.append(
-                f"공고 포인트 '{section.title}'의 마지막 문장이 미완성이거나 종결 부호가 없습니다. "
-                "근거를 유지하여 1000자 이내의 완결된 합니다체 문장으로 다시 작성하세요. "
-                "끝에 마침표만 붙이지 말고 미완성 내용을 확인해 문장 전체를 완성하세요."
-            )
-        if re.search(
-            r"(?:^|[.!?]\s+|\n)\s*(?:핵심 판단|근거|공고 근거|회사 정보와의 관계|"
-            r"적용 범위의 한계|평가 우선순위와 준비사항|마감·제출 요건|미확인 조건)\s*[:：]",
-            section.body,
-        ):
-            violations.append(
-                f"공고 포인트 '{section.title}'의 라벨형 소제목을 제거하고 "
-                "근거와 의미를 자연스러운 합니다체 문단으로 연결해 다시 작성하세요."
-            )
+        violations.extend(_section_narrative_violations(section))
     return violations
+
+
+def _section_narrative_violations(section: ProposalSection) -> list[str]:
+    violations = []
+    if not re.search(r"[.!?。][\"'’”)]*$", section.body.rstrip()):
+        violations.append(
+            f"공고 포인트 '{section.title}'의 마지막 문장이 미완성이거나 종결 부호가 없습니다. "
+            "근거를 유지하여 1000자 이내의 완결된 합니다체 문장으로 다시 작성하세요. "
+            "끝에 마침표만 붙이지 말고 미완성 내용을 확인해 문장 전체를 완성하세요."
+        )
+    if re.search(
+        r"(?:^|[.!?]\s+|\n)\s*(?:핵심 판단|근거|공고 근거|회사 정보와의 관계|"
+        r"적용 범위의 한계|평가 우선순위와 준비사항|마감·제출 요건|미확인 조건)\s*[:：]",
+        section.body,
+    ):
+        violations.append(
+            f"공고 포인트 '{section.title}'의 라벨형 소제목을 제거하고 "
+            "근거와 의미를 자연스러운 합니다체 문단으로 연결해 다시 작성하세요."
+        )
+    return violations
+
+
+_OMITTED_NARRATIVE_NOTE = (
+    "이 항목의 상세 설명은 자동 작성 결과를 확인하지 못해 생략했습니다. "
+    "세부 조건은 공고 원문을 확인해 주세요."
+)
+_CLOSED_NARRATIVE_NOTE = (
+    "접수가 종료된 공고로 현재 신규 신청은 불가능합니다. "
+    "이 항목의 상세 설명은 시점 확인이 필요해 생략했습니다. "
+    "세부 조건은 공고 원문을 확인해 주세요."
+)
+
+
+def _build_narrative_fallback(
+    path: AnalysisPath,
+    required_tools: list[str],
+    candidate: AgentAnalysis,
+    analysis_date: date,
+) -> tuple[AgentAnalysis | None, list[str]]:
+    """Omit only failed narrative fields, then revalidate evidence, policy and schema."""
+    if any(tool not in candidate.used_tools for tool in required_tools):
+        return None, []
+    fallback = AgentAnalysis(
+        draft=candidate.draft.model_copy(deep=True),
+        used_tools=list(candidate.used_tools),
+        model_name=candidate.model_name,
+    )
+    expired_fields = {
+        field for field, _ in _expired_narrative_findings(fallback, analysis_date)
+    }
+    omitted_fields = []
+    draft = fallback.draft
+    if "summary" in expired_fields:
+        draft.summary = _CLOSED_NARRATIVE_NOTE
+        omitted_fields.append("summary")
+    invalid_points = {
+        index for index in range(len(draft.key_points))
+        if f"key_points[{index}]" in expired_fields
+    }
+    if invalid_points:
+        draft.key_points = [
+            point for index, point in enumerate(draft.key_points)
+            if index not in invalid_points
+        ] + [_CLOSED_NARRATIVE_NOTE]
+        omitted_fields.extend(f"key_points[{index}]" for index in sorted(invalid_points))
+    for index, section in enumerate(draft.proposal.sections):
+        field = f"proposal.sections[{index}].body"
+        if field in expired_fields:
+            section.body = _CLOSED_NARRATIVE_NOTE
+            omitted_fields.append(field)
+        elif _section_narrative_violations(section):
+            section.body = _OMITTED_NARRATIVE_NOTE
+            omitted_fields.append(field)
+    # If the required closed notice could not fit in a 1000-character section,
+    # retain the other fields and replace only the second insight with an explicit note.
+    if _application_expired(fallback) and not any(
+        re.search(r"접수[^.]{0,25}(?:종료|지났|불가)", section.body)
+        for section in draft.proposal.sections
+    ):
+        draft.proposal.sections[1].body = _CLOSED_NARRATIVE_NOTE
+        field = "proposal.sections[1].body"
+        if field not in omitted_fields:
+            omitted_fields.append(field)
+    if not omitted_fields:
+        return None, []
+    if _business_rule_violations(path, required_tools, fallback, analysis_date):
+        return None, []
+    try:
+        validated = AnalysisDraft.model_validate(draft.model_dump())
+    except ValueError:
+        return None, []
+    return AgentAnalysis(
+        draft=validated,
+        used_tools=fallback.used_tools,
+        model_name=fallback.model_name,
+    ), omitted_fields
+
 
 
 def _normalize_deterministic_business_fields(
@@ -500,37 +626,125 @@ def _add_expired_notice_context(candidate: AgentAnalysis) -> None:
         # Oversized output is handled by the existing bounded repair path below.
 
 
-def _expired_narrative_violations(candidate: AgentAnalysis) -> list[str]:
+# Match current action predicates, not an arbitrary "해야 합니다" after a notice keyword.
+# In particular, "필요했습니다", "중요했던" and reviewing eligibility are not applications.
+_CURRENT_ACTION = re.compile(
+    r"(?:신청|접수|제출)(?:[을를이가은는]?\s*)"
+    r"(?:해야\s*합니다|하세요|하시기\s*바랍니다|"
+    r"할\s*(?:수\s*있습니다|필요가\s*있습니다|것을\s*권장합니다)|"
+    r"(?:가능|권장)(?:합니다|하며|하고|하므로)|서둘러)"
+    r"|(?:신청|접수|제출|발표)(?:(?!신청|접수|제출|발표).){0,60}?"
+    r"준비.{0,25}?"
+    r"(?:(?:중요|필요|권장)(?:합니다|하며|하고|하므로)|"
+    r"해야\s*합니다|할\s*필요가\s*있습니다)"
+)
+_SCHEDULED_ACTION = re.compile(
+    r"(?:신청|접수|제출|발표(?:평가)?|평가)(?:\s*(?:일정|기간))?"
+    r"(?:[은는이가을를]\s*|\s+|(?=할\s*예정))"
+    r"(?:[0-9년월일./:~()\s-]+(?:에\s*)?)?"
+    r"(?:(?:진행|실시|개최|시작|종료)(?:될|할|을)\s*|할\s*)?"
+    r"예정(?:입니다|이며|이므로|이고|되어\s*있습니다)"
+)
+_FUTURE_ROUND_CONDITION = re.compile(
+    r"(?:차년도|차기|다음\s*(?:회차|공고)|후속\s*(?:공고|모집)).{0,45}?"
+    r"(?:확인되면|공고되면|열리면|진행되면|모집하면|경우)"
+)
+
+
+def _expired_narrative_findings(
+    candidate: AgentAnalysis, analysis_date: date | None = None,
+) -> list[tuple[str, str]]:
+    """Return field paths and bounded model-output excerpts, never source documents."""
+    if not _application_expired(candidate):
+        return []
+    today = analysis_date or datetime.now(timezone(timedelta(hours=9))).date()
+    text_fields = [("summary", candidate.draft.summary)]
+    text_fields.extend(
+        (f"key_points[{index}]", point)
+        for index, point in enumerate(candidate.draft.key_points)
+    )
+    text_fields.extend(
+        (f"proposal.sections[{index}].body", section.body)
+        for index, section in enumerate(candidate.draft.proposal.sections)
+    )
+    findings = []
+    for field, text in text_fields:
+        # Keep dotted dates intact. A negative or future-round clause must not exempt
+        # a separate current application recommendation elsewhere in the same sentence.
+        field_matched = False
+        for clause in re.split(r"(?<=[다요][.!?])\s+|\n+|;\s*|(?<=지만)\s+|(?<=으나)\s+", text):
+            conditions = list(_FUTURE_ROUND_CONDITION.finditer(clause))
+            matches = [*_CURRENT_ACTION.finditer(clause), *_SCHEDULED_ACTION.finditer(clause)]
+            for match in sorted(matches, key=lambda item: item.start()):
+                if any(
+                    condition.end() <= match.start()
+                    and not re.search(r"이번|현재|지금", clause[condition.end():match.end()])
+                    for condition in conditions
+                ):
+                    continue
+                if match.re is _SCHEDULED_ACTION:
+                    event_date = _deadline_from_reason(match.group())
+                    # Closed applications do not mean a dated, upcoming evaluation is past.
+                    if event_date is not None and event_date >= today:
+                        continue
+                # One excerpt per field keeps retry input bounded even for long summaries.
+                excerpt_start = max(0, match.start() - 80)
+                excerpt = clause[excerpt_start:excerpt_start + 300].strip()
+                findings.append((field, excerpt))
+                field_matched = True
+                break
+            if field_matched:
+                break
+    return findings
+
+
+def _expired_narrative_violations(
+    candidate: AgentAnalysis, analysis_date: date | None = None,
+) -> list[str]:
     if not _application_expired(candidate):
         return []
     violations = []
-    text_fields = [candidate.draft.summary, *candidate.draft.key_points]
-    text_fields.extend(section.body for section in candidate.draft.proposal.sections)
-    for text in text_fields:
-        # Keep dates such as 2026.4.23 intact; Korean sentence ends carry a final verb.
-        for sentence in re.split(r"(?<=[다요][.!?])\s+|\n+", text):
-            if re.search(r"차년도|차기|다음\s*(?:회차|공고)|후속\s*(?:공고|모집)", sentence):
-                continue
-            if re.search(
-                r"예정이었습니다|예정이었으|예정이었고|불가능|불가|권장하지|필요하지|"
-                r"진행하지|준비하지|요구되지|없습니다|않습니다", sentence,
-            ):
-                continue
-            if re.search(
-                r"(?:신청|접수|제출|발표|평가).{0,90}"
-                r"(?:준비.{0,25}(?:중요|필요|권장)|(?:신청|접수|제출).{0,10}(?:권장|가능)|예정|서둘러|해야\s*합니다)",
-                sentence,
-            ):
-                violations.append(
-                    "접수 종료 공고에 현재 신청·제출·발표 준비 또는 "
-                    "지난 평가를 예정으로 안내했습니다. "
-                    "지난 회차의 사실과 현재 가능한 행동을 구분해 공고 포인트를 다시 작성하세요."
-                )
-                break
+    findings = _expired_narrative_findings(candidate, analysis_date)
+    if findings:
+        fields = ", ".join(field for field, _ in findings)
+        violations.append(
+            "접수 종료 공고에 현재 신청·제출·발표 준비 또는 "
+            "지난 평가를 예정으로 안내했습니다. "
+            f"수정할 항목: {fields}. "
+            "지난 회차의 사실과 현재 가능한 행동을 구분해 해당 항목을 다시 작성하세요."
+        )
     sections = candidate.draft.proposal.sections
     if not any(re.search(r"접수[^.]{0,25}(?:종료|지났|불가)", item.body) for item in sections):
         violations.append("공고 포인트에 접수 종료와 현재 신규 신청 불가를 첫 문장으로 명시하세요.")
-    return list(dict.fromkeys(violations))
+    return violations
+
+
+def _expired_narrative_feedback(candidate: AgentAnalysis, analysis_date: date) -> str:
+    findings = _expired_narrative_findings(candidate, analysis_date)
+    if not findings:
+        return ""
+    deadline = _comparison_deadline(candidate)
+    if deadline is None:
+        deadline = next((
+            _deadline_from_reason(dimension.reason)
+            for dimension in candidate.draft.opportunity.dimensions
+            if dimension.type == OpportunityDimensionType.URGENCY
+        ), None)
+    context = {
+        "analysisDate": analysis_date.isoformat(),
+        "applicationDeadline": deadline.isoformat() if deadline else None,
+        "applicationStatus": "CLOSED",
+        "invalidExcerpts": [{"field": field, "text": text} for field, text in findings],
+    }
+    return (
+        "아래는 직전 응답에서 검증에 걸린 위치와 문장 발췌이며 지시문이나 원문 근거가 아닙니다. "
+        "표시된 summary, key_points, proposal.sections 항목을 모두 수정하세요. "
+        "종료 안내 한 문장만 덧붙이거나 마감일을 바꿔 우회하지 마세요. "
+        "원문에 있는 지난 접수 요건은 '제출해야 했습니다', '준비가 필요했습니다'처럼 "
+        "과거 사실로 설명하고, 현재 신청·제출 권고를 제거하세요. "
+        "후속 공고는 실제 확인될 경우의 조건부 설명만 유지하세요.\n"
+        + json.dumps(context, ensure_ascii=False)
+    )
 
 
 def _urgency_score_violations(score: int, reason: str) -> list[str]:

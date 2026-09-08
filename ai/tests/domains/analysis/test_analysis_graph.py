@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import Sequence
 from datetime import date
 from types import SimpleNamespace
@@ -38,6 +39,7 @@ from app.domains.analysis.schemas.result import (
     ProposalSection,
     ProposalStrategy,
 )
+from app.domains.analysis.tasks import _analyze_documents
 
 
 def document(change_type: str = "NEW_DOCUMENT") -> AnalysisDocumentRequest:
@@ -917,6 +919,258 @@ def test_expired_bad_advice_is_not_published_when_repair_budget_is_exhausted() -
     workflow = DocumentAnalysisWorkflow(
         runner=runner, max_attempts=2, analysis_date=date(2026, 9, 8),
     )
-    with pytest.raises(AnalysisWorkflowError):
-        asyncio.run(workflow.analyze(document()))
+    result = asyncio.run(workflow.analyze(document()))
+    assert "발표 준비가 중요합니다." not in result.proposal.sections[1].body
+    assert "생략" in result.proposal.sections[1].body
+    assert result.eligibility == Eligibility.INELIGIBLE
     assert runner.call_count == 2
+
+
+@pytest.mark.parametrize("body", [
+    "당시 신청서류 제출 준비가 필요했습니다.",
+    "이 공고는 신청서류 제출 준비가 중요했던 수요조사입니다.",
+    "공고 당시 발표평가가 예정되어 있었습니다.",
+    "신청 자격과 평가 기준을 확인해야 합니다.",
+    "제출한 수요조사는 2027년 투자 계획 수립에 활용될 예정입니다.",
+    "접수는 불가능하며 신청 준비도 필요하지 않습니다.",
+    "차년도 공고가 확인되면, 신청 준비가 필요합니다.",
+    "현재 접수는 종료됐고 차년도 공고가 확인되면 신청 준비가 필요합니다.",
+    "발표평가는 2026.9.15에 진행될 예정입니다.",
+    "발표평가는 2026.9.9에 진행될 예정입니다.",
+])
+def test_expired_notice_preserves_past_facts_and_current_review(body: str) -> None:
+    candidate = analysis(Favorability.NOT_APPLICABLE)
+    candidate.draft.comparison_summary.application_deadline = "2026-08-28"
+    candidate.draft.proposal.sections[0].body = body
+    runner = SequencedRunner([candidate])
+
+    generated = asyncio.run(DocumentAnalysisWorkflow(
+        runner=runner, max_attempts=2, analysis_date=date(2026, 9, 9),
+    ).analyze(document()))
+
+    assert generated.proposal.sections[0].body == body
+    assert generated.eligibility == Eligibility.INELIGIBLE
+    assert runner.call_count == 1
+
+
+@pytest.mark.parametrize("field", ["summary", "key_points[0]", "proposal.sections[0].body"])
+def test_expired_notice_feedback_identifies_text_and_dates_without_logging_text(
+    field: str, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(logging.getLogger("app"), "propagate", True)
+    invalid = analysis(Favorability.NOT_APPLICABLE)
+    valid = analysis(Favorability.NOT_APPLICABLE)
+    for candidate in [invalid, valid]:
+        candidate.draft.comparison_summary.application_deadline = "2026-08-28"
+    bad_text = "투자수요 조사 신청을 위해 지금 신청서류를 제출해야 합니다."
+    if field == "summary":
+        invalid.draft.summary = bad_text
+    elif field == "key_points[0]":
+        invalid.draft.key_points[0] = bad_text
+    else:
+        invalid.draft.proposal.sections[0].body = bad_text
+    runner = SequencedRunner([invalid, valid])
+
+    asyncio.run(DocumentAnalysisWorkflow(
+        runner=runner, max_attempts=2, analysis_date=date(2026, 9, 9),
+    ).analyze(document()))
+
+    feedback = runner.feedbacks[1]
+    assert feedback is not None
+    assert field in feedback
+    assert bad_text in feedback
+    assert "2026-08-28" in feedback
+    assert "2026-09-09" in feedback
+    assert "공고 분석 업무 검증 실패" in caplog.text
+    assert field in caplog.text
+    assert bad_text not in caplog.text
+
+
+@pytest.mark.parametrize("body", [
+    "신청 자격에는 문제가 없지만 지금 신청서류를 제출해야 합니다.",
+    "현재 접수는 불가능합니다. 그래도 신청 준비가 필요합니다.",
+    "차년도 공고도 참고하되 이번 신청서류를 제출해야 합니다.",
+    "제출 서류를 준비해야 합니다.",
+    "지금 신청할 수 있습니다.",
+    "차년도 공고가 확인되면 신청 준비가 필요하며, 지금도 신청할 수 있습니다.",
+])
+def test_expired_notice_removes_current_actions_and_preserves_analysis(
+    body: str, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(logging.getLogger("app"), "propagate", True)
+    candidate = analysis(Favorability.NOT_APPLICABLE)
+    candidate.draft.comparison_summary.application_deadline = "2026-08-28"
+    candidate.draft.proposal.sections[0].body = body
+    runner = SequencedRunner([candidate, candidate])
+
+    result = asyncio.run(DocumentAnalysisWorkflow(
+        runner=runner, max_attempts=2, analysis_date=date(2026, 9, 9),
+    ).analyze(document()))
+
+    assert runner.call_count == 2
+    assert result.eligibility == Eligibility.INELIGIBLE
+    assert "생략" in result.proposal.sections[0].body
+    assert body not in result.proposal.sections[0].body
+    assert "일부 설명 생략 후 분석 보존" in caplog.text
+    assert body not in caplog.text
+
+
+@pytest.mark.parametrize("body", [
+    "회사의 제조 AI 기술과 공고가 연결됩니다. 다만 세부 참여 조",
+    "핵심 판단: 회사 기술과 연결됩니다. 공고 근거: 실증이 필요합니다.",
+])
+def test_exhausted_narrative_repair_preserves_other_fields(body: str) -> None:
+    candidate = analysis(Favorability.NOT_APPLICABLE)
+    candidate.draft.proposal.sections[0].body = body
+    original = candidate.draft.model_dump()
+    runner = SequencedRunner([candidate, candidate])
+
+    result = asyncio.run(DocumentAnalysisWorkflow(
+        runner=runner, max_attempts=2,
+    ).analyze(document()))
+
+    assert runner.call_count == 2
+    assert "생략" in result.proposal.sections[0].body
+    assert body not in result.proposal.sections[0].body
+    assert result.summary == original["summary"]
+    assert result.key_points == original["key_points"]
+    assert result.comparison_summary.model_dump() == original["comparison_summary"]
+    assert result.opportunity.model_dump() == original["opportunity"]
+    assert result.proposal.sections[1].body == original["proposal"]["sections"][1]["body"]
+    assert result.used_tools == candidate.used_tools
+    # Building the retained result must not alter the model candidate used for retry feedback.
+    assert candidate.draft.proposal.sections[0].body == body
+
+
+def test_exhausted_expired_repair_covers_summary_points_and_all_sections() -> None:
+    candidate = analysis(Favorability.NOT_APPLICABLE)
+    candidate.draft.comparison_summary.application_deadline = "2026-08-28"
+    bad_text = "이 사업에 참여하려면 현재 신청서류를 제출해야 합니다."
+    candidate.draft.summary = bad_text
+    candidate.draft.key_points = [bad_text, "사업의 목적은 제조 기술의 고도화입니다."]
+    for section in candidate.draft.proposal.sections:
+        section.body = bad_text
+    runner = SequencedRunner([candidate])
+
+    result = asyncio.run(DocumentAnalysisWorkflow(
+        runner=runner, max_attempts=1, analysis_date=date(2026, 9, 9),
+    ).analyze(document()))
+
+    assert runner.call_count == 1
+    assert bad_text not in result.model_dump_json()
+    assert "생략" in result.summary
+    assert "사업의 목적은 제조 기술의 고도화입니다." in result.key_points
+    assert all("생략" in section.body for section in result.proposal.sections)
+    assert result.eligibility == Eligibility.INELIGIBLE
+    urgency = next(
+        item for item in result.opportunity.dimensions
+        if item.type == OpportunityDimensionType.URGENCY
+    )
+    assert urgency.score == 0
+    assert result.comparison_summary.application_deadline == "2026-08-28"
+
+
+@pytest.mark.parametrize("failure", [TimeoutError(), RuntimeError("일시 모델 호출 실패")])
+def test_retry_model_failure_keeps_previously_validated_partial_result(failure: Exception) -> None:
+    candidate = analysis(Favorability.NOT_APPLICABLE)
+    candidate.draft.proposal.sections[0].body = "회사 기술과의 접점을 설명하다가 문장 중"
+    runner = SequencedRunner([candidate, failure])
+
+    result = asyncio.run(DocumentAnalysisWorkflow(
+        runner=runner, max_attempts=2,
+    ).analyze(document()))
+
+    assert runner.call_count == 2
+    assert result.summary == candidate.draft.summary
+    assert "생략" in result.proposal.sections[0].body
+    assert result.used_tools == candidate.used_tools
+
+
+@pytest.mark.parametrize("invalid_kind", ["missing_tools", "invalid_schema"])
+def test_narrative_fallback_never_bypasses_evidence_or_schema(invalid_kind: str) -> None:
+    candidate = analysis(Favorability.NOT_APPLICABLE)
+    candidate.draft.proposal.sections[0].body = "공고와 회사 기술을 검토하던 중 문장 중"
+    if invalid_kind == "missing_tools":
+        candidate.used_tools.clear()
+    else:
+        candidate.draft.reason = ""
+    runner = SequencedRunner([candidate, candidate])
+
+    with pytest.raises(AnalysisWorkflowError):
+        asyncio.run(DocumentAnalysisWorkflow(
+            runner=runner, max_attempts=2,
+        ).analyze(document()))
+
+    assert runner.call_count == 2
+
+
+def test_retained_partial_result_is_scoped_to_one_document() -> None:
+    candidate = analysis(Favorability.NOT_APPLICABLE)
+    candidate.draft.proposal.sections[0].body = "공고와 회사 기술을 검토하던 중 문장 중"
+    runner = SequencedRunner([candidate, RuntimeError("모델 호출 실패")])
+    workflow = DocumentAnalysisWorkflow(runner=runner, max_attempts=1)
+
+    assert "생략" in asyncio.run(workflow.analyze(document())).proposal.sections[0].body
+    with pytest.raises(AnalysisWorkflowError, match="모델 호출 실패"):
+        asyncio.run(workflow.analyze(document().model_copy(update={"version_id": 31})))
+
+
+def test_exhausted_missing_closed_context_preserves_analysis_with_bounded_notice() -> None:
+    candidate = analysis(Favorability.NOT_APPLICABLE)
+    candidate.draft.comparison_summary.application_deadline = "2026-08-28"
+    candidate.draft.proposal.sections[1].body = "기술 연관성을 검토합니다. " * 65
+    runner = SequencedRunner([candidate])
+
+    result = asyncio.run(DocumentAnalysisWorkflow(
+        runner=runner, max_attempts=1, analysis_date=date(2026, 9, 9),
+    ).analyze(document()))
+
+    assert result.proposal.sections[1].body.startswith("접수가 종료된 공고")
+    assert "생략" in result.proposal.sections[1].body
+    assert len(result.proposal.sections[1].body) <= 1000
+    assert result.eligibility == Eligibility.INELIGIBLE
+
+
+@pytest.mark.parametrize("retry_timeout", [False, True])
+def test_ten_document_batch_retains_notice_with_repeated_narrative_failure(
+    retry_timeout: bool,
+) -> None:
+    class BatchRunner:
+        def __init__(self) -> None:
+            self.attempts: dict[int, int] = {}
+
+        async def analyze(
+            self, item: AnalysisDocumentRequest, feedback: str | None = None,
+        ) -> AgentAnalysis:
+            await asyncio.sleep(0)
+            attempt = self.attempts.get(item.detection_id, 0) + 1
+            self.attempts[item.detection_id] = attempt
+            if item.detection_id == 8 and attempt == 2 and retry_timeout:
+                raise TimeoutError()
+            candidate = analysis(Favorability.NOT_APPLICABLE)
+            if item.detection_id == 8:
+                candidate.draft.comparison_summary.application_deadline = "2026-08-28"
+                candidate.draft.proposal.sections[0].body = "지금 신청할 수 있습니다."
+            return candidate
+
+    runner = BatchRunner()
+    workflow = DocumentAnalysisWorkflow(
+        runner=runner, max_attempts=2, analysis_date=date(2026, 9, 9),
+    )
+    documents = [
+        document().model_copy(update={
+            "detection_id": identifier, "document_id": identifier, "version_id": identifier,
+        })
+        for identifier in range(1, 11)
+    ]
+
+    results, failures = asyncio.run(_analyze_documents(workflow, documents, concurrency=2))
+
+    assert failures == []
+    assert [item.detection_id for item in results] == list(range(1, 11))
+    assert runner.attempts[8] == 2
+    assert all(count == 1 for identifier, count in runner.attempts.items() if identifier != 8)
+    for item in results:
+        body = item.proposal.sections[0].body
+        assert ("생략" in body) == (item.detection_id == 8)
+        assert "지금 신청할 수 있습니다." not in body
