@@ -3,6 +3,9 @@ import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import pytest
+from pydantic import ValidationError
+
 from app.domains.analysis.proposal_drafting import (
     CORE_PROPOSAL_SECTION_TITLES,
     LangChainProposalGenerationRunner,
@@ -731,3 +734,63 @@ def test_skipped_or_failed_proposal_keeps_base_analysis_demo_usage() -> None:
         workflow = TwoStageAnalysisWorkflow(BaseWorkflow(base), ProposalRunner(fail=fail))
         generated = asyncio.run(workflow.analyze(document()))
         assert generated.proposal.uses_demo_profile is True
+
+
+@pytest.mark.parametrize("moved_count", [1, 11])
+def test_reclassified_submission_documents_survive_final_validation(moved_count) -> None:
+    draft = asyncio.run(ProposalRunner().generate(document(), result()))
+    item = draft.preparation.submission_documents[0]
+    draft.preparation.company_inputs = []
+    draft.preparation.submission_documents = [
+        item.model_copy(update={"title": f"사업계획서 {index}", "applies_to": f"기관 {index}"})
+        for index in range(15)
+    ]
+    draft.preparation.eligibility_checklist.extend(
+        item.model_copy(update={"title": f"참여확인서 {index}", "applies_to": f"기관 {index}"})
+        for index in range(moved_count)
+    )
+    _normalize_preparation_structure(draft)
+    runner = SimpleNamespace(generate=AsyncMock(return_value=draft))
+    workflow = TwoStageAnalysisWorkflow(BaseWorkflow(result()), runner)
+    generated = asyncio.run(workflow.analyze(document()))
+
+    assert generated.proposal.draft_status == ProposalDraftStatus.READY
+    documents = generated.proposal.preparation.submission_documents
+    assert len(documents) == 15 + moved_count
+    assert documents[-1].title == f"참여확인서 {moved_count - 1}"
+    assert documents[-1].source == item.source
+
+
+def test_final_validation_failure_does_not_abort_other_proposals() -> None:
+    invalid = asyncio.run(ProposalRunner().generate(document(), result()))
+    item = invalid.preparation.submission_documents[0]
+    invalid.preparation.submission_documents = [item.model_copy() for _ in range(28)]
+    failing = TwoStageAnalysisWorkflow(
+        BaseWorkflow(result()), SimpleNamespace(generate=AsyncMock(return_value=invalid))
+    )
+    successful = TwoStageAnalysisWorkflow(BaseWorkflow(result()), ProposalRunner())
+
+    async def generate_both():
+        return await asyncio.gather(failing.analyze(document()), successful.analyze(document()))
+
+    failed, completed = asyncio.run(generate_both())
+    assert failed.proposal.draft_status == ProposalDraftStatus.REVIEW_REQUIRED
+    assert failed.proposal.preparation is None
+    assert failed.summary == result().summary
+    assert failed.used_tools == result().used_tools
+    assert "결과 형식 검증" in failed.proposal.draft_reason
+    assert "input_value" not in failed.proposal.draft_reason
+    assert completed.proposal.draft_status == ProposalDraftStatus.READY
+
+
+def test_model_limit_stays_15_while_final_document_limit_is_27() -> None:
+    draft = asyncio.run(ProposalRunner().generate(document(), result()))
+    payload = draft.preparation.model_dump()
+    payload["submission_documents"] *= 27
+    assert len(ProposalPreparation.model_validate(payload).submission_documents) == 27
+    payload["submission_documents"].append(payload["submission_documents"][0])
+    with pytest.raises(ValidationError):
+        ProposalPreparation.model_validate(payload)
+    model_schema = ProposalModelOutput.model_json_schema()
+    preparation_schema = model_schema["$defs"]["ProposalPreparationModelOutput"]
+    assert preparation_schema["properties"]["submissionDocuments"]["maxItems"] == 15

@@ -331,7 +331,8 @@ class StrategyOnePage(CamelCaseModel):
 class ProposalPreparation(CamelCaseModel):
     meeting_agenda: list[str] = Field(default_factory=list)
     eligibility_checklist: list[PreparationChecklistItem] = Field(min_length=1, max_length=12)
-    submission_documents: list[PreparationChecklistItem] = Field(min_length=1, max_length=15)
+    # Preserve up to 12 document items reclassified from the eligibility checklist.
+    submission_documents: list[PreparationChecklistItem] = Field(min_length=1, max_length=27)
     company_inputs: list[PreparationChecklistItem] = Field(default_factory=list, exclude=True)
     application_deadline: str | None = Field(default=None, max_length=10)
     strategy: StrategyOnePage

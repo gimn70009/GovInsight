@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Protocol
 
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from app.core.schemas import CamelCaseModel
 from app.domains.analysis.config import AnalysisSettings
@@ -421,6 +421,7 @@ class TwoStageAnalysisWorkflow:
                     "preparation_schema_version": 12,
                 }
             )
+            result = DocumentAnalysisResult.model_validate(result.model_dump())
             result.used_tools = list(
                 dict.fromkeys(
                     [*result.used_tools, "map_proposal_sources", "build_proposal_preparation"]
@@ -1250,6 +1251,8 @@ def _relevant_excerpt(text: str, limit: int) -> str:
 
 
 def _safe_error(exception: Exception) -> str:
+    if isinstance(exception, ValidationError):
+        return "생성된 지원 준비 정보가 결과 형식 검증을 통과하지 못했습니다."
     message = str(exception).strip()
     if "length limit was reached" in message.casefold():
         return "모델 출력 한도에 도달했습니다."
