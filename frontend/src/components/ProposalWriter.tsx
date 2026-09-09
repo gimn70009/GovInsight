@@ -31,10 +31,12 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
   const resultHeading = useRef<HTMLDivElement>(null)
   const focusResult = useRef(false)
   const savedByKey = new Map(savedDrafts.map((item) => [sourceKey(item), item]))
-  const allSources = [...sources, ...savedDrafts
+  const allSources: ProposalSource[] = [...sources, ...savedDrafts
     .filter((item) => !sources.some((source) => sourceKey(source) === sourceKey(item)))
     .map((item) => ({ attachmentId: item.attachmentId, partIndex: item.partIndex,
       fileName: item.result.fileName, attachmentName: item.attachmentName, available: false, reason: '' }))]
+  const selectableSources = allSources.filter((source) => source.available || savedByKey.has(sourceKey(source)))
+  const unavailableSources = allSources.filter((source) => !source.available && !savedByKey.has(sourceKey(source)))
   const current = allSources.find((source) => sourceKey(source) === selected)
   const draft = savedByKey.get(selected)?.result
 
@@ -189,27 +191,38 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
       {loading ? <p role="status" className="proposal-writer__empty">첨부 양식과 초안을 불러오고 있습니다.</p> : sourceError ? (
         <div className="proposal-writer__notice" role="alert">{sourceError} <button type="button" onClick={() => setReload((value) => value + 1)}>다시 불러오기</button></div>
       ) : loaded && <div className="proposal-writer__picker">
-        <div className="proposal-writer__picker-heading"><span>첨부 양식</span><small>{allSources.length}개</small></div>
+        <div className="proposal-writer__picker-heading"><span>첨부 양식</span><small>{selectableSources.length}개</small></div>
         {allSources.length === 0 ? <p className="proposal-writer__empty">수집된 첨부파일이 없습니다. 첨부 양식이 있는 공고에서 작성할 수 있어요.</p> : <>
           <div className="proposal-writer__sources" role="group" aria-label="첨부 양식">
-            {allSources.map((source) => {
+            {selectableSources.map((source) => {
               const key = sourceKey(source)
               const saved = savedByKey.get(key)
-              const unavailable = !source.available && !saved
-              return <button type="button" key={key} className="proposal-writer__source-card"
+              const related = source.relatedFileNames ?? []
+              return <div key={key} className="proposal-writer__source-item"><button type="button" className="proposal-writer__source-card"
                 aria-label={sourceName(source)} aria-pressed={selected === key}
-                data-saved={Boolean(saved)} disabled={writing || unavailable}
+                data-saved={Boolean(saved)} disabled={writing}
                 onClick={() => selectSource(source)}>
                 <span className="proposal-writer__selection-mark" aria-hidden="true">{selected === key && <Check size={12} />}</span>
                 <span className="proposal-writer__file-info">
                   <span className="proposal-writer__file-name">{source.fileName}</span>
                   {source.attachmentName !== source.fileName && <small>{source.attachmentName}</small>}
                   {saved && <span className="proposal-writer__saved-label"><Check size={12} />작성 완료</span>}
-                  {unavailable && <small>{source.reason || '본문을 읽지 못한 파일입니다.'}</small>}
                 </span>
               </button>
+              {related.length > 1 && <details className="proposal-writer__related-files">
+                <summary>같은 본문 파일 {related.length}개</summary>
+                <ul>{related.map((name, index) => <li key={index}>{name}</li>)}</ul>
+              </details>}
+              </div>
             })}
           </div>
+          {unavailableSources.length > 0 &&
+            <details className="proposal-writer__unavailable-files">
+              <summary>사용할 수 없는 파일 {unavailableSources.length}개</summary>
+              <ul>{unavailableSources.map((source) =>
+                <li key={sourceKey(source)}><span>{source.fileName}</span>
+                  <small>{source.reason || '본문을 읽지 못한 파일입니다.'}</small></li>)}</ul>
+            </details>}
           {current && !draft && <div className="proposal-writer__actions">
             <span>작성한 초안은 자동 저장됩니다.</span>
             <button type="button" className="proposal-writer__generate" disabled={!current.available || writing} onClick={generate}>
@@ -231,8 +244,9 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
           <ProposalCopyButton text={draft.sections.map((item) => `${item.title}\n\n${item.body}`).join('\n\n')} label="전체 복사" />
         </div>
         {draft.message && <p className="proposal-writer__notice">{draft.message}</p>}
-        {draft.sections.map((section) => <article className="proposal-writer__section" key={section.title}>
-          <div className="proposal-writer__section-heading"><h4>{section.title}</h4>
+        {draft.sections.map((section, index) => <article className="proposal-writer__section" key={section.title}>
+          <div className="proposal-writer__section-heading"><div className="proposal-writer__section-title">
+            <span className="proposal-writer__section-number">{index + 1}</span><h4>{section.title}</h4></div>
             <ProposalCopyButton text={section.body} label="복사" accessibleLabel={`${section.title} 본문 복사`} /></div>
           <p className="proposal-writer__body">{section.body}</p>
           {section.confirmationItems.length > 0 && <div className="proposal-writer__confirm"><strong>제출 전 확인할 내용</strong><ul>{section.confirmationItems.map((item, i) => <li key={i}>{item}</li>)}</ul></div>}

@@ -273,6 +273,7 @@ export interface LegalPairResult {
 }
 
 export interface ProposalSource {
+  relatedFileNames?: string[]
   attachmentId: number
   partIndex: number
   fileName: string

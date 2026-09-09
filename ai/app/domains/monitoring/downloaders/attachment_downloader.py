@@ -1,4 +1,5 @@
 import hashlib
+import json
 import logging
 import tempfile
 from dataclasses import dataclass
@@ -97,8 +98,11 @@ class AttachmentDownloader:
                     "file_size": metadata.file_size,
                     "file_hash": metadata.file_hash,
                     "extracted_text": parsed.text if parsed is not None else None,
+                    "archive_entries_json": json.dumps(parsed.archive_entries, ensure_ascii=False)
+                    if parsed is not None and parsed.archive_entries else None,
                     "parse_status": _successful_parse_status(attachment.file_name, parsed),
-                    "error_message": None,
+                    "error_message": "ZIP 내부에서 읽을 수 있는 문서를 찾지 못했습니다."
+                    if parsed is not None and parsed.archive_entries and not parsed.text else None,
                 }
             )
         except (
@@ -118,6 +122,7 @@ class AttachmentDownloader:
                     "file_size": metadata.file_size if metadata is not None else None,
                     "file_hash": metadata.file_hash if metadata is not None else None,
                     "extracted_text": None,
+                    "archive_entries_json": None,
                     "parse_status": AttachmentParseStatus.FAILED,
                     "error_message": _safe_error_message(exception),
                 }
@@ -156,6 +161,10 @@ class AttachmentDownloader:
 
 def _successful_parse_status(file_name: str, parsed: object | None) -> AttachmentParseStatus:
     if parsed is not None:
+        if getattr(parsed, "archive_entries", ()) and not parsed.text:
+            return (AttachmentParseStatus.FAILED
+                    if any(e["status"] == "FAILED" for e in parsed.archive_entries)
+                    else AttachmentParseStatus.UNSUPPORTED)
         return AttachmentParseStatus.COMPLETED
     return AttachmentParseStatus.UNSUPPORTED
 

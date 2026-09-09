@@ -99,6 +99,10 @@ set ZIP_MAX_UNCOMPRESSED_SIZE_BYTES=104857600
 - 다운로드 또는 파싱 실패: `PARSE_STATUS=FAILED`와 안전한 오류 메시지 저장
 - PDF는 `pypdf`, HWP는 `olefile`과 HWP 5.0 레코드 분석, HWPX는 Python ZIP·XML 기능으로 처리
 - ZIP은 내부 파일 20개와 총 압축 해제 크기 100 MiB를 기본 상한으로 사용하며 중첩 ZIP은 분석하지 않음
+- 지원 확장자의 실제 PDF/OLE/HWPX 구조를 확인해 파서를 선택하므로 `.hwp`로 이름 붙은 HWPX도 처리. DOCX·XLSX는 미지원 유지
+- ZIP 내부의 추출 본문이 동일한 파일은 한 번만 분석 본문에 포함하고 모든 파일명·상태는 `archiveEntriesJson`으로 별도 전달. 줄 양끝 공백 외 본문·줄바꿈이 다르면 묶지 않음
+- `archiveEntriesJson`은 `{fileName,status,partIndex,reason,actualFormat}` 배열 문자열. 상태는 `COMPLETED|DUPLICATE|UNSUPPORTED|FAILED`; 성공·중복만 대표 본문 순번을 공유. 전체 실패·미지원 ZIP도 파일별 안내를 보존
+- Spring의 `DOCUMENT_ATTACHMENTS.ARCHIVE_ENTRIES_JSON` 열이 필요하며 [마이그레이션](../docs/migrations/20260909_zip_entry_metadata.sql) 참고. 추가 LLM 호출·라이브러리 없음
 - 암호화·DRM·배포용 HWP와 그림·OLE 개체 추출은 지원하지 않음
 - 본문 전체와 다운로드 URL은 로그에 남기지 않음
 

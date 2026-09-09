@@ -23,7 +23,6 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class ProposalSourceService {
     private static final int MAX_TEMPLATE_CHARS = 80_000;
-    private static final Pattern ZIP_PART = Pattern.compile("(?m)^\\[파일: ([^\\r\\n]+)\\]\\r?\\n");
     private final DocumentDetectionRepository detections;
     private final DocumentAttachmentRepository attachments;
 
@@ -91,17 +90,41 @@ public class ProposalSourceService {
         if (!"zip".equalsIgnoreCase(file.getFileExtension())) {
             return List.of(source(file, 0, file.getFileName(), text));
         }
-        var matches = ZIP_PART.matcher(text).results().toList();
-        if (matches.isEmpty()) {
+        var raw = ZipArchiveContent.parts(text);
+        var manifest = ZipArchiveContent.entries(file.getArchiveEntriesJson());
+        if (!manifest.isEmpty()) {
+            var result = new ArrayList<Source>();
+            for (int index = 0; index < raw.size(); index++) {
+                final int position = index;
+                var group = manifest.stream().filter(entry -> entry.partIndex() != null
+                        && entry.partIndex() == position
+                        && ("COMPLETED".equals(entry.status()) || "DUPLICATE".equals(entry.status()))).toList();
+                if (group.isEmpty()) continue;
+                var part = raw.get(index);
+                var parsed = source(file, index, part.name(), part.text());
+                var summary = parsed.summary();
+                result.add(new Source(new ProposalSourceResponse(summary.attachmentId(), index,
+                        summary.fileName(), summary.attachmentName(), summary.available(), summary.reason(),
+                        group.size() > 1 ? group.stream().map(ZipArchiveContent.Entry::fileName).toList() : List.of()),
+                        parsed.text()));
+            }
+            int unavailableIndex = raw.size();
+            for (var entry : manifest) {
+                if (!"UNSUPPORTED".equals(entry.status()) && !"FAILED".equals(entry.status())) continue;
+                String reason = "UNSUPPORTED".equals(entry.status())
+                        ? "미지원 형식 · HWP, HWPX, PDF만 읽을 수 있어요." : "읽기 실패 · 파일 내용을 확인할 수 없어요.";
+                result.add(new Source(new ProposalSourceResponse(file.getId(), unavailableIndex++, entry.fileName(),
+                        file.getFileName(), false, reason), ""));
+            }
+            if (!result.isEmpty()) return result;
+        }
+        if (raw.isEmpty()) {
             return List.of(new Source(new ProposalSourceResponse(file.getId(), 0, file.getFileName(),
                     file.getFileName(), false, "ZIP 내부에서 읽을 수 있는 문서를 찾지 못했습니다."), ""));
         }
         var parts = new ArrayList<Source>();
-        for (int index = 0; index < matches.size(); index++) {
-            var match = matches.get(index);
-            int end = index + 1 < matches.size() ? matches.get(index + 1).start() : text.length();
-            parts.add(source(file, index, ZipEntryFileName.restoreLegacyKorean(match.group(1)),
-                    text.substring(match.end(), end).strip()));
+        for (int index = 0; index < raw.size(); index++) {
+            parts.add(source(file, index, raw.get(index).name(), raw.get(index).text()));
         }
         return parts;
     }

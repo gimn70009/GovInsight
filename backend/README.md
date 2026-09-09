@@ -66,7 +66,7 @@ OpenAPI 통합 테스트에서는 다음 항목을 확인한다.
 
 ## 첨부 양식 선택형 초안 API
 
-- `GET /api/document-detections/{detectionId}/proposal-sources`: 현재 감지 버전의 첨부와 ZIP 내부 문서, 사용 가능 여부를 조회한다.
+- `GET /api/document-detections/{detectionId}/proposal-sources`: 현재 감지 버전의 첨부와 ZIP 내부 문서, 사용 가능 여부와 사유, 동일 본문의 파일명 목록(`relatedFileNames`)을 조회한다. 미지원·실패 파일도 목록에 포함한다.
 - `POST /api/document-detections/{detectionId}/proposal-draft`: `{attachmentId, partIndex}`로 선택한 양식의 핵심 항목 최대 4개를 생성한다. 저장된 결과가 있으면 모델 호출 없이 반환하며 새 완료 결과는 계정별 DB에 저장한다.
 - `GET /api/document-detections/{detectionId}/proposal-drafts`: 본인 계정의 같은 문서 버전에서 작성한 초안을 최근 열람 순서로 조회한다.
 - `GET /api/document-detections/{detectionId}/proposal-drafts/state`: `{drafts, running}`으로 저장된 초안과 본인 계정·현재 문서 버전의 생성 중인 양식 목록을 함께 조회한다. 재진입·새로고침 후에도 생성 중 잠금을 복원하며 완료 결과를 자동 표시한다. 상태 조회에는 AI 호출이 없다.
@@ -102,3 +102,7 @@ OpenAPI 통합 테스트에서는 다음 항목을 확인한다.
 수신은 getUpdates 긴 폴링을 사용한다. 다른 프로그램의 getUpdates와 동시에 실행하지 않는다. 기존 웹훅이 있거나 HTTP 409 충돌이 발생하면 수신을 중지하고 로그에 안내하며 웹훅을 변경하지 않는다. 원인을 해결한 뒤 서버를 재시작한다. 정상 수신 로그는 Telegram /start is listening for new private messages.이며, 답장 성공은 updateId만 기록한다. 봇 토큰과 채팅 ID·메시지 원문은 로그에 기록하지 않는다.
 
 자동 테스트는 외부 Telegram 수신을 끄고 HTTP·메시지 응답을 모의 객체로 검증한다.
+
+### ZIP 내부 파일 상태 저장
+
+기존 DB에는 [ZIP 목록 열 추가 SQL](../docs/migrations/20260909_zip_entry_metadata.sql)을 한 번 적용한다. 수집 요청의 `archiveEntriesJson`을 `DOCUMENT_ATTACHMENTS.ARCHIVE_ENTRIES_JSON` CLOB에 보관하며 본문과 분리한다. 같은 버전의 재수집은 기존 파일의 내부 순번을 유지하고 새 문서만 뒤에 추가해 저장 초안의 연결을 보존한다. 이전 목록 없는 데이터도 계속 조회할 수 있으며, 다음 수집부터 미지원·실패 파일 목록까지 표시한다. DB 초기화나 기존 초안 재생성이 필요하지 않다.

@@ -156,7 +156,7 @@ public class CollectionResultService {
                             attachment.extractedText(),
                             attachment.parseStatus(),
                             attachment.errorMessage()
-                    ))
+                    ).recordArchiveEntries(attachment.archiveEntriesJson()))
                     .toList());
         } else {
             updateAttachmentMetadata(version, attachments);
@@ -189,14 +189,13 @@ public class CollectionResultService {
                 collectedAttachments.stream()
                         .filter(collected -> collected.downloadUrl().equals(savedAttachment.getDownloadUrl()))
                         .findFirst()
-                        .ifPresent(collected -> savedAttachment.updateDownloadMetadata(
-                                collected.contentType(),
-                                collected.fileSize(),
-                                collected.fileHash(),
-                                collected.extractedText(),
-                                collected.parseStatus(),
-                                collected.errorMessage()
-                        ))
+                        .ifPresent(collected -> {
+                            var archive = ZipArchiveContent.reconcile(savedAttachment.getExtractedText(),
+                                    collected.extractedText(), collected.archiveEntriesJson());
+                            savedAttachment.updateDownloadMetadata(collected.contentType(), collected.fileSize(),
+                                    collected.fileHash(), archive.text(), collected.parseStatus(), collected.errorMessage());
+                            savedAttachment.recordArchiveEntries(archive.entriesJson());
+                        })
         );
     }
     private DocumentChangeType determineChangeType(DocumentVersion latestVersion, String versionHash) {
@@ -218,7 +217,8 @@ public class CollectionResultService {
                         attachment.fileHash(),
                         attachment.extractedText(),
                         attachment.parseStatus(),
-                        attachment.errorMessage()
+                        attachment.errorMessage(),
+                        attachment.archiveEntriesJson()
                 ))
                 .toList();
     }

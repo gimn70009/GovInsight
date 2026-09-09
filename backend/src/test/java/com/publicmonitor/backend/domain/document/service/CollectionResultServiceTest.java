@@ -111,6 +111,7 @@ class CollectionResultServiceTest {
             assertThat(attachment.getFileSize()).isEqualTo(1024L);
             assertThat(attachment.getFileHash()).isEqualTo("a".repeat(64));
             assertThat(attachment.getExtractedText()).isEqualTo("HWPX 추출 본문");
+            assertThat(attachment.getArchiveEntriesJson()).contains("양식.hwpx");
             assertThat(attachment.getParseStatus()).isEqualTo(AttachmentParseStatus.COMPLETED);
             return List.of(attachment);
         });
@@ -175,6 +176,7 @@ class CollectionResultServiceTest {
         assertThat(storedAttachment.getFileSize()).isEqualTo(1024L);
         assertThat(storedAttachment.getFileHash()).isEqualTo("a".repeat(64));
         assertThat(storedAttachment.getExtractedText()).isEqualTo("HWPX 추출 본문");
+        assertThat(storedAttachment.getArchiveEntriesJson()).contains("양식.hwpx");
         verify(versionRepository, never()).save(any());
         verify(attachmentRepository, never()).saveAll(any());
         verify(detectionRepository).save(any());
@@ -195,7 +197,8 @@ class CollectionResultServiceTest {
                         "a".repeat(64),
                         "HWPX 추출 본문",
                         AttachmentParseStatus.COMPLETED,
-                        null
+                        null,
+                        "[{\"fileName\":\"양식.hwpx\",\"status\":\"COMPLETED\",\"partIndex\":0}]"
                 ))
         );
         return new CollectionResultRequest(

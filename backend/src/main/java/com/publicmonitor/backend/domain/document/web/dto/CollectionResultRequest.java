@@ -87,8 +87,16 @@ public record CollectionResultRequest(
             @NotNull AttachmentParseStatus parseStatus,
 
             @Schema(description = "다운로드 또는 파싱 실패 원인", maxLength = 2000, nullable = true)
-            @Size(max = 2000) String errorMessage
+            @Size(max = 2000) String errorMessage,
+
+            @Schema(description = "ZIP 내부 파일별 상태와 본문 순번 JSON", nullable = true)
+            @Size(max = 100000) String archiveEntriesJson
     ) {
+        public CollectedAttachment(String fileName, String downloadUrl, String contentType, Long fileSize,
+                String fileHash, String extractedText, AttachmentParseStatus parseStatus, String errorMessage) {
+            this(fileName, downloadUrl, contentType, fileSize, fileHash, extractedText, parseStatus, errorMessage, null);
+        }
+
         public CollectedAttachment(
                 String fileName,
                 String downloadUrl,

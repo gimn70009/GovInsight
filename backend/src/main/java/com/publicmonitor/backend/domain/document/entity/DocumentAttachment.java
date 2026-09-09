@@ -76,6 +76,14 @@ public class DocumentAttachment extends BaseEntity {
     @Column(name = "extracted_text", columnDefinition = "CLOB")
     private String extractedText;
 
+    @Column(name = "archive_entries_json", columnDefinition = "CLOB")
+    private String archiveEntriesJson;
+
+    public DocumentAttachment recordArchiveEntries(String archiveEntriesJson) {
+        this.archiveEntriesJson = archiveEntriesJson;
+        return this;
+    }
+
     @Enumerated(EnumType.STRING)
     @Column(
             name = "parse_status",

@@ -47,13 +47,15 @@ def test_extracts_supported_documents_and_ignores_failed_or_unsupported_entries(
     assert result.text == "[파일: first.pdf]\n첫 번째 문서"
 
 
-def test_rejects_zip_without_supported_documents() -> None:
+def test_lists_zip_without_supported_documents() -> None:
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / "unsupported.zip"
         _write_zip(path, {"notice.txt": "안내"})
 
-        with pytest.raises(ZipParseError, match="분석할 수 있는 문서가 없습니다"):
-            ZipParser({}, 20, 1024).parse(path)
+        result = ZipParser({}, 20, 1024).parse(path)
+        assert result.text == ""
+        assert result.archive_entries[0]["fileName"] == "notice.txt"
+        assert result.archive_entries[0]["status"] == "UNSUPPORTED"
 
 
 def test_rejects_zip_when_entry_count_exceeds_limit() -> None:
@@ -113,24 +115,31 @@ def test_recovers_korean_names_in_mixed_encoding_zip(tmp_path: Path) -> None:
 
     result = ZipParser({".hwpx": TextParser()}, 20, 1024).parse(path)
 
-    assert result.text == "\n\n".join([
-        *(f"[파일: {name}]\n문서 {index}" for index, name in enumerate(names)),
-        "[파일: 한글 양식.hwpx]\nUTF-8 문서",
-        "[파일: form.hwpx]\nASCII 문서",
-    ])
+    assert result.text == "\n\n".join(
+        [
+            *(f"[파일: {name}]\n문서 {index}" for index, name in enumerate(names)),
+            "[파일: 한글 양식.hwpx]\nUTF-8 문서",
+            "[파일: form.hwpx]\nASCII 문서",
+        ]
+    )
 
 
-@pytest.mark.parametrize("name,encoding", [
-    ("café.hwpx", "cp437"),
-    ("éé.hwpx", "cp437"),
-    ("╡.hwpx", "cp437"),  # Incomplete CP949 sequence.
-    ("╩í.hwpx", "cp437"),  # Decodes to Hanja, not a Korean filename.
-    ("Résumé.hwpx", "utf-8"),
-    ("日本語.hwpx", "utf-8"),
-    ("붙임 1. 신청서 양식.hwpx".encode("cp949").decode("cp437"), "utf-8"),
-])
+@pytest.mark.parametrize(
+    "name,encoding",
+    [
+        ("café.hwpx", "cp437"),
+        ("éé.hwpx", "cp437"),
+        ("╡.hwpx", "cp437"),  # Incomplete CP949 sequence.
+        ("╩í.hwpx", "cp437"),  # Decodes to Hanja, not a Korean filename.
+        ("Résumé.hwpx", "utf-8"),
+        ("日本語.hwpx", "utf-8"),
+        ("붙임 1. 신청서 양식.hwpx".encode("cp949").decode("cp437"), "utf-8"),
+    ],
+)
 def test_preserves_other_names_and_explicit_utf8_metadata(
-    tmp_path: Path, name: str, encoding: str,
+    tmp_path: Path,
+    name: str,
+    encoding: str,
 ) -> None:
     path = tmp_path / "unchanged.zip"
     with zipfile.ZipFile(path, "w") as archive:
@@ -140,3 +149,44 @@ def test_preserves_other_names_and_explicit_utf8_metadata(
     result = ZipParser({".hwpx": TextParser()}, 20, 1024).parse(path)
 
     assert result.text == f"[파일: {name}]\n원문"
+
+
+def test_records_every_file_without_putting_failures_in_text(tmp_path: Path) -> None:
+    path = tmp_path / "files.zip"
+    _write_zip(path, {"ok.pdf": "본문", "broken.hwp": "오류", "file.docx": "미지원"})
+    result = ZipParser({".pdf": TextParser(), ".hwp": FailingParser()}, 20, 1024).parse(path)
+    assert [item["status"] for item in result.archive_entries] == [
+        "COMPLETED",
+        "FAILED",
+        "UNSUPPORTED",
+    ]
+    assert result.text == "[파일: ok.pdf]\n본문"
+
+
+def test_same_name_with_different_text_is_not_merged(tmp_path: Path) -> None:
+    path = tmp_path / "files.zip"
+    _write_zip(path, {"one/form.pdf": "지원금 100원", "two/form.pdf": "지원금 200원"})
+    result = ZipParser({".pdf": TextParser()}, 20, 1024).parse(path)
+    assert [item["partIndex"] for item in result.archive_entries] == [0, 1]
+    assert all(item["status"] == "COMPLETED" for item in result.archive_entries)
+
+
+def test_identical_extracted_text_is_grouped_conservatively(tmp_path: Path) -> None:
+    path = tmp_path / "files.zip"
+    _write_zip(path, {"a.pdf": "목표\n  방법  ", "b.hwp": "목표\n방법", "c.pdf": "목표 방법"})
+    result = ZipParser({".pdf": TextParser(), ".hwp": TextParser()}, 20, 1024).parse(path)
+    assert [item["status"] for item in result.archive_entries] == [
+        "COMPLETED",
+        "DUPLICATE",
+        "COMPLETED",
+    ]
+    assert [item["partIndex"] for item in result.archive_entries] == [0, 0, 1]
+    assert result.text.count("[파일:") == 2
+
+
+def test_all_failed_zip_retains_diagnostics(tmp_path: Path) -> None:
+    path = tmp_path / "files.zip"
+    _write_zip(path, {"broken.hwp": "실패"})
+    result = ZipParser({".hwp": FailingParser()}, 20, 1024).parse(path)
+    assert not result.text
+    assert result.archive_entries[0]["status"] == "FAILED"

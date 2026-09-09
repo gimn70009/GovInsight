@@ -161,4 +161,36 @@ class ProposalSourceServiceTest {
         setAttachments(attachment(2L, name, "hwpx", "본문", AttachmentParseStatus.COMPLETED));
         assertThat(service.list(1L).getFirst().fileName()).isEqualTo(name);
     }
+    @Test
+    void 동일_본문의_파일명과_미지원_실패_사유를_표시하고_선택한_본문만_전달한다() {
+        var file = attachment(2L, "서식.zip", "zip", "[파일: 양식.hwpx]\n작성 본문", AttachmentParseStatus.COMPLETED);
+        when(file.getArchiveEntriesJson()).thenReturn("""
+                [{"fileName":"양식.hwp","status":"DUPLICATE","partIndex":0},
+                 {"fileName":"양식.hwpx","status":"COMPLETED","partIndex":0},
+                 {"fileName":"설명.docx","status":"UNSUPPORTED","partIndex":null},
+                 {"fileName":"고장.pdf","status":"FAILED","partIndex":null}]
+                """);
+        setAttachments(file);
+        var sources = service.list(1L);
+        assertThat(sources).hasSize(3);
+        assertThat(sources.getFirst().relatedFileNames()).containsExactly("양식.hwp", "양식.hwpx");
+        assertThat(sources.get(1).reason()).startsWith("미지원 형식");
+        assertThat(sources.get(2).reason()).startsWith("읽기 실패");
+        assertThat(service.prepare(1L, new ProposalWriteRequest(2L, 0)).templateText()).isEqualTo("작성 본문");
+        assertThatThrownBy(() -> service.prepare(1L, new ProposalWriteRequest(2L, 1)))
+                .isInstanceOf(DocumentDetectionException.class);
+        assertThatThrownBy(() -> service.prepare(1L, new ProposalWriteRequest(2L, 2)))
+                .isInstanceOf(DocumentDetectionException.class);
+    }
+
+    @Test
+    void 모든_파일이_미지원이어도_파일별_이유를_반환한다() {
+        var file = attachment(2L, "서식.zip", "zip", "", AttachmentParseStatus.UNSUPPORTED);
+        when(file.getArchiveEntriesJson()).thenReturn("""
+                [{"fileName":"양식.docx","status":"UNSUPPORTED"},{"fileName":"표.xlsx","status":"UNSUPPORTED"}]
+                """);
+        setAttachments(file);
+        assertThat(service.list(1L)).hasSize(2).allSatisfy(source -> assertThat(source.available()).isFalse());
+    }
+
 }
