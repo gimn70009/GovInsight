@@ -7,10 +7,13 @@ import com.publicmonitor.backend.domain.document.entity.*;
 import com.publicmonitor.backend.domain.document.exception.DocumentDetectionException;
 import com.publicmonitor.backend.domain.document.repository.*;
 import com.publicmonitor.backend.domain.document.web.dto.ProposalWriteRequest;
+import java.nio.charset.Charset;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class ProposalSourceServiceTest {
     private final DocumentDetectionRepository detections = mock(DocumentDetectionRepository.class);
@@ -109,5 +112,53 @@ class ProposalSourceServiceTest {
         assertThat(input.templateText()).isEqualTo("선택 양식의 목표");
         assertThat(input.noticeText()).contains("사업공고문.pdf", "지원 대상과 접수기한")
                 .doesNotContain("다른 양식의 목차", "선택 양식의 목표");
+    }
+
+    @Test
+    void 기존_zip의_깨진_파일명을_조회와_초안입력에서_복구하고_원문과_선택번호를_유지한다() {
+        var names = List.of("붙임 1. 신청서 양식.hwpx", "붙임 2. 신청서 영문요약 양식.hwpx", "붙임 3. 별첨 양식.hwpx");
+        var stored = new StringBuilder();
+        for (int index = 0; index < names.size(); index++) {
+            String broken = new String(names.get(index).getBytes(Charset.forName("x-windows-949")),
+                    Charset.forName("IBM437"));
+            assertThat(broken).isNotEqualTo(names.get(index));
+            stored.append("[파일: ").append(broken).append("]\n본문 ").append(index).append("\n\n");
+        }
+        var zip = attachment(2L, "제출서류.zip", "zip", stored.toString(), AttachmentParseStatus.COMPLETED);
+        setAttachments(zip);
+
+        var sources = service.list(1L);
+        assertThat(sources).extracting(item -> item.fileName()).containsExactlyElementsOf(names);
+        assertThat(sources).allSatisfy(item -> {
+            assertThat(item.attachmentId()).isEqualTo(2L);
+            assertThat(item.attachmentName()).isEqualTo("제출서류.zip");
+            assertThat(item.available()).isTrue();
+        });
+        for (int index = 0; index < names.size(); index++) {
+            assertThat(sources.get(index).partIndex()).isEqualTo(index);
+            var input = service.prepare(1L, new ProposalWriteRequest(2L, index));
+            assertThat(input.fileName()).isEqualTo(names.get(index));
+            assertThat(input.templateText()).isEqualTo("본문 " + index);
+        }
+        assertThat(zip.getExtractedText()).isEqualTo(stored.toString());
+        verify(attachments, never()).save(any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"서식/한글 양식.hwpx", "form.pdf", "café.hwpx", "éé.hwpx", "╡.hwpx",
+            "╩í.hwpx", "日本語.hwpx", "한글─양식.hwpx"})
+    void 정상_이름과_복구할_수_없는_이름은_그대로_유지한다(String name) {
+        setAttachments(attachment(2L, "제출서류.zip", "zip", "[파일: " + name + "]\n양식 본문",
+                AttachmentParseStatus.COMPLETED));
+        assertThat(service.list(1L).getFirst().fileName()).isEqualTo(name);
+        assertThat(service.prepare(1L, new ProposalWriteRequest(2L, 0)).fileName()).isEqualTo(name);
+    }
+
+    @Test
+    void zip_외부_첨부파일명은_복구_대상에서_제외한다() {
+        String name = new String("신청서.hwpx".getBytes(Charset.forName("x-windows-949")),
+                Charset.forName("IBM437"));
+        setAttachments(attachment(2L, name, "hwpx", "본문", AttachmentParseStatus.COMPLETED));
+        assertThat(service.list(1L).getFirst().fileName()).isEqualTo(name);
     }
 }

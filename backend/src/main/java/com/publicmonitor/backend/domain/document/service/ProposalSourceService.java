@@ -100,7 +100,8 @@ public class ProposalSourceService {
         for (int index = 0; index < matches.size(); index++) {
             var match = matches.get(index);
             int end = index + 1 < matches.size() ? matches.get(index + 1).start() : text.length();
-            parts.add(source(file, index, match.group(1), text.substring(match.end(), end).strip()));
+            parts.add(source(file, index, ZipEntryFileName.restoreLegacyKorean(match.group(1)),
+                    text.substring(match.end(), end).strip()));
         }
         return parts;
     }

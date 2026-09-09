@@ -81,3 +81,62 @@ def test_rejects_invalid_zip() -> None:
 
         with pytest.raises(ZipParseError, match="읽을 수 없습니다"):
             ZipParser({".pdf": TextParser()}, 20, 1024).parse(path)
+
+
+class EncodedZipInfo(zipfile.ZipInfo):
+    """Write real legacy name bytes into both ZIP headers without a UTF-8 flag."""
+
+    def __init__(self, filename: str, encoding: str) -> None:
+        super().__init__(filename)
+        self.encoding = encoding
+
+    def _encodeFilenameFlags(self) -> tuple[bytes, int]:
+        return self.filename.encode(self.encoding), self.flag_bits & ~0x800
+
+
+def test_recovers_korean_names_in_mixed_encoding_zip(tmp_path: Path) -> None:
+    path = tmp_path / "mixed.zip"
+    names = [
+        "붙임 1. 신청서 양식.hwpx",
+        "붙임 2. 신청서 영문요약 양식.hwpx",
+        "붙임 3. 별첨 양식.hwpx",
+    ]
+    with zipfile.ZipFile(path, "w") as archive:
+        for index, name in enumerate(names):
+            archive.writestr(EncodedZipInfo(f"서식/{name}", "cp949"), f"문서 {index}")
+        archive.writestr("정상/한글 양식.hwpx", "UTF-8 문서")
+        archive.writestr("form.hwpx", "ASCII 문서")
+    with zipfile.ZipFile(path) as archive:
+        assert archive.infolist()[0].filename != f"서식/{names[0]}"
+        assert archive.infolist()[0].flag_bits & 0x800 == 0
+        assert archive.infolist()[3].flag_bits & 0x800
+
+    result = ZipParser({".hwpx": TextParser()}, 20, 1024).parse(path)
+
+    assert result.text == "\n\n".join([
+        *(f"[파일: {name}]\n문서 {index}" for index, name in enumerate(names)),
+        "[파일: 한글 양식.hwpx]\nUTF-8 문서",
+        "[파일: form.hwpx]\nASCII 문서",
+    ])
+
+
+@pytest.mark.parametrize("name,encoding", [
+    ("café.hwpx", "cp437"),
+    ("éé.hwpx", "cp437"),
+    ("╡.hwpx", "cp437"),  # Incomplete CP949 sequence.
+    ("╩í.hwpx", "cp437"),  # Decodes to Hanja, not a Korean filename.
+    ("Résumé.hwpx", "utf-8"),
+    ("日本語.hwpx", "utf-8"),
+    ("붙임 1. 신청서 양식.hwpx".encode("cp949").decode("cp437"), "utf-8"),
+])
+def test_preserves_other_names_and_explicit_utf8_metadata(
+    tmp_path: Path, name: str, encoding: str,
+) -> None:
+    path = tmp_path / "unchanged.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        entry = name if encoding == "utf-8" else EncodedZipInfo(name, encoding)
+        archive.writestr(entry, "원문")
+
+    result = ZipParser({".hwpx": TextParser()}, 20, 1024).parse(path)
+
+    assert result.text == f"[파일: {name}]\n원문"

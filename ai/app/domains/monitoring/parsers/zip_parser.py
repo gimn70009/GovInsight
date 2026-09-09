@@ -78,7 +78,7 @@ class ZipParser:
                 except (AttachmentParseError, OSError, RuntimeError, zipfile.BadZipFile):
                     continue
                 if parsed is not None:
-                    display_name = _display_name(entry.filename)
+                    display_name = _display_name(_entry_name(entry))
                     parsed_sections.append(f"[파일: {display_name}]\n{parsed.text}")
 
         if not parsed_sections:
@@ -99,6 +99,21 @@ class ZipParser:
                     raise ZipParseError("ZIP 압축 해제 크기가 허용된 범위를 초과했습니다.")
                 output.write(chunk)
         return extracted_size
+
+
+def _entry_name(entry: zipfile.ZipInfo) -> str:
+    value = entry.filename
+    # Respect explicit UTF-8 metadata. Legacy Korean ZIPs often have no encoding flag.
+    if entry.flag_bits & 0x800 or not any("\u2500" <= char <= "\u259f" for char in value):
+        return value
+    try:
+        raw_name = value.encode("cp437")
+        decoded = raw_name.decode("cp949")
+        if any("가" <= char <= "힣" for char in decoded) and decoded.encode("cp949") == raw_name:
+            return decoded
+    except UnicodeError:
+        pass
+    return value
 
 
 def _display_name(value: str) -> str:
