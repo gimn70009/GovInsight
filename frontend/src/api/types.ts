@@ -295,3 +295,39 @@ export interface ProposalWrittenDraft {
     confirmationItems: string[]
   }>
 }
+
+export interface TelegramRecipient { chatId: string; name: string; enabled: boolean }
+export interface TelegramSettings {
+  version: number | null
+  enabled: boolean
+  botConfigured: boolean
+  recipients: TelegramRecipient[]
+  updatedAt: string | null
+}
+export type TelegramSettingsPayload = Pick<TelegramSettings, 'version' | 'enabled' | 'recipients'>
+export interface TelegramConnection {
+  botConnected: boolean; chatConnected: boolean
+  botName: string | null; botUsername: string | null
+  chatTitle: string | null; chatType: string | null
+  message: string; checkedAt: string
+}
+export type TelegramDeliveryStatus = 'SENT' | 'PARTIAL' | 'FAILED' | 'SENDING' | 'NOT_SENT' | 'PREPARING' | 'REPORT_FAILED'
+export interface TelegramReport {
+  reportId: number; runId: number; title: string | null
+  triggerType: 'MANUAL' | 'SCHEDULED'
+  createdAt: string; generatedAt: string | null
+  status: TelegramDeliveryStatus
+  recipientCount: number; sentCount: number; failedCount: number
+  errorMessage: string | null
+}
+export interface TelegramRecipientDelivery {
+  deliveryId: number; chatId: string; name: string | null
+  status: 'PENDING' | 'SENT' | 'FAILED'
+  attemptCount: number; attemptedAt: string | null; sentAt: string | null
+  errorMessage: string | null
+}
+export interface TelegramReportDetail {
+  report: TelegramReport
+  body: string | null
+  deliveries: TelegramRecipientDelivery[]
+}

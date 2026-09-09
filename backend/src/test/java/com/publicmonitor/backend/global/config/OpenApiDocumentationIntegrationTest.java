@@ -19,6 +19,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest(properties = {
+    "app.telegram.commands.enabled=false",
         "spring.autoconfigure.exclude="
                 + "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration,"
                 + "org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration",
@@ -33,6 +34,15 @@ class OpenApiDocumentationIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @MockitoBean
+    private com.publicmonitor.backend.domain.telegram.service.TelegramSettingsService telegramSettings;
+    @MockitoBean
+    private com.publicmonitor.backend.domain.telegram.service.TelegramConnectionService telegramConnection;
+    @MockitoBean
+    private com.publicmonitor.backend.domain.telegram.service.TelegramReportQueryService telegramReports;
+    @MockitoBean
+    private com.publicmonitor.backend.domain.telegram.TelegramReportDeliveryService telegramDelivery;
 
     @MockitoBean
     private UserRepository userRepository;
@@ -87,6 +97,8 @@ class OpenApiDocumentationIntegrationTest {
                 .andExpect(jsonPath("$.paths['/api/monitoring-runs'].post").exists())
                 .andExpect(jsonPath("$.paths['/api/monitoring-runs'].get").exists())
                 .andExpect(jsonPath("$.paths['/api/document-detections'].get").exists())
+                .andExpect(jsonPath("$.paths['/api/telegram/settings'].get").exists())
+                .andExpect(jsonPath("$.paths['/api/telegram/deliveries/{deliveryId}/retry'].post").exists())
                 .andExpect(jsonPath("$.components.securitySchemes.bearerAuth.type").value("http"))
                 .andExpect(jsonPath("$.components.securitySchemes.bearerAuth.scheme").value("bearer"))
                 .andExpect(jsonPath("$.paths['/api/monitoring-sources'].get.security[0].bearerAuth").exists())

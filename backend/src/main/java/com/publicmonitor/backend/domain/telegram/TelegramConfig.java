@@ -9,6 +9,11 @@ import org.springframework.web.client.RestClient;
 @Configuration
 @EnableConfigurationProperties(TelegramProperties.class)
 public class TelegramConfig {
+    @Bean(destroyMethod = "close")
+    java.util.concurrent.ExecutorService telegramDeliveryExecutor() {
+        return java.util.concurrent.Executors.newFixedThreadPool(3);
+    }
+
 
     @Bean
     RestClient telegramRestClient(TelegramProperties properties) {

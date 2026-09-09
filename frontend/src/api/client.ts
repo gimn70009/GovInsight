@@ -1,5 +1,7 @@
 import type {
   ApiResponse,
+  TelegramSettings, TelegramSettingsPayload, TelegramConnection,
+  TelegramReport, TelegramReportDetail, TelegramDeliveryStatus, TelegramRecipientDelivery,
   ProposalSource,
   ProposalWrittenDraft,
   CreateMonitoringRunResponse,
@@ -49,6 +51,29 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  getTelegramSettings: () => request<TelegramSettings>('/api/telegram/settings'),
+  updateTelegramSettings: (payload: TelegramSettingsPayload) =>
+    request<TelegramSettings>('/api/telegram/settings', { method: 'PUT', body: JSON.stringify(payload) }),
+  checkTelegramConnection: (expectedChatId: string) => request<TelegramConnection>('/api/telegram/connection-check', {
+    method: 'POST', body: JSON.stringify({ expectedChatId }),
+  }),
+  sendTelegramTest: (expectedChatId: string) =>
+    request<{ sent: boolean; message: string }>('/api/telegram/test-message', {
+      method: 'POST', body: JSON.stringify({ expectedChatId }),
+    }),
+  getTelegramReports: (page: number, from: string, to: string, status: TelegramDeliveryStatus | '', signal?: AbortSignal) => {
+    const params = new URLSearchParams({ page: String(page), size: '10' })
+    if (from) params.set('from', from)
+    if (to) params.set('to', to)
+    if (status) params.set('status', status)
+    return request<PageResponse<TelegramReport>>(`/api/telegram/reports?${params}`, { signal })
+  },
+  getTelegramReport: (reportId: number, signal?: AbortSignal) =>
+    request<TelegramReportDetail>(`/api/telegram/reports/${reportId}`, { signal }),
+  retryTelegramReport: (deliveryId: number, expectedChatId: string, expectedAttemptCount: number) =>
+    request<TelegramRecipientDelivery>(`/api/telegram/deliveries/${deliveryId}/retry`, {
+      method: 'POST', body: JSON.stringify({ expectedChatId, expectedAttemptCount }),
+    }),
   login: (loginId: string, password: string) =>
     request<LoginResponse>('/api/auth/login', {
       method: 'POST',

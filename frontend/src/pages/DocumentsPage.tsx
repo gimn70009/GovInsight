@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft,
@@ -200,6 +201,8 @@ const formatProposalDraftBody = (body: string) =>
   )
   .replace(/\.\s*\./gu, '.')
 export default function DocumentsPage() {
+  const [searchParams] = useSearchParams()
+  const linkedRunId = Number(searchParams.get('runId'))
   const [savedOnly, setSavedOnly] = useState(false)
   const [bookmarkIds, setBookmarkIds] = useState<number[]>([])
   const [bookmarkReady, setBookmarkReady] = useState(false)
@@ -208,7 +211,7 @@ export default function DocumentsPage() {
   const loadSequence = useRef(0)
   const [documents, setDocuments] = useState<DocumentDetection[]>([])
   const [runs, setRuns] = useState<MonitoringRun[]>([])
-  const [selectedRunId, setSelectedRunId] = useState<number | 'ALL' | null>(null)
+  const [selectedRunId, setSelectedRunId] = useState<number | 'ALL' | null>(() => Number.isSafeInteger(linkedRunId) && linkedRunId > 0 ? linkedRunId : null)
   const [page, setPage] = useState(0)
   const [pages, setPages] = useState(0)
   const [total, setTotal] = useState(0)
@@ -233,7 +236,7 @@ export default function DocumentsPage() {
       setSelectedRunId((current) => current ?? data.content[0]?.runId ?? 'ALL')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '모니터링 실행 이력을 불러오지 못했습니다.')
-      setSelectedRunId('ALL')
+      setSelectedRunId((current) => current ?? 'ALL')
     }
   }, [])
 
@@ -381,6 +384,9 @@ export default function DocumentsPage() {
               disabled={selectedRunId === null}
             >
               <option value="ALL">전체 실행 결과</option>
+              {typeof selectedRunId === 'number' && selectedRunId !== runs[0]?.runId && (
+                <option value={selectedRunId}>선택한 실행 #{selectedRunId}</option>
+              )}
               {runs[0] && (
                 <option value={runs[0].runId}>
                   최근 실행 결과 · {formatDateTime(runs[0].requestedAt)} · {runs[0].detectedDocumentCount}건
