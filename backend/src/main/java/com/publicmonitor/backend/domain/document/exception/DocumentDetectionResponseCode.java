@@ -18,6 +18,8 @@ public enum DocumentDetectionResponseCode implements BaseResponseCode {
             "이 문서 버전에 속한 첨부 양식을 찾을 수 없습니다."),
     PROPOSAL_SOURCE_UNAVAILABLE("DOCUMENT_DETECTION_400_2", HttpStatus.BAD_REQUEST.value(),
             "선택한 첨부파일의 본문을 초안 작성에 사용할 수 없습니다."),
+    PROPOSAL_DRAFT_NOT_FOUND("DOCUMENT_DETECTION_404_3", HttpStatus.NOT_FOUND.value(),
+            "저장된 초안을 찾을 수 없습니다."),
     NOT_FOUND("DOCUMENT_DETECTION_404_1", HttpStatus.NOT_FOUND.value(), "감지 문서를 찾을 수 없습니다.");
 
     private final String code;

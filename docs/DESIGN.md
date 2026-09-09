@@ -221,11 +221,16 @@ Python은 Playwright로 다음 정보를 수집한다.
 - `DOCUMENT_VERSIONS`: 제목, 본문, 게시일과 첨부파일 구성이 변경된 버전
 - `DOCUMENT_ATTACHMENTS`: 버전별 첨부파일 메타데이터와 파싱 결과
 - `DOCUMENT_DETECTIONS`: 실행별로 감지된 문서, 버전과 변경 유형
+- 생성 진행 상태는 화면 컴포넌트가 아니라 Spring의 계정·문서 버전·첨부·내부 순번별 진행 요청으로 관리한다. 동일 키의 동시 생성 요청은 하나의 생성·저장 결과를 기다리며 성공·실패 모두 처리 종료 후 진행 상태를 제거한다. DB 저장 트랜잭션이 끝나기 전에는 진행 상태를 해제하지 않는다. 상태 조회는 진행 목록을 먼저 확인한 뒤 저장 초안을 읽어 완료 직후의 빈 결과를 생성 실패로 오인하지 않도록 한다. 모델·DB 스키마·새 라이브러리 변경은 없다. 진행 상태는 현재 Spring 프로세스의 메모리에만 있으며 서버 재시작 시 초기화된다. 이미 저장된 초안은 DB에 유지되고 미완료 초안은 다시 요청할 수 있다.
+- 화면을 닫아도 생성 POST를 취소하지 않는다. 상세 재진입·브라우저 새로고침에서는 상태 API로 생성 중인 양식을 선택하고 카드와 생성 버튼을 잠근다. 진행 상태를 복원했거나 생성 POST 응답을 받지 못했을 때만 화면이 활성화된 동안 1.5초 간격으로 상태를 확인하며, 완료 결과를 자동 표시하고 실제 실패가 확인되면 잠금을 해제한다. 상태 조회 실패는 완료로 취급하지 않고 잠금을 유지하면서 3초 후 재확인한다. 숨긴 화면의 조회는 중지하고 다시 열면 재개한다. 상태 조회는 모델을 호출하지 않는다.
+- `DOCUMENT_PROPOSAL_DRAFTS`: 계정·첨부 양식별 완료 초안과 마지막 열람 시각
 
 ```text
 MONITORING_SOURCES 1 ── N DOCUMENTS
 DOCUMENTS 1 ── N DOCUMENT_VERSIONS
 DOCUMENT_VERSIONS 1 ── N DOCUMENT_ATTACHMENTS
+DOCUMENT_ATTACHMENTS 1 ── N DOCUMENT_PROPOSAL_DRAFTS
+APP_USERS 1 ── N DOCUMENT_PROPOSAL_DRAFTS
 
 MONITORING_RUN_SOURCES 1 ── N DOCUMENT_DETECTIONS
 DOCUMENTS 1 ── N DOCUMENT_DETECTIONS
@@ -698,16 +703,24 @@ Frontend는 React, TypeScript와 Vite로 구성하고 Spring Boot의 `/api` 요�
 - 첫 모델 호출은 실제 서술형 작성 항목 중 핵심 항목 최대 4개를 선택한다. 모델은 제목을 다시 쓰지 않고 제목이 적힌 연속된 원문 줄 번호 최대 3개만 선택한다. 코드는 해당 줄에서 제목을 가져오고 다음 선택 항목 이전의 인접 원문 최대 8줄에서 연속 인용을 직접 가져와 전체 선택 양식과 공백 정규화 후 대조하고 원문 순서로 정렬한다. 원문의 오타와 여러 줄에 걸친 제목도 보존한다. 단순 신청인 정보, 동의서와 일반 공고문에는 임의의 목차를 만들지 않는다. 작성 항목이 4개 미만이면 확인된 항목만 작성하고 개수를 안내한다.
 - 두 번째 호출은 회사 실제 소개와 현재 설정의 데모 운영 정보를 사용해 항목당 400~2,600자의 본문을 한 번에 작성한다. 당사 관점의 합니다체, 일관된 제안 범위, 현재 사실과 향후 수행 계획 구분, 근거 없는 실적·수치·자격 생성 방지를 지시한다. 제목은 검증된 첫 단계 결과로 고정하며 모델이 다시 작성하지 않는다.
 - 항목 누락·중복, 존재하지 않는 회사 근거 ID, 불완전한 종결과 작성 안내 표현을 검증하고 스키마 파싱 오류를 포함해 최대 1회 본문 재작성을 허용한다. 본문의 내부 근거 괄호와 데모 수식어는 별도 출처 안내를 유지한 채 정리하며, 시험 시나리오·데모 영상 같은 기술 표현은 보존한다. 인용의 존재와 문체를 코드로 검증하더라도 회사 근거의 의미 연결이나 모든 사실의 정확성을 보장하는 것은 아니다. 최종 제출 전 사용자 검토가 필요하다.
-- 화면에는 본문과 분리된 확인 사항, 펼쳐 볼 수 있는 원문 인용·선정 이유, 실제 입력에 따른 `usesDemoProfile` 안내를 표시한다. 항목별 및 전체 복사는 제목·본문만 복사하고 근거·확인 목록은 섞지 않는다. 복사 결과는 누른 버튼에 체크 아이콘·초록색·복사됨으로 2초간 표시하며 하단 완료 문구는 표시하지 않는다. 실패도 해당 버튼에 표시하고 다시 시도할 수 있다. 탭 전환과 첨부 재선택 시 같은 상세 화면의 완료 결과를 유지한다.
+- 첨부 양식은 작성 여부와 관계없이 항상 같은 카드 목록에 표시한다. 파일명은 가벼운 굵기와 자연스러운 줄바꿈을 사용하고 ZIP 이름을 보조로 표시한다. 작성한 양식에는 `작성 완료`를 표시하며, 목록에서 더 이상 반환되지 않는 저장 초안도 카드로 열 수 있다. 카드 선택은 하나만 유지하되 같은 카드를 다시 누르면 해제한다. Enter·Space로도 선택·해제할 수 있다. 미작성 양식은 선택 후 나타나는 `초안 생성` 버튼을 눌러야 생성하며, 완료 양식은 저장된 본문을 바로 아래에 표시한다. 별도의 새 초안 작성·취소 화면 전환은 사용하지 않는다.
+- 최초 작성 때는 양식을 미리 선택하지 않는다. 완료 초안이 있으면 마지막으로 본 초안과 본문을 자동 표시한다. 선택 해제는 현재 화면에만 적용하고 저장된 초안과 최근 열람 기록은 유지한다. 새로고침·상세 화면 재진입·재로그인·서버 재시작 뒤에도 DB에 저장된 초안을 조회한다. 실패한 목록 조회는 빈 최초 작성 화면으로 취급하지 않고 다시 불러오기를 제공한다. 최근 선택 저장 요청은 클릭 순서대로 전송하되 카드 조작을 막지 않고, 이전 선택의 지연된 실패는 현재 선택의 오류로 표시하지 않는다. 생성 완료 후에도 같은 순서로 최근 열람을 기록한다.
+- 결과 상단에는 항목 수와 전체 복사만 표시하며 카드와 중복되는 파일명·고정된 회사 데모 안내 문구는 표시하지 않는다. `usesDemoProfile`은 API와 저장 결과에 보존한다. 원래 항목 제목에 추가 번호를 덧붙이지 않고, 본문과 분리된 확인 사항 및 펼쳐 볼 수 있는 원문 인용·선정 이유는 유지한다. 항목별 복사는 본문만, 전체 복사는 제목·본문만 복사하며 근거·확인 목록은 섞지 않는다. 복사 결과는 누른 버튼에 체크 아이콘·초록색·복사됨으로 2초간 표시하며 별도 복사 완료 문구는 표시하지 않는다. 실패도 해당 버튼에 표시하고 다시 시도할 수 있다.
 - 선택 양식은 최대 80,000자로 제한하고 초과 시 임의로 자르지 않는다. 게시글과 선택 양식 외의 공고·RFP·제안요청·안내 첨부 최대 3개를 참고 공고 본문으로 구분해 전달하며, 앞뒤를 보존해 합계 최대 16,000자로 제한한다. 다른 양식의 제목을 작성 목차로 사용하지 않는다. `PROPOSAL_MODEL` 설정을 재사용하고 모델 재시도는 SDK에서 끈다. 요청 전체 시간은 대기·최대 3회 모델 호출을 포함해 `min(PROPOSAL_TIMEOUT_SECONDS, 180초)`, 동시 모델 실행은 2개, 대기 포함 진행 요청은 8개로 제한한다. Spring 읽기 제한은 190초다.
-- 동일 문서 내용·회사 정보·데모 모드·한국 날짜·모델의 진행 요청은 공유하고, 완료 결과만 Python 메모리에 1시간·최대 64건 보관한다. 실패 결과는 보관하지 않아 즉시 재시도할 수 있다. 새 DB 테이블이나 영구 초안 저장은 추가하지 않으며 화면에 복사 보관 안내를 제공한다.
+- 이미 저장된 계정·첨부·내부 순번의 완료 초안은 DB에서 반환하며 Python이나 모델을 호출하지 않는다. 첫 생성의 동일 문서 내용·회사 정보·데모 모드·한국 날짜·모델 진행 요청 공유 및 Python 메모리의 1시간·최대 64건 완료 캐시는 유지한다. 생성 완료 후 별도 짧은 트랜잭션에서 저장하고 커밋된 경우에만 완료 응답을 반환한다. 실패·빈 완료 결과는 저장하지 않는다.
+- `DOCUMENT_PROPOSAL_DRAFTS`: `DRAFT_ID` PK, `USER_ID` → `APP_USERS`, `ATTACHMENT_ID` → `DOCUMENT_ATTACHMENTS`, `PART_INDEX`, `RESULT_JSON` CLOB, `CREATED_AT`, `LAST_VIEWED_AT`. `(USER_ID, ATTACHMENT_ID, PART_INDEX)` UNIQUE와 `DOCUMENT_PROPOSAL_DRAFTS_SEQ` 사용. 첨부의 문서 버전으로 조회하므로 같은 버전의 다음 감지에서도 재사용하되 다른 버전·다른 계정과 섞지 않는다. 저장·최근 선택 변경 시 계정 행 잠금으로 직렬화하고 동시 완료는 먼저 저장된 본문을 보존한다. 모델 대기 중 DB 트랜잭션이나 행 잠금을 유지하지 않는다.
+- 목록은 최근 열람 시각·초안 ID 내림차순이며 조회 자체로 선택을 변경하지 않는다. 완료된 초안 선택은 별도 PUT으로 마지막 열람 시각을 저장한다. 초안 본문·원문 인용·회사 근거·확인 사항·데모 표시를 함께 보존하며 단순 열람 때문에 날짜·회사 정보 변화에 따라 재생성하지 않는다.
+- 기존 Oracle에는 [초안 보관 마이그레이션](migrations/20260909_saved_proposal_drafts.sql)을 한 번 적용한다. 기존 데이터는 수정하지 않으며 새 테이블과 시퀀스만 추가하고 데이터 보존 설정으로 시작한다. 새 라이브러리는 추가하지 않는다. 이 기능 적용 전에 메모리에만 있던 초안은 자동 이관할 수 없으며, 다음 생성 요청에서 반환된 완료 결과부터 보관한다. DB 자체를 초기화하면 저장 초안도 초기화된다.
 
 ### API 계약
 
 | 경로 | 요청 | 응답 |
 |---|---|---|
 | `GET /api/document-detections/{detectionId}/proposal-sources` | JWT 인증, 감지 ID | `attachmentId, partIndex, fileName, attachmentName, available, reason` 목록 |
-| `POST /api/document-detections/{detectionId}/proposal-draft` | JWT 인증, `{attachmentId, partIndex}` | 공통 성공 응답 안에 아래 초안 결과 |
+| `POST /api/document-detections/{detectionId}/proposal-draft` | JWT 인증, `{attachmentId, partIndex}` | 저장 결과 재사용 또는 생성·저장 후 아래 초안 결과 |
+| `GET /api/document-detections/{detectionId}/proposal-drafts` | JWT 인증 | 본인 계정·현재 문서 버전의 `{attachmentId, partIndex, attachmentName, createdAt, lastViewedAt, result}` 목록. `result`는 아래 초안 결과 |
+| `GET /api/document-detections/{detectionId}/proposal-drafts/state` | JWT 인증 | `{drafts, running}`. `drafts`는 저장 초안 목록, `running`은 본인 계정·현재 문서 버전의 진행 중인 `{attachmentId, partIndex}` 목록. 생성·저장 요청 없음 |
+| `PUT /api/document-detections/{detectionId}/proposal-drafts/last-viewed` | JWT 인증, `{attachmentId, partIndex}` | 완료 초안의 최근 열람 시각 저장. 없는 초안·다른 계정/버전은 404 |
 | `POST /internal/monitoring/proposal-write` | `title, noticeText, fileName, templateText` | Python 초안 결과 |
 
 초안 결과는 `status=COMPLETED|NEEDS_TEMPLATE|UNAVAILABLE`, `fileName`, `usesDemoProfile`, `message`, `sections`로 구성한다. 각 항목은 `title, body, sourceQuote, selectionReason, companyEvidence[], confirmationItems[]`를 반환한다. 양식 확인 실패와 일시 생성 실패는 빈 항목 및 안전한 안내를 반환한다. Spring의 DB 읽기 트랜잭션은 모델 요청 전에 종료한다.

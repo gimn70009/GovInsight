@@ -1,63 +1,179 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, Copy, FilePenLine, RefreshCw, Sparkles, X } from 'lucide-react'
 import { api } from '../api/client'
-import type { ProposalSource, ProposalWrittenDraft } from '../api/types'
+import type { ProposalDraftState, ProposalSource, SavedProposalDraft } from '../api/types'
 
-const sourceKey = (source: ProposalSource) => `${source.attachmentId}:${source.partIndex}`
+const sourceKey = (source: { attachmentId: number; partIndex: number }) => `${source.attachmentId}:${source.partIndex}`
+const sourceName = (source: { attachmentName: string; fileName: string }) =>
+  source.attachmentName !== source.fileName ? `${source.attachmentName} › ${source.fileName}` : source.fileName
 
 export function ProposalWriter({ detectionId, active, expired }: { detectionId: number; active: boolean; expired: boolean }) {
   const [sources, setSources] = useState<ProposalSource[]>([])
+  const [savedDrafts, setSavedDrafts] = useState<SavedProposalDraft[]>([])
   const [selected, setSelected] = useState('')
-  const [loadingSources, setLoadingSources] = useState(false)
+  const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [reload, setReload] = useState(0)
   const [sourceError, setSourceError] = useState('')
-  const [drafts, setDrafts] = useState<Record<string, ProposalWrittenDraft>>({})
-  const [writing, setWriting] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [running, setRunning] = useState<ProposalDraftState['running']>([])
+  const [checking, setChecking] = useState(false)
+  const [progressError, setProgressError] = useState('')
+  const awaitingSource = useRef('')
+  const needsStatus = running.length > 0 || checking
+  const writing = submitting || needsStatus
+  const [selectionError, setSelectionError] = useState('')
   const [error, setError] = useState('')
   const pending = useRef<AbortController | null>(null)
   const mounted = useRef(true)
-  const current = sources.find((source) => sourceKey(source) === selected)
-  const draft = drafts[selected]
+  const selectionRevision = useRef(0)
+  const viewQueue = useRef<Promise<void>>(Promise.resolve())
+  const resultHeading = useRef<HTMLDivElement>(null)
+  const focusResult = useRef(false)
+  const savedByKey = new Map(savedDrafts.map((item) => [sourceKey(item), item]))
+  const allSources = [...sources, ...savedDrafts
+    .filter((item) => !sources.some((source) => sourceKey(source) === sourceKey(item)))
+    .map((item) => ({ attachmentId: item.attachmentId, partIndex: item.partIndex,
+      fileName: item.result.fileName, attachmentName: item.attachmentName, available: false, reason: '' }))]
+  const current = allSources.find((source) => sourceKey(source) === selected)
+  const draft = savedByKey.get(selected)?.result
+
+  useEffect(() => {
+    if (draft && focusResult.current) {
+      resultHeading.current?.focus({ preventScroll: true })
+      focusResult.current = false
+    }
+  }, [draft])
 
   useEffect(() => {
     mounted.current = true
-    return () => { mounted.current = false; pending.current?.abort() }
+    // Leaving the detail view must not cancel the server's generation request.
+    return () => { mounted.current = false }
   }, [])
 
   useEffect(() => {
     if (!active || loaded) return
     const controller = new AbortController()
-    setLoadingSources(true)
+    setLoading(true)
     setSourceError('')
-    api.getProposalSources(detectionId, controller.signal).then((items) => {
+    Promise.all([
+      api.getProposalSources(detectionId, controller.signal),
+      api.getProposalDraftState(detectionId, controller.signal),
+    ]).then(([items, state]) => {
       if (controller.signal.aborted) return
       setSources(items)
+      setSavedDrafts(state.drafts)
+      setRunning(state.running)
+      awaitingSource.current = state.running.length ? sourceKey(state.running[0]) : ''
+      setSelected(awaitingSource.current || (state.drafts.length ? sourceKey(state.drafts[0]) : ''))
       setLoaded(true)
     }).catch(() => {
-      if (!controller.signal.aborted) setSourceError('첨부 목록을 불러오지 못했습니다.')
-    }).finally(() => { if (!controller.signal.aborted) setLoadingSources(false) })
+      if (!controller.signal.aborted) setSourceError('첨부 양식과 작성한 초안을 불러오지 못했습니다.')
+    }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
   }, [active, detectionId, loaded, reload])
 
+  useEffect(() => {
+    if (!active || !loaded || !needsStatus) return
+    const controller = new AbortController()
+    let timer: ReturnType<typeof setTimeout>
+    async function poll() {
+      try {
+        const state = await api.getProposalDraftState(detectionId, controller.signal)
+        if (controller.signal.aborted) return
+        const completed = state.drafts.find((item) => sourceKey(item) === awaitingSource.current)
+        setSavedDrafts(state.drafts)
+        setRunning(state.running)
+        setProgressError('')
+        if (state.running.length) {
+          if (!state.running.some((item) => sourceKey(item) === awaitingSource.current)) {
+            awaitingSource.current = sourceKey(state.running[0])
+          }
+          setSelected(awaitingSource.current)
+          timer = setTimeout(poll, 1500)
+        } else {
+          setChecking(false)
+          if (completed) {
+            focusResult.current = true
+            setSelected(sourceKey(completed))
+            setError('')
+          } else {
+            setError('초안 생성이 완료되지 않았습니다. 다시 시도해 주세요.')
+          }
+          awaitingSource.current = ''
+        }
+      } catch {
+        if (controller.signal.aborted) return
+        // An unreachable status endpoint is not evidence that generation has stopped.
+        setProgressError('생성 상태를 확인하지 못했습니다. 연결되면 자동으로 다시 확인합니다.')
+        timer = setTimeout(poll, 3000)
+      }
+    }
+    timer = setTimeout(poll, 1500)
+    return () => { clearTimeout(timer); controller.abort() }
+  }, [active, detectionId, loaded, needsStatus])
+
+  function rememberSelection(source: { attachmentId: number; partIndex: number }, revision: number) {
+    // Keep the last viewed draft in click order without blocking card selection.
+    viewQueue.current = viewQueue.current.then(() =>
+      api.rememberProposalDraft(detectionId, source.attachmentId, source.partIndex),
+    ).catch(() => {
+      if (mounted.current && selectionRevision.current === revision) {
+        setSelectionError('최근 선택을 기억하지 못했습니다. 초안 본문은 저장되어 있어요.')
+      }
+    })
+  }
+
+  function selectSource(source: ProposalSource) {
+    if (writing || pending.current) return
+    const key = sourceKey(source)
+    const next = selected === key ? '' : key
+    const revision = ++selectionRevision.current
+    setSelected(next)
+    setError('')
+    setSelectionError('')
+    if (next && savedByKey.has(next)) rememberSelection(source, revision)
+  }
+
+  function retrySelection() {
+    if (!current || !draft) return
+    setSelectionError('')
+    rememberSelection(current, ++selectionRevision.current)
+  }
+
   async function generate() {
-    if (!current?.available || pending.current) return
+    if (!current?.available || writing || pending.current || draft) return
     const key = sourceKey(current)
     const controller = new AbortController()
     pending.current = controller
-    setWriting(true)
+    setSubmitting(true)
+    awaitingSource.current = key
+    setProgressError('')
     setError('')
     try {
       const response = await api.writeProposal(detectionId, current.attachmentId, current.partIndex, controller.signal)
       if (controller.signal.aborted || !mounted.current) return
-      if (response.status === 'COMPLETED') setDrafts((previous) => ({ ...previous, [key]: response }))
-      else setError(response.message)
+      if (response.status === 'COMPLETED') {
+        focusResult.current = true
+        const now = new Date().toISOString()
+        setSavedDrafts((previous) => [{ attachmentId: current.attachmentId, partIndex: current.partIndex,
+          attachmentName: current.attachmentName, createdAt: now, lastViewedAt: now, result: response },
+          ...previous.filter((item) => sourceKey(item) !== key)])
+        setSelected(key)
+        setSelectionError('')
+        // A delayed earlier selection must not replace the newly completed draft as the latest.
+        rememberSelection(current, ++selectionRevision.current)
+      } else setError(response.message)
     } catch {
-      if (!controller.signal.aborted && mounted.current) setError('초안을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요.')
+      if (!controller.signal.aborted && mounted.current) {
+        // A lost POST response may still have a running or committed result on the server.
+        setChecking(true)
+        setProgressError('생성 결과를 확인하고 있습니다. 잠시만 기다려 주세요.')
+      }
     } finally {
       if (pending.current === controller) {
         pending.current = null
-        if (mounted.current) setWriting(false)
+        if (mounted.current) setSubmitting(false)
       }
     }
   }
@@ -66,48 +182,63 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
     <section className="proposal-writer" hidden={!active} aria-labelledby="proposal-writer-title">
       <div className="proposal-writer__heading">
         <span className="proposal-writer__icon"><FilePenLine size={22} /></span>
-        <div><h3 id="proposal-writer-title">제안서 초안 작성</h3><p>첨부 양식의 핵심 항목 4개를 골라 우리 회사의 제안 본문을 작성합니다.</p></div>
+        <div><h3 id="proposal-writer-title">제안서 초안</h3>
+          <p>양식을 선택해 초안을 작성하거나 저장된 내용을 확인하세요.</p></div>
       </div>
       {expired && <p className="proposal-writer__notice">접수가 종료된 공고입니다. 생성한 초안은 향후 제안을 위한 참고 자료로 활용해 주세요.</p>}
-      {loadingSources ? <p role="status">첨부파일을 확인하고 있습니다.</p> : sourceError ? (
+      {loading ? <p role="status" className="proposal-writer__empty">첨부 양식과 초안을 불러오고 있습니다.</p> : sourceError ? (
         <div className="proposal-writer__notice" role="alert">{sourceError} <button type="button" onClick={() => setReload((value) => value + 1)}>다시 불러오기</button></div>
-      ) : loaded && sources.length === 0 ? (
-        <p className="proposal-writer__notice">수집된 첨부파일이 없습니다. 제안서 또는 사업계획서 양식이 있는 공고에서 사용할 수 있습니다.</p>
-      ) : (
-        <div className="proposal-writer__controls">
-          <div><label htmlFor="proposal-template">작성할 첨부 양식</label>
-            <select id="proposal-template" value={selected} disabled={writing || !loaded}
-              onChange={(event) => { setSelected(event.target.value); setError('') }}>
-              <option value="">제안서 또는 사업계획서 양식을 선택해 주세요</option>
-              {sources.map((source) => <option key={sourceKey(source)} value={sourceKey(source)} disabled={!source.available}>
-                {source.attachmentName !== source.fileName ? `${source.attachmentName} › ` : ''}{source.fileName}{!source.available ? ' (본문 확인 불가)' : ''}
-              </option>)}
-            </select>
+      ) : loaded && <div className="proposal-writer__picker">
+        <div className="proposal-writer__picker-heading"><span>첨부 양식</span><small>{allSources.length}개</small></div>
+        {allSources.length === 0 ? <p className="proposal-writer__empty">수집된 첨부파일이 없습니다. 첨부 양식이 있는 공고에서 작성할 수 있어요.</p> : <>
+          <div className="proposal-writer__sources" role="group" aria-label="첨부 양식">
+            {allSources.map((source) => {
+              const key = sourceKey(source)
+              const saved = savedByKey.get(key)
+              const unavailable = !source.available && !saved
+              return <button type="button" key={key} className="proposal-writer__source-card"
+                aria-label={sourceName(source)} aria-pressed={selected === key}
+                data-saved={Boolean(saved)} disabled={writing || unavailable}
+                onClick={() => selectSource(source)}>
+                <span className="proposal-writer__selection-mark" aria-hidden="true">{selected === key && <Check size={12} />}</span>
+                <span className="proposal-writer__file-info">
+                  <span className="proposal-writer__file-name">{source.fileName}</span>
+                  {source.attachmentName !== source.fileName && <small>{source.attachmentName}</small>}
+                  {saved && <span className="proposal-writer__saved-label"><Check size={12} />작성 완료</span>}
+                  {unavailable && <small>{source.reason || '본문을 읽지 못한 파일입니다.'}</small>}
+                </span>
+              </button>
+            })}
           </div>
-          <button type="button" className="proposal-writer__generate" disabled={!current?.available || writing || Boolean(draft)}
-            onClick={generate}>{writing ? <RefreshCw size={16} className="proposal-writer__spin" /> : <Sparkles size={16} />}
-            {writing ? '초안 작성 중' : draft ? '작성 완료' : '초안 생성'}</button>
-        </div>
-      )}
-      {sources.some((source) => !source.available) && <details className="proposal-writer__unavailable"><summary>사용할 수 없는 첨부파일</summary>
-        <ul>{sources.filter((source) => !source.available).map((source) => <li key={sourceKey(source)}>{source.fileName} — {source.reason}</li>)}</ul>
-      </details>}
-      {writing && <p role="status" className="proposal-writer__notice">실제 양식의 항목을 확인하고 회사 정보와 연결해 본문을 작성하고 있습니다. 최대 3분 정도 걸릴 수 있습니다.</p>}
+          {current && !draft && <div className="proposal-writer__actions">
+            <span>작성한 초안은 자동 저장됩니다.</span>
+            <button type="button" className="proposal-writer__generate" disabled={!current.available || writing} onClick={generate}>
+              {writing ? <RefreshCw size={16} className="proposal-writer__spin" /> : <Sparkles size={16} />}
+              {writing ? '초안 작성 중' : '초안 생성'}
+            </button>
+          </div>}
+        </>}
+      </div>}
+      {selectionError && <div role="alert" className="proposal-writer__notice">{selectionError}
+        <button type="button" onClick={retrySelection}>다시 기억하기</button>
+      </div>}
+      {writing && <p role="status" className="proposal-writer__notice">초안을 작성하고 있습니다. 완료되면 자동으로 저장됩니다. 최대 3분 정도 걸릴 수 있습니다.</p>}
+      {progressError && <p role="status" className="proposal-writer__notice">{progressError}</p>}
       {error && <p role="alert" className="proposal-writer__error">{error}</p>}
       {draft && <div className="proposal-writer__result" key={selected}>
-        <div className="proposal-writer__result-heading"><div><strong>{draft.sections.length}개 항목 초안</strong><span>{draft.fileName}</span></div>
+        <div className="proposal-writer__result-heading" ref={resultHeading} tabIndex={-1}>
+          <strong>{draft.sections.length}개 항목 초안</strong>
           <ProposalCopyButton text={draft.sections.map((item) => `${item.title}\n\n${item.body}`).join('\n\n')} label="전체 복사" />
         </div>
-        {draft.usesDemoProfile && <p className="proposal-writer__notice">실제 회사 소개와 데모 운영 정보를 바탕으로 작성했습니다. 데모의 고객·자원·인력 정보는 가상 설정이므로 제출 전에 실제 내용으로 확인해 주세요.</p>}
         {draft.message && <p className="proposal-writer__notice">{draft.message}</p>}
-        {draft.sections.map((section, index) => <article className="proposal-writer__section" key={section.title}>
-          <div className="proposal-writer__section-heading"><h4><span>{String(index + 1).padStart(2, '0')}</span>{section.title}</h4>
+        {draft.sections.map((section) => <article className="proposal-writer__section" key={section.title}>
+          <div className="proposal-writer__section-heading"><h4>{section.title}</h4>
             <ProposalCopyButton text={section.body} label="복사" accessibleLabel={`${section.title} 본문 복사`} /></div>
           <p className="proposal-writer__body">{section.body}</p>
           {section.confirmationItems.length > 0 && <div className="proposal-writer__confirm"><strong>제출 전 확인할 내용</strong><ul>{section.confirmationItems.map((item, i) => <li key={i}>{item}</li>)}</ul></div>}
           <details className="proposal-writer__evidence"><summary>양식 원문</summary><p>{section.selectionReason}</p><blockquote>{section.sourceQuote}</blockquote></details>
         </article>)}
-        <p className="proposal-writer__footnote">초안은 현재 화면에서 확인할 수 있습니다. 보관하려면 본문을 복사해 주세요.</p>
+        <p className="proposal-writer__footnote">초안이 자동 저장되었습니다.</p>
       </div>}
     </section>
   )

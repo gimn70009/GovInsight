@@ -296,6 +296,20 @@ export interface ProposalWrittenDraft {
   }>
 }
 
+export interface ProposalDraftState {
+  drafts: SavedProposalDraft[]
+  running: Array<{ attachmentId: number; partIndex: number }>
+}
+
+export interface SavedProposalDraft {
+  attachmentId: number
+  partIndex: number
+  attachmentName: string
+  createdAt: string
+  lastViewedAt: string
+  result: ProposalWrittenDraft
+}
+
 export interface TelegramRecipient { chatId: string; name: string; enabled: boolean }
 export interface TelegramSettings {
   version: number | null

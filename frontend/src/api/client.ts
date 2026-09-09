@@ -4,6 +4,8 @@ import type {
   TelegramReport, TelegramReportDetail, TelegramDeliveryStatus, TelegramRecipientDelivery,
   ProposalSource,
   ProposalWrittenDraft,
+  SavedProposalDraft,
+  ProposalDraftState,
   CreateMonitoringRunResponse,
   DocumentDetail,
   DocumentDetection,
@@ -123,6 +125,14 @@ export const api = {
     request<LegalPairResult>(`/api/document-detections/${currentId}/similar-notices/${similarId}/legal-review`, { method: 'POST', signal }),
   getProposalSources: (detectionId: number, signal?: AbortSignal) =>
     request<ProposalSource[]>(`/api/document-detections/${detectionId}/proposal-sources`, { signal }),
+  getProposalDrafts: (detectionId: number, signal?: AbortSignal) =>
+    request<SavedProposalDraft[]>(`/api/document-detections/${detectionId}/proposal-drafts`, { signal }),
+  getProposalDraftState: (detectionId: number, signal?: AbortSignal) =>
+    request<ProposalDraftState>(`/api/document-detections/${detectionId}/proposal-drafts/state`, { signal }),
+  rememberProposalDraft: (detectionId: number, attachmentId: number, partIndex: number) =>
+    request<void>(`/api/document-detections/${detectionId}/proposal-drafts/last-viewed`, {
+      method: 'PUT', body: JSON.stringify({ attachmentId, partIndex }),
+    }),
   writeProposal: (detectionId: number, attachmentId: number, partIndex: number, signal?: AbortSignal) =>
     request<ProposalWrittenDraft>(`/api/document-detections/${detectionId}/proposal-draft`, {
       method: 'POST', body: JSON.stringify({ attachmentId, partIndex }), signal,

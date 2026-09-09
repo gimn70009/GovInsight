@@ -67,9 +67,14 @@ OpenAPI 통합 테스트에서는 다음 항목을 확인한다.
 ## 첨부 양식 선택형 초안 API
 
 - `GET /api/document-detections/{detectionId}/proposal-sources`: 현재 감지 버전의 첨부와 ZIP 내부 문서, 사용 가능 여부를 조회한다.
-- `POST /api/document-detections/{detectionId}/proposal-draft`: `{attachmentId, partIndex}`로 선택한 양식의 핵심 항목 최대 4개를 생성한다. 두 API 모두 JWT 인증이 필요하다.
+- `POST /api/document-detections/{detectionId}/proposal-draft`: `{attachmentId, partIndex}`로 선택한 양식의 핵심 항목 최대 4개를 생성한다. 저장된 결과가 있으면 모델 호출 없이 반환하며 새 완료 결과는 계정별 DB에 저장한다.
+- `GET /api/document-detections/{detectionId}/proposal-drafts`: 본인 계정의 같은 문서 버전에서 작성한 초안을 최근 열람 순서로 조회한다.
+- `GET /api/document-detections/{detectionId}/proposal-drafts/state`: `{drafts, running}`으로 저장된 초안과 본인 계정·현재 문서 버전의 생성 중인 양식 목록을 함께 조회한다. 재진입·새로고침 후에도 생성 중 잠금을 복원하며 완료 결과를 자동 표시한다. 상태 조회에는 AI 호출이 없다.
+- 동일 계정·첨부·내부 순번의 동시 생성은 같은 결과를 기다린다. 화면을 나가도 생성 요청을 취소하지 않으며 진행 표시를 실제 생성·저장 종료까지 유지한다. 진행 상태는 Spring 프로세스 메모리, 완료 결과는 DB에 보관한다. 서버 재시작은 미완료 진행 상태를 초기화하며 새 테이블이나 라이브러리는 필요하지 않다.
+- `PUT /api/document-detections/{detectionId}/proposal-drafts/last-viewed`: `{attachmentId, partIndex}`로 마지막으로 본 완료 초안을 기억한다. 모든 초안 API는 JWT 인증이 필요하다.
+- 기존 Oracle에는 `docs/migrations/20260909_saved_proposal_drafts.sql`을 한 번 적용하고 DB 초기화 없이 시작한다. 생성 전의 임시 메모리 결과는 자동 이관하지 않는다.
 - Spring은 첨부 소속과 본문을 검증하고 DB 트랜잭션을 종료한 뒤 Python의 `/internal/monitoring/proposal-write`를 호출한다. 응답 대기는 최대 190초이며 실패는 안전한 안내로 반환한다.
-- 새 테이블·영구 초안 저장은 추가하지 않는다. 상세 응답 계약과 제한은 `docs/DESIGN.md`에 기록한다.
+- 완료 결과는 `DOCUMENT_PROPOSAL_DRAFTS`에 본문·근거·확인 사항과 함께 보관한다. 상세 응답 계약과 제한은 `docs/DESIGN.md`에 기록한다.
 
 
 ## 텔레그램 관리 페이지 적용
