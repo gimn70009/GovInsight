@@ -98,11 +98,11 @@ export function RunWarningTooltip({ runId, warningCount, status }: {
           : <ul>{details.warnings.map((warning, index) => <li key={index}>
             <div className="run-warning-tooltip__source">
               <strong>{[warning.organizationName, warning.boardName].filter(Boolean).join(' · ') || '실행 경고'}</strong>
-              <span>{warning.stage === 'SOURCE_COLLECTION' ? '게시판 수집' : warning.stage === 'ATTACHMENT_READ' ? '첨부파일 읽기' : '이전 기록'}{warning.count > 1 ? ` · ${warning.count}건` : ''}</span>
+              {warning.count > 1 && <span className="run-warning-tooltip__count">{warning.count}건</span>}
             </div>
             {warning.documentTitle && <p className="run-warning-tooltip__document">{warning.documentTitle}</p>}
             {warning.fileName && <p className="run-warning-tooltip__file">{warning.fileName}</p>}
-            <p>{warning.message}</p>
+            <p className="run-warning-tooltip__reason">{warning.message}</p>
           </li>)}</ul>}
     </div>, document.body)}
   </>

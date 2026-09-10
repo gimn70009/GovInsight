@@ -36,7 +36,9 @@
 .run-warning-tooltip ul { list-style: none; padding: 0; margin: 10px 0 0; }
 .run-warning-tooltip li + li { margin-top: 12px; padding-top: 12px; border-top: 1px solid #e8edf3; }
 .run-warning-tooltip p { margin: 5px 0 0; }
-.run-warning-tooltip__source strong { display: block; color: #293649; font-size: 13px; }
-.run-warning-tooltip__source span { color: #936320; font-size: 11px; }
-.run-warning-tooltip__document { font-weight: 600; }
-.run-warning-tooltip__file { color: #66788f; }
+.run-warning-tooltip__source { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.run-warning-tooltip__source strong { min-width: 0; color: #6b7684; font-size: 12px; font-weight: 500; }
+.run-warning-tooltip__count { flex-shrink: 0; color: #6b7684; font-size: 11px; }
+.run-warning-tooltip .run-warning-tooltip__document { margin-top: 8px; color: #293649; font-weight: 600; }
+.run-warning-tooltip .run-warning-tooltip__file { margin-top: 3px; color: #66788f; }
+.run-warning-tooltip .run-warning-tooltip__reason { margin-top: 8px; color: #4e5968; }
