@@ -1,165 +1,64 @@
-# GovInsight AI
+# AI 모듈 실행 안내
 
-Python 3.12와 FastAPI를 사용하는 GovInsight 수집·분석 모듈이다.
+FastAPI가 작업을 접수하고 Playwright로 공고를 수집합니다. PDF·HWP·HWPX·ZIP을 읽어 회사 관점의 분석과 초안을 생성하며, 결과 저장은 Spring Boot에 맡깁니다.
 
-## 프로젝트 구조
+[프로젝트 소개](../README.md) · [전체 설계](../docs/DESIGN.md)
 
-```text
-ai/
-├─ app/
-│  ├─ main.py
-│  ├─ api/
-│  │  └─ router.py
-│  ├─ core/
-│  │  ├─ logging.py
-│  │  └─ schemas.py
-│  └─ domains/
-│     └─ monitoring/
-│        ├─ api.py
-│        ├─ service.py
-│        ├─ tasks.py
-│        └─ schemas/
-│           ├─ request.py
-│           └─ response.py
-├─ tests/
-│  ├─ domains/
-│  │  └─ monitoring/
-│  └─ test_health.py
-├─ pyproject.toml
-├─ requirements.txt
-└─ requirements-dev.txt
+## 설치
+
+Python 3.12가 필요합니다. 아래 명령은 **`ai` 폴더에서** 실행합니다.
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m playwright install chromium
 ```
 
-- `main.py`: FastAPI 애플리케이션 생성과 공통 API 라우터 등록
-- `api/router.py`: 도메인별 API 라우터 조립
-- `core/logging.py`: AI 모듈의 공통 로그 레벨과 출력 형식 설정
-- `core/schemas.py`: JSON 필드 명명 방식 등 공통 스키마 규칙
-- `core/config.py`: Spring Boot 주소와 HTTP 타임아웃 환경설정
-- `domains/monitoring/api.py`: 모니터링 내부 API의 HTTP 요청과 응답 처리
-- `domains/monitoring/schemas/request.py`: Spring Boot에서 받는 요청 형식 정의
-- `domains/monitoring/schemas/response.py`: Spring Boot로 보내는 응답 형식 정의
-- `domains/monitoring/service.py`: 작업 ID 생성과 접수 응답 생성
-- `domains/monitoring/tasks.py`: HTTP 응답 이후 실행되는 모니터링 백그라운드 작업
-- `domains/monitoring/collectors`: Playwright 수집과 상세 게시글 URL 선별
-- `domains/monitoring/clients`: Spring Boot 수집 결과 API 호출
-- `domains/monitoring/schemas/collection_result.py`: 수집 결과 요청·응답 형식
-- `domains/monitoring/schemas/collected_document.py`: 문서·첨부파일·소스별 수집 결과 모델
-- `tests/domains/monitoring`: 모니터링 API와 백그라운드 작업 테스트
+설정 파일이 없는 경우에만 복사합니다.
 
-## 현재 지원하는 기관별 수집 프로필
-
-- 산업통상부
-- 과학기술정보통신부
-- 기후에너지환경부
-- 고용노동부
-- 국토교통부
-- 한국산업기술진흥원
-
-기관별 프로필은 JavaScript 상세 이동 링크, 제목·본문·게시일 선택자와 첨부파일 링크 형식을 처리한다. 등록 시에는 해당 기관의 게시판 목록 URL과 상세 URL 포함 패턴을 사용한다. 사이트 개편으로 화면 구조가 바뀌면 프로필도 수정해야 하며, 첨부파일 중심 게시글은 본문이 비어 있을 수 있다.
-
-## 개발 환경
-
-```cmd
-cd C:\GovInsight\ai
-python -m venv .venv
-.venv\Scripts\activate.bat
-python -m pip install --upgrade pip
-python -m pip install -r requirements-dev.txt
-python -m playwright install chromium
+```powershell
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
-이미 `.venv`가 존재하면 새로 만들지 않고 활성화한 뒤 requirements 파일을 설치한다.
+`.env`의 `OPENAI_API_KEY`를 입력합니다. 키가 들어간 파일은 커밋하지 않습니다.
 
-```cmd
-.venv\Scripts\activate.bat
-python -m pip install -r requirements-dev.txt
-python -m playwright install chromium
-```
+| 설정 | 용도·기본값 |
+| --- | --- |
+| `OPENAI_API_KEY` | 실제 분석·초안 생성에 필요한 API 키 |
+| `OPENAI_MODEL`, `PROPOSAL_MODEL` | 분석·제안 모델, 기본 `gpt-5-mini` |
+| `SPRING_BOOT_BASE_URL` | 결과를 전달할 백엔드, 기본 `http://127.0.0.1:8080` |
+| `ANALYSIS_CONCURRENCY` | 문서 분석 동시 처리 수, 기본 `2` |
 
-## Spring Boot 연동 설정
-
-기본적으로 `http://127.0.0.1:8080`으로 수집 결과를 전달한다. 주소나 타임아웃을 바꿀 때만 환경변수를 설정한다.
-
-```cmd
-set SPRING_BOOT_BASE_URL=http://127.0.0.1:8080
-set SPRING_BOOT_TIMEOUT_SECONDS=5
-set ATTACHMENT_DOWNLOAD_TIMEOUT_SECONDS=15
-set ATTACHMENT_MAX_SIZE_BYTES=20971520
-set ZIP_MAX_ENTRY_COUNT=20
-set ZIP_MAX_UNCOMPRESSED_SIZE_BYTES=104857600
-```
-## 첨부파일 메타데이터 처리
-
-수집한 첨부파일은 운영체제 임시 폴더에 스트리밍 방식으로 내려받는다. 다운로드 중 파일 크기와 SHA-256 해시를 계산하고 HTTP 응답의 MIME 타입을 정리한 뒤, 임시 파일은 즉시 삭제한다. 파일 원본은 Git이나 Oracle에 저장하지 않는다.
-
-- 기본 다운로드 제한 시간: 15초
-- 기본 최대 파일 크기: 20 MiB
-- PDF·HWP·HWPX 및 ZIP 내부의 PDF·HWP·HWPX 파싱 성공: 추출 텍스트 저장 후 `PARSE_STATUS=COMPLETED`
-- 그 외 형식: `PARSE_STATUS=UNSUPPORTED`
-- 다운로드 또는 파싱 실패: `PARSE_STATUS=FAILED`와 안전한 오류 메시지 저장
-- PDF는 `pypdf`, HWP는 `olefile`과 HWP 5.0 레코드 분석, HWPX는 Python ZIP·XML 기능으로 처리
-- ZIP은 내부 파일 20개와 총 압축 해제 크기 100 MiB를 기본 상한으로 사용하며 중첩 ZIP은 분석하지 않음
-- 지원 확장자의 실제 PDF/OLE/HWPX 구조를 확인해 파서를 선택하므로 `.hwp`로 이름 붙은 HWPX도 처리. DOCX·XLSX는 미지원 유지
-- ZIP 내부의 추출 본문이 동일한 파일은 한 번만 분석 본문에 포함하고 모든 파일명·상태는 `archiveEntriesJson`으로 별도 전달. 줄 양끝 공백 외 본문·줄바꿈이 다르면 묶지 않음
-- `archiveEntriesJson`은 `{fileName,status,partIndex,reason,actualFormat}` 배열 문자열. 상태는 `COMPLETED|DUPLICATE|UNSUPPORTED|FAILED`; 성공·중복만 대표 본문 순번을 공유. 전체 실패·미지원 ZIP도 파일별 안내를 보존
-- Spring의 `DOCUMENT_ATTACHMENTS.ARCHIVE_ENTRIES_JSON` 열이 필요하며 [마이그레이션](../docs/migrations/20260909_zip_entry_metadata.sql) 참고. 추가 LLM 호출·라이브러리 없음
-- 암호화·DRM·배포용 HWP와 그림·OLE 개체 추출은 지원하지 않음
-- 본문 전체와 다운로드 URL은 로그에 남기지 않음
-
-## AI 문서 분석 설정
-
-`.env.example`을 참고하여 `ai/.env`에 OpenAI API 키를 설정한다. `.env`는 Git에서 제외되며 실제 키를 커밋하지 않는다.
-
-```ini
-OPENAI_API_KEY=발급받은_API_키
-OPENAI_MODEL=gpt-5-mini
-ANALYSIS_TIMEOUT_SECONDS=180
-PROPOSAL_MODEL=gpt-5-mini
-PROPOSAL_TIMEOUT_SECONDS=180
-ANALYSIS_MAX_ATTEMPTS=2
-ANALYSIS_CONCURRENCY=2
-ANALYSIS_MAX_TEXT_CHARS=40000
-```
-
-분석 에이전트는 LangChain 도구로 현재 게시글 본문, 첨부파일 추출 텍스트와 이전 버전 차이를 필요한 순서대로 조회한다. LangGraph는 문서별 분석 상태, 결과 검증과 제한된 재시도를 관리한다. 문서는 `ANALYSIS_CONCURRENCY` 값에 따라 기본 최대 2건씩 동시에 분석하며 결과 순서와 문서별 실패 격리를 유지한다. 분석 결과는 Spring Boot로 전달되어 Oracle에 저장된다.
-
-사업 제안 준비안은 조건부 2단계로 생성한다. 공고 분석 결과를 먼저 Spring Boot에 전달해 화면 저장과 보고서 생성을 시작한 뒤, 제안서 제출 공고, 회사 적합도 61점 이상, 신청 불가 아님, 파싱된 첨부 양식 보유 조건을 모두 만족한 문서만 별도 백그라운드 단계에서 후속 처리한다. 후속 단계는 같은 OpenAI API 키와 `PROPOSAL_MODEL` 모델을 사용하며 `PROPOSAL_TIMEOUT_SECONDS`의 기본 180초 제한을 적용한다. 생성이 끝나면 제안 결과만 별도 내부 API로 갱신한다. 후속 처리 실패는 기본 공고 분석과 보고서 생성을 지연시키지 않으며 사업 제안만 추가 검토 상태로 저장한다.
-
-문서별 분석 저장이 완료되면 Spring Boot가 `/internal/monitoring/report-jobs`로 보고서 생성을 요청한다. Python은 추가 OpenAI 호출 없이 문서별 요약과 중요도를 템플릿으로 조합해 기관·게시판별 전체 보고서 제목·요약을 생성하고 `/internal/monitoring/report-results`로 전달한다. 변경 없는 버전에 저장된 분석이 있으면 Spring Boot가 AI 재분석을 생략하고 같은 분석을 보고서에 재사용한다.
+처리 시간·재시도·ZIP 제한은 [.env.example](.env.example)에서 확인할 수 있습니다.
 
 ## 실행
 
-```cmd
-python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-- API 문서: <http://localhost:8000/docs>
-- 상태 확인: <http://localhost:8000/health>
+- [상태 확인](http://127.0.0.1:8000/health): 정상 응답은 `{"status":"UP"}`입니다.
+- [API 문서](http://127.0.0.1:8000/docs): 내부 작업 요청과 응답 형식을 확인합니다.
+- 전체 모니터링은 [백엔드](../backend/README.md)도 실행한 뒤 화면에서 시작합니다.
 
-## 검증
+Windows용 UUID·해시 호환 모듈을 사용하도록 `ai` 폴더의 가상환경 Python으로 실행합니다. 별도의 네이티브 모듈 차단 여부는 해당 PC 정책에 따라 달라질 수 있습니다.
 
-```cmd
-python -m pytest
-python -m ruff check .
+## 코드에서 확인할 부분
+
+| 위치 | 역할 |
+| --- | --- |
+| [monitoring](app/domains/monitoring) | 작업 접수, 기관별 수집, 파일 처리, 결과 전달 |
+| [analysis](app/domains/analysis) | 근거 선택, 공고 분석, 사업 제안·초안, 결과 검증 |
+| [tests](tests) | 파싱·작업 흐름·모델 출력·실패 처리 회귀 테스트 |
+
+AI 호출은 횟수와 시간을 제한합니다. 결과를 스키마로 검증하고, 첨부 하나의 읽기 실패는 가능한 경우 경고로 남겨 나머지 처리를 이어갑니다. 사업 제안 후속 처리까지 끝난 뒤 보고서 단계로 넘어가며, 양식 초안은 사용자가 별도로 요청합니다.
+
+## 테스트
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest
 ```
 
+외부 사이트·모델·Spring Boot 호출은 대체 객체로 검증합니다. 테스트 통과가 실제 공고 전체에 대한 분석 정확도를 뜻하지는 않습니다.
 
-### 첨부 양식 선택형 초안
-
-`POST /internal/monitoring/proposal-write`는 Spring이 전달한 `title, noticeText, fileName, templateText`를 받아 실제 양식의 핵심 항목 최대 4개를 작성한다. 저장 본문만 사용하며 URL 다운로드는 하지 않는다. `PROPOSAL_MODEL`과 회사 프로필의 기존 데모 사용 설정을 재사용한다. 선택 양식 80,000자, 공고 본문 16,000자, 전체 최대 180초, 동시 생성 2건이며 제목·인용 검증과 본문 형식 보완을 포함해 모델 호출은 최대 3회다. 완료 결과만 1시간 메모리에 재사용하며 재시작 시 사라진다. 상세 계약은 `docs/DESIGN.md`의 첨부 양식 선택형 제안서 본문 작성을 참고한다.
-
-
-선택 양식의 파일명·작성 안내가 영문을 요구하면 제출용 본문을 영어로 작성한다. 국문 양식과 언어가 불명확한 양식은 기존 한국어 합니다체를 유지하며, 공고·회사 정보의 영어 표현이나 개별 영문 이름 입력란만으로 전체 언어를 바꾸지 않는다. 영문 본문에는 영어 검증을 적용하고 항목명·원문 인용·회사 근거는 원본 그대로, 제출 전 확인 사항은 한국어로 유지한다. 언어 판정용 모델 호출·새 라이브러리는 추가하지 않으며 기존 저장 초안을 자동 번역하지 않는다.
-
-영문요약 등 표 기반 양식의 제목 선택은 표 전체의 중복 합본 줄과 단순 입력란을 제외한 원문 후보로 수행한다. 잘못된 제목 선택도 최대 1회 보완하며 제목·본문 보완은 전체 3회 호출 예산을 공유한다. 숫자로만 된 내부 근거 괄호는 본문에서 정리하되 별도 근거와 기존 검증은 유지한다. 실패 로그는 단계·시도·안전한 검증 조건을 포함하고 원문이나 모델 본문을 기록하지 않는다.
-
-영문 본문은 검증 전에 단일 줄바꿈·마크다운·중복 항목명과 종결 부호를 정리한다. 빈 줄로 나눈 문단과 회사 사실은 보존하며, 명백히 끊긴 문장·작성 지시·언어/근거/분량 오류는 기존 보완 대상으로 유지한다. 서식만 다른 응답에는 추가 모델 호출이 필요하지 않다. 남은 영문 형식 오류 로그에는 본문 대신 항목·문단 번호와 종결 형식 분류를 남긴다.
-
-명확한 공고·확인서·동의서·체크리스트는 본문 제목과 서술형 작성란 유무를 대조해 완료 캐시 조회·모델 호출 전에 NEEDS_TEMPLATE로 반환한다. 실제 사업계획서가 포함된 혼합 문서와 서술형 별첨은 유지한다. 나머지 문서는 전체 본문과 제목 후보를 첫 모델에 전달해 유형을 판단하며, 비양식 판정은 다시 긍정 응답을 유도하지 않는다. Spring도 같은 공유 경계사례로 검증한 선제 제외를 적용하고 과거 비대상 초안을 삭제 없이 목록·재사용에서 제외한다.
-
-
-첨부 양식 초안 재작성 요청은 기존 입력에 `generationId`(최대 128자), `feedback`(최대 2,000자),
-`previousSections`(최대 4개, 항목별 title/body)를 추가한다. 모두 생략 가능하다.
-`generationId`가 있으면 완료 캐시는 읽거나 저장하지 않으며 같은 입력의 진행 중 요청만 공유한다.
-이전 본문은 수정 대상 데이터로 구분하고 사용자 수정 방향을 반영하면서 회사 사실·양식·언어·분량 검증을 유지한다.
-호출 단계/횟수/시간 제한은 기존과 같으며 저장본 교체·직전 본문 보관·복원은 Spring Boot가 담당한다.
+[영문 초안 검증 개선](../docs/case-studies/english-draft.md) · [초안 재작성과 실패 복구](../docs/case-studies/draft-regeneration.md)
