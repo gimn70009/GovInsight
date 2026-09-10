@@ -11,6 +11,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.Lob;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.SequenceGenerator;
 import jakarta.persistence.Table;
@@ -88,6 +89,10 @@ public class MonitoringRunSource extends BaseEntity {
     @Column(name = "warning_count", nullable = false, columnDefinition = "NUMBER DEFAULT 0")
     private int warningCount;
 
+    @Lob
+    @Column(name = "warning_details_json", columnDefinition = "CLOB")
+    private String warningDetailsJson;
+
     @Column(name = "started_at")
     private LocalDateTime startedAt;
 
@@ -108,6 +113,10 @@ public class MonitoringRunSource extends BaseEntity {
     ) {
         return new MonitoringRunSource(monitoringRun, monitoringSource);
     }
+    public void recordWarningDetails(String details) {
+        this.warningDetailsJson = details;
+    }
+
     public void complete(int detectedDocumentCount, int warningCount, LocalDateTime completedAt) {
         if (startedAt == null) {
             startedAt = completedAt;

@@ -1,3 +1,5 @@
+import './MonitoringPage.css'
+import { RunWarningTooltip } from '../components/RunWarningTooltip'
 import { useToast } from '../hooks/useToast'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Activity, Building2, CalendarDays, CirclePlus, Clock3, Pencil, Play, RefreshCw, Save, Search, X } from 'lucide-react'
@@ -154,7 +156,7 @@ export default function MonitoringPage() {
 
       <section className="panel">
         <div className="panel-header"><div><h2>최근 실행 이력</h2><p>모니터링이 어떻게 진행됐는지 빠르게 확인하세요.</p></div><button className="button button--subtle" onClick={() => void load()}><RefreshCw size={16} />새로고침</button></div>
-        {loading ? <Loading /> : runs.length === 0 ? <EmptyState icon={<Clock3 />} title="아직 실행 이력이 없어요" description="모니터링을 실행하면 처리 과정과 결과가 여기에 쌓여요." /> : <div className="table-wrap"><table><thead><tr><th>실행 시각</th><th>상태</th><th>소스</th><th>감지 문서</th><th>경고</th><th>보고서</th></tr></thead><tbody>{runs.map((run) => <tr key={run.runId}><td><strong>{formatDate(run.requestedAt)}</strong><small className="block muted">{run.triggerType === 'MANUAL' ? '수동 실행' : '자동 실행'}</small></td><td><Badge tone={runTone[run.status]}>{runLabel[run.status]}</Badge></td><td>{run.totalSourceCount}개</td><td><b>{run.detectedDocumentCount}</b>건</td><td>{run.warningCount > 0 ? <Badge tone="warning">{run.warningCount}건</Badge> : <span className="muted">없음</span>}</td><td>{run.reportTitle ? <span className="report-title">{run.reportTitle}</span> : <span className="muted">준비 중</span>}</td></tr>)}</tbody></table></div>}
+        {loading ? <Loading /> : runs.length === 0 ? <EmptyState icon={<Clock3 />} title="아직 실행 이력이 없어요" description="모니터링을 실행하면 처리 과정과 결과가 여기에 쌓여요." /> : <div className="table-wrap"><table className="monitoring-run-table"><thead><tr><th scope="col">실행 시각</th><th scope="col">상태</th><th scope="col">소스</th><th scope="col">감지 문서</th><th scope="col">경고</th></tr></thead><tbody>{runs.map((run) => <tr key={run.runId}><td><strong>{formatDate(run.requestedAt)}</strong><small className="block muted">{run.triggerType === 'MANUAL' ? '수동 실행' : '자동 실행'}</small></td><td><Badge tone={runTone[run.status]}>{runLabel[run.status]}</Badge></td><td>{run.totalSourceCount}개</td><td><b>{run.detectedDocumentCount}</b>건</td><td><RunWarningTooltip runId={run.runId} warningCount={run.warningCount} status={run.status} /></td></tr>)}</tbody></table></div>}
         <Pagination page={runPage} totalPages={runPages} onChange={setRunPage} />
       </section>
       {modal.open && <SourceModal source={modal.source} onClose={() => setModal({ open: false })} onSaved={(source) => { setSources((items) => modal.source ? items.map((item) => item.sourceId === source.sourceId ? source : item) : [source, ...items]); setModal({ open: false }); setToast(modal.source ? '소스 정보를 수정했어요.' : '새 모니터링 소스를 등록했어요.') }} />}

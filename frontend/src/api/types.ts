@@ -59,6 +59,20 @@ export interface MonitoringRun {
   reportTitle: string | null
 }
 
+export interface MonitoringRunWarnings {
+  runId: number
+  warningCount: number
+  warnings: Array<{
+    stage: 'SOURCE_COLLECTION' | 'ATTACHMENT_READ' | 'LEGACY_DETAILS_UNAVAILABLE'
+    organizationName: string | null
+    boardName: string | null
+    documentTitle: string | null
+    fileName: string | null
+    message: string
+    count: number
+  }>
+}
+
 export interface CreateMonitoringRunResponse {
   runId: number
   status: RunStatus

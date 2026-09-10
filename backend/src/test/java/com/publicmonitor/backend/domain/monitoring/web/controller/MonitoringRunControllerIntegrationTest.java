@@ -61,6 +61,9 @@ class MonitoringRunControllerIntegrationTest {
     private DocumentDetectionQueryService documentDetectionQueryService;
 
 
+    @MockitoBean
+    private com.publicmonitor.backend.domain.monitoring.service.MonitoringRunWarningService warningService;
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -72,6 +75,34 @@ class MonitoringRunControllerIntegrationTest {
 
     @MockitoBean
     private UserRepository userRepository;
+
+    @Test
+    void 실행_경고_상세를_조회한다() throws Exception {
+        given(warningService.find(12L)).willReturn(
+                new com.publicmonitor.backend.domain.monitoring.web.dto.MonitoringRunWarningsResponse(12L, 1,
+                        List.of(new com.publicmonitor.backend.domain.monitoring.web.dto.MonitoringRunWarningsResponse.Warning(
+                                "ATTACHMENT_READ", "기관", "공고", "지원사업", "신청서.hwpx", "응답 대기 시간이 초과됐어요.", 1))));
+        mockMvc.perform(get("/api/monitoring-runs/12/warnings"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.runId").value(12))
+                .andExpect(jsonPath("$.data.warningCount").value(1))
+                .andExpect(jsonPath("$.data.warnings[0].fileName").value("신청서.hwpx"));
+    }
+
+    @Test
+    void 잘못된_경고_실행번호는_400이고_없는_실행은_404다() throws Exception {
+        mockMvc.perform(get("/api/monitoring-runs/0/warnings")).andExpect(status().isBadRequest());
+        given(warningService.find(99L)).willThrow(new com.publicmonitor.backend.domain.monitoring.exception.MonitoringRunNotFoundException());
+        mockMvc.perform(get("/api/monitoring-runs/99/warnings"))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("MONITORING_RUN_404_1"));
+    }
+
+    @Test
+    @org.springframework.security.test.context.support.WithAnonymousUser
+    void 로그인하지_않으면_경고_상세를_조회할_수_없다() throws Exception {
+        mockMvc.perform(get("/api/monitoring-runs/12/warnings")).andExpect(status().isUnauthorized());
+        org.mockito.Mockito.verifyNoInteractions(warningService);
+    }
 
     @Test
     void 수동_모니터링_실행을_생성하면_201을_반환한다() throws Exception {
