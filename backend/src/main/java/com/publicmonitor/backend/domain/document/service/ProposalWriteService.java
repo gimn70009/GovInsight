@@ -58,6 +58,9 @@ public class ProposalWriteService {
     }
 
     private ProposalWriteResponse generate(Long userId, Long detectionId, ProposalWriteRequest request) {
+        var source = sources.excludedFromDrafting(detectionId).get(request);
+        if (source != null) return new ProposalWriteResponse("NEEDS_TEMPLATE", source.fileName(), false,
+                java.util.List.of(), source.reason());
         var saved = drafts.reuse(userId, detectionId, request);
         if (saved.isPresent()) return saved.get();
         var response = writer.write(sources.prepare(detectionId, request));

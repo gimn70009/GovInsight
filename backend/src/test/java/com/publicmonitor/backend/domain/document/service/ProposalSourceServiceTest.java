@@ -16,6 +16,22 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class ProposalSourceServiceTest {
+    @Test
+    void 비대상_문서만_생성에서_제외하고_실제_작성란이_있는_별첨은_유지한다() {
+        setAttachments(attachment(2L, "붙임.zip", "zip",
+                "[파일: 별첨.hwpx]\n신청 자격 확인서\n해당 여부\n( ) 예 ( ) 아니오\n"
+                + "[파일: 다른별첨.hwpx]\n사업계획서\n사업 목표\n구체적인 사업 내용을 작성해 주세요.",
+                AttachmentParseStatus.COMPLETED));
+        var items = service.list(1L);
+        assertThat(items.getFirst().available()).isFalse();
+        assertThat(items.getFirst().reason()).contains("대상이 아닙니다");
+        assertThat(items.get(1).available()).isTrue();
+        assertThat(service.excludedFromDrafting(1L)).containsOnlyKeys(new ProposalWriteRequest(2L, 0));
+        assertThatThrownBy(() -> service.prepare(1L, new ProposalWriteRequest(2L, 0)))
+                .isInstanceOf(DocumentDetectionException.class);
+        assertThat(service.prepare(1L, new ProposalWriteRequest(2L, 1)).templateText()).contains("사업 목표");
+    }
+
     private final DocumentDetectionRepository detections = mock(DocumentDetectionRepository.class);
     private final DocumentAttachmentRepository attachments = mock(DocumentAttachmentRepository.class);
     private final DocumentVersion version = mock(DocumentVersion.class);

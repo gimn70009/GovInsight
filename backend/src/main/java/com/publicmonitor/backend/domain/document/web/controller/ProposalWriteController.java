@@ -34,14 +34,15 @@ public class ProposalWriteController {
         this.drafts = drafts;
     }
 
-    @Operation(summary = "제안서 작성에 사용할 첨부 및 ZIP 내부 문서 목록")
+    @Operation(summary = "제안서 작성에 사용할 첨부 및 ZIP 내부 문서 목록",
+            description = "읽기 실패 및 명확한 비작성 문서는 available=false와 사유를 반환합니다.")
     @GetMapping("/proposal-sources")
     public SuccessResponse<List<ProposalSourceResponse>> sources(@PathVariable @Min(1) Long detectionId) {
         return SuccessResponse.ok(sources.list(detectionId));
     }
 
     @Operation(summary = "선택한 양식의 핵심 항목 최대 4개 초안 생성",
-            description = "완료된 초안은 계정과 첨부 양식별로 저장하며 재요청 시 저장된 결과를 반환합니다.")
+            description = "명확한 비작성 문서는 NEEDS_TEMPLATE로 반환합니다. 정상 완료 초안은 계정·첨부 양식별로 저장하고 재사용합니다.")
     @PostMapping("/proposal-draft")
     public SuccessResponse<ProposalWriteResponse> write(@AuthenticationPrincipal CustomUserDetails principal,
             @PathVariable @Min(1) Long detectionId,

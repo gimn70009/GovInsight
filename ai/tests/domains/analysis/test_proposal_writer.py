@@ -230,9 +230,11 @@ def test_non_template_does_not_call_writer_and_invalid_outline_is_not_published(
         model.ainvoke.return_value = {"is_writing_template": False, "sections": []}
         with patch("app.domains.analysis.proposal_writer.ChatOpenAI") as chat:
             chat.return_value.with_structured_output.return_value = model
-            result = await writer._compose(request(), {}, settings(), "2026-09-08")
+            result = await writer._compose(
+                request("개인정보 처리 동의서\n서명"), {}, settings(), "2026-09-08"
+            )
         assert result.status == "NEEDS_TEMPLATE"
-        assert model.ainvoke.await_count == 1
+        assert model.ainvoke.await_count == 0
 
     asyncio.run(scenario())
 

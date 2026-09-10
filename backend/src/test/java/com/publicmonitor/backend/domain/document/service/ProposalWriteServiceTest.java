@@ -23,6 +23,21 @@ class ProposalWriteServiceTest {
     private final ProposalWriteResponse completed = new ProposalWriteResponse("COMPLETED", "양식.hwpx", false,
             List.of(new ProposalWriteResponse.Section("목표", "본문", "원문", "이유", List.of(), List.of())), "");
 
+    @Test
+    void 비대상_문서는_기존_저장본이_있어도_재사용과_생성을_차단한다() {
+        when(sources.excludedFromDrafting(1L)).thenReturn(java.util.Map.of(request,
+                new ProposalSourceResponse(2L, 0, "선정 공고.hwpx", "선정 공고.hwpx", false, "초안 대상 아님")));
+        var response = service.write(7L, 1L, request);
+        assertThat(response.status()).isEqualTo("NEEDS_TEMPLATE");
+        assertThat(response.sections()).isEmpty();
+        assertThat(response.message()).isEqualTo("초안 대상 아님");
+        verify(drafts, never()).reuse(any(), any(), any());
+        verify(drafts, never()).save(any(), any(), any(), any());
+        verify(sources, never()).prepare(any(), any());
+        verifyNoInteractions(writer);
+        assertThat(service.state(7L, 1L).running()).isEmpty();
+    }
+
     @BeforeEach
     void versions() {
         when(drafts.getVersionId(anyLong())).thenReturn(10L);
@@ -33,7 +48,9 @@ class ProposalWriteServiceTest {
     void 저장된_초안은_원문_준비와_모델_호출_없이_그대로_반환한다() {
         when(drafts.reuse(7L, 1L, request)).thenReturn(Optional.of(completed));
         assertThat(service.write(7L, 1L, request)).isEqualTo(completed);
-        verifyNoInteractions(sources, writer);
+        verify(sources).excludedFromDrafting(1L);
+        verify(sources, never()).prepare(any(), any());
+        verifyNoInteractions(writer);
         verify(drafts, never()).save(any(), any(), any(), any());
     }
 

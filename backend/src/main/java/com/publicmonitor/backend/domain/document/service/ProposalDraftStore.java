@@ -24,10 +24,15 @@ public class ProposalDraftStore {
     private final DocumentAttachmentRepository attachments;
     private final UserRepository users;
     private final ObjectMapper mapper;
+    private final ProposalSourceService sources;
 
     @Transactional(readOnly = true)
     public List<SavedProposalDraftResponse> list(Long userId, Long detectionId) {
-        return drafts.findSaved(userId, versionId(detectionId)).stream().map(this::response).toList();
+        var excluded = sources.excludedFromDrafting(detectionId);
+        return drafts.findSaved(userId, versionId(detectionId)).stream()
+                .filter(draft -> !excluded.containsKey(new ProposalWriteRequest(
+                        draft.getAttachment().getId(), draft.getPartIndex())))
+                .map(this::response).toList();
     }
 
     @Transactional
