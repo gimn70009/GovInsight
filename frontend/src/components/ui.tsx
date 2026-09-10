@@ -25,7 +25,7 @@ export function InlineError({ message }: { message: string }) {
 
 export function Toast({ message, onClose }: { message: string; onClose: () => void }) {
   return (
-    <div className="toast"><CheckCircle2 size={18} /><span>{message}</span><button onClick={onClose} aria-label="알림 닫기"><X size={16} /></button></div>
+    <div className="toast" role="status" aria-live="polite" aria-atomic="true"><CheckCircle2 size={18} aria-hidden="true" /><span>{message}</span><button onClick={onClose} aria-label="알림 닫기"><X size={16} /></button></div>
   )
 }
 

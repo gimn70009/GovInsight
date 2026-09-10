@@ -1,3 +1,4 @@
+import { useToast } from '../hooks/useToast'
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowUpRight, Bot, Check, ChevronDown, CircleHelp, Copy, Link2, Pencil, Plus, RefreshCw, Send, SlidersHorizontal, Trash2, Users, X } from 'lucide-react'
@@ -44,7 +45,7 @@ export default function TelegramPage() {
   const [busy, setBusy] = useState(false)
   const actionRef = useRef(false)
   const [actionError, setActionError] = useState('')
-  const [toast, setToast] = useState('')
+  const [toast, setToast] = useToast()
   const [editor, setEditor] = useState<Editor | null>(null)
   const [removing, setRemoving] = useState<TelegramRecipient | null>(null)
   const [sendTarget, setSendTarget] = useState<SendTarget | null>(null)
@@ -100,11 +101,6 @@ export default function TelegramPage() {
     }).catch(e => { if (!controller.signal.aborted) setDetailError(messageOf(e)) })
     return () => controller.abort()
   }, [detailId])
-  useEffect(() => {
-    if (!toast) return
-    const timer = window.setTimeout(() => setToast(''), 3500)
-    return () => window.clearTimeout(timer)
-  }, [toast])
 
   const runAction = async (action: () => Promise<void>) => {
     if (actionRef.current) return

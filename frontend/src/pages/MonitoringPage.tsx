@@ -1,3 +1,4 @@
+import { useToast } from '../hooks/useToast'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Activity, Building2, CalendarDays, CirclePlus, Clock3, Pencil, Play, RefreshCw, Save, Search, X } from 'lucide-react'
 import { api } from '../api/client'
@@ -24,7 +25,7 @@ export default function MonitoringPage() {
   const [query, setQuery] = useState('')
   const [modal, setModal] = useState<{ open: boolean; source?: MonitoringSource }>({ open: false })
   const [running, setRunning] = useState(false)
-  const [toast, setToast] = useState('')
+  const [toast, setToast] = useToast()
   const [schedule, setSchedule] = useState<MonitoringSchedule>(defaultSchedule)
   const [savingSchedule, setSavingSchedule] = useState(false)
 
