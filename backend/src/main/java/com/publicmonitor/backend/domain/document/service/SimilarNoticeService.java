@@ -8,7 +8,6 @@ import com.publicmonitor.backend.domain.document.exception.DocumentDetectionExce
 import com.publicmonitor.backend.domain.document.exception.DocumentDetectionResponseCode;
 import com.publicmonitor.backend.domain.document.repository.DocumentDetectionRepository;
 import com.publicmonitor.backend.domain.document.web.dto.SimilarNoticeResponse;
-import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -63,36 +62,38 @@ public class SimilarNoticeService {
     private volatile SearchSnapshot searchSnapshot;
 
     private record SearchEntry(Long versionId, Long documentId, String model,
-            double[] vector, Set<String> title, Set<String> purpose) {}
-    private record SearchSnapshot(String revision, long builtAt, List<SearchEntry> entries) {}
+            double[] vector, HybridNoticeRanker.Features features, boolean reliableSemanticInput) {}
+    private record SearchSnapshot(String revision, long builtAt, List<SearchEntry> entries,
+            HybridNoticeRanker.Statistics statistics) {}
 
-    private List<SearchEntry> searchEntries() {
+    private SearchSnapshot searchEntries() {
         var revision = analysisRepository.similarityRevision();
         String signature = revision == null ? null
                 : revision.getTotal() + ":" + revision.getLastId() + ":" + revision.getChangedAt();
         SearchSnapshot cached = searchSnapshot;
         if (signature != null && cached != null && signature.equals(cached.revision())
-                && System.nanoTime() - cached.builtAt() < 60_000_000_000L) return cached.entries();
+                && System.nanoTime() - cached.builtAt() < 60_000_000_000L) return cached;
         return rebuildSearchEntries(signature);
     }
 
-    private synchronized List<SearchEntry> rebuildSearchEntries(String signature) {
+    private synchronized SearchSnapshot rebuildSearchEntries(String signature) {
         SearchSnapshot cached = searchSnapshot;
         if (signature != null && cached != null && signature.equals(cached.revision())
-                && System.nanoTime() - cached.builtAt() < 60_000_000_000L) return cached.entries();
+                && System.nanoTime() - cached.builtAt() < 60_000_000_000L) return cached;
         var entries = new ArrayList<SearchEntry>();
         for (DocumentAnalysis analysis : analysisRepository.findLatestSimilarityCandidates(0L)) {
             var version = analysis.getDocumentVersion();
             String organization = version.getDocument().getMonitoringSource().getOrganizationName();
             entries.add(new SearchEntry(version.getId(), version.getDocument().getId(),
                     analysis.getEmbeddingModelName(), unitVector(embedding(analysis)),
-                    Set.copyOf(topicTerms(version.getTitle(), organization)),
-                    Set.copyOf(topicTerms(purpose(version.getContentText() == null ? "" : version.getContentText(), analysis), organization))));
+                    new HybridNoticeRanker.Features(topicTerms(version.getTitle(), organization),
+                            topicTerms(purpose(version.getContentText() == null ? "" : version.getContentText(), analysis), organization)),
+                    !NoticeSearchText.hasUnknown(analysis.getSimilarityProfile())));
         }
-        List<SearchEntry> snapshot = List.copyOf(entries);
+        SearchSnapshot snapshot = new SearchSnapshot(signature, System.nanoTime(), List.copyOf(entries),
+                HybridNoticeRanker.Statistics.of(entries.stream().map(SearchEntry::features).toList()));
         // Cache derived values only, never JPA entities or legal/source documents.
-        searchSnapshot = signature != null && entries.size() <= 5000
-                ? new SearchSnapshot(signature, System.nanoTime(), snapshot) : null;
+        searchSnapshot = signature != null && entries.size() <= 5000 ? snapshot : null;
         return snapshot;
     }
 
@@ -115,23 +116,27 @@ public class SimilarNoticeService {
         queryTerms.addAll(queryPurpose);
         var inputs = new ArrayList<HybridNoticeRanker.Candidate>();
         var scored = new java.util.HashMap<Long, ScoredCandidate>();
-        for (SearchEntry candidate : searchEntries()) {
-            if (candidate.documentId().equals(currentVersion.getDocument().getId())) continue;
+        SearchSnapshot snapshot = searchEntries();
+        HybridNoticeRanker.Statistics statistics = snapshot.statistics();
+        boolean reliableQuery = !NoticeSearchText.hasUnknown(currentAnalysis.getSimilarityProfile());
+        for (SearchEntry candidate : snapshot.entries()) {
+            if (candidate.documentId().equals(currentVersion.getDocument().getId())) {
+                statistics = statistics.excluding(candidate.features());
+                continue;
+            }
             boolean comparable = currentEmbedding.length > 0
                     && candidate.vector().length == currentEmbedding.length
                     && currentAnalysis.getEmbeddingModelName() != null
                     && !currentAnalysis.getEmbeddingModelName().isBlank()
                     && currentAnalysis.getEmbeddingModelName().equals(candidate.model());
             double similarity = comparable ? dot(currentEmbedding, candidate.vector()) : Double.NaN;
-            Set<String> candidateTerms = new LinkedHashSet<>(candidate.title());
-            candidateTerms.addAll(candidate.purpose());
-            List<String> sharedTopics = sharedTopicTerms(queryTerms, candidateTerms);
+            List<String> sharedTopics = sharedTopicTerms(queryTerms, candidate.features().terms);
             inputs.add(new HybridNoticeRanker.Candidate(candidate.versionId(), similarity,
-                    candidate.title(), candidate.purpose(), sharedTopics));
+                    candidate.features(), sharedTopics, reliableQuery && candidate.reliableSemanticInput()));
             scored.put(candidate.versionId(), new ScoredCandidate(candidate.versionId(), similarity, sharedTopics));
         }
 
-        List<SimilarNoticeResponse.SimilarNotice> matches = HybridNoticeRanker.rank(queryTitle, queryPurpose, inputs).stream()
+        List<SimilarNoticeResponse.SimilarNotice> matches = HybridNoticeRanker.rank(new HybridNoticeRanker.Features(queryTitle, queryPurpose), inputs, statistics).stream()
                 .flatMap(match -> toResponse(currentAnalysis, scored.get(match.id()), match.basis()).stream())
                 .limit(MAX_RESULTS)
                 .toList();
@@ -260,10 +265,9 @@ public class SimilarNoticeService {
     }
 
     private Set<String> topicTerms(String value, String organization) {
-        String source = (organization == null || organization.isBlank()
-                ? value
-                : value.replace(organization, " ")).toLowerCase(Locale.ROOT);
-        source = Normalizer.normalize(source, Normalizer.Form.NFKC)
+        String source = NoticeSearchText.clean(value);
+        source = (organization == null || organization.isBlank()
+                ? source : source.replace(organization, " ")).toLowerCase(Locale.ROOT)
                 .replaceAll("인공\\s*지능|artificial\\s+intelligence", "ai")
                 .replaceAll("예지\\s*보전|예측\\s*정비", "예지보전")
                 .replaceAll("결함\\s*탐지|불량\\s*검출", "결함탐지")
@@ -307,7 +311,8 @@ public class SimilarNoticeService {
         ComparisonFields comparison = comparisonFields(analysis);
         return new SimilarNoticeResponse.ComparisonSide(
                 version.getDocument().getMonitoringSource().getOrganizationName(),
-                comparison == null ? purpose(content, analysis) : comparison.purpose(),
+                comparison == null || NoticeSearchText.clean(comparison.purpose()).isBlank()
+                        ? purpose(content, analysis) : comparison.purpose(),
                 comparison == null
                         ? firstMatch(MONEY_PATTERN, content, "원문에서 지원 규모를 확인하지 못했습니다.")
                         : comparison.supportScale(),
@@ -344,13 +349,23 @@ public class SimilarNoticeService {
         if (analysis != null && analysis.getComparisonSummary() != null) {
             try {
                 String savedPurpose = objectMapper.readTree(analysis.getComparisonSummary()).path("purpose").asText().strip();
-                if (!savedPurpose.isBlank()) return savedPurpose;
+                if (!NoticeSearchText.clean(savedPurpose).isBlank()) return NoticeSearchText.clean(savedPurpose);
             } catch (RuntimeException ignored) {
                 // Fall back to the source when legacy comparison JSON cannot be read.
             }
         }
+        String sourcePurpose = sourcePurpose(content);
+        if (!sourcePurpose.isBlank()) return sourcePurpose;
+        String summary = analysis == null ? "" : NoticeSearchText.summaryPurpose(analysis.getSummary());
+        return summary.isBlank() ? "원문에서 확인하지 못했습니다." : summary;
+    }
+
+    private String sourcePurpose(String content) {
         Matcher inlineSection = INLINE_PURPOSE_SECTION.matcher(normalizeText(content));
-        if (inlineSection.find()) return cleanSourceLine(inlineSection.group(1));
+        if (inlineSection.find()) {
+            String extracted = NoticeSearchText.clean(cleanSourceLine(inlineSection.group(1)));
+            return extracted;
+        }
 
         List<String> purposeLines = new ArrayList<>();
         boolean collecting = false;
@@ -361,16 +376,15 @@ public class SimilarNoticeService {
                 Matcher heading = PURPOSE_HEADING.matcher(line);
                 if (!heading.matches()) continue;
                 collecting = true;
-                String inlinePurpose = cleanSourceLine(heading.group(1));
+                String inlinePurpose = NoticeSearchText.clean(cleanSourceLine(heading.group(1)));
                 if (!inlinePurpose.isBlank()) purposeLines.add(inlinePurpose);
                 continue;
             }
             if (NEXT_SECTION_HEADING.matcher(line).matches() || line.matches("^[0-9]+[.)]$")) break;
-            String cleaned = cleanSourceLine(line);
+            String cleaned = NoticeSearchText.clean(cleanSourceLine(line));
             if (!cleaned.isBlank()) purposeLines.add(cleaned);
         }
-        if (!purposeLines.isEmpty()) return String.join(" ", purposeLines);
-        return analysis == null ? "사업 목적을 확인하지 못했습니다." : normalizeText(analysis.getSummary());
+        return String.join(" ", purposeLines);
     }
 
     private String requiredPartner(String content) {

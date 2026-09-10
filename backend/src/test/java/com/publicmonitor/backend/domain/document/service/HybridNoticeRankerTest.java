@@ -88,4 +88,47 @@ class HybridNoticeRankerTest {
         assertThat(HybridNoticeRanker.rank(Set.of("반도체"), Set.of("교육", "훈련", "인력"), List.of(match))).isEmpty();
     }
 
+    @Test
+    void hybridAndLexicalPathsCannotBypassConflictingThemes() {
+        for (double semantic : List.of(.70, .85, .99)) {
+            var item = new HybridNoticeRanker.Candidate(1, semantic, Set.of("공연"),
+                    Set.of("시설", "확충", "운영"), List.of("시설", "확충", "운영"));
+            assertThat(HybridNoticeRanker.rank(Set.of("반도체"), Set.of("시설", "확충", "운영"), List.of(item))).isEmpty();
+        }
+    }
+
+    @Test
+    void aSingleSharedTermDoesNotCorroborateModerateSemantics() {
+        var item = new HybridNoticeRanker.Candidate(1, .80, Set.of("반도체"), Set.of("교육", "인력"), List.of("반도체"));
+        assertThat(HybridNoticeRanker.rank(Set.of("반도체"), Set.of("결함탐지", "검사"), List.of(item))).isEmpty();
+    }
+
+    @Test
+    void contaminatedEmbeddingCannotUseSemanticOnlyPath() {
+        var query = new HybridNoticeRanker.Features(Set.of("전산장비"), Set.of("유지보수"));
+        var features = new HybridNoticeRanker.Features(Set.of("it", "인프라"), Set.of("유지관리"));
+        var item = new HybridNoticeRanker.Candidate(1, .99, features, List.of(), false);
+        assertThat(HybridNoticeRanker.rank(query, List.of(item), HybridNoticeRanker.Statistics.of(List.of(features)))).isEmpty();
+    }
+
+    @Test
+    void excludingCurrentDocumentFromCachedStatisticsMatchesFreshRanking() {
+        var query = new HybridNoticeRanker.Features(Set.of("반도체"), Set.of("공정", "결함탐지"));
+        var candidates = new java.util.ArrayList<HybridNoticeRanker.Candidate>();
+        var corpus = new java.util.ArrayList<HybridNoticeRanker.Features>();
+        corpus.add(query);
+        for (int id = 1; id <= 45; id++) {
+            var item = new HybridNoticeRanker.Candidate(id, .80, Set.of("반도체", "장비" + id),
+                    Set.of("공정", "결함탐지"), List.of("반도체", "공정", "결함탐지"));
+            candidates.add(item);
+            corpus.add(item.features());
+        }
+        var expected = HybridNoticeRanker.rank(query.title, query.purpose, candidates);
+        java.util.Collections.reverse(candidates);
+        var actual = HybridNoticeRanker.rank(query, candidates, HybridNoticeRanker.Statistics.of(corpus).excluding(query));
+        assertThat(actual).isEqualTo(expected);
+        assertThat(actual).hasSize(20);
+        assertThat(actual.getFirst().id()).isEqualTo(1);
+    }
+
 }

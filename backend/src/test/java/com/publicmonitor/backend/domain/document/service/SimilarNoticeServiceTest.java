@@ -22,6 +22,8 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -284,6 +286,61 @@ class SimilarNoticeServiceTest {
                 .willReturn(Optional.of(valid.detection()));
         assertThat(service().find(1L).similarNotices()).hasSize(1);
         org.mockito.Mockito.verify(detectionRepository).findTopByDocumentVersionIdOrderByDetectedAtDescIdDesc(30L);
+    }
+
+    @ParameterizedTest
+    @ValueSource(doubles = {0.76, 0.79, 0.99, Double.NaN})
+    void missingPurposeMessagesCannotLinkUnrelatedNoticesThroughAnySearchLane(double similarity) {
+        String missing = "원문에서 확인하지 못했습니다.";
+        Fixture current = fixture(1L, "산업통상부", "2026년 제5차 산업융합 규제샌드박스 규제특례 승인 공고",
+                missing, List.of(1.0, 0.0));
+        Fixture other = fixture(2L, "산업통상부", "2026년 에너지공기업 기술나눔 공고",
+                missing, List.of(1.0, 0.0));
+        other.analysis().updateSimilarity("test", Double.isNaN(similarity) ? null
+                : new ObjectMapper().writeValueAsString(List.of(similarity, Math.sqrt(1 - similarity * similarity))),
+                "text-embedding-3-small");
+        prepareSearch(current, List.of(other));
+        given(detectionRepository.findById(2L)).willReturn(Optional.of(other.detection()));
+        org.mockito.Mockito.lenient().when(detectionRepository.findTopByDocumentVersionIdOrderByDetectedAtDescIdDesc(1L))
+                .thenReturn(Optional.of(current.detection()));
+        org.mockito.Mockito.lenient().when(detectionRepository.findTopByDocumentVersionIdOrderByDetectedAtDescIdDesc(2L))
+                .thenReturn(Optional.of(other.detection()));
+
+        // Check stored comparison fields, legacy source extraction, and summary fallback.
+        for (String origin : List.of("comparison", "source", "summary")) {
+            for (Fixture item : List.of(current, other)) {
+                item.analysis().updateComparisonSummary(origin.equals("comparison")
+                        ? "{\"purpose\":\"" + missing + "\"}" : null);
+                ReflectionTestUtils.setField(item.version(), "contentText", origin.equals("source")
+                        ? "1. 사업 목적 ○ " + missing + " 2. 사업 내용" : "");
+            }
+            SimilarNoticeService instance = service();
+            assertThat(instance.find(1L).similarNotices()).as(origin + " forward").isEmpty();
+            assertThat(instance.find(2L).similarNotices()).as(origin + " reverse").isEmpty();
+            assertThat(instance.find(1L).currentNotice().purpose()).isEqualTo(missing);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"원문에서 확인하지 못했습니다.", "  원문에서  확인하지 못했습니다。  ",
+            "사업 목적을 확인하지 못했습니다", "원문에서 사업 목적을 확인하지 못했습니다."})
+    void missingMessageDoesNotAddTopicsToOtherwiseValidPurpose(String missing) {
+        Fixture current = fixture(1L, "기관A", "반도체", "결함탐지 공정", List.of(1.0, 0.0));
+        Fixture other = fixture(2L, "기관B", "반도체", "결함탐지 공정", List.of(0.7, Math.sqrt(0.51)));
+        ObjectMapper mapper = new ObjectMapper();
+        for (Fixture item : List.of(current, other)) {
+            item.analysis().updateComparisonSummary(mapper.writeValueAsString(
+                    java.util.Map.of("purpose", missing + "! 결함탐지 공정")));
+        }
+        prepareSearch(current, List.of(other));
+        given(detectionRepository.findTopByDocumentVersionIdOrderByDetectedAtDescIdDesc(2L))
+                .willReturn(Optional.of(other.detection()));
+        assertThat(service().find(1L).similarNotices()).singleElement().satisfies(item -> {
+            assertThat(item.matchBasis()).isEqualTo("LEXICAL");
+            assertThat(item.legalReview().summary()).contains("반도체", "결함탐지", "공정")
+                    .doesNotContain("원문·", "확인하지", "못했습니다");
+            assertThat(item.comparison().purpose()).isEqualTo("결함탐지 공정");
+        });
     }
 
     private void prepareSearch(Fixture current, List<Fixture> candidates) {

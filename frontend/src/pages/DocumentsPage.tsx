@@ -966,8 +966,7 @@ function SimilarNoticeComparison({ currentId, result, loading, currentTitle, cur
   return (
     <section className="detail-section similar-notice-panel">
       <div className="similar-notice-panel__header">
-        <div><small>SIMILAR NOTICE</small><h3>유사 공고 비교</h3><p>의미 검색과 제목·사업 목적의 어휘 검색을 결합한 비교 후보입니다.</p></div>
-        <Badge tone="info">{selected.matchBasis === 'LEXICAL_ONLY' ? '사업 목적·어휘 일치 후보' : selected.matchBasis === 'LEXICAL' ? '어휘 근거 중심 후보' : selected.matchBasis === 'SEMANTIC' ? '의미 근거 중심 후보' : '의미·어휘 비교 후보'}</Badge>
+        <div><small>SIMILAR NOTICE</small><h3>유사 공고 비교</h3><p>공통점과 신청 조건을 비교해 보세요.</p></div>
       </div>
       {result.similarNotices.length > 1 && (
         <label className="similar-notice-select"><span>비교할 공고</span><select value={selectedIndex} onChange={(event) => setSelectedIndex(Number(event.target.value))}>{result.similarNotices.map((notice, index) => <option key={notice.detectionId} value={index}>{notice.title}</option>)}</select></label>
@@ -1082,7 +1081,6 @@ function LegalPairInsightPanel({ currentId, similarId, review }: { currentId: nu
       {statusMessage && <p className="legal-pair-insight__status">{statusMessage}</p>}
       {result?.status === 'COMPLETED' && <p className="legal-pair-insight__status">확인된 조항을 바탕으로 정리한 주의사항입니다. 자세한 원문은 아래 항목에서 확인할 수 있습니다.</p>}
     </div>
-    {result?.status === 'COMPLETED' && result.usesDemoProfile && <p className="company-context-note">이 비교는 실제 회사 소개와 데모 가정을 함께 참고했습니다.</p>}
     {result?.status === 'COMPLETED' && <div className="legal-pair-insight__results">
       {result.insights.map((item) => <article key={item.type}>
         <h5>{labels[item.type] ?? '신청 조건'}</h5>

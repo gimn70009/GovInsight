@@ -9,6 +9,7 @@ from app.domains.analysis.agent import LangChainAnalysisRunner
 from app.domains.analysis.clients import AnalysisResultClient, AnalysisResultClientError
 from app.domains.analysis.config import AnalysisConfigurationError, AnalysisSettings
 from app.domains.analysis.graph import AnalysisWorkflowError, DocumentAnalysisWorkflow
+from app.domains.analysis.notice_search_text import build_search_profile
 from app.domains.analysis.proposal_drafting import (
     LangChainProposalGenerationRunner,
     TwoStageAnalysisWorkflow,
@@ -186,6 +187,8 @@ async def _attach_similarity_embeddings(
         if document is None:
             continue
         profile = _build_similarity_profile(document, result)
+        if not profile:
+            continue
         profiles.append(profile)
         target_results.append(result)
 
@@ -218,13 +221,9 @@ def _build_similarity_profile(
     document: AnalysisDocumentRequest,
     result: DocumentAnalysisResult,
 ) -> str:
-    comparison = result.comparison_summary
-    return (
-        f"핵심 주제: {document.title}\n"
-        f"사업 목적: {comparison.purpose if comparison else result.summary}\n"
-        f"지원 대상: {comparison.eligibility if comparison else '확인되지 않음'}\n"
-        f"협력 구조: {comparison.required_partner if comparison else '확인되지 않음'}"
-    )[:3000]
+    return build_search_profile(
+        document.title, document.content_text, result.summary, result.comparison_summary
+    )
 
 
 class _ScopedAnalysisWorkflow:
