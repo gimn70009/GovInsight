@@ -7,6 +7,11 @@ const sourceKey = (source: { attachmentId: number; partIndex: number }) => `${so
 const sourceName = (source: { attachmentName: string; fileName: string }) =>
   source.attachmentName !== source.fileName ? `${source.attachmentName} › ${source.fileName}` : source.fileName
 
+// These three Hancom markers appear as outline squares in the supplied form.
+// Normalize only line-leading markers for display/copy, preserving the stored source.
+const displayTemplateText = (text: string) =>
+  text.replace(/(^|\n)([ \t]*)[\u{F02B1}-\u{F02B3}](?=\s|$)/gu, '$1$2□')
+
 export function ProposalWriter({ detectionId, active, expired }: { detectionId: number; active: boolean; expired: boolean }) {
   const [sources, setSources] = useState<ProposalSource[]>([])
   const [savedDrafts, setSavedDrafts] = useState<SavedProposalDraft[]>([])
@@ -44,6 +49,11 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
   const current = allSources.find((source) => sourceKey(source) === selected)
   const saved = savedByKey.get(selected)
   const draft = saved?.result
+  const displayedSections = (draft?.sections ?? []).map((section) => ({
+    ...section,
+    title: displayTemplateText(section.title),
+    sourceQuote: displayTemplateText(section.sourceQuote),
+  }))
 
   useEffect(() => {
     if (draft && focusResult.current) {
@@ -285,7 +295,7 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
                 <RefreshCw size={15} />다시 작성
               </button>
             </>}
-          <ProposalCopyButton text={draft.sections.map((item) => `${item.title}\n\n${item.body}`).join('\n\n')} label="전체 복사" />
+          <ProposalCopyButton text={displayedSections.map((item) => `${item.title}\n\n${item.body}`).join('\n\n')} label="전체 복사" />
           </div>
         </div>
         {rewriteOpen && current?.available && <form id="proposal-rewrite-form" className="proposal-writer__rewrite"
@@ -304,7 +314,7 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
           </div>
         </form>}
         {draft.message && <p className="proposal-writer__notice">{draft.message}</p>}
-        {draft.sections.map((section, index) => <article className="proposal-writer__section" key={section.title}>
+        {displayedSections.map((section, index) => <article className="proposal-writer__section" key={draft.sections[index].title}>
           <div className="proposal-writer__section-heading"><div className="proposal-writer__section-title">
             <span className="proposal-writer__section-number">{index + 1}</span><h4>{section.title}</h4></div>
             <ProposalCopyButton text={section.body} label="복사" accessibleLabel={`${section.title} 본문 복사`} /></div>
