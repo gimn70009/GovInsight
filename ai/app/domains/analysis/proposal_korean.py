@@ -13,11 +13,13 @@ _LIST_OR_HEADING = re.compile(r"^(?:#{1,6}\s|```|[-*•]\s|\d{1,2}[.)]\s|[가-�
 
 
 class KoreanBodyFormatError(ValueError):
-    def __init__(self, sentence_number: int, ending_kind: str):
+    def __init__(self, sentence_number: int, ending_kind: str, sentence_text: str = ""):
         super().__init__("본문의 모든 문장은 완전한 합니다체로 작성해야 합니다.")
         self.section_id = None
         self.sentence_number = sentence_number
         self.ending_kind = ending_kind
+        # Repair input only; safe_hint deliberately excludes generated text.
+        self.sentence_text = sentence_text
 
     def safe_hint(self):
         return (
@@ -51,10 +53,32 @@ def normalize_korean_body(body: str) -> str:
     return "\n".join(lines).strip()
 
 
+def _protected_spans(line: str):
+    # Only matched delimiters protect punctuation. An unfinished bracket cannot hide a sentence.
+    pairs = {"(": ")", "[": "]", "{": "}", "“": "”", "‘": "’", "「": "」", "『": "』"}
+    stack = []
+    spans = []
+    for index, char in enumerate(line):
+        if char in pairs:
+            stack.append((index, pairs[char]))
+        elif stack and char == stack[-1][1]:
+            begin, _ = stack.pop()
+            spans.append((begin, index + 1))
+    for match in re.finditer(r'https?://[^\s<>"()\[\]{}]+', line):
+        end = match.end()
+        while end > match.start() and line[end - 1] in ".!?,;":
+            end -= 1
+        spans.append((match.start(), end))
+    return spans
+
+
 def _sentences(line: str):
     start = 0
-    # Periods in Latin abbreviations, decimal numbers and dates are not sentence ends.
+    protected = _protected_spans(line)
+    # Periods inside citations, decimals, dates, URLs and abbreviations are not sentence ends.
     for match in re.finditer(r"[.!?]+[\"'”’]?", line):
+        if any(begin <= match.start() < end for begin, end in protected):
+            continue
         if match[0] == ".":
             prefix, suffix = line[: match.start()], line[match.end() :]
             abbreviation = re.search(
@@ -76,7 +100,7 @@ def verify_korean_body(body: str) -> None:
         if not line.strip():
             continue
         if _LIST_OR_HEADING.match(line):
-            raise KoreanBodyFormatError(count + 1, "list_or_heading")
+            raise KoreanBodyFormatError(count + 1, "list_or_heading", line)
         for sentence in _sentences(line):
             count += 1
             if not _ENDING.search(sentence):
@@ -85,6 +109,6 @@ def verify_korean_body(body: str) -> None:
                     kind = "missing_terminal"
                 elif re.search(r"[!?]$|\.{2,}$", sentence):
                     kind = "terminal_punctuation"
-                raise KoreanBodyFormatError(count, kind)
+                raise KoreanBodyFormatError(count, kind, sentence)
     if not count:
         raise KoreanBodyFormatError(1, "empty")
