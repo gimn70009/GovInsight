@@ -34,7 +34,8 @@ public record DocumentDetectionDetailResponse(
             AnalysisEligibility eligibility,
             AnalysisFavorability favorableOrNot,
             Proposal proposal,
-            Opportunity opportunity
+            Opportunity opportunity,
+            String applicationDeadline
     ) {
     }
 

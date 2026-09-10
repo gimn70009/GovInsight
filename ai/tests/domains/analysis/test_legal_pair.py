@@ -150,3 +150,16 @@ def test_pair_uses_both_profiles_and_invalidates_cache_when_company_context_chan
             assert model.ainvoke.await_count == 3
 
     asyncio.run(scenario())
+
+
+def test_pair_normalizes_known_endings_and_rejects_fragments():
+    candidate = output()
+    candidate["insights"][0]["comparison"] = "두 공고의 목적에 공통점이 있다."
+    candidate["insights"][0]["verification"] = "실제 수행 범위 확인"
+    result = validate_pair_output(candidate, request())
+    assert result.status == "COMPLETED"
+    assert result.insights[0].comparison == "두 공고의 목적에 공통점이 있습니다."
+    assert result.insights[0].verification.endswith("확인이 필요합니다.")
+    candidate["insights"][0]["verification"] = "실제 수행 범위 및 목표"
+    assert validate_pair_output(candidate, request()).status == "UNAVAILABLE"
+    assert validate_pair_output({"insights": [12, ["bad"]]}, request()).status == "UNAVAILABLE"

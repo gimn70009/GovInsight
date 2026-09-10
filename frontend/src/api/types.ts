@@ -130,6 +130,7 @@ export interface OpportunityAssessment {
 }
 
 export interface DocumentAnalysis {
+  applicationDeadline?: string | null
   summary: string
   keyPoints: string[]
   importance: Importance

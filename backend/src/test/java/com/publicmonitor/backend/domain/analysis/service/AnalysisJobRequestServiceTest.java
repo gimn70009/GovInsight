@@ -150,6 +150,7 @@ class AnalysisJobRequestServiceTest {
         assertThat(item.previousVersion().versionId()).isEqualTo(199L);
         assertThat(item.previousVersion().title()).isEqualTo("이전 제목");
         assertThat(item.previousVersion().contentText()).isEqualTo("이전 본문");
+        assertThat(item.previousVersion().attachments()).isEmpty();
     }
 
     @Test
@@ -161,6 +162,44 @@ class AnalysisJobRequestServiceTest {
         given(attachmentRepository.findAllByDocumentVersionId(200L)).willReturn(List.of());
 
         assertThat(service.prepare(10L)).isEmpty();
+    }
+
+    @Test
+    void 수정_문서는_이전_첨부와_현재_첨부를_버전별로_분리하여_전달한다() {
+        DocumentVersion previous = version(1, 199L, "공고", "본문");
+        DocumentVersion current = version(2, 200L, "공고", "본문");
+        given(detectionRepository.findAllByMonitoringRunSourceMonitoringRunIdOrderByIdAsc(10L))
+                .willReturn(List.of(detection(current, 300L, DocumentChangeType.UPDATED_DOCUMENT)));
+        given(versionRepository.findByDocumentIdAndVersionNo(100L, 1)).willReturn(Optional.of(previous));
+        given(attachmentRepository.findAllByDocumentVersionId(199L)).willReturn(List.of(
+                attachment(previous, 390L, AttachmentParseStatus.COMPLETED, "접수 기한 9월 20일"),
+                attachment(previous, 391L, AttachmentParseStatus.FAILED, "실패한 이전 추출 내용")
+        ));
+        given(attachmentRepository.findAllByDocumentVersionId(200L)).willReturn(List.of(
+                attachment(current, 400L, AttachmentParseStatus.COMPLETED, "접수 기한 9월 30일")
+        ));
+
+        var item = service.prepare(10L).orElseThrow().documents().getFirst();
+
+        assertThat(item.attachments()).singleElement().satisfies(file -> {
+            assertThat(file.attachmentId()).isEqualTo(400L);
+            assertThat(file.extractedText()).isEqualTo("접수 기한 9월 30일");
+        });
+        assertThat(item.previousVersion().attachments()).hasSize(2);
+        assertThat(item.previousVersion().attachments().getFirst().attachmentId()).isEqualTo(390L);
+        assertThat(item.previousVersion().attachments().getFirst().extractedText()).isEqualTo("접수 기한 9월 20일");
+        assertThat(item.previousVersion().attachments().get(1).extractedText()).isNull();
+        var json = new tools.jackson.databind.ObjectMapper().valueToTree(item.previousVersion());
+        assertThat(json.get("attachments").get(0).get("extractedText").asString()).isEqualTo("접수 기한 9월 20일");
+        assertThat(json.get("attachments").get(1).get("extractedText").isNull()).isTrue();
+    }
+
+    @Test
+    void 이전_버전이_없으면_이전_첨부가_있다고_추정하지_않는다() {
+        DocumentVersion current = version(2, 200L, "공고", "본문");
+        given(detectionRepository.findAllByMonitoringRunSourceMonitoringRunIdOrderByIdAsc(10L))
+                .willReturn(List.of(detection(current, 300L, DocumentChangeType.UPDATED_DOCUMENT)));
+        assertThat(service.prepare(10L).orElseThrow().documents().getFirst().previousVersion()).isNull();
     }
 
     private DocumentVersion version(int versionNo, Long id, String title, String content) {

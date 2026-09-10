@@ -21,6 +21,7 @@ from app.domains.analysis.context_tools import (
     serialize_company_profile,
 )
 from app.domains.analysis.legal_risks import unsupported_consequences
+from app.domains.analysis.legal_style import has_formal_style, normalize_legal_narrative
 from app.domains.analysis.schemas.result import LegalRiskType
 
 logger = logging.getLogger(__name__)
@@ -140,8 +141,16 @@ def validate_pair_output(output, request: LegalPairRequest) -> LegalPairResponse
     seen = set()
     for raw_item in output.get("insights", [])[:5]:
         try:
-            item = PairInsight.model_validate(raw_item)
-        except (ValidationError, TypeError):
+            normalized = dict(raw_item)
+            for field in ("comparison", "implication", "verification"):
+                if isinstance(normalized.get(field), str):
+                    normalized[field] = normalize_legal_narrative(normalized[field])
+            item = PairInsight.model_validate(normalized)
+            if not all(has_formal_style(getattr(item, field)) for field in (
+                "comparison", "implication", "verification"
+            )):
+                continue
+        except (ValueError, TypeError):
             continue
         if item.type in seen or not all(
             ref in evidence and evidence[ref]["type"] == item.type.value
@@ -233,7 +242,8 @@ class LegalPairReviewer:
                             pass
                         prompt += (
                             "\n근거 검증을 통과하지 못했습니다. 제공된 id만 연결하고 "
-                            "원문에 없는 지원 취소·신청 배제·환수·처벌을 제거하세요."
+                            "원문에 없는 지원 취소·신청 배제·환수·처벌을 제거하고 "
+                            "모든 설명을 완결된 합니다체로 쓰세요."
                         )
         except Exception as exception:
             logger.warning("공고 쌍 해석 실패 reason=%s", type(exception).__name__)

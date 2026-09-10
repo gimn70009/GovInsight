@@ -374,3 +374,50 @@ def test_model_schema_requires_every_risk_and_rejects_empty_response():
     response = LegalRiskModelResponse.model_validate({kind.value: verdict for kind in LegalRiskType})
     assert len(response.to_assessment().legal_risks) == 5
     assert set(LegalRiskModelResponse.model_json_schema()["required"]) == {kind.value for kind in LegalRiskType}
+
+
+def test_normalized_legal_insight_keeps_original_evidence_without_retry():
+    import asyncio
+    from unittest.mock import AsyncMock
+    from app.domains.analysis.legal_risks import assess_with_repair
+    source = "동일 과제 중복 지원은 금지한다. 다만 별도 승인 시 예외로 한다."
+    candidates = find_legal_risk_candidates(_document(source))
+    decision = LegalRiskDecision(
+        type="DUPLICATE_SUPPORT", status="RESTRICTION_FOUND", candidate_id=1,
+        interpretation="동일 과제의 중복지원은 제한되나 별도 승인 예외가 있다.",
+        implication="수행 범위가 같다면 승인 조건의 확인이 필요하다.",
+        verification="기존 과제와 신청 과제의 수행 범위 확인")
+    model = AsyncMock()
+    model.ainvoke.return_value = LegalRiskAssessment(legal_risks=[decision])
+    result = asyncio.run(assess_with_repair(model, candidates))
+    assert model.ainvoke.await_count == 1
+    assert result[0].failure_reason is None
+    assert "승인 예외가 있습니다." in result[0].summary
+    assert "확인이 필요합니다." in result[0].summary
+    assert result[0].summary.endswith("수행 범위 확인이 필요합니다.")
+    assert result[0].evidence_excerpt == source
+
+
+def test_unrepairable_style_retries_only_failed_type_and_preserves_other_findings():
+    import asyncio
+    from unittest.mock import AsyncMock
+    from app.domains.analysis.legal_risks import assess_with_repair
+    candidates = find_legal_risk_candidates(_document(
+        "동일 과제 중복 지원은 금지합니다.\n비밀정보의 공개는 금지합니다."))
+    decisions = [LegalRiskDecision(
+        type=candidate.type.value, status="RESTRICTION_FOUND", candidate_id=index,
+        interpretation="제한 조항이 있습니다.", implication="해당 조건의 검토가 필요합니다.",
+        verification="실제 적용 범위를 확인합니다.")
+        for index, candidate in enumerate(candidates, 1)]
+    bad = decisions[0].model_copy(update={"verification": "수행 범위 및 조건"})
+    model = AsyncMock()
+    model.ainvoke.side_effect = [
+        LegalRiskAssessment(legal_risks=[bad, *decisions[1:]]),
+        LegalRiskAssessment(legal_risks=[decisions[0]])]
+    result = asyncio.run(assess_with_repair(model, candidates))
+    assert model.ainvoke.await_count == 2
+    assert "INVALID_STYLE" in model.ainvoke.call_args.args[0]
+    for decision in decisions:
+        finding = next(item for item in result if item.type.value == decision.type)
+        assert finding.failure_reason is None
+        assert finding.summary.startswith(decision.interpretation)

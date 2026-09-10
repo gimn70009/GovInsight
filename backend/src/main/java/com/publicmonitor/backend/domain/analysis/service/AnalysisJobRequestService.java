@@ -113,7 +113,10 @@ public class AnalysisJobRequestService {
                 .map(previous -> new PythonPreviousVersionRequest(
                         previous.getId(),
                         previous.getTitle(),
-                        previous.getContentText()
+                        previous.getContentText(),
+                        attachmentRepository.findAllByDocumentVersionId(previous.getId()).stream()
+                                .map(this::toAttachmentRequest)
+                                .toList()
                 ));
     }
 

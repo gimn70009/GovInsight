@@ -6,13 +6,13 @@ from dataclasses import dataclass, replace
 
 from pydantic import BaseModel, Field, ValidationError
 
+from app.domains.analysis.legal_style import has_formal_style, normalize_legal_narrative
 from app.domains.analysis.schemas.request import AnalysisDocumentRequest
 from app.domains.analysis.schemas.result import (
     LegalRiskFinding,
     LegalRiskStatus,
     LegalRiskType,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -256,13 +256,16 @@ def validate_legal_risk_assessment(
         # Report the clause actually reviewed, not a blanket decision about every source.
         summary = _summary_for(risk_type, status)
         if all(part.strip() for part in (decision.interpretation, decision.implication, decision.verification)):
-            summary = " ".join(part.strip() for part in (
+            summary = " ".join(normalize_legal_narrative(part) for part in (
                 decision.interpretation, decision.implication, decision.verification))
         reason = None
         if unsupported_consequences(summary, selected.excerpt):
             summary = _summary_for(risk_type, status)
             reason = "UNSUPPORTED_INTERPRETATION"
         summary = summary.replace("확인하십시오.", "확인해야 합니다.").replace("대조하십시오.", "대조해야 합니다.")
+        if not has_formal_style(summary) or len(summary) > 430:
+            summary = _summary_for(risk_type, status)
+            reason = "INVALID_STYLE"
         if selected.selection_limited:
             summary += " 확인한 조항에 대한 결과이며 다른 조항의 조건·예외는 추가 확인이 필요합니다."
         validated.append(LegalRiskFinding(type=risk_type, status=status,
@@ -309,7 +312,7 @@ def legal_risk_prompt(
         "interpretation과 implication은 각각 140자 이하, verification은 100자 이하입니다.",
         "같은 유형의 후보를 모두 검토하고 적용되는 제한을 빠뜨리지 않도록 대표 근거를 선택합니다. 다른 후보의 예외가 해당 제한에도 적용되는지 확인합니다.",
         "interpretation은 선택한 후보의 적용 대상·조건·예외를 보존한 조항 해석입니다. implication은 이 조항 때문에 신청 또는 수행 시 달라지는 점입니다. verification은 실제 적용 판단을 위해 대조할 구체적인 정보입니다.",
-        "각 필드는 간결한 합니다체 1문장으로 씁니다. 같은 말을 반복하거나 단순히 원문 확인을 권하지 않습니다. 내부 추론은 출력하지 않습니다.",
+        "각 필드는 완결된 합니다체 문장과 마침표로 씁니다. 있다/한다/이다/확인 같은 종결은 사용하지 않습니다. 같은 말을 반복하거나 단순히 원문 확인을 권하지 않습니다. 내부 추론은 출력하지 않습니다.",
         "금지 조항만 있을 때 원문에 없는 지원 취소·신청 배제·환수 등 제재를 추정하지 않습니다.",
         "원문에 없는 법률·기한·제재·허가를 만들지 않습니다. 확인할 사항은 의무인 것처럼 단정하지 않습니다. 다른 공고나 신청자의 실제 과제·비용·권리 정보는 제공되지 않았으므로 충돌을 확정하지 않습니다.",
         "예: 동일 과제 중복지원 금지 조항이라면, 동일 과제가 제한 대상임을 설명하고 기존 과제와 연구 목표·수행 범위가 겹치는 경우의 영향을 조건부로 설명한 뒤 비교할 과제 범위를 구체적으로 제시합니다.",
@@ -469,7 +472,7 @@ async def assess_with_repair(
                     continue
                 decision = decisions.get(finding.type.value)
                 if finding.status in (LegalRiskStatus.RESTRICTION_FOUND, LegalRiskStatus.CAUTION):
-                    if finding.failure_reason == "UNSUPPORTED_INTERPRETATION":
+                    if finding.failure_reason in ("UNSUPPORTED_INTERPRETATION", "INVALID_STYLE"):
                         retry.add(finding.type)
                     elif decision is None or not all(part.strip() for part in (
                         decision.interpretation, decision.implication, decision.verification

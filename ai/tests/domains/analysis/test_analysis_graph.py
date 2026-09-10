@@ -278,7 +278,7 @@ def test_graph_retries_transient_failure_and_returns_new_document_result() -> No
     result = asyncio.run(workflow.analyze(document()))
 
     assert runner.call_count == 2
-    assert runner.feedbacks[1] == "이전 분석 시도가 실패했습니다: 첫 호출 시간 초과"
+    assert runner.feedbacks[1] == "이전 분석 시도가 실패했습니다: AI 모델 응답 시간이 초과되었습니다."
     assert result.detection_id == 10
     assert result.importance == DocumentImportance.HIGH
     assert result.favorable_or_not == Favorability.NOT_APPLICABLE
@@ -1174,3 +1174,115 @@ def test_ten_document_batch_retains_notice_with_repeated_narrative_failure(
         body = item.proposal.sections[0].body
         assert ("생략" in body) == (item.detection_id == 8)
         assert "지금 신청할 수 있습니다." not in body
+
+
+def test_updated_attachment_evidence_and_change_focus_reach_model_and_saved_insight() -> None:
+    payload = document("UPDATED_DOCUMENT").model_dump(by_alias=True)
+    payload["contentText"] = payload["previousVersion"]["contentText"] = "자세한 조건은 첨부를 확인합니다."
+    payload["previousVersion"]["attachments"] = [
+        {"attachmentId": 1, "fileName": "공고문.pdf", "extractedText": "필수 서류는 신청서입니다."}
+    ]
+    payload["attachments"] = [
+        {"attachmentId": 2, "fileName": "공고문.pdf", "extractedText": "필수 서류는 신청서와 납세증명서입니다."}
+    ]
+    request = AnalysisDocumentRequest.model_validate(payload)
+    runner = LangChainAnalysisRunner.__new__(LangChainAnalysisRunner)
+    runner._settings = SimpleNamespace(max_text_chars=20_000, timeout_seconds=5, model_name="mock-model")
+    runner._plan_analysis = AsyncMock(return_value=_default_analysis_plan(request.change_type))
+    draft = analysis(Favorability.REVIEW_REQUIRED).draft
+    insight = (
+        "이전에는 신청서만 요구했지만 수정 공고에는 납세증명서가 추가되었습니다. "
+        "제출 증빙의 범위가 늘어났으며 현재 회사 정보에서는 해당 증명서의 유효성이 확인되지 않습니다."
+    )
+    draft.proposal.sections[1].body = insight
+    runner._assess_legal_risks = AsyncMock(return_value=draft.comparison_summary.legal_risks)
+    runner._analysis_model = AsyncMock()
+    runner._analysis_model.ainvoke.return_value = draft.model_dump()
+
+    generated = asyncio.run(DocumentAnalysisWorkflow(runner=runner, max_attempts=1).analyze(request))
+
+    prompt = runner._analysis_model.ainvoke.call_args.args[0][1]["content"]
+    assert "변경 전 → 변경 후 → 우리 회사에 미치는 영향" in prompt
+    assert "-필수 서류는 신청서입니다." in prompt
+    assert "+필수 서류는 신청서와 납세증명서입니다." in prompt
+    assert "attachmentComparison" in prompt
+    assert runner._analysis_model.ainvoke.await_count == 1
+    assert generated.proposal.sections[1].body == insight
+
+
+@pytest.mark.parametrize("source_limit", [40_000, 16_000])
+@pytest.mark.parametrize("failure_kind", ["native", "sdk", "transport", "validation"])
+def test_retry_shrinks_sources_and_guides_complete_output_only_for_timeouts(
+    source_limit: int, failure_kind: str,
+) -> None:
+    import json
+
+    import httpx
+    from openai import APITimeoutError
+
+    from app.domains.analysis.retry_policy import COMPACT_RETRY_INSTRUCTIONS
+
+    errors = {
+        "native": TimeoutError("nonempty timeout message"),
+        "sdk": APITimeoutError(request=httpx.Request("POST", "https://example.org/model")),
+        "transport": httpx.ReadTimeout("Read timed out"),
+        "validation": ValueError("필드 형식을 확인하세요"),
+    }
+    request = document("UPDATED_DOCUMENT").model_copy(update={
+        "content_text": "접수 마감은 2026년 9월 30일 18시입니다.\n"
+        + "배경 설명입니다. " * 6000
+        + "\n자부담 비율은 20%이며 납세증명서가 필요합니다.",
+    })
+    draft = analysis(Favorability.REVIEW_REQUIRED).draft
+    runner = LangChainAnalysisRunner.__new__(LangChainAnalysisRunner)
+    runner._settings = SimpleNamespace(
+        max_text_chars=source_limit, timeout_seconds=5, model_name="mock-model",
+    )
+    runner._plan_analysis = AsyncMock(return_value=_default_analysis_plan(request.change_type))
+    runner._assess_legal_risks = AsyncMock(return_value=draft.comparison_summary.legal_risks)
+    runner._analysis_model = AsyncMock()
+    runner._analysis_model.ainvoke.side_effect = [errors[failure_kind], draft.model_dump()]
+
+    generated = asyncio.run(DocumentAnalysisWorkflow(
+        runner=runner, max_attempts=2, analysis_date=date(2026, 9, 11),
+    ).analyze(request))
+
+    calls = runner._analysis_model.ainvoke.call_args_list
+    assert len(calls) == 2
+    prompts = [call.args[0] for call in calls]
+    assert COMPACT_RETRY_INSTRUCTIONS not in prompts[0][0]["content"]
+    assert (COMPACT_RETRY_INSTRUCTIONS in prompts[1][0]["content"]) == (failure_kind != "validation")
+    def input_body(messages):
+        data = messages[1]["content"].split("<current_document>\n", 1)[1].split("\n</current_document>", 1)[0]
+        return json.loads(data)["contentText"]
+    assert len(input_body(prompts[0])) == source_limit
+    assert len(input_body(prompts[1])) == (source_limit if failure_kind == "validation" else min(source_limit, 24_000))
+    assert "2026년 9월 30일 18시" in input_body(prompts[1])
+    assert "자부담 비율은 20%" in input_body(prompts[1])
+    retry_system = prompts[1][0]["content"]
+    if failure_kind != "validation":
+        for essential in ("필수 제출 서류", "지원 대상과 제외 대상", "금액 단위·상한",
+                          "예외·부정·제한 조건", "변경 전 → 변경 후 → 회사 영향", "400~700자",
+                          "미확인 사항", "기존 필드 상한", "필수 필드를 비우지"):
+            assert essential in retry_system
+    assert generated.summary == draft.summary
+    assert generated.key_points == draft.key_points
+    assert len(generated.proposal.sections) == 2
+    assert len(generated.opportunity.dimensions) == 4
+    assert generated.comparison_summary == draft.comparison_summary
+    assert generated.proposal.sections[1].body == draft.proposal.sections[1].body
+
+
+def test_future_deadline_removes_stale_closure_before_eligibility_normalization():
+    candidate = analysis(Favorability.NOT_APPLICABLE, opportunity_assessment=opportunity(
+        urgency_reason="신청 마감일은 2026년 10월 1일이며 마감 지남 상태입니다."))
+    candidate.draft.comparison_summary.application_deadline = "2026-10-01 18:00"
+    expected_eligibility = candidate.draft.eligibility
+    generated = asyncio.run(DocumentAnalysisWorkflow(
+        runner=SequencedRunner([candidate]), max_attempts=1, analysis_date=date(2026, 9, 11),
+    ).analyze(document()))
+    urgency = next(item for item in generated.opportunity.dimensions if item.type.value == "URGENCY")
+    assert urgency.reason == "신청 마감일은 2026년 10월 1일이며 분석일 기준 남은 20일입니다."
+    assert generated.eligibility == expected_eligibility
+    assert generated.eligibility != Eligibility.INELIGIBLE
+    assert "접수기한이 지나" not in (generated.proposal.draft_reason or "")

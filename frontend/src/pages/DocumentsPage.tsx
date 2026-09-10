@@ -23,6 +23,8 @@ import { ProposalWriter } from '../components/ProposalWriter'
 import type { ChangeType, DocumentAnalysis, DocumentDetail, DocumentDetection, MonitoringRun, OpportunityDimensionType, OpportunityPriority, ProposalPreparationItem, SimilarNoticeResult } from '../api/types'
 import { Badge, EmptyState, InlineError, Loading, Pagination } from '../components/ui'
 
+import { isApplicationExpired, normalizeLegalNarrative } from '../utils/noticePresentation'
+
 const opportunityLabels: Record<OpportunityDimensionType, string> = {
   COMPANY_FIT: '회사 적합도',
   BUSINESS_VALUE: '사업 매력도',
@@ -114,7 +116,6 @@ const requirementStageLabel = {
   REPORTING: '결과보고',
 } as const
 
-const expiredDeadlinePattern = /(?:마감\s*(?:지남|경과)|접수(?:기한|기간|마감)[^.]{0,40}(?:지났|경과|종료|불가능))/u
 const formReferencePattern = /\s*[（(]\s*((?:양식|서식)\s*\d+)\s*[)）]\s*/gu
 const readableSentence = (value: string) => value.replace(/\s+·\s+/gu, ', ')
 const genericAppliesTo = new Set(['신청기관', '모든 신청기관', '전체 신청기관', '해당 기관', '참여기관'])
@@ -123,11 +124,6 @@ const formatEvidenceSource = (parts: Array<string | null | undefined>) => {
   if (values.length === 0) return null
   if (values.length === 1) return `출처는 ${values[0]}입니다.`
   return `출처는 ${values.slice(0, -1).join(', ')}이며 위치는 ${values.at(-1)}입니다.`
-}
-
-function isExpiredApplication(detail: DocumentDetail) {
-  const urgencyReason = detail.analysis?.opportunity?.dimensions.find(({ type }) => type === 'URGENCY')?.reason ?? ''
-  return expiredDeadlinePattern.test(`${urgencyReason} ${detail.analysis?.summary ?? ''}`)
 }
 
 function PreparationChecklist({
@@ -664,7 +660,7 @@ function OpportunityScore({ opportunity }: { opportunity: NonNullable<DocumentAn
 function DocumentContent({ detail, similarNotices, similarLoading }: { detail: DocumentDetail; similarNotices: SimilarNoticeResult | null; similarLoading: boolean }) {
   const [activeDetailTab, setActiveDetailTab] = useState<'ANALYSIS' | 'PROPOSAL' | 'SIMILAR'>('ANALYSIS')
   const analysis = detail.analysis
-  const applicationExpired = isExpiredApplication(detail)
+  const applicationExpired = isApplicationExpired(detail.analysis)
   const eligible = analysis
     ? applicationExpired ? ['지원 불가능', 'danger'] as const : eligibility[analysis.eligibility]
     : null
@@ -983,7 +979,7 @@ function SimilarNoticeComparison({ currentId, result, loading, currentTitle, cur
         <div className="legal-review__check-list">{legalReview.checks.map((check) => {
           const findings = splitLegalComparison(formatLegalFinding(check.finding))
           const evidence = splitLegalComparison(check.evidence)
-          return <details key={check.type}><summary><strong>{check.label}</strong><span aria-hidden="true"><ChevronDown size={15} /></span></summary><div className="legal-review__detail"><div className="legal-review__sources"><section><small>현재 공고</small><p>{findings.current}</p>{evidence.current && <blockquote><b>관련 원문</b><ExpandableComparisonCell content={evidence.current} onExpand={() => setExpandedCell({ title: '현재 공고 원문 근거', content: evidence.current })} /></blockquote>}</section><section><small>유사 공고</small><p>{findings.similar}</p>{evidence.similar && <blockquote><b>관련 원문</b><ExpandableComparisonCell content={evidence.similar} onExpand={() => setExpandedCell({ title: '유사 공고 원문 근거', content: evidence.similar })} /></blockquote>}</section></div></div></details>
+          return <details key={check.type}><summary><strong>{check.label}</strong><span aria-hidden="true"><ChevronDown size={15} /></span></summary><div className="legal-review__detail"><div className="legal-review__sources"><section><small>현재 공고</small><p>{normalizeLegalNarrative(findings.current)}</p>{evidence.current && <blockquote><b>관련 원문</b><ExpandableComparisonCell content={evidence.current} onExpand={() => setExpandedCell({ title: '현재 공고 원문 근거', content: evidence.current })} /></blockquote>}</section><section><small>유사 공고</small><p>{normalizeLegalNarrative(findings.similar)}</p>{evidence.similar && <blockquote><b>관련 원문</b><ExpandableComparisonCell content={evidence.similar} onExpand={() => setExpandedCell({ title: '유사 공고 원문 근거', content: evidence.similar })} /></blockquote>}</section></div></div></details>
         })}</div>
         <p className="legal-review__disclaimer">{legalReview.disclaimer}</p>
       </section>
@@ -1085,9 +1081,9 @@ function LegalPairInsightPanel({ currentId, similarId, review }: { currentId: nu
       {result.insights.map((item) => <article key={item.type}>
         <h5>{labels[item.type] ?? '신청 조건'}</h5>
         <dl>
-          <dt>공고별 조건</dt><dd>{item.comparison}</dd>
-          <dt>주의할 점</dt><dd>{item.implication}</dd>
-          <dt>직접 확인할 내용</dt><dd>{item.verification}</dd>
+          <dt>공고별 조건</dt><dd>{normalizeLegalNarrative(item.comparison)}</dd>
+          <dt>주의할 점</dt><dd>{normalizeLegalNarrative(item.implication)}</dd>
+          <dt>직접 확인할 내용</dt><dd>{normalizeLegalNarrative(item.verification)}</dd>
         </dl>
       </article>)}
     </div>}

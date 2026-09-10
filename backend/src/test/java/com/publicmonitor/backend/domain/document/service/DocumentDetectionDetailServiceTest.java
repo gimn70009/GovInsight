@@ -99,6 +99,7 @@ class DocumentDetectionDetailServiceTest {
                 "mock-model",
                 now
         );
+        analysis.updateComparisonSummary("{\"applicationDeadline\":\"2026-10-01 18:00\"}");
         DocumentAttachment attachment = DocumentAttachment.create(
                 version, "공고문.hwpx", "https://example.com/file/1", "hwpx",
                 "application/zip", 100L, "b".repeat(64), "추출 본문",
@@ -115,6 +116,7 @@ class DocumentDetectionDetailServiceTest {
         assertThat(response.title()).isEqualTo("AI 지원사업");
         assertThat(response.attachments()).hasSize(1);
         assertThat(response.analysis().keyPoints()).containsExactly("신청 자격 확인", "제출 기한 확인");
+        assertThat(response.analysis().applicationDeadline()).isEqualTo("2026-10-01 18:00");
         assertThat(response.analysis().eligibility()).isEqualTo(AnalysisEligibility.REVIEW_REQUIRED);
         assertThat(response.analysis().opportunity().totalScore()).isEqualTo(75);
         assertThat(response.analysis().opportunity().priority().name()).isEqualTo("HIGH");
@@ -136,6 +138,14 @@ class DocumentDetectionDetailServiceTest {
 
         assertThatThrownBy(() -> service().findById(999L))
                 .isInstanceOf(DocumentDetectionException.class);
+    }
+
+    @Test
+    void 마감일이_없는_기존_결과나_손상된_JSON도_조회한다() {
+        for (String json : new String[] {null, "", "{}", "null", "{broken", "{\"applicationDeadline\":12}"}) {
+            String deadline = ReflectionTestUtils.invokeMethod(service(), "parseApplicationDeadline", json);
+            assertThat(deadline).isNull();
+        }
     }
 
     private String opportunityJson() {

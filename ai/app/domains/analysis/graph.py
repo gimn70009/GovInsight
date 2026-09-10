@@ -8,6 +8,7 @@ from typing import Literal, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from app.domains.analysis.agent import AgentAnalysis, AnalysisRunner
+from app.domains.analysis.retry_policy import TIMEOUT_FEEDBACK, is_timeout_error
 from app.domains.analysis.schemas.request import (
     AnalysisChangeType,
     AnalysisDocumentRequest,
@@ -783,17 +784,10 @@ def _normalize_urgency_score(
             )
             return
         urgency.score = _urgency_score(remaining_days)
-        if re.search(r"남은\s*\d+\s*일", urgency.reason):
-            urgency.reason = re.sub(
-                r"남은\s*\d+\s*일",
-                f"남은 {remaining_days}일",
-                urgency.reason,
-            )
-        else:
-            urgency.reason = (
-                f"신청 마감일은 {deadline_text}이며 분석일 기준 남은 {remaining_days}일입니다. "
-                f"{urgency.reason}"
-            )
+        # The parsed deadline owns the status; never append stale model claims of closure.
+        urgency.reason = (
+            f"신청 마감일은 {deadline_text}이며 분석일 기준 남은 {remaining_days}일입니다."
+        )
         return
     expected_score = _expected_urgency_score(urgency.reason)
     if expected_score is None:
@@ -935,7 +929,7 @@ def _urgency_score(remaining_days: int) -> int:
 
 
 def _safe_error(exception: Exception) -> str:
-    if isinstance(exception, TimeoutError) and not str(exception).strip():
-        return "AI 모델 응답 시간이 초과되었습니다. 첨부파일 분량 또는 출력 항목을 확인하세요."
+    if is_timeout_error(exception):
+        return TIMEOUT_FEEDBACK
     message = str(exception).strip()
     return message[:500] if message else exception.__class__.__name__

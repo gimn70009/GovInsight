@@ -1,7 +1,6 @@
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from difflib import unified_diff
 
 from langchain.tools import ToolRuntime, tool
 
@@ -15,6 +14,7 @@ from app.domains.analysis.context_tools import (
     read_previous_analysis,
 )
 from app.domains.analysis.schemas.request import AnalysisDocumentRequest
+from app.domains.analysis.version_comparison import compare_versions
 
 
 @dataclass(frozen=True)
@@ -66,32 +66,9 @@ def read_attachment_texts(context: AnalysisToolContext) -> str:
 
 
 def compare_with_previous_version(context: AnalysisToolContext) -> str:
-    document = context.document
-    previous = document.previous_version
-    if previous is None:
-        return json.dumps({"available": False}, ensure_ascii=False)
-
-    current_content = _truncate(document.content_text, context.max_text_chars // 2) or ""
-    previous_content = _truncate(previous.content_text, context.max_text_chars // 2) or ""
-    diff = "\n".join(
-        unified_diff(
-            previous_content.splitlines(),
-            current_content.splitlines(),
-            fromfile="previous",
-            tofile="current",
-            lineterm="",
-            n=2,
-        )
+    return json.dumps(
+        compare_versions(context.document, context.max_text_chars), ensure_ascii=False
     )
-    payload = {
-        "available": True,
-        "previousVersionId": previous.version_id,
-        "titleChanged": previous.title.strip() != document.title.strip(),
-        "previousTitle": previous.title,
-        "currentTitle": document.title,
-        "contentDiff": _truncate(diff, context.max_text_chars),
-    }
-    return json.dumps(payload, ensure_ascii=False)
 
 
 @tool
@@ -116,7 +93,7 @@ def get_attachment_texts(runtime: ToolRuntime[AnalysisToolContext]) -> str:
 
 @tool
 def compare_previous_version(runtime: ToolRuntime[AnalysisToolContext]) -> str:
-    """수정 문서의 바로 이전 버전과 현재 버전의 제목·본문 차이를 조회한다."""
+    """직전 버전과 현재 버전의 제목·본문·첨부 차이와 비교 한계를 조회한다."""
     return _cached_result(
         runtime.context,
         "compare_previous_version",

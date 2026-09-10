@@ -27,6 +27,10 @@ from app.domains.analysis.legal_risks import (
     no_candidate_legal_risks,
 )
 from app.domains.analysis.opportunity_scoring import OPPORTUNITY_SCORING_RUBRIC
+from app.domains.analysis.retry_policy import (
+    COMPACT_RETRY_INSTRUCTIONS,
+    needs_compact_retry,
+)
 from app.domains.analysis.schemas.request import (
     AnalysisChangeType,
     AnalysisDocumentRequest,
@@ -207,14 +211,7 @@ class LangChainAnalysisRunner:
         document: AnalysisDocumentRequest,
         feedback: str | None = None,
     ) -> AgentAnalysis:
-        compact_retry = bool(
-            feedback
-            and (
-                "시간이 초과" in feedback
-                or "Recursion limit" in feedback
-                or "tool call limit" in feedback.casefold()
-            )
-        )
+        compact_retry = needs_compact_retry(feedback)
         if compact_retry:
             max_text_chars = min(self._settings.max_text_chars, 24_000)
         else:
@@ -245,11 +242,18 @@ class LangChainAnalysisRunner:
             *input_sections,
         ])
         prompt = "\n".join(prompt_parts)
+        system_prompt = SYSTEM_PROMPT + "\n" + COMPANY_CONTEXT_INSTRUCTIONS + "\n" + NOTICE_APPLICABILITY_INSTRUCTIONS
+        if compact_retry:
+            system_prompt += "\n" + COMPACT_RETRY_INSTRUCTIONS
+        logger.info(
+            "공고 분석 요청 준비. detection_id=%s compact_retry=%s source_text_limit=%s",
+            document.detection_id, compact_retry, max_text_chars,
+        )
 
         try:
             async with asyncio.timeout(self._settings.timeout_seconds):
                 response = await self._analysis_model.ainvoke([
-                    {"role": "system", "content": SYSTEM_PROMPT + "\n" + COMPANY_CONTEXT_INSTRUCTIONS + "\n" + NOTICE_APPLICABILITY_INSTRUCTIONS},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt},
                 ])
         except BaseException:
@@ -481,5 +485,14 @@ def _strategy_instruction(change_type: AnalysisChangeType) -> str:
     if change_type == AnalysisChangeType.NEW_DOCUMENT:
         return common + "\n신규 문서: favorable_or_not은 NOT_APPLICABLE입니다. eligibility는 회사 정보와 공고 조건을 비교합니다."
     if change_type == AnalysisChangeType.UPDATED_DOCUMENT:
-        return common + "\n수정 문서: previous_version_diff와 previous_analysis를 확인합니다. 달라진 조건과 회사 영향을 동일한 고정 항목 안에 설명하고 summary와 key_points에서도 현재 조건과 변경점을 구분합니다. favorable_or_not으로 변경 유불리를 판단하되 대응 전략은 작성하지 않습니다."
+        return common + """
+수정 문서의 변경 중심 해석 규칙:
+- previous_version_diff의 contentDiff·attachmentComparison과 previous_analysis를 확인합니다. 이전 분석은 보조 자료이며 변경 사실은 이전·현재 원문으로 확인합니다.
+- `이 공고에서 중요하게 볼 점`은 변경 전 → 변경 후 → 우리 회사에 미치는 영향 순서로 설명합니다. 첫 문단에서 회사 판단에 가장 중요한 실제 변경을 먼저 밝힙니다. 접수가 종료된 경우에는 기존 종료 안내를 첫 문장에 두고 바로 변경 설명을 이어갑니다.
+- 신청 자격·접수 기한·지원 규모·제출 서류·평가 기준·수행 범위 중 실제 달라진 조건을 우선합니다. 변경 전후의 날짜·금액·조건을 근거에서 확인해 구체적으로 비교하고, 자격·기회·부담에 어떤 영향을 주는지 회사 정보와 연결합니다. 바뀌지 않은 일반 조건은 변경의 의미 설명에 필요한 만큼만 포함합니다.
+- `우리 회사와 연결되는 부분`은 현재 공고와 회사의 접점을 유지하되 변경 때문에 접점·제약이 달라졌으면 반영합니다. 두 항목에서 같은 변경 설명을 반복하지 않습니다. summary와 key_points에서도 현재 조건과 변경점을 구분합니다.
+- attachmentComparison의 ADDED/REMOVED는 목록상 추가·삭제입니다. 이름이 다른 두 파일을 임의로 동일 파일의 개정 전후로 연결하지 않습니다. AMBIGUOUS_NAME은 대응 관계를 확정할 수 없으며 TEXT_UNCHANGED는 추출 텍스트가 같다는 뜻일 뿐 원본 파일 전체가 동일하다는 뜻이 아닙니다. TEXT_CHANGED도 내용상 중요한 변경인지 근거를 보고 판단하며 서식·띄어쓰기 차이를 자격 변경으로 확대하지 않습니다.
+- available=false, complete=false, sourceTruncated, diffTruncated, omittedFileCount 또는 본문·첨부 읽기 실패가 있으면 확인 가능한 변경만 설명하고 해당 비교 한계를 명시합니다. 이전 첨부 목록 미전달을 첨부 없음으로 해석하지 않습니다. 비교 자료가 없거나 차이를 확인하지 못하면 구체적인 변경을 확인할 수 없다고 쓰며 '변경 없음'이나 변경 전 조건을 추측하지 않습니다.
+- 충분한 비교 자료에서 중요한 조건 변경이 확인되지 않으면 그 사실을 밝히고 확인된 제목·서식·파일 목록 변화의 범위를 설명합니다. favorable_or_not은 확인한 변경의 회사 영향으로 판단하며 자료 부족으로 유불리를 판단할 수 없으면 REVIEW_REQUIRED입니다. 대응 전략·준비 체크리스트는 작성하지 않습니다.
+"""
     return common + "\n변경 없는 문서: favorable_or_not은 NEUTRAL입니다. 새로운 변경 사실을 만들지 않고 현재 유효한 공고의 의미를 동일한 고정 항목으로 설명합니다."

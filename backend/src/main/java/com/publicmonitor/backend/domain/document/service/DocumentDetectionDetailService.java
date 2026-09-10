@@ -70,8 +70,19 @@ public class DocumentDetectionDetailService {
                 analysis.getEligibility(),
                 analysis.getFavorableOrNot(),
                 parseProposal(analysis.getProposalDirection()),
-                parseOpportunity(analysis)
+                parseOpportunity(analysis),
+                parseApplicationDeadline(analysis.getComparisonSummary())
         );
+    }
+
+    private String parseApplicationDeadline(String comparisonSummary) {
+        if (comparisonSummary == null || comparisonSummary.isBlank()) return null;
+        try {
+            var value = objectMapper.readTree(comparisonSummary).path("applicationDeadline");
+            return value.isString() ? value.asString().strip() : null;
+        } catch (RuntimeException exception) {
+            return null;
+        }
     }
 
     private DocumentDetectionDetailResponse.Proposal parseProposal(String proposalDirection) {

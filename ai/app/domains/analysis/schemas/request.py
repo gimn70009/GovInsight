@@ -28,6 +28,8 @@ class PreviousVersionRequest(CamelCaseModel):
     version_id: int = Field(gt=0)
     title: str = Field(min_length=1, max_length=500)
     content_text: str | None = None
+    # None is an older caller without an inventory; [] explicitly means no attachments.
+    attachments: list[AnalysisAttachmentRequest] | None = None
 
 
 class PreviousAnalysisRequest(CamelCaseModel):
