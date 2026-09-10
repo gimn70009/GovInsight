@@ -10,6 +10,8 @@ import com.publicmonitor.backend.domain.document.service.ProposalWriteService;
 import com.publicmonitor.backend.domain.document.web.dto.ProposalSourceResponse;
 import com.publicmonitor.backend.domain.document.web.dto.ProposalWriteRequest;
 import com.publicmonitor.backend.domain.document.web.dto.ProposalWriteResponse;
+import com.publicmonitor.backend.domain.document.web.dto.ProposalRegenerateRequest;
+import com.publicmonitor.backend.domain.document.web.dto.ProposalRestoreRequest;
 import com.publicmonitor.backend.global.response.SuccessResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
@@ -48,6 +50,20 @@ public class ProposalWriteController {
             @PathVariable @Min(1) Long detectionId,
             @RequestBody @Valid ProposalWriteRequest request) {
         return SuccessResponse.ok(writer.write(principal.user().getId(), detectionId, request));
+    }
+
+    @Operation(summary = "선택한 초안 다시 작성", description = "수정 요청은 선택 사항입니다. 성공할 때만 교체하고 직전 초안을 보관합니다.")
+    @PostMapping("/proposal-draft/regenerate")
+    public SuccessResponse<ProposalWriteResponse> regenerate(@AuthenticationPrincipal CustomUserDetails principal,
+            @PathVariable @Min(1) Long detectionId, @RequestBody @Valid ProposalRegenerateRequest request) {
+        return SuccessResponse.ok(writer.regenerate(principal.user().getId(), detectionId, request));
+    }
+
+    @Operation(summary = "직전 초안으로 복원", description = "모델 호출 없이 직전 초안과 현재 초안을 교환합니다.")
+    @PostMapping("/proposal-draft/restore")
+    public SuccessResponse<ProposalWriteResponse> restore(@AuthenticationPrincipal CustomUserDetails principal,
+            @PathVariable @Min(1) Long detectionId, @RequestBody @Valid ProposalRestoreRequest request) {
+        return SuccessResponse.ok(writer.restore(principal.user().getId(), detectionId, request));
     }
 
     @Operation(summary = "이 문서 버전에서 내가 작성한 초안 목록", description = "마지막으로 본 초안부터 반환하며 모델은 호출하지 않습니다.")

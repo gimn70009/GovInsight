@@ -247,6 +247,15 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .proposal-writer__result { margin-top:28px; padding-top:22px; border-top:1px solid #e8edf4; }
 .proposal-writer__result-heading,.proposal-writer__section-heading { display:flex; align-items:center; justify-content:space-between; gap:14px; }
 .proposal-writer__result-heading>strong { color:#465569; font-size:15px; font-weight:500; }
+.proposal-writer__result-heading { flex-wrap:wrap; }
+.proposal-writer__result-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.proposal-writer__rewrite { margin-top:16px; padding:18px; border:1px solid #dbe7f8; border-radius:12px; background:#f8faff; }
+.proposal-writer__rewrite label { display:block; margin-bottom:10px; color:#465569; font-size:14px; font-weight:500; }
+.proposal-writer__rewrite label>span { color:#8290a2; font-weight:400; }
+.proposal-writer__rewrite textarea { display:block; width:100%; min-height:96px; padding:12px; border:1px solid #d7e1ef; border-radius:8px; color:#465569; background:#fff; font:inherit; font-size:14px; line-height:1.7; resize:vertical; }
+.proposal-writer__rewrite textarea:focus-visible { outline:2px solid #3182f6; outline-offset:2px; }
+.proposal-writer__rewrite p { margin:10px 0; color:#8290a2; font-size:12px; line-height:1.7; }
+.proposal-writer__rewrite-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; }
 .proposal-writer__section { margin-top:16px; padding:24px; border:1px solid #e4eaf3; border-radius:12px; }
 .proposal-writer h4 { margin:0; color:#344258; font-size:17px; font-weight:500; letter-spacing:-.25px; line-height:1.7; overflow-wrap:anywhere; }
 .proposal-writer__body { margin:18px 0 0; color:#465569; white-space:pre-wrap; font-size:15px; font-weight:400; line-height:1.95; letter-spacing:-.15px; overflow-wrap:anywhere; }

@@ -137,6 +137,14 @@ export const api = {
     request<ProposalWrittenDraft>(`/api/document-detections/${detectionId}/proposal-draft`, {
       method: 'POST', body: JSON.stringify({ attachmentId, partIndex }), signal,
     }),
+  regenerateProposal: (detectionId: number, payload: { attachmentId: number; partIndex: number; expectedRevision: number; operationId: string; feedback: string }, signal?: AbortSignal) =>
+    request<ProposalWrittenDraft>(`/api/document-detections/${detectionId}/proposal-draft/regenerate`, {
+      method: 'POST', body: JSON.stringify(payload), signal,
+    }),
+  restoreProposal: (detectionId: number, payload: { attachmentId: number; partIndex: number; expectedRevision: number; operationId: string }, signal?: AbortSignal) =>
+    request<ProposalWrittenDraft>(`/api/document-detections/${detectionId}/proposal-draft/restore`, {
+      method: 'POST', body: JSON.stringify(payload), signal,
+    }),
   getSimilarNotices: (detectionId: number) =>
     request<SimilarNoticeResult>(`/api/document-detections/${detectionId}/similar-notices`),
 }

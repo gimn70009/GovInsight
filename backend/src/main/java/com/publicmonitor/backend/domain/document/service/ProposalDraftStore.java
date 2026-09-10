@@ -25,6 +25,7 @@ public class ProposalDraftStore {
     private final UserRepository users;
     private final ObjectMapper mapper;
     private final ProposalSourceService sources;
+    private final jakarta.persistence.EntityManager entityManager;
 
     @Transactional(readOnly = true)
     public List<SavedProposalDraftResponse> list(Long userId, Long detectionId) {
@@ -73,6 +74,62 @@ public class ProposalDraftStore {
         return result;
     }
 
+    @Transactional(readOnly = true)
+    public SavedProposalDraftResponse beforeChange(Long userId, Long detectionId, ProposalWriteRequest request,
+            long expectedRevision, String operationId) {
+        var draft = required(userId, detectionId, request);
+        checkRevision(draft, expectedRevision, operationId);
+        return response(draft);
+    }
+
+    @Transactional
+    public ProposalWriteResponse replace(Long userId, Long detectionId, ProposalWriteRequest request,
+            long expectedRevision, String operationId, ProposalWriteResponse next) {
+        if (!"COMPLETED".equals(next.status()) || next.sections() == null || next.sections().isEmpty()) {
+            throw new IllegalArgumentException("Only completed drafts can replace a saved draft");
+        }
+        users.findForProposalUpdate(userId).orElseThrow();
+        var draft = required(userId, detectionId, request);
+        // Reload after the account lock; OSIV may still hold the pre-generation entity.
+        entityManager.refresh(draft);
+        // The snapshot transaction can leave this OSIV entity marked read-only.
+        entityManager.unwrap(org.hibernate.Session.class).setReadOnly(draft, false);
+        checkRevision(draft, expectedRevision, operationId);
+        if (!operationId.equals(draft.getLastOperationId())) {
+            draft.replace(mapper.writeValueAsString(next), operationId, LocalDateTime.now());
+        }
+        return result(draft);
+    }
+
+    @Transactional
+    public ProposalWriteResponse restore(Long userId, Long detectionId, ProposalWriteRequest request,
+            long expectedRevision, String operationId) {
+        users.findForProposalUpdate(userId).orElseThrow();
+        var draft = required(userId, detectionId, request);
+        // Reload after the account lock; OSIV may still hold the pre-generation entity.
+        entityManager.refresh(draft);
+        // The snapshot transaction can leave this OSIV entity marked read-only.
+        entityManager.unwrap(org.hibernate.Session.class).setReadOnly(draft, false);
+        checkRevision(draft, expectedRevision, operationId);
+        if (operationId.equals(draft.getLastOperationId())) return result(draft);
+        if (draft.getPreviousResultJson() == null) {
+            throw new DocumentDetectionException(DocumentDetectionResponseCode.PROPOSAL_PREVIOUS_NOT_FOUND);
+        }
+        draft.restore(operationId, LocalDateTime.now());
+        return result(draft);
+    }
+
+    private DocumentProposalDraft required(Long userId, Long detectionId, ProposalWriteRequest request) {
+        return find(userId, detectionId, request).orElseThrow(() ->
+                new DocumentDetectionException(DocumentDetectionResponseCode.PROPOSAL_DRAFT_NOT_FOUND));
+    }
+
+    private void checkRevision(DocumentProposalDraft draft, long expectedRevision, String operationId) {
+        if (!operationId.equals(draft.getLastOperationId()) && draft.getRevision() != expectedRevision) {
+            throw new DocumentDetectionException(DocumentDetectionResponseCode.PROPOSAL_DRAFT_CONFLICT);
+        }
+    }
+
     private Optional<DocumentProposalDraft> find(Long userId, Long detectionId, ProposalWriteRequest request) {
         return drafts.findSavedSource(userId, versionId(detectionId), request.attachmentId(), request.partIndex());
     }
@@ -93,6 +150,7 @@ public class ProposalDraftStore {
 
     private SavedProposalDraftResponse response(DocumentProposalDraft draft) {
         return new SavedProposalDraftResponse(draft.getAttachment().getId(), draft.getPartIndex(),
-                draft.getAttachment().getFileName(), draft.getCreatedAt(), draft.getLastViewedAt(), result(draft));
+                draft.getAttachment().getFileName(), draft.getCreatedAt(), draft.getLastViewedAt(), result(draft),
+                draft.getRevision(), draft.getPreviousResultJson() != null, draft.getLastOperationId());
     }
 }

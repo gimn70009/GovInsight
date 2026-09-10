@@ -33,6 +33,25 @@ public class DocumentProposalDraft {
     @Column(name = "last_viewed_at", nullable = false)
     private LocalDateTime lastViewedAt;
 
+    @Column(name = "previous_result_json", columnDefinition = "CLOB")
+    private String previousResultJson;
+    @Column(name = "revision", nullable = false)
+    private long revision;
+    @Column(name = "last_operation_id", length = 36)
+    private String lastOperationId;
+
+    public void replace(String nextResult, String operationId, LocalDateTime now) {
+        previousResultJson = resultJson;
+        resultJson = nextResult;
+        revision++;
+        lastOperationId = operationId;
+        lastViewedAt = now;
+    }
+
+    public void restore(String operationId, LocalDateTime now) {
+        replace(previousResultJson, operationId, now);
+    }
+
     public static DocumentProposalDraft create(User user, DocumentAttachment attachment, int partIndex,
             String resultJson, LocalDateTime now) {
         var draft = new DocumentProposalDraft();

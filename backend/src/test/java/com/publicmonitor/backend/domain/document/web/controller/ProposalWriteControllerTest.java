@@ -79,6 +79,42 @@ class ProposalWriteControllerTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    void 재작성과_복원은_계정과_버전을_검증하며_공통_응답을_반환한다() throws Exception {
+        String id = "4cf8d775-8b22-4f03-9050-1e03a11a906a";
+        String body = "{\"attachmentId\":2,\"partIndex\":0,\"expectedRevision\":3,\"operationId\":\"" + id + "\",\"feedback\":\"협력 강조\"}";
+        var result = new ProposalWriteResponse("COMPLETED", "양식.hwpx", false, List.of(), "");
+        when(writer.regenerate(eq(7L), eq(1L), any())).thenReturn(result);
+        mvc.perform(post("/api/document-detections/1/proposal-draft/regenerate").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("COMPLETED"));
+        verify(writer).regenerate(7L, 1L, new ProposalRegenerateRequest(2L, 0, 3L, java.util.UUID.fromString(id), "협력 강조"));
+        when(writer.restore(eq(7L), eq(1L), any())).thenReturn(result);
+        mvc.perform(post("/api/document-detections/1/proposal-draft/restore").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk());
+        verify(writer).restore(7L, 1L, new ProposalRestoreRequest(2L, 0, 3L, java.util.UUID.fromString(id)));
+        when(writer.regenerate(eq(7L), eq(1L), any())).thenThrow(new DocumentDetectionException(DocumentDetectionResponseCode.PROPOSAL_DRAFT_CONFLICT));
+        mvc.perform(post("/api/document-detections/1/proposal-draft/regenerate").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void 재작성_필수버전과_요청ID_및_수정요청_길이를_검증한다() throws Exception {
+        String id = "4cf8d775-8b22-4f03-9050-1e03a11a906a";
+        String valid = "{\"attachmentId\":2,\"partIndex\":0,\"expectedRevision\":0,\"operationId\":\"" + id + "\"}";
+        for (String suffix : List.of("regenerate", "restore")) {
+            for (String body : List.of("{}", valid.replace("\"expectedRevision\":0,", ""),
+                    valid.replace("\"expectedRevision\":0", "\"expectedRevision\":-1"),
+                    valid.replace(id, "invalid"), valid.replace("\"attachmentId\":2", "\"attachmentId\":0"))) {
+                mvc.perform(post("/api/document-detections/1/proposal-draft/" + suffix).contentType(MediaType.APPLICATION_JSON).content(body))
+                        .andExpect(status().isBadRequest());
+            }
+        }
+        String oversized = valid.substring(0, valid.length() - 1) + ",\"feedback\":\"" + "가".repeat(2001) + "\"}";
+        mvc.perform(post("/api/document-detections/1/proposal-draft/regenerate").contentType(MediaType.APPLICATION_JSON).content(oversized))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(writer);
+    }
+
     @AfterEach
     void clearAuthentication() { SecurityContextHolder.clearContext(); }
 

@@ -157,6 +157,107 @@ class ProposalWriteServiceTest {
         verifyNoInteractions(sources, writer);
     }
 
+    private final java.util.UUID operation = java.util.UUID.randomUUID();
+    private ProposalRegenerateRequest rewrite() { return new ProposalRegenerateRequest(2L, 0, 0L, operation, "  협력 계획을 강조해 주세요.  "); }
+    private void prepareRewrite() {
+        when(drafts.beforeChange(7L, 1L, request, 0, operation.toString()))
+                .thenReturn(new SavedProposalDraftResponse(2L, 0, "양식.zip", null, null, completed));
+        when(sources.prepare(1L, request)).thenReturn(new PythonProposalWriteRequest("공고", "공고 본문", "양식.hwpx", "양식 본문"));
+        when(writer.write(any())).thenReturn(completed);
+        when(drafts.replace(7L, 1L, request, 0, operation.toString(), completed)).thenReturn(completed);
+    }
+
+    @Test
+    void 재작성은_저장본_재사용을_건너뛰고_수정요청과_기존본문을_AI에_전달한다() {
+        prepareRewrite();
+        assertThat(service.regenerate(7L, 1L, rewrite())).isEqualTo(completed);
+        var input = org.mockito.ArgumentCaptor.forClass(PythonProposalWriteRequest.class);
+        verify(writer).write(input.capture());
+        assertThat(input.getValue().generationId()).isEqualTo("7:2:0:" + operation);
+        assertThat(input.getValue().feedback()).isEqualTo("협력 계획을 강조해 주세요.");
+        assertThat(input.getValue().previousSections()).containsExactly(new PythonProposalWriteRequest.PreviousSection("목표", "본문"));
+        verify(drafts, never()).reuse(any(), any(), any());
+        verify(drafts).replace(7L, 1L, request, 0, operation.toString(), completed);
+    }
+
+    @Test
+    void 재작성_실패와_빈결과는_기존저장을_변경하지_않는다() {
+        prepareRewrite();
+        for (var failed : List.of(ProposalWriteResponse.unavailable(),
+                new ProposalWriteResponse("COMPLETED", "양식.hwpx", false, List.of(), ""))) {
+            when(writer.write(any())).thenReturn(failed);
+            assertThat(service.regenerate(7L, 1L, rewrite()).status()).isEqualTo("UNAVAILABLE");
+        }
+        when(writer.write(any())).thenThrow(new IllegalStateException("test failure"));
+        assertThatThrownBy(() -> service.regenerate(7L, 1L, rewrite())).isInstanceOf(IllegalStateException.class);
+        verify(drafts, never()).replace(any(), any(), any(), anyLong(), any(), any());
+        assertThat(service.state(7L, 1L).running()).isEmpty();
+    }
+
+    @Test
+    void 완료된_재작성의_재전송과_오래된_버전은_AI를_호출하지_않는다() {
+        prepareRewrite();
+        when(drafts.beforeChange(7L, 1L, request, 0, operation.toString()))
+                .thenReturn(new SavedProposalDraftResponse(2L, 0, "양식.zip", null, null, completed, 1, true, operation.toString()));
+        assertThat(service.regenerate(7L, 1L, rewrite())).isEqualTo(completed);
+        when(drafts.beforeChange(7L, 1L, request, 0, operation.toString()))
+                .thenThrow(new com.publicmonitor.backend.domain.document.exception.DocumentDetectionException(
+                        com.publicmonitor.backend.domain.document.exception.DocumentDetectionResponseCode.PROPOSAL_DRAFT_CONFLICT));
+        assertThatThrownBy(() -> service.regenerate(7L, 1L, rewrite()))
+                .isInstanceOf(com.publicmonitor.backend.domain.document.exception.DocumentDetectionException.class);
+        verifyNoInteractions(writer);
+    }
+
+    @Test
+    void 복원은_모델을_호출하지_않으며_비대상_문서의_재작성과_복원은_차단한다() {
+        var restore = new ProposalRestoreRequest(2L, 0, 1L, operation);
+        when(drafts.restore(7L, 1L, request, 1, operation.toString())).thenReturn(completed);
+        assertThat(service.restore(7L, 1L, restore)).isEqualTo(completed);
+        when(sources.excludedFromDrafting(1L)).thenReturn(java.util.Map.of(request,
+                new ProposalSourceResponse(2L, 0, "공고", "공고", false, "초안 대상 아님")));
+        assertThat(service.regenerate(7L, 1L, rewrite()).status()).isEqualTo("NEEDS_TEMPLATE");
+        assertThat(service.restore(7L, 1L, restore).status()).isEqualTo("NEEDS_TEMPLATE");
+        verify(drafts, times(1)).restore(any(), any(), any(), anyLong(), any());
+        verify(drafts, never()).beforeChange(any(), any(), any(), anyLong(), any());
+        verifyNoInteractions(writer);
+    }
+
+    @Test
+    void 재작성중_기존본문과_요청ID를_조회하며_같은요청만_합치고_다른요청은_충돌한다() throws Exception {
+        prepareRewrite();
+        var old = new SavedProposalDraftResponse(2L, 0, "양식.zip", null, null, completed);
+        when(drafts.list(7L, 1L)).thenReturn(List.of(old));
+        var started = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        when(writer.write(any())).thenAnswer(call -> {
+            started.countDown();
+            assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
+            return completed;
+        });
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> service.regenerate(7L, 1L, rewrite()));
+            try {
+                assertThat(started.await(3, TimeUnit.SECONDS)).isTrue();
+                var state = service.state(7L, 1L);
+                assertThat(state.drafts()).containsExactly(old);
+                assertThat(state.running()).containsExactly(new ProposalDraftStateResponse.RunningProposalResponse(2L, 0, operation.toString(), "REGENERATE"));
+                var second = executor.submit(() -> service.regenerate(7L, 1L, rewrite()));
+                assertThatThrownBy(() -> second.get(100, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
+                var different = new ProposalRegenerateRequest(2L, 0, 0L, java.util.UUID.randomUUID(), "다른 수정");
+                assertThatThrownBy(() -> service.regenerate(7L, 1L, different))
+                        .isInstanceOf(com.publicmonitor.backend.domain.document.exception.DocumentDetectionException.class);
+                assertThatThrownBy(() -> service.restore(7L, 1L, new ProposalRestoreRequest(2L, 0, 0L, operation)))
+                        .isInstanceOf(com.publicmonitor.backend.domain.document.exception.DocumentDetectionException.class);
+                release.countDown();
+                assertThat(first.get(3, TimeUnit.SECONDS)).isEqualTo(completed);
+                assertThat(second.get(3, TimeUnit.SECONDS)).isEqualTo(completed);
+            } finally { release.countDown(); }
+        }
+        verify(writer, times(1)).write(any());
+        verify(drafts, times(1)).replace(any(), any(), any(), anyLong(), any(), any());
+        assertThat(service.state(7L, 1L).running()).isEmpty();
+    }
+
     private void prepare(ProposalWriteResponse response) {
         when(drafts.reuse(7L, 1L, request)).thenReturn(Optional.empty());
         var input = new PythonProposalWriteRequest("공고", "공고 본문", "양식.hwpx", "양식 본문");

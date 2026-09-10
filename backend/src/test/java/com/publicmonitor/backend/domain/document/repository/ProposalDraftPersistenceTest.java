@@ -134,6 +134,80 @@ class ProposalDraftPersistenceTest {
         assertThat(drafts.count()).isZero();
     }
 
+    @Test
+    void 재작성은_직전_초안을_보관하고_복원과_재복원을_멱등하게_처리한다() {
+        store.save(first.getId(), detection.getId(), request(0), result);
+        em.flush(); em.clear();
+        var original = store.list(first.getId(), detection.getId()).getFirst();
+        var next = new ProposalWriteResponse("COMPLETED", "신청서.hwpx", false, result.sections(), "새 초안");
+        assertThat(original.revision()).isZero();
+        assertThat(original.canRestorePrevious()).isFalse();
+        assertThat(store.replace(first.getId(), detection.getId(), request(0), 0, "rewrite", next)).isEqualTo(next);
+        em.flush(); em.clear();
+        var rewritten = store.list(first.getId(), repeated.getId()).getFirst();
+        assertThat(rewritten.revision()).isEqualTo(1);
+        assertThat(rewritten.canRestorePrevious()).isTrue();
+        assertThat(rewritten.createdAt()).isEqualTo(original.createdAt());
+        assertThat(rewritten.lastOperationId()).isEqualTo("rewrite");
+        assertThat(store.replace(first.getId(), detection.getId(), request(0), 0, "rewrite", next)).isEqualTo(next);
+        assertThat(store.restore(first.getId(), detection.getId(), request(0), 1, "restore")).isEqualTo(result);
+        em.flush(); em.clear();
+        assertThat(store.restore(first.getId(), detection.getId(), request(0), 1, "restore")).isEqualTo(result);
+        assertThat(store.list(first.getId(), detection.getId()).getFirst().revision()).isEqualTo(2);
+        assertThat(store.restore(first.getId(), detection.getId(), request(0), 2, "redo")).isEqualTo(next);
+        em.flush(); em.clear();
+        assertThat(store.list(first.getId(), detection.getId()).getFirst().revision()).isEqualTo(3);
+        assertThat(drafts.count()).isEqualTo(1);
+    }
+
+    @Test
+    void 오래된_요청과_실패_결과는_현재와_직전_초안을_바꾸지_않는다() {
+        store.save(first.getId(), detection.getId(), request(0), result);
+        em.flush(); em.clear();
+        assertThatThrownBy(() -> store.restore(first.getId(), detection.getId(), request(0), 0, "missing"))
+                .isInstanceOf(DocumentDetectionException.class);
+        var next = new ProposalWriteResponse("COMPLETED", "신청서.hwpx", false, result.sections(), "새 초안");
+        store.replace(first.getId(), detection.getId(), request(0), 0, "rewrite", next);
+        em.flush(); em.clear();
+        assertThatThrownBy(() -> store.beforeChange(first.getId(), detection.getId(), request(0), 0, "stale"))
+                .isInstanceOf(DocumentDetectionException.class);
+        assertThatThrownBy(() -> store.replace(first.getId(), detection.getId(), request(0), 0, "stale", result))
+                .isInstanceOf(DocumentDetectionException.class);
+        assertThatThrownBy(() -> store.restore(first.getId(), detection.getId(), request(0), 0, "stale"))
+                .isInstanceOf(DocumentDetectionException.class);
+        assertThatThrownBy(() -> store.replace(first.getId(), detection.getId(), request(0), 1, "failed", ProposalWriteResponse.unavailable()))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> store.restore(second.getId(), detection.getId(), request(0), 1, "other-user"))
+                .isInstanceOf(DocumentDetectionException.class);
+        assertThatThrownBy(() -> store.replace(first.getId(), revised.getId(), request(0), 1, "other-version", result))
+                .isInstanceOf(DocumentDetectionException.class);
+        em.flush(); em.clear();
+        var unchanged = store.list(first.getId(), detection.getId()).getFirst();
+        assertThat(unchanged.result()).isEqualTo(next);
+        assertThat(unchanged.revision()).isEqualTo(1);
+        assertThat(store.restore(first.getId(), detection.getId(), request(0), 1, "restore")).isEqualTo(result);
+    }
+
+    @Test
+    void 읽기전용_OSIV_스냅샷도_재작성_결과를_저장하고_최신_버전을_다시_확인한다() {
+        store.save(first.getId(), detection.getId(), request(0), result);
+        em.flush(); em.clear();
+        var entity = drafts.findAll().getFirst();
+        em.unwrap(org.hibernate.Session.class).setReadOnly(entity, true);
+        var next = new ProposalWriteResponse("COMPLETED", "신청서.hwpx", false, result.sections(), "새 초안");
+        store.beforeChange(first.getId(), detection.getId(), request(0), 0, "rewrite");
+        store.replace(first.getId(), detection.getId(), request(0), 0, "rewrite", next);
+        em.flush(); em.clear();
+        assertThat(store.list(first.getId(), detection.getId()).getFirst().result()).isEqualTo(next);
+        var stale = drafts.findAll().getFirst();
+        em.createNativeQuery("update document_proposal_drafts set revision = 2 where draft_id = :id")
+                .setParameter("id", stale.getId()).executeUpdate();
+        assertThat(stale.getRevision()).isEqualTo(1);
+        assertThatThrownBy(() -> store.replace(first.getId(), detection.getId(), request(0), 1, "stale", result))
+                .isInstanceOf(DocumentDetectionException.class);
+        assertThat(stale.getRevision()).isEqualTo(2);
+    }
+
     private ProposalWriteRequest request(int index) { return new ProposalWriteRequest(attachment.getId(), index); }
     private DocumentDetection detect(MonitoringSource source, Document document, DocumentVersion version, LocalDateTime now) {
         var run = MonitoringRun.create(MonitoringTriggerType.MANUAL, 1, now); em.persist(run);

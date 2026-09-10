@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, Copy, FilePenLine, RefreshCw, Sparkles, X } from 'lucide-react'
-import { api } from '../api/client'
+import { api, ApiError } from '../api/client'
 import type { ProposalDraftState, ProposalSource, SavedProposalDraft } from '../api/types'
 
 const sourceKey = (source: { attachmentId: number; partIndex: number }) => `${source.attachmentId}:${source.partIndex}`
@@ -20,6 +20,10 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
   const [checking, setChecking] = useState(false)
   const [progressError, setProgressError] = useState('')
   const awaitingSource = useRef('')
+  const awaitingOperation = useRef<string | null>(null)
+  const [operationKind, setOperationKind] = useState<'GENERATE' | 'REGENERATE' | 'RESTORE'>('GENERATE')
+  const [rewriteOpen, setRewriteOpen] = useState(false)
+  const [feedback, setFeedback] = useState('')
   const needsStatus = running.length > 0 || checking
   const writing = submitting || needsStatus
   const [selectionError, setSelectionError] = useState('')
@@ -38,7 +42,8 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
   const selectableSources = allSources.filter((source) => source.available || savedByKey.has(sourceKey(source)))
   const unavailableSources = allSources.filter((source) => !source.available && !savedByKey.has(sourceKey(source)))
   const current = allSources.find((source) => sourceKey(source) === selected)
-  const draft = savedByKey.get(selected)?.result
+  const saved = savedByKey.get(selected)
+  const draft = saved?.result
 
   useEffect(() => {
     if (draft && focusResult.current) {
@@ -67,6 +72,8 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
       setSavedDrafts(state.drafts)
       setRunning(state.running)
       awaitingSource.current = state.running.length ? sourceKey(state.running[0]) : ''
+      awaitingOperation.current = state.running[0]?.operationId ?? null
+      setOperationKind(state.running[0]?.kind ?? 'GENERATE')
       setSelected(awaitingSource.current || (state.drafts.length ? sourceKey(state.drafts[0]) : ''))
       setLoaded(true)
     }).catch(() => {
@@ -83,13 +90,16 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
       try {
         const state = await api.getProposalDraftState(detectionId, controller.signal)
         if (controller.signal.aborted) return
-        const completed = state.drafts.find((item) => sourceKey(item) === awaitingSource.current)
+        const completed = state.drafts.find((item) => sourceKey(item) === awaitingSource.current
+          && (!awaitingOperation.current || item.lastOperationId === awaitingOperation.current))
         setSavedDrafts(state.drafts)
         setRunning(state.running)
         setProgressError('')
         if (state.running.length) {
           if (!state.running.some((item) => sourceKey(item) === awaitingSource.current)) {
             awaitingSource.current = sourceKey(state.running[0])
+            awaitingOperation.current = state.running[0].operationId
+            setOperationKind(state.running[0].kind)
           }
           setSelected(awaitingSource.current)
           timer = setTimeout(poll, 1500)
@@ -99,10 +109,13 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
             focusResult.current = true
             setSelected(sourceKey(completed))
             setError('')
+            setRewriteOpen(false)
+            setFeedback('')
           } else {
-            setError('초안 생성이 완료되지 않았습니다. 다시 시도해 주세요.')
+            setError((previous) => previous || '요청이 완료되지 않았습니다. 기존 초안은 유지됩니다. 다시 시도해 주세요.')
           }
           awaitingSource.current = ''
+          awaitingOperation.current = null
         }
       } catch {
         if (controller.signal.aborted) return
@@ -132,6 +145,8 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
     const next = selected === key ? '' : key
     const revision = ++selectionRevision.current
     setSelected(next)
+    setRewriteOpen(false)
+    setFeedback('')
     setError('')
     setSelectionError('')
     if (next && savedByKey.has(next)) rememberSelection(source, revision)
@@ -143,34 +158,50 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
     rememberSelection(current, ++selectionRevision.current)
   }
 
-  async function generate() {
-    if (!current?.available || writing || pending.current || draft) return
+  async function submit(kind: 'GENERATE' | 'REGENERATE' | 'RESTORE') {
+    if (!current?.available || writing || pending.current) return
+    if (kind === 'GENERATE' ? Boolean(draft) : !saved) return
+    if (kind === 'RESTORE' && !saved?.canRestorePrevious) return
     const key = sourceKey(current)
     const controller = new AbortController()
+    const operationId = kind === 'GENERATE' ? null : crypto.randomUUID()
     pending.current = controller
-    setSubmitting(true)
     awaitingSource.current = key
+    awaitingOperation.current = operationId
+    setOperationKind(kind)
+    setSubmitting(true)
     setProgressError('')
     setError('')
     try {
-      const response = await api.writeProposal(detectionId, current.attachmentId, current.partIndex, controller.signal)
-      if (controller.signal.aborted || !mounted.current) return
+      const payload = { attachmentId: current.attachmentId, partIndex: current.partIndex,
+        expectedRevision: saved?.revision ?? 0, operationId: operationId ?? '' }
+      const response = kind === 'GENERATE'
+        ? await api.writeProposal(detectionId, current.attachmentId, current.partIndex, controller.signal)
+        : kind === 'REGENERATE'
+          ? await api.regenerateProposal(detectionId, { ...payload, feedback: feedback.trim() }, controller.signal)
+          : await api.restoreProposal(detectionId, payload, controller.signal)
+      if (!mounted.current) return
       if (response.status === 'COMPLETED') {
-        focusResult.current = true
-        const now = new Date().toISOString()
-        setSavedDrafts((previous) => [{ attachmentId: current.attachmentId, partIndex: current.partIndex,
-          attachmentName: current.attachmentName, createdAt: now, lastViewedAt: now, result: response },
-          ...previous.filter((item) => sourceKey(item) !== key)])
-        setSelected(key)
-        setSelectionError('')
-        // A delayed earlier selection must not replace the newly completed draft as the latest.
-        rememberSelection(current, ++selectionRevision.current)
-      } else setError(response.message)
-    } catch {
-      if (!controller.signal.aborted && mounted.current) {
-        // A lost POST response may still have a running or committed result on the server.
+        // Read the committed revision and operation ID; an older saved body is not a new result.
         setChecking(true)
-        setProgressError('생성 결과를 확인하고 있습니다. 잠시만 기다려 주세요.')
+        setSelectionError('')
+        rememberSelection(current, ++selectionRevision.current)
+      } else {
+        setError(response.message + (draft ? ' 기존 초안은 유지됩니다.' : ''))
+        awaitingSource.current = ''
+        awaitingOperation.current = null
+      }
+    } catch (cause) {
+      if (mounted.current) {
+        if (cause instanceof ApiError && cause.status >= 400 && cause.status < 500) {
+          setError(cause.message)
+          // A different tab may have completed a newer revision. Refresh before offering retry.
+          setChecking(true)
+        } else {
+          // A lost POST response may still have a running or committed result on the server.
+          setChecking(true)
+          setProgressError('처리 결과를 확인하고 있습니다. 잠시만 기다려 주세요.')
+        }
       }
     } finally {
       if (pending.current === controller) {
@@ -225,7 +256,7 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
             </details>}
           {current && !draft && <div className="proposal-writer__actions">
             <span>작성한 초안은 자동 저장됩니다.</span>
-            <button type="button" className="proposal-writer__generate" disabled={!current.available || writing} onClick={generate}>
+            <button type="button" className="proposal-writer__generate" disabled={!current.available || writing} onClick={() => void submit('GENERATE')}>
               {writing ? <RefreshCw size={16} className="proposal-writer__spin" /> : <Sparkles size={16} />}
               {writing ? '초안 작성 중' : '초안 생성'}
             </button>
@@ -235,14 +266,43 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
       {selectionError && <div role="alert" className="proposal-writer__notice">{selectionError}
         <button type="button" onClick={retrySelection}>다시 기억하기</button>
       </div>}
-      {writing && <p role="status" className="proposal-writer__notice">초안을 작성하고 있습니다. 완료되면 자동으로 저장됩니다. 최대 3분 정도 걸릴 수 있습니다.</p>}
+      {writing && <p role="status" className="proposal-writer__notice">{operationKind === 'RESTORE'
+        ? '이전 초안을 복원하고 있습니다.'
+        : operationKind === 'REGENERATE'
+          ? '초안을 다시 작성하고 있습니다. 새 결과가 완성될 때까지 기존 초안은 유지됩니다. 최대 3분 정도 걸릴 수 있습니다.'
+          : '초안을 작성하고 있습니다. 완료되면 자동으로 저장됩니다. 최대 3분 정도 걸릴 수 있습니다.'}</p>}
       {progressError && <p role="status" className="proposal-writer__notice">{progressError}</p>}
       {error && <p role="alert" className="proposal-writer__error">{error}</p>}
       {draft && <div className="proposal-writer__result" key={selected}>
         <div className="proposal-writer__result-heading" ref={resultHeading} tabIndex={-1}>
           <strong>{draft.sections.length}개 항목 초안</strong>
+          <div className="proposal-writer__result-actions">
+            {current?.available && <>
+              {saved?.canRestorePrevious && <button type="button" disabled={writing}
+                onClick={() => void submit('RESTORE')}>이전 초안으로 복원</button>}
+              <button type="button" disabled={writing} aria-expanded={rewriteOpen}
+                aria-controls="proposal-rewrite-form" onClick={() => setRewriteOpen((value) => !value)}>
+                <RefreshCw size={15} />다시 작성
+              </button>
+            </>}
           <ProposalCopyButton text={draft.sections.map((item) => `${item.title}\n\n${item.body}`).join('\n\n')} label="전체 복사" />
+          </div>
         </div>
+        {rewriteOpen && current?.available && <form id="proposal-rewrite-form" className="proposal-writer__rewrite"
+          onSubmit={(event) => { event.preventDefault(); void submit('REGENERATE') }}>
+          <label htmlFor="proposal-rewrite-feedback">수정 요청 <span>(선택)</span></label>
+          <textarea id="proposal-rewrite-feedback" value={feedback} maxLength={2000} rows={3} disabled={writing}
+            placeholder="예: 사업 소개를 줄이고 유럽 기관과의 협력 계획을 강조해 주세요."
+            aria-describedby="proposal-rewrite-help" onChange={(event) => setFeedback(event.target.value)} />
+          <p id="proposal-rewrite-help">새 초안이 완성되면 자동 저장되며, 직전 초안으로 복원할 수 있습니다.</p>
+          <div className="proposal-writer__rewrite-actions">
+            <button type="button" disabled={writing} onClick={() => setRewriteOpen(false)}>취소</button>
+            <button type="submit" className="proposal-writer__generate" disabled={writing}>
+              <RefreshCw size={15} className={writing ? 'proposal-writer__spin' : undefined} />
+              {writing ? '처리 중' : '다시 작성하기'}
+            </button>
+          </div>
+        </form>}
         {draft.message && <p className="proposal-writer__notice">{draft.message}</p>}
         {draft.sections.map((section, index) => <article className="proposal-writer__section" key={section.title}>
           <div className="proposal-writer__section-heading"><div className="proposal-writer__section-title">

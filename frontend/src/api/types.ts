@@ -299,7 +299,7 @@ export interface ProposalWrittenDraft {
 
 export interface ProposalDraftState {
   drafts: SavedProposalDraft[]
-  running: Array<{ attachmentId: number; partIndex: number }>
+  running: Array<{ attachmentId: number; partIndex: number; operationId: string | null; kind: 'GENERATE' | 'REGENERATE' | 'RESTORE' }>
 }
 
 export interface SavedProposalDraft {
@@ -309,6 +309,9 @@ export interface SavedProposalDraft {
   createdAt: string
   lastViewedAt: string
   result: ProposalWrittenDraft
+  revision: number
+  canRestorePrevious: boolean
+  lastOperationId: string | null
 }
 
 export interface TelegramRecipient { chatId: string; name: string; enabled: boolean }
