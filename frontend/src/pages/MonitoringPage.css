@@ -1,0 +1,17 @@
+.monitoring-run-table {
+  table-layout: fixed;
+  min-width: 560px;
+}
+
+.monitoring-run-table th:first-child { width: 24%; }
+
+.monitoring-run-table th:not(:first-child),
+.monitoring-run-table td:not(:first-child) {
+  width: 19%;
+  padding-left: 12px;
+  padding-right: clamp(12px, 5vw, 84px);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.monitoring-run-table .run-warning-trigger { vertical-align: middle; }

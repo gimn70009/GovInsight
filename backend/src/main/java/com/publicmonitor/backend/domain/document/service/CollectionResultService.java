@@ -21,6 +21,7 @@ import com.publicmonitor.backend.domain.document.web.dto.CollectionResultRespons
 import com.publicmonitor.backend.domain.document.web.dto.CollectionResultResponse.DocumentResult;
 import com.publicmonitor.backend.domain.document.web.dto.CollectionSourceStatus;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRun;
+import com.publicmonitor.backend.domain.monitoring.service.MonitoringWarningDetails;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRunSource;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunRepository;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunSourceRepository;
@@ -81,6 +82,7 @@ public class CollectionResultService {
                     .findByMonitoringRunIdAndMonitoringSourceId(run.getId(), sourceResult.sourceId())
                     .orElseThrow(() -> new CollectionResultException(CollectionResultResponseCode.SOURCE_NOT_INCLUDED));
 
+            MonitoringWarningDetails.record(runSource, sourceResult);
             if (sourceResult.status() == CollectionSourceStatus.FAILED) {
                 runSource.fail(safeError(sourceResult.errorMessage()), now);
                 failedCount++;
@@ -156,7 +158,7 @@ public class CollectionResultService {
                             attachment.extractedText(),
                             attachment.parseStatus(),
                             attachment.errorMessage()
-                    ))
+                    ).recordArchiveEntries(attachment.archiveEntriesJson()))
                     .toList());
         } else {
             updateAttachmentMetadata(version, attachments);
@@ -189,14 +191,13 @@ public class CollectionResultService {
                 collectedAttachments.stream()
                         .filter(collected -> collected.downloadUrl().equals(savedAttachment.getDownloadUrl()))
                         .findFirst()
-                        .ifPresent(collected -> savedAttachment.updateDownloadMetadata(
-                                collected.contentType(),
-                                collected.fileSize(),
-                                collected.fileHash(),
-                                collected.extractedText(),
-                                collected.parseStatus(),
-                                collected.errorMessage()
-                        ))
+                        .ifPresent(collected -> {
+                            var archive = ZipArchiveContent.reconcile(savedAttachment.getExtractedText(),
+                                    collected.extractedText(), collected.archiveEntriesJson());
+                            savedAttachment.updateDownloadMetadata(collected.contentType(), collected.fileSize(),
+                                    collected.fileHash(), archive.text(), collected.parseStatus(), collected.errorMessage());
+                            savedAttachment.recordArchiveEntries(archive.entriesJson());
+                        })
         );
     }
     private DocumentChangeType determineChangeType(DocumentVersion latestVersion, String versionHash) {
@@ -218,7 +219,8 @@ public class CollectionResultService {
                         attachment.fileHash(),
                         attachment.extractedText(),
                         attachment.parseStatus(),
-                        attachment.errorMessage()
+                        attachment.errorMessage(),
+                        attachment.archiveEntriesJson()
                 ))
                 .toList();
     }

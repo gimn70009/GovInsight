@@ -110,6 +110,14 @@ public class AnalysisResultService {
             storedCount++;
         }
 
+        for (AnalysisResultRequest.LegalReviewResult result : request.legalResults()) {
+            validatedDetection(request.runId(), result.detectionId(), result.documentId(), result.versionId());
+            DocumentAnalysis existing = analysisRepository.findByDocumentVersionId(result.versionId())
+                    .orElseThrow(() -> new AnalysisResultException(AnalysisResultResponseCode.ANALYSIS_NOT_FOUND));
+            mergeLegalReview(existing, result.legalRisks(), request.jobId());
+            storedCount++;
+        }
+
         for (AnalysisResultRequest.AnalysisFailure failure : request.failures()) {
             validatedDetection(
                     request.runId(), failure.detectionId(), failure.documentId(), failure.versionId()
@@ -205,6 +213,47 @@ public class AnalysisResultService {
             AnalysisResultRequest.AnalysisResult result
     ) {
         if (result.comparisonSummary() == null) return;
+        // Preserve the comparison fields and attach versioned review metadata.
         analysis.updateComparisonSummary(objectMapper.writeValueAsString(result.comparisonSummary()));
+        mergeLegalReview(analysis, result.comparisonSummary().legalRisks(), null);
     }
+    private void mergeLegalReview(DocumentAnalysis analysis,
+            java.util.List<AnalysisResultRequest.LegalRiskFinding> findings, java.util.UUID jobId) {
+        var root = objectMapper.createObjectNode();
+        try {
+            if (analysis.getComparisonSummary() != null) {
+                var saved = objectMapper.readTree(analysis.getComparisonSummary());
+                if (saved.isObject()) root = (tools.jackson.databind.node.ObjectNode) saved;
+            }
+        } catch (RuntimeException ignored) {
+            // Legacy broken comparison JSON must not block a legal-only repair.
+        }
+        if (jobId != null && jobId.toString().equals(root.path("legalReviewJobId").asText())) return;
+        var byType = new java.util.LinkedHashMap<String, tools.jackson.databind.JsonNode>();
+        if (root.path("legalRisks").isArray()) for (var finding : root.path("legalRisks")) {
+            byType.put(finding.path("type").asText(), finding);
+        }
+        var incoming = new java.util.HashSet<String>();
+        for (var finding : findings) {
+            if (!LegalReviewPolicy.TYPES.contains(finding.type()) || !incoming.add(finding.type())
+                    || !java.util.Set.of("RESTRICTION_FOUND", "CAUTION", "NOT_FOUND", "DATA_INSUFFICIENT", "ASSESSMENT_INCOMPLETE")
+                    .contains(finding.status())) {
+                throw new AnalysisResultException(AnalysisResultResponseCode.RESULT_RELATION_MISMATCH);
+            }
+            byType.put(finding.type(), objectMapper.valueToTree(finding));
+        }
+        var array = objectMapper.createArrayNode();
+        for (String type : LegalReviewPolicy.TYPES) {
+            if (byType.containsKey(type)) array.add(byType.get(type));
+        }
+        int attempts = root.path("legalReviewVersion").asInt(0) == LegalReviewPolicy.VERSION
+                ? root.path("legalReviewAttempts").asInt(0) : 0;
+        root.set("legalRisks", array);
+        if (jobId != null) root.put("legalReviewJobId", jobId.toString());
+        root.put("legalReviewVersion", LegalReviewPolicy.VERSION);
+        root.put("legalReviewAttempts", attempts + 1);
+        root.put("legalReviewedAt", clock.instant().toString());
+        analysis.updateComparisonSummary(objectMapper.writeValueAsString(root));
+    }
+
 }

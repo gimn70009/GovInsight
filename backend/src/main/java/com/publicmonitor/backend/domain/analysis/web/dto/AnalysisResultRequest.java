@@ -19,12 +19,27 @@ public record AnalysisResultRequest(
         @NotNull @Positive Long runId,
         @NotNull UUID jobId,
         @NotNull List<@Valid AnalysisResult> results,
-        @NotNull List<@Valid AnalysisFailure> failures
+        @NotNull List<@Valid AnalysisFailure> failures,
+        List<@Valid LegalReviewResult> legalResults
 ) {
+
+    public AnalysisResultRequest {
+        legalResults = legalResults == null ? List.of() : List.copyOf(legalResults);
+    }
+
+    public AnalysisResultRequest(Long runId, UUID jobId, List<AnalysisResult> results, List<AnalysisFailure> failures) {
+        this(runId, jobId, results, failures, List.of());
+    }
+
+    public record LegalReviewResult(
+            @NotNull @Positive Long detectionId, @NotNull @Positive Long documentId,
+            @NotNull @Positive Long versionId,
+            @NotNull @Size(min = 1, max = 5) List<@Valid LegalRiskFinding> legalRisks
+    ) {}
 
     @AssertTrue(message = "분석 성공 또는 실패 결과가 한 건 이상 필요합니다.")
     public boolean hasResult() {
-        return results != null && failures != null && (!results.isEmpty() || !failures.isEmpty());
+        return results != null && failures != null && (!results.isEmpty() || !failures.isEmpty() || !legalResults.isEmpty());
     }
 
     public record AnalysisResult(
@@ -81,8 +96,12 @@ public record AnalysisResultRequest(
             @NotBlank @Size(max = 40) String type,
             @NotBlank @Size(max = 40) String status,
             @NotBlank @Size(max = 500) String summary,
-            @Size(max = 300) String evidenceExcerpt
+            @Size(max = 3000) String evidenceExcerpt,
+            @Size(max = 40) String failureReason
     ) {
+        public LegalRiskFinding(String type, String status, String summary, String evidenceExcerpt) {
+            this(type, status, summary, evidenceExcerpt, null);
+        }
     }
     public record Proposal(
             @NotNull @Size(min = 1, max = 6) List<@Valid Section> sections,
@@ -93,8 +112,22 @@ public record AnalysisResultRequest(
             @NotNull @Size(max = 30) List<@NotBlank @Size(max = 100) String> templateSections,
             @NotNull @Size(max = 8) List<@Valid Section> draftSections,
             @Valid Preparation preparation,
-            Integer preparationSchemaVersion
+            Integer preparationSchemaVersion,
+            Boolean usesDemoProfile
     ) {
+        public Proposal {
+            usesDemoProfile = Boolean.TRUE.equals(usesDemoProfile);
+        }
+
+        public Proposal(
+                List<Section> sections, String documentType, String draftStatus, String draftReason,
+                List<String> sourceAttachmentNames, List<String> templateSections,
+                List<Section> draftSections, Preparation preparation, Integer preparationSchemaVersion
+        ) {
+            this(sections, documentType, draftStatus, draftReason, sourceAttachmentNames,
+                    templateSections, draftSections, preparation, preparationSchemaVersion, false);
+        }
+
         public Proposal(List<Section> sections) {
             this(sections, "REVIEW_REQUIRED", "NOT_APPLICABLE",
                     "기존 분석 결과에는 제안서 판정 정보가 없습니다.",
@@ -116,10 +149,9 @@ public record AnalysisResultRequest(
     }
 
     public record Preparation(
-            @NotNull @Size(min = 3, max = 8) List<@NotBlank @Size(max = 500) String> meetingAgenda,
+            @NotNull @Size(max = 20) List<@NotBlank @Size(max = 500) String> meetingAgenda,
             @NotNull @Size(min = 1, max = 12) List<@Valid PreparationItem> eligibilityChecklist,
-            @NotNull @Size(min = 1, max = 15) List<@Valid PreparationItem> submissionDocuments,
-            @NotNull @Size(min = 1, max = 12) List<@Valid PreparationItem> companyInputs,
+            @NotNull @Size(min = 1, max = 27) List<@Valid PreparationItem> submissionDocuments,
             @Size(max = 10) String applicationDeadline,
             @NotNull @Valid StrategyOnePage strategy
     ) {

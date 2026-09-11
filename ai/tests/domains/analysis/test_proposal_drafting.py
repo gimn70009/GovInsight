@@ -1,12 +1,19 @@
 import asyncio
 import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+from pydantic import ValidationError
 
 from app.domains.analysis.proposal_drafting import (
     CORE_PROPOSAL_SECTION_TITLES,
+    LangChainProposalGenerationRunner,
     ProposalDraftOutput,
     ProposalModelOutput,
     TwoStageAnalysisWorkflow,
     _apply_strategy_eligibility_guardrails,
+    _build_preparation_highlights,
     _build_proposal_source_context,
     _is_international_requirement,
     _normalize_preparation_structure,
@@ -240,7 +247,7 @@ def test_generates_outline_then_draft_only_for_matching_proposal_request() -> No
     assert generated.proposal.preparation is not None
     assert generated.proposal.preparation.strategy.recommended_project.startswith("제조 현장")
     assert generated.proposal.source_attachment_names == ["신청서식.hwp"]
-    assert generated.proposal.preparation_schema_version == 11
+    assert generated.proposal.preparation_schema_version == 12
     assert "map_proposal_sources" in generated.used_tools
     assert "build_proposal_preparation" in generated.used_tools
 
@@ -304,7 +311,7 @@ def test_proposal_stage_failure_preserves_base_analysis() -> None:
     assert generated.summary.startswith("산업 AI 실증")
     assert generated.proposal.draft_status == ProposalDraftStatus.REVIEW_REQUIRED
     assert generated.proposal.draft_sections == []
-    assert generated.proposal.preparation_schema_version == 11
+    assert generated.proposal.preparation_schema_version == 12
     assert "사업 제안 생성 제한 시간을 초과했습니다." in generated.proposal.draft_reason
 
 
@@ -406,7 +413,6 @@ def test_compact_model_output_restores_api_defaults() -> None:
     for section_name in (
         "eligibility_checklist",
         "submission_documents",
-        "company_inputs",
     ):
         for item in preparation[section_name]:
             for field_name in (
@@ -433,7 +439,7 @@ def test_compact_model_output_restores_api_defaults() -> None:
 
     assert raw is None
     assert restored.preparation.eligibility_checklist[0].readiness_score == 0
-    assert restored.preparation.strategy.critical_gaps[0].target_date is None
+    assert restored.preparation.strategy.critical_gaps == []
 
 
 def test_normalizes_internal_terms_and_strategy_tone() -> None:
@@ -652,3 +658,139 @@ def test_holds_strategy_until_sandbox_approval_is_officially_verified() -> None:
     assert strategy.recommended_project.startswith("규제특례 승인 제품 또는 서비스 확인 후")
     assert "별도의 영업 기회" in strategy.alternative_participation
     assert "대안 역할" not in strategy.alternative_participation
+
+
+def test_model_does_not_generate_fourth_list_or_independent_highlights() -> None:
+    schema = json.dumps(ProposalModelOutput.model_json_schema())
+    assert "companyInputs" not in schema
+    assert "criticalGaps" not in schema
+
+
+def test_legacy_internal_information_moves_to_agenda_without_loss() -> None:
+    draft = asyncio.run(ProposalRunner().generate(document(), result()))
+    legacy = draft.preparation.company_inputs[0]
+    _normalize_preparation_structure(draft)
+    assert draft.preparation.company_inputs == []
+    assert any(legacy.title in agenda and legacy.detail in agenda
+               and legacy.next_action in agenda for agenda in draft.preparation.meeting_agenda)
+    assert "companyInputs" not in draft.preparation.model_dump(by_alias=True)
+
+
+def test_highlights_only_copy_existing_three_list_entries() -> None:
+    draft = asyncio.run(ProposalRunner().generate(document(), result()))
+    _normalize_preparation_structure(draft)
+    preparation = draft.preparation
+    _build_preparation_highlights(preparation)
+    allowed = {(item.title, item.next_action) for item in (
+        *preparation.eligibility_checklist, *preparation.submission_documents)}
+    allowed.update((agenda[:300], agenda[:300]) for agenda in preparation.meeting_agenda)
+    assert 1 <= len(preparation.strategy.critical_gaps) <= 4
+    assert all((gap.gap, gap.next_action) in allowed
+               for gap in preparation.strategy.critical_gaps)
+    assert preparation.strategy.critical_gaps[0].gap == preparation.eligibility_checklist[0].title
+    assert preparation.strategy.critical_gaps[1].gap == preparation.submission_documents[0].title
+
+
+def test_duplicate_documents_keep_distinct_stage_and_evidence() -> None:
+    draft = asyncio.run(ProposalRunner().generate(document(), result()))
+    item = draft.preparation.submission_documents[0]
+    later = item.model_copy(update={"stage": RequirementStage.AGREEMENT})
+    draft.preparation.submission_documents.extend([item.model_copy(), later])
+    _normalize_preparation_structure(draft)
+    matches = [row for row in draft.preparation.submission_documents if row.title == item.title]
+    assert len(matches) == 2
+    assert {row.stage for row in matches} == {item.stage, RequirementStage.AGREEMENT}
+
+
+def test_proposal_generation_reads_both_profiles_and_persists_demo_usage() -> None:
+    async def scenario():
+        runner = LangChainProposalGenerationRunner.__new__(LangChainProposalGenerationRunner)
+        runner._settings = SimpleNamespace(max_text_chars=20_000, proposal_timeout_seconds=5)
+        draft = await ProposalRunner().generate(document(), result())
+        draft.preparation.eligibility_checklist[0].detail = (
+            "데모 가정에서는 회사에 관련 역량이 있지만 원본 증빙 확인이 필요합니다."
+        )
+        original_source = draft.preparation.eligibility_checklist[0].source.model_dump()
+        runner._draft_model = AsyncMock()
+        runner._draft_model.ainvoke.return_value = draft
+        workflow = TwoStageAnalysisWorkflow(BaseWorkflow(result()), runner)
+        generated = await workflow.analyze(document())
+        prompt = runner._draft_model.ainvoke.call_args.args[0]
+        assert "BISTelligence" in prompt
+        assert "SYNTHETIC_DEMO" in prompt and "DEMO-NEED-GPU" in prompt
+        assert generated.proposal.uses_demo_profile is True
+        checklist = generated.proposal.preparation.eligibility_checklist[0]
+        assert "데모 가정" not in checklist.detail
+        assert checklist.source.model_dump() == original_source
+        assert generated.model_dump(by_alias=True)["proposal"]["usesDemoProfile"] is True
+
+    asyncio.run(scenario())
+
+
+def test_skipped_or_failed_proposal_keeps_base_analysis_demo_usage() -> None:
+    for document_type, fail in [("BUSINESS_NOTICE", False), ("PROPOSAL_REQUEST", True)]:
+        base = result(document_type=document_type)
+        base.proposal.uses_demo_profile = True
+        workflow = TwoStageAnalysisWorkflow(BaseWorkflow(base), ProposalRunner(fail=fail))
+        generated = asyncio.run(workflow.analyze(document()))
+        assert generated.proposal.uses_demo_profile is True
+
+
+@pytest.mark.parametrize("moved_count", [1, 11])
+def test_reclassified_submission_documents_survive_final_validation(moved_count) -> None:
+    draft = asyncio.run(ProposalRunner().generate(document(), result()))
+    item = draft.preparation.submission_documents[0]
+    draft.preparation.company_inputs = []
+    draft.preparation.submission_documents = [
+        item.model_copy(update={"title": f"사업계획서 {index}", "applies_to": f"기관 {index}"})
+        for index in range(15)
+    ]
+    draft.preparation.eligibility_checklist.extend(
+        item.model_copy(update={"title": f"참여확인서 {index}", "applies_to": f"기관 {index}"})
+        for index in range(moved_count)
+    )
+    _normalize_preparation_structure(draft)
+    runner = SimpleNamespace(generate=AsyncMock(return_value=draft))
+    workflow = TwoStageAnalysisWorkflow(BaseWorkflow(result()), runner)
+    generated = asyncio.run(workflow.analyze(document()))
+
+    assert generated.proposal.draft_status == ProposalDraftStatus.READY
+    documents = generated.proposal.preparation.submission_documents
+    assert len(documents) == 15 + moved_count
+    assert documents[-1].title == f"참여확인서 {moved_count - 1}"
+    assert documents[-1].source == item.source
+
+
+def test_final_validation_failure_does_not_abort_other_proposals() -> None:
+    invalid = asyncio.run(ProposalRunner().generate(document(), result()))
+    item = invalid.preparation.submission_documents[0]
+    invalid.preparation.submission_documents = [item.model_copy() for _ in range(28)]
+    failing = TwoStageAnalysisWorkflow(
+        BaseWorkflow(result()), SimpleNamespace(generate=AsyncMock(return_value=invalid))
+    )
+    successful = TwoStageAnalysisWorkflow(BaseWorkflow(result()), ProposalRunner())
+
+    async def generate_both():
+        return await asyncio.gather(failing.analyze(document()), successful.analyze(document()))
+
+    failed, completed = asyncio.run(generate_both())
+    assert failed.proposal.draft_status == ProposalDraftStatus.REVIEW_REQUIRED
+    assert failed.proposal.preparation is None
+    assert failed.summary == result().summary
+    assert failed.used_tools == result().used_tools
+    assert "결과 형식 검증" in failed.proposal.draft_reason
+    assert "input_value" not in failed.proposal.draft_reason
+    assert completed.proposal.draft_status == ProposalDraftStatus.READY
+
+
+def test_model_limit_stays_15_while_final_document_limit_is_27() -> None:
+    draft = asyncio.run(ProposalRunner().generate(document(), result()))
+    payload = draft.preparation.model_dump()
+    payload["submission_documents"] *= 27
+    assert len(ProposalPreparation.model_validate(payload).submission_documents) == 27
+    payload["submission_documents"].append(payload["submission_documents"][0])
+    with pytest.raises(ValidationError):
+        ProposalPreparation.model_validate(payload)
+    model_schema = ProposalModelOutput.model_json_schema()
+    preparation_schema = model_schema["$defs"]["ProposalPreparationModelOutput"]
+    assert preparation_schema["properties"]["submissionDocuments"]["maxItems"] == 15

@@ -55,6 +55,7 @@ public class SecurityConfig {
                                 "/v3/api-docs",
                                 "/v3/api-docs/**"
                         ).permitAll()
+                        .requestMatchers("/api/telegram/**").hasRole("ADMIN")
                         .requestMatchers("/internal/**").permitAll()
                         .anyRequest().authenticated()
                 )

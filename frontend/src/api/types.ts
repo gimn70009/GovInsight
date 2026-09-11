@@ -59,6 +59,20 @@ export interface MonitoringRun {
   reportTitle: string | null
 }
 
+export interface MonitoringRunWarnings {
+  runId: number
+  warningCount: number
+  warnings: Array<{
+    stage: 'SOURCE_COLLECTION' | 'ATTACHMENT_READ' | 'LEGACY_DETAILS_UNAVAILABLE'
+    organizationName: string | null
+    boardName: string | null
+    documentTitle: string | null
+    fileName: string | null
+    message: string
+    count: number
+  }>
+}
+
 export interface CreateMonitoringRunResponse {
   runId: number
   status: RunStatus
@@ -116,6 +130,7 @@ export interface OpportunityAssessment {
 }
 
 export interface DocumentAnalysis {
+  applicationDeadline?: string | null
   summary: string
   keyPoints: string[]
   importance: Importance
@@ -130,12 +145,12 @@ export interface DocumentAnalysis {
     sourceAttachmentNames: string[]
     templateSections: string[]
     draftSections: Array<{ title: string; body: string }>
+    usesDemoProfile?: boolean
     preparationSchemaVersion?: number
     preparation: {
       meetingAgenda: string[]
       eligibilityChecklist: ProposalPreparationItem[]
       submissionDocuments: ProposalPreparationItem[]
-      companyInputs: ProposalPreparationItem[]
       applicationDeadline?: string | null
       strategy: {
         decision?: 'GO' | 'CONDITIONAL_GO' | 'HOLD' | 'NO_GO' | null
@@ -239,24 +254,113 @@ export interface SimilarNoticeResult {
   currentNotice: SimilarNoticeComparisonSide
   similarNotices: Array<{
     detectionId: number
-    similarityScore: number
+    similarityScore: number | null
+    matchBasis?: 'HYBRID' | 'LEXICAL' | 'SEMANTIC' | 'LEXICAL_ONLY'
     title: string
     originalUrl: string
     comparison: SimilarNoticeComparisonSide
-    commonPoints: string
-    proposalReuse: string
     legalReview?: {
-      overallStatus: 'HIGH' | 'REVIEW_REQUIRED'
+      overallStatus: 'HIGH' | 'REVIEW_REQUIRED' | 'RESTRICTION_FOUND' | 'DATA_INSUFFICIENT' | 'ASSESSMENT_INCOMPLETE' | 'NOT_FOUND'
       summary: string
       checks: Array<{
         type: 'DUPLICATE_SUPPORT' | 'COST_DOUBLE_COUNTING' | 'RESULT_IP_REUSE' | 'CONFIDENTIALITY' | 'PROPOSAL_TEXT_REUSE'
         label: string
-        status: 'HIGH' | 'REVIEW_REQUIRED'
+        status: 'HIGH' | 'REVIEW_REQUIRED' | 'RESTRICTION_FOUND' | 'DATA_INSUFFICIENT' | 'ASSESSMENT_INCOMPLETE' | 'NOT_FOUND'
         finding: string
         evidence: string
-        action: string
       }>
       disclaimer: string
     }
   }>
+}
+
+export interface LegalPairResult {
+  usesDemoProfile?: boolean
+  status: 'COMPLETED' | 'UNAVAILABLE' | 'NEEDS_EVIDENCE'
+  message: string
+  insights: Array<{
+    type: string
+    comparison: string
+    implication: string
+    verification: string
+    evidenceIds: number[]
+  }>
+}
+
+export interface ProposalSource {
+  relatedFileNames?: string[]
+  attachmentId: number
+  partIndex: number
+  fileName: string
+  attachmentName: string
+  available: boolean
+  reason: string
+}
+
+export interface ProposalWrittenDraft {
+  status: 'COMPLETED' | 'NEEDS_TEMPLATE' | 'UNAVAILABLE'
+  fileName: string
+  usesDemoProfile: boolean
+  message: string
+  sections: Array<{
+    title: string
+    body: string
+    sourceQuote: string
+    selectionReason: string
+    companyEvidence: string[]
+    confirmationItems: string[]
+  }>
+}
+
+export interface ProposalDraftState {
+  drafts: SavedProposalDraft[]
+  running: Array<{ attachmentId: number; partIndex: number; operationId: string | null; kind: 'GENERATE' | 'REGENERATE' | 'RESTORE' }>
+}
+
+export interface SavedProposalDraft {
+  attachmentId: number
+  partIndex: number
+  attachmentName: string
+  createdAt: string
+  lastViewedAt: string
+  result: ProposalWrittenDraft
+  revision: number
+  canRestorePrevious: boolean
+  lastOperationId: string | null
+}
+
+export interface TelegramRecipient { chatId: string; name: string; enabled: boolean }
+export interface TelegramSettings {
+  version: number | null
+  enabled: boolean
+  botConfigured: boolean
+  recipients: TelegramRecipient[]
+  updatedAt: string | null
+}
+export type TelegramSettingsPayload = Pick<TelegramSettings, 'version' | 'enabled' | 'recipients'>
+export interface TelegramConnection {
+  botConnected: boolean; chatConnected: boolean
+  botName: string | null; botUsername: string | null
+  chatTitle: string | null; chatType: string | null
+  message: string; checkedAt: string
+}
+export type TelegramDeliveryStatus = 'SENT' | 'PARTIAL' | 'FAILED' | 'SENDING' | 'NOT_SENT' | 'PREPARING' | 'REPORT_FAILED'
+export interface TelegramReport {
+  reportId: number; runId: number; title: string | null
+  triggerType: 'MANUAL' | 'SCHEDULED'
+  createdAt: string; generatedAt: string | null
+  status: TelegramDeliveryStatus
+  recipientCount: number; sentCount: number; failedCount: number
+  errorMessage: string | null
+}
+export interface TelegramRecipientDelivery {
+  deliveryId: number; chatId: string; name: string | null
+  status: 'PENDING' | 'SENT' | 'FAILED'
+  attemptCount: number; attemptedAt: string | null; sentAt: string | null
+  errorMessage: string | null
+}
+export interface TelegramReportDetail {
+  report: TelegramReport
+  body: string | null
+  deliveries: TelegramRecipientDelivery[]
 }

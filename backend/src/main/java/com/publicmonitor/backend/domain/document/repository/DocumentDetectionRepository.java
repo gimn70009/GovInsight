@@ -41,7 +41,7 @@ public interface DocumentDetectionRepository extends JpaRepository<DocumentDetec
 
     boolean existsByMonitoringRunSourceIdAndDocumentId(Long runSourceId, Long documentId);
 
-    Optional<DocumentDetection> findTopByDocumentIdOrderByDetectedAtDescIdDesc(Long documentId);
+    Optional<DocumentDetection> findTopByDocumentVersionIdOrderByDetectedAtDescIdDesc(Long versionId);
 
     @Query(value = SUMMARY_QUERY + " order by detection.detectedAt desc, detection.id desc", countQuery = SUMMARY_COUNT_QUERY)
     Page<DocumentDetectionSummaryRow> findSummaries(
@@ -67,4 +67,23 @@ public interface DocumentDetectionRepository extends JpaRepository<DocumentDetec
             @Param("toDateTime") LocalDateTime toDateTime,
             Pageable pageable
     );
+
+    String BOOKMARK_FILTER = """
+              and exists (select b.id from DocumentBookmark b
+                          where b.user.id = :userId and b.version.id = detection.documentVersion.id)
+              and not exists (select newer.id from DocumentDetection newer
+                              where newer.documentVersion.id = detection.documentVersion.id
+                                and (newer.detectedAt > detection.detectedAt
+                                     or (newer.detectedAt = detection.detectedAt and newer.id > detection.id)))
+            """;
+
+    @Query(value = SUMMARY_QUERY + BOOKMARK_FILTER + """
+            order by case when :byScore = true then coalesce(analysis.opportunityScore, -1) else 0 end desc,
+                     detection.detectedAt desc, detection.id desc
+            """, countQuery = SUMMARY_COUNT_QUERY + BOOKMARK_FILTER)
+    Page<DocumentDetectionSummaryRow> findBookmarkedSummaries(
+            @Param("userId") Long userId, @Param("runId") Long runId,
+            @Param("fromDateTime") LocalDateTime fromDateTime,
+            @Param("toDateTime") LocalDateTime toDateTime,
+            @Param("byScore") boolean byScore, Pageable pageable);
 }

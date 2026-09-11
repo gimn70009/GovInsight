@@ -22,6 +22,8 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -32,6 +34,24 @@ class SimilarNoticeServiceTest {
 
     @Mock DocumentDetectionRepository detectionRepository;
     @Mock DocumentAnalysisRepository analysisRepository;
+
+    @Test
+    void 자료부족과_미발견과_분석누락을_구분한다() {
+        Fixture current = fixture(1L, "기관", "제조 AI", "제조 AI 실증 지원", List.of(1.0));
+        for (String status : List.of("DATA_INSUFFICIENT", "NOT_FOUND", "ASSESSMENT_INCOMPLETE")) {
+            current.analysis().updateComparisonSummary("{\"legalRisks\":[{\"type\":\"DUPLICATE_SUPPORT\",\"status\":\""
+                    + status + "\",\"summary\":\"확인 상태 설명입니다.\"}]}");
+            com.publicmonitor.backend.domain.document.web.dto.SimilarNoticeResponse.LegalRiskCheck check =
+                    ReflectionTestUtils.invokeMethod(service(), "legalRiskCheck", "DUPLICATE_SUPPORT", "중복지원",
+                            current.analysis(), current.analysis());
+            assertThat(check.status()).isEqualTo(status);
+        }
+        current.analysis().updateComparisonSummary("{}");
+        com.publicmonitor.backend.domain.document.web.dto.SimilarNoticeResponse.LegalRiskCheck missing =
+                ReflectionTestUtils.invokeMethod(service(), "legalRiskCheck", "DUPLICATE_SUPPORT", "중복지원",
+                        current.analysis(), current.analysis());
+        assertThat(missing.status()).isEqualTo("ASSESSMENT_INCOMPLETE");
+    }
 
     @Test
     void 사업_목적과_수행_내용이_모두_유사한_다른_기관_공고를_반환한다() {
@@ -57,8 +77,8 @@ class SimilarNoticeServiceTest {
                 """);
         given(detectionRepository.findById(current.detection().getId())).willReturn(Optional.of(current.detection()));
         given(analysisRepository.findByDocumentVersionId(current.version().getId())).willReturn(Optional.of(current.analysis()));
-        given(analysisRepository.findAll()).willReturn(List.of(current.analysis(), similar.analysis()));
-        given(detectionRepository.findTopByDocumentIdOrderByDetectedAtDescIdDesc(similar.document().getId()))
+        stubCandidates(List.of(current.analysis(), similar.analysis()));
+        given(detectionRepository.findTopByDocumentVersionIdOrderByDetectedAtDescIdDesc(similar.version().getId()))
                 .willReturn(Optional.of(similar.detection()));
 
         var result = service().find(current.detection().getId());
@@ -67,19 +87,16 @@ class SimilarNoticeServiceTest {
             assertThat(notice.title()).isEqualTo("제조 AI 실증 사업 공고");
             assertThat(notice.comparison().organizationName()).isEqualTo("산업통상부");
             assertThat(notice.similarityScore()).isGreaterThanOrEqualTo(78);
-            assertThat(notice.commonPoints()).contains("제조", "ai", "실증");
-            assertThat(notice.commonPoints()).doesNotContain("같은 유형의 지원사업");
             assertThat(notice.comparison().purpose())
                     .isEqualTo("제조기업의 AI 공정 최적화 실증과 사업화를 지원합니다.");
             assertThat(notice.comparison().requiredPartner())
                     .isEqualTo("해외 연구기관과 컨소시엄을 구성해야 합니다.");
-            assertThat(notice.legalReview().overallStatus()).isEqualTo("HIGH");
+            assertThat(notice.legalReview().overallStatus()).isEqualTo("RESTRICTION_FOUND");
             assertThat(notice.legalReview().checks()).hasSize(5);
             assertThat(notice.legalReview().checks().getFirst().evidence())
                     .contains("동일 과제 중복 신청 불가");
-            assertThat(notice.legalReview().summary()).contains("제조", "중복지원");
-            assertThat(notice.legalReview().checks().getFirst().action())
-                    .contains("제조", "동일 과제 중복 신청 불가", "목적·수행 범위·산출물");
+            assertThat(notice.legalReview().summary()).contains("제조", "중복지원", "충돌을 확정할 수 없습니다");
+            assertThat(notice.legalReview().checks().getFirst().status()).isEqualTo("RESTRICTION_FOUND");
         });
         assertThat(result.currentNotice().purpose())
                 .isEqualTo("제조 현장 데이터를 활용한 AI 공정 최적화 실증과 제조기업 사업화를 지원합니다.");
@@ -95,7 +112,7 @@ class SimilarNoticeServiceTest {
                 List.of(0.0, 1.0, 0.0));
         given(detectionRepository.findById(current.detection().getId())).willReturn(Optional.of(current.detection()));
         given(analysisRepository.findByDocumentVersionId(current.version().getId())).willReturn(Optional.of(current.analysis()));
-        given(analysisRepository.findAll()).willReturn(List.of(current.analysis(), unrelated.analysis()));
+        stubCandidates(List.of(current.analysis(), unrelated.analysis()));
 
         var result = service().find(current.detection().getId());
 
@@ -114,7 +131,7 @@ class SimilarNoticeServiceTest {
                 .willReturn(Optional.of(current.detection()));
         given(analysisRepository.findByDocumentVersionId(current.version().getId()))
                 .willReturn(Optional.of(current.analysis()));
-        given(analysisRepository.findAll()).willReturn(List.of(current.analysis(), unrelated.analysis()));
+        stubCandidates(List.of(current.analysis(), unrelated.analysis()));
 
         var result = service().find(current.detection().getId());
 
@@ -135,7 +152,7 @@ class SimilarNoticeServiceTest {
                 .willReturn(Optional.of(current.detection()));
         given(analysisRepository.findByDocumentVersionId(current.version().getId()))
                 .willReturn(Optional.of(current.analysis()));
-        given(analysisRepository.findAll()).willReturn(List.of(current.analysis(), unrelated.analysis()));
+        stubCandidates(List.of(current.analysis(), unrelated.analysis()));
 
         var result = service().find(current.detection().getId());
 
@@ -151,7 +168,7 @@ class SimilarNoticeServiceTest {
         Fixture similar = fixture(2L, "한국산업기술진흥원",
                 "2026년 산업기술국제협력사업 통합 시행계획 공고",
                 "해외 기관과 산업기술 국제공동연구개발을 수행할 기업을 지원합니다.",
-                List.of(0.2, 0.98, 0.0));
+                List.of(0.9, 0.3, 0.0));
         ReflectionTestUtils.setField(current.analysis(), "proposalDirection",
                 "{\"documentType\":\"PROPOSAL_REQUEST\"}");
         ReflectionTestUtils.setField(similar.analysis(), "proposalDirection",
@@ -160,19 +177,220 @@ class SimilarNoticeServiceTest {
                 .willReturn(Optional.of(current.detection()));
         given(analysisRepository.findByDocumentVersionId(current.version().getId()))
                 .willReturn(Optional.of(current.analysis()));
-        given(analysisRepository.findAll()).willReturn(List.of(current.analysis(), similar.analysis()));
-        given(detectionRepository.findTopByDocumentIdOrderByDetectedAtDescIdDesc(similar.document().getId()))
+        stubCandidates(List.of(current.analysis(), similar.analysis()));
+        given(detectionRepository.findTopByDocumentVersionIdOrderByDetectedAtDescIdDesc(similar.version().getId()))
                 .willReturn(Optional.of(similar.detection()));
 
         var result = service().find(current.detection().getId());
 
         assertThat(result.similarNotices()).singleElement().satisfies(notice -> {
-            assertThat(notice.commonPoints()).contains("산업기술국제협력");
             assertThat(notice.legalReview().overallStatus()).isEqualTo("REVIEW_REQUIRED");
             assertThat(notice.legalReview().checks()).allSatisfy(check ->
-                    assertThat(check.finding()).contains("원문에서 관련 제한을 확인하지 못했습니다.")
+                    assertThat(check.finding()).contains("판정이 미완료입니다.")
             );
         });
+    }
+
+    @Test
+    void 긴_제목이_같아도_의미_유사도가_낮으면_선택하지_않는다() {
+        Fixture current = fixture(1L, "기관A", "산업기술국제협력 공고", "국제공동연구 지원", List.of(1.0, 0.0));
+        Fixture other = fixture(2L, "기관B", "산업기술국제협력 안내", "국제공동연구 안내", List.of(0.2, 0.98));
+        prepareSearch(current, List.of(other));
+        assertThat(service().find(1L).similarNotices()).isEmpty();
+    }
+
+    @Test
+    void 동의어와_띄어쓰기와_조사가_달라도_핵심_주제를_연결한다() {
+        Fixture current = fixture(1L, "기관A", "예측 정비 지원", "설비의 예측 정비를 지원합니다.", List.of(1.0, 0.0));
+        Fixture other = fixture(2L, "기관B", "예지보전 공고", "기계 예지보전은 고장을 줄입니다.", List.of(0.9, 0.3));
+        prepareSearch(current, List.of(other));
+        given(detectionRepository.findTopByDocumentVersionIdOrderByDetectedAtDescIdDesc(2L))
+                .willReturn(Optional.of(other.detection()));
+        assertThat(service().find(1L).similarNotices()).hasSize(1);
+    }
+
+    @Test
+    void 조사만_다른_한국어_명사를_연결한다() {
+        Fixture current = fixture(1L, "기관A", "신규 공고", "반도체의 품질을 높입니다.", List.of(1.0, 0.0));
+        Fixture other = fixture(2L, "기관B", "지원 안내", "반도체를 검사합니다.", List.of(0.9, 0.3));
+        prepareSearch(current, List.of(other));
+        given(detectionRepository.findTopByDocumentVersionIdOrderByDetectedAtDescIdDesc(2L))
+                .willReturn(Optional.of(other.detection()));
+        assertThat(service().find(1L).similarNotices()).hasSize(1);
+    }
+
+    @Test
+    void 인공지능만_같고_분야와_목적이_다르면_제외한다() {
+        Fixture current = fixture(1L, "기관A", "AI 지원", "반도체 결함탐지를 지원합니다.", List.of(1.0, 0.0));
+        Fixture other = fixture(2L, "기관B", "인공 지능 공고", "공연 창작을 지원합니다.", List.of(0.99, 0.01));
+        prepareSearch(current, List.of(other));
+        assertThat(service().find(1L).similarNotices()).isEmpty();
+    }
+
+    @Test
+    void 비교_요약의_다른_필드가_없어도_사업_목적은_사용한다() {
+        Fixture current = fixture(1L, "기관A", "신규 공고", "기업을 지원합니다.", List.of(1.0, 0.0));
+        Fixture other = fixture(2L, "기관B", "선정 안내", "기관을 지원합니다.", List.of(0.9, 0.3));
+        current.analysis().updateComparisonSummary("{\"purpose\":\"반도체 결함탐지 연구\"}");
+        other.analysis().updateComparisonSummary("{\"purpose\":\"반도체 불량검출 연구\"}");
+        prepareSearch(current, List.of(other));
+        given(detectionRepository.findTopByDocumentVersionIdOrderByDetectedAtDescIdDesc(2L))
+                .willReturn(Optional.of(other.detection()));
+        assertThat(service().find(1L).similarNotices()).singleElement()
+                .satisfies(item -> assertThat(item.comparison().purpose()).contains("반도체 불량검출"));
+    }
+
+    @Test
+    void 잘못된_벡터와_영벡터는_제목이_같아도_제외한다() {
+        Fixture current = fixture(1L, "기관A", "산업기술국제협력", "국제공동연구", List.of(1.0, 0.0));
+        Fixture other = fixture(2L, "기관B", "산업기술국제협력", "국제공동연구", List.of(0.9, 0.3));
+        prepareSearch(current, List.of(other));
+        for (String vector : List.of("[0,0]", "[1,null]", "[1,\"0\"]", "[1,1e999]", "[]", "{}", "[1]")) {
+            other.analysis().updateSimilarity("국제공동연구", vector, "text-embedding-3-small");
+            assertThat(service().find(1L).similarNotices()).as(vector).isEmpty();
+        }
+        other.analysis().updateSimilarity("국제공동연구", "[1,0]", "other-model");
+        assertThat(service().find(1L).similarNotices()).isEmpty();
+    }
+
+    @Test
+    void 반올림_전_점수로_상위_세건을_정렬한다() {
+        Fixture current = fixture(1L, "기관A", "반도체", "반도체 연구", List.of(1.0, 0.0));
+        var candidates = new java.util.ArrayList<Fixture>();
+        for (long id = 2; id <= 5; id++) {
+            double similarity = 0.780 + id * 0.001;
+            Fixture item = fixture(id, "기관B", "반도체 연구 " + id, "반도체 연구",
+                    List.of(similarity, Math.sqrt(1 - similarity * similarity)));
+            candidates.add(item);
+            if (id >= 3) {
+                given(detectionRepository.findTopByDocumentVersionIdOrderByDetectedAtDescIdDesc(id))
+                        .willReturn(Optional.of(item.detection()));
+            }
+        }
+        prepareSearch(current, candidates);
+        assertThat(service().find(1L).similarNotices()).extracting(item -> item.title())
+                .containsExactly("반도체 연구 5", "반도체 연구 4", "반도체 연구 3");
+    }
+
+    @Test
+    void 감지_이력이_없는_후보는_건너뛰고_다음_후보를_반환한다() {
+        Fixture current = fixture(1L, "기관A", "반도체", "반도체 연구", List.of(1.0, 0.0));
+        Fixture missing = fixture(2L, "기관B", "반도체", "반도체 연구", List.of(1.0, 0.0));
+        Fixture valid = fixture(3L, "기관C", "반도체", "반도체 연구", List.of(0.9, 0.3));
+        // Version IDs are independent of document IDs.
+        ReflectionTestUtils.setField(valid.version(), "id", 30L);
+        prepareSearch(current, List.of(missing, valid));
+        given(detectionRepository.findTopByDocumentVersionIdOrderByDetectedAtDescIdDesc(2L))
+                .willReturn(Optional.empty());
+        given(detectionRepository.findTopByDocumentVersionIdOrderByDetectedAtDescIdDesc(30L))
+                .willReturn(Optional.of(valid.detection()));
+        assertThat(service().find(1L).similarNotices()).hasSize(1);
+        org.mockito.Mockito.verify(detectionRepository).findTopByDocumentVersionIdOrderByDetectedAtDescIdDesc(30L);
+    }
+
+    @ParameterizedTest
+    @ValueSource(doubles = {0.76, 0.79, 0.99, Double.NaN})
+    void missingPurposeMessagesCannotLinkUnrelatedNoticesThroughAnySearchLane(double similarity) {
+        String missing = "원문에서 확인하지 못했습니다.";
+        Fixture current = fixture(1L, "산업통상부", "2026년 제5차 산업융합 규제샌드박스 규제특례 승인 공고",
+                missing, List.of(1.0, 0.0));
+        Fixture other = fixture(2L, "산업통상부", "2026년 에너지공기업 기술나눔 공고",
+                missing, List.of(1.0, 0.0));
+        other.analysis().updateSimilarity("test", Double.isNaN(similarity) ? null
+                : new ObjectMapper().writeValueAsString(List.of(similarity, Math.sqrt(1 - similarity * similarity))),
+                "text-embedding-3-small");
+        prepareSearch(current, List.of(other));
+        given(detectionRepository.findById(2L)).willReturn(Optional.of(other.detection()));
+        org.mockito.Mockito.lenient().when(detectionRepository.findTopByDocumentVersionIdOrderByDetectedAtDescIdDesc(1L))
+                .thenReturn(Optional.of(current.detection()));
+        org.mockito.Mockito.lenient().when(detectionRepository.findTopByDocumentVersionIdOrderByDetectedAtDescIdDesc(2L))
+                .thenReturn(Optional.of(other.detection()));
+
+        // Check stored comparison fields, legacy source extraction, and summary fallback.
+        for (String origin : List.of("comparison", "source", "summary")) {
+            for (Fixture item : List.of(current, other)) {
+                item.analysis().updateComparisonSummary(origin.equals("comparison")
+                        ? "{\"purpose\":\"" + missing + "\"}" : null);
+                ReflectionTestUtils.setField(item.version(), "contentText", origin.equals("source")
+                        ? "1. 사업 목적 ○ " + missing + " 2. 사업 내용" : "");
+            }
+            SimilarNoticeService instance = service();
+            assertThat(instance.find(1L).similarNotices()).as(origin + " forward").isEmpty();
+            assertThat(instance.find(2L).similarNotices()).as(origin + " reverse").isEmpty();
+            assertThat(instance.find(1L).currentNotice().purpose()).isEqualTo(missing);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"원문에서 확인하지 못했습니다.", "  원문에서  확인하지 못했습니다。  ",
+            "사업 목적을 확인하지 못했습니다", "원문에서 사업 목적을 확인하지 못했습니다."})
+    void missingMessageDoesNotAddTopicsToOtherwiseValidPurpose(String missing) {
+        Fixture current = fixture(1L, "기관A", "반도체", "결함탐지 공정", List.of(1.0, 0.0));
+        Fixture other = fixture(2L, "기관B", "반도체", "결함탐지 공정", List.of(0.7, Math.sqrt(0.51)));
+        ObjectMapper mapper = new ObjectMapper();
+        for (Fixture item : List.of(current, other)) {
+            item.analysis().updateComparisonSummary(mapper.writeValueAsString(
+                    java.util.Map.of("purpose", missing + "! 결함탐지 공정")));
+        }
+        prepareSearch(current, List.of(other));
+        given(detectionRepository.findTopByDocumentVersionIdOrderByDetectedAtDescIdDesc(2L))
+                .willReturn(Optional.of(other.detection()));
+        assertThat(service().find(1L).similarNotices()).singleElement().satisfies(item -> {
+            assertThat(item.matchBasis()).isEqualTo("LEXICAL");
+            assertThat(item.legalReview().summary()).contains("반도체", "결함탐지", "공정")
+                    .doesNotContain("원문·", "확인하지", "못했습니다");
+            assertThat(item.comparison().purpose()).isEqualTo("결함탐지 공정");
+        });
+    }
+
+    private void prepareSearch(Fixture current, List<Fixture> candidates) {
+        given(detectionRepository.findById(current.detection().getId())).willReturn(Optional.of(current.detection()));
+        given(analysisRepository.findByDocumentVersionId(current.version().getId())).willReturn(Optional.of(current.analysis()));
+        var analyses = new java.util.ArrayList<DocumentAnalysis>();
+        analyses.add(current.analysis());
+        candidates.forEach(item -> analyses.add(item.analysis()));
+        stubCandidates(analyses);
+    }
+
+    @Test
+    void unchangedCorpusReusesVectorsAndChangedRevisionRebuilds() {
+        Fixture current = fixture(1L, "기관A", "반도체 공정", "결함탐지 예지보전 공정", List.of(1.0, 0.0));
+        Fixture other = fixture(2L, "기관B", "반도체 공정", "결함탐지 예지보전 공정", List.of(1.0, 0.0));
+        prepareSearch(current, List.of(other));
+        given(detectionRepository.findTopByDocumentVersionIdOrderByDetectedAtDescIdDesc(2L)).willReturn(Optional.of(other.detection()));
+        var revision = org.mockito.Mockito.mock(DocumentAnalysisRepository.SimilarityRevision.class);
+        given(revision.getTotal()).willReturn(2L);
+        given(revision.getLastId()).willReturn(2L);
+        given(revision.getChangedAt()).willReturn(LocalDateTime.of(2026, 9, 8, 0, 0));
+        given(analysisRepository.similarityRevision()).willReturn(revision);
+        SimilarNoticeService instance = service();
+        instance.find(1L);
+        instance.find(1L);
+        org.mockito.Mockito.verify(analysisRepository, org.mockito.Mockito.times(1)).findLatestSimilarityCandidates(0L);
+        given(revision.getChangedAt()).willReturn(LocalDateTime.of(2026, 9, 8, 0, 1));
+        instance.find(1L);
+        org.mockito.Mockito.verify(analysisRepository, org.mockito.Mockito.times(2)).findLatestSimilarityCandidates(0L);
+    }
+
+    @Test
+    void noEmbeddingProducesLexicalCandidateWithoutInventingSimilarityPercentage() {
+        Fixture current = fixture(1L, "기관A", "반도체 공정", "결함탐지 예지보전 공정", List.of(1.0, 0.0));
+        Fixture other = fixture(2L, "기관B", "반도체 공정", "결함탐지 예지보전 공정", List.of(1.0, 0.0));
+        ReflectionTestUtils.setField(current.analysis(), "similarityEmbedding", null);
+        prepareSearch(current, List.of(other));
+        given(detectionRepository.findTopByDocumentVersionIdOrderByDetectedAtDescIdDesc(2L)).willReturn(Optional.of(other.detection()));
+        assertThat(service().find(1L).similarNotices()).singleElement().satisfies(item -> {
+            assertThat(item.matchBasis()).isEqualTo("LEXICAL_ONLY");
+            assertThat(item.similarityScore()).isNull();
+        });
+    }
+
+    private void stubCandidates(List<DocumentAnalysis> analyses) {
+        given(analysisRepository.findLatestSimilarityCandidates(0L)).willReturn(analyses);
+        for (DocumentAnalysis analysis : analyses) {
+            org.mockito.Mockito.lenient().when(analysisRepository.findByDocumentVersionId(
+                    analysis.getDocumentVersion().getId())).thenReturn(Optional.of(analysis));
+        }
     }
 
     private SimilarNoticeService service() {

@@ -49,15 +49,22 @@ public class AnalysisJobRequestService {
             return true;
         }
         return analysisRepository.findByDocumentVersionId(detection.getDocumentVersion().getId())
-                .map(DocumentAnalysis::requiresProposalSchemaUpgrade)
+                .map(analysis -> analysis.requiresProposalSchemaUpgrade()
+                        || requiresLegalReview(analysis.getComparisonSummary()))
                 .orElse(true);
+    }
+
+    static boolean requiresLegalReview(String summary) {
+        return !LegalReviewPolicy.pendingTypes(summary, java.time.Instant.now()).isEmpty();
     }
 
     private PythonAnalysisDocumentRequest toRequest(DocumentDetection detection) {
         DocumentVersion version = detection.getDocumentVersion();
+        DocumentAnalysis existing = analysisRepository.findByDocumentVersionId(version.getId()).orElse(null);
+        boolean legalOnly = detection.getChangeType() == DocumentChangeType.UNCHANGED_DOCUMENT
+                && existing != null && !existing.requiresProposalSchemaUpgrade();
         List<PythonAnalysisAttachmentRequest> attachments = attachmentRepository
                 .findAllByDocumentVersionId(version.getId()).stream()
-                .filter(attachment -> attachment.getParseStatus() == AttachmentParseStatus.COMPLETED)
                 .map(this::toAttachmentRequest)
                 .toList();
 
@@ -74,7 +81,9 @@ public class AnalysisJobRequestService {
                 detection.getDocument().getOriginalUrl(),
                 attachments,
                 previousVersion(version).orElse(null),
-                previousAnalysis(version).orElse(null)
+                previousAnalysis(version).orElse(null),
+                legalOnly ? "LEGAL_ONLY" : "FULL",
+                legalOnly ? LegalReviewPolicy.pendingTypes(existing.getComparisonSummary(), java.time.Instant.now()) : null
         );
     }
 
@@ -90,7 +99,8 @@ public class AnalysisJobRequestService {
         return new PythonAnalysisAttachmentRequest(
                 attachment.getId(),
                 attachment.getFileName(),
-                attachment.getExtractedText()
+                attachment.getParseStatus() == AttachmentParseStatus.COMPLETED
+                        ? attachment.getExtractedText() : null
         );
     }
 
@@ -103,7 +113,10 @@ public class AnalysisJobRequestService {
                 .map(previous -> new PythonPreviousVersionRequest(
                         previous.getId(),
                         previous.getTitle(),
-                        previous.getContentText()
+                        previous.getContentText(),
+                        attachmentRepository.findAllByDocumentVersionId(previous.getId()).stream()
+                                .map(this::toAttachmentRequest)
+                                .toList()
                 ));
     }
 

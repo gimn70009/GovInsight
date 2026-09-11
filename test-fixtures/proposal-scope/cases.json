@@ -1,0 +1,102 @@
+[
+  {
+    "name": "notice",
+    "file": "notice.txt",
+    "excluded": true
+  },
+  {
+    "name": "application",
+    "file": "application.txt",
+    "excluded": false
+  },
+  {
+    "name": "english-summary",
+    "file": "english-summary.txt",
+    "excluded": false
+  },
+  {
+    "name": "administrative",
+    "file": "administrative.txt",
+    "excluded": true
+  },
+  {
+    "name": "consent",
+    "text": "개인정보 이용 동의서\n성명\n서명\n개인정보 수집에 동의합니다.",
+    "excluded": true
+  },
+  {
+    "name": "eligibility",
+    "text": "신청 자격 확인서\n사업명\n해당 여부를 기재합니다.\n( ) 예 ( ) 아니오",
+    "excluded": true
+  },
+  {
+    "name": "benefits",
+    "text": "우대 사항 확인서\n검토 내용\n해당 여부\n2점\n증빙서류 첨부",
+    "excluded": true
+  },
+  {
+    "name": "checklist",
+    "text": "제출서류 체크리스트\n사업계획서\n확인서\n동의서",
+    "excluded": true
+  },
+  {
+    "name": "notice-with-plan-in-list",
+    "text": "모집 공고\n제출 서류\n사업계획서\n자격 확인서\n문의처",
+    "excluded": true
+  },
+  {
+    "name": "notice-process",
+    "text": "선정 공고\n지원 절차\n기업 협력 파트너 리스트 작성\n선정 기업 기술정보 제공",
+    "excluded": true
+  },
+  {
+    "name": "notice-rating",
+    "text": "선정 공고\n평가 기준\n사업 내용 (50)\n기술적 우수성\n50%",
+    "excluded": true
+  },
+  {
+    "name": "english-notice",
+    "text": "Call for applications\nEligibility\nEvaluation criteria\nBusiness plan\nCertificate",
+    "excluded": true
+  },
+  {
+    "name": "english-consent",
+    "text": "Consent form\nFull name\nSignature",
+    "excluded": true
+  },
+  {
+    "name": "mixed-plan",
+    "text": "선정 공고\n지원 절차\n붙임 사업계획서\n1. 사업 목표\n2. 추진 계획",
+    "excluded": false
+  },
+  {
+    "name": "mixed-guidance",
+    "text": "개인정보 이용 동의서\n서명\n협력 희망 분야\n협력을 원하는 기술 및 산업 분야, 협력 사유 등 기재",
+    "excluded": false
+  },
+  {
+    "name": "english-mixed",
+    "text": "Consent form\nSignature\nCooperation\nDescribe the proposed research and cooperation.",
+    "excluded": false
+  },
+  {
+    "name": "annex-plan",
+    "text": "별첨 3\n사업계획서\n사업 목표\n구체적인 사업 내용을 작성해 주세요.",
+    "excluded": false
+  },
+  {
+    "name": "korean-plan",
+    "text": "사업계획서\n사업목표\n추진계획",
+    "excluded": false
+  },
+  {
+    "name": "identity-only-ambiguous",
+    "text": "신청서\n기업명\n대표자\n주소",
+    "excluded": false
+  },
+  {
+    "name": "unknown",
+    "text": "안내 자료\n주요 내용\n기술 분야",
+    "excluded": false
+  }
+]

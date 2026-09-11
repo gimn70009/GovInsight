@@ -17,6 +17,17 @@ public record PythonAnalysisDocumentRequest(
         String originalUrl,
         List<PythonAnalysisAttachmentRequest> attachments,
         PythonPreviousVersionRequest previousVersion,
-        PythonPreviousAnalysisRequest previousAnalysis
+        PythonPreviousAnalysisRequest previousAnalysis,
+        String analysisScope,
+        List<String> legalReviewTypes
 ) {
+    public PythonAnalysisDocumentRequest(Long detectionId, Long documentId, Long versionId,
+            DocumentChangeType changeType, String organizationName, String boardName,
+            String title, String contentText, LocalDateTime publishedAt, String originalUrl,
+            List<PythonAnalysisAttachmentRequest> attachments,
+            PythonPreviousVersionRequest previousVersion, PythonPreviousAnalysisRequest previousAnalysis) {
+        this(detectionId, documentId, versionId, changeType, organizationName, boardName, title,
+                contentText, publishedAt, originalUrl, attachments, previousVersion, previousAnalysis,
+                "FULL", null);
+    }
 }

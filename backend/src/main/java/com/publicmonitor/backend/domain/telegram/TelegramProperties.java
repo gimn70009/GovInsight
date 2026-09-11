@@ -10,7 +10,8 @@ public record TelegramProperties(
         @DefaultValue("") String botToken,
         @DefaultValue("") String chatId,
         @DefaultValue("3s") Duration connectTimeout,
-        @DefaultValue("10s") Duration readTimeout
+        @DefaultValue("10s") Duration readTimeout,
+        @DefaultValue("") String recipientName
 ) {
     public boolean isConfigured() {
         return enabled && !botToken.isBlank() && !chatId.isBlank();

@@ -191,6 +191,28 @@ class AnalysisResultServiceTest {
         assertThat(response.updatedProposalCount()).isEqualTo(1);
     }
 
+    @Test
+    void legalOnlyDeliveryPreservesAnalysisAndOtherFindingsAndIsIdempotent() {
+        DocumentAnalysis existing = mock(DocumentAnalysis.class);
+        var saved = new java.util.concurrent.atomic.AtomicReference<>("{\"purpose\":\"원래 사업 목적\",\"legalRisks\":[{\"type\":\"CONFIDENTIALITY\",\"status\":\"CAUTION\",\"summary\":\"비밀정보 조건 확인\"}]}");
+        given(existing.getComparisonSummary()).willAnswer(call -> saved.get());
+        org.mockito.Mockito.doAnswer(call -> { saved.set(call.getArgument(0)); return null; })
+                .when(existing).updateComparisonSummary(any());
+        given(analysisRepository.findByDocumentVersionId(40L)).willReturn(Optional.of(existing));
+        var delivered = new AnalysisResultRequest(10L, UUID.randomUUID(), List.of(), List.of(), List.of(
+                new AnalysisResultRequest.LegalReviewResult(detection.getId(), detection.getDocument().getId(), 40L, List.of(
+                        new AnalysisResultRequest.LegalRiskFinding("DUPLICATE_SUPPORT", "RESTRICTION_FOUND",
+                                "동일 과제의 중복지원이 제한됩니다.", "동일 과제 중복지원 금지", null)))));
+        assertThat(delivered.hasResult()).isTrue();
+        service.receive(delivered);
+        String first = saved.get();
+        service.receive(delivered);
+        assertThat(saved.get()).isEqualTo(first).contains("원래 사업 목적", "비밀정보 조건 확인", "legalReviewVersion", "legalReviewedAt");
+        verify(existing, never()).replaceAnalysis(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+        verify(existing, never()).updateSimilarity(any(), any(), any());
+        verify(existing, org.mockito.Mockito.times(1)).updateComparisonSummary(any());
+    }
+
     private AnalysisResultRequest.OpportunityDimension opportunityDimension(
             OpportunityDimensionType type,
             int score

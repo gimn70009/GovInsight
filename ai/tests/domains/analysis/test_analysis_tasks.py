@@ -64,3 +64,19 @@ def test_analyze_documents_isolates_unexpected_document_errors() -> None:
         failure.error_message == "AI 문서 분석 중 예상하지 못한 오류가 발생했습니다."
         for failure in failures
     )
+
+
+def test_legal_only_task_never_invokes_base_analysis_and_has_valid_delivery():
+    from unittest.mock import AsyncMock
+    from uuid import uuid4
+    from app.domains.analysis.legal_risks import no_candidate_legal_risks
+    from app.domains.analysis.schemas.delivery import AnalysisResultRequest, LegalReviewResult
+    from app.domains.analysis.schemas.request import AnalysisScope
+    from app.domains.analysis.tasks import _ScopedAnalysisWorkflow
+    base, legal = AsyncMock(), AsyncMock()
+    legal.review_legal_only.return_value = no_candidate_legal_risks()
+    doc = analysis_document(1).model_copy(update={"analysis_scope": AnalysisScope.LEGAL_ONLY})
+    result = asyncio.run(_ScopedAnalysisWorkflow(base, legal).analyze(doc))
+    assert isinstance(result, LegalReviewResult)
+    base.analyze.assert_not_awaited()
+    assert AnalysisResultRequest(run_id=1, job_id=uuid4(), results=[], failures=[], legal_results=[result])
