@@ -70,8 +70,19 @@ public class DocumentDetectionDetailService {
                 analysis.getEligibility(),
                 analysis.getFavorableOrNot(),
                 parseProposal(analysis.getProposalDirection()),
-                parseOpportunity(analysis)
+                parseOpportunity(analysis),
+                parseApplicationDeadline(analysis.getComparisonSummary())
         );
+    }
+
+    private String parseApplicationDeadline(String comparisonSummary) {
+        if (comparisonSummary == null || comparisonSummary.isBlank()) return null;
+        try {
+            var value = objectMapper.readTree(comparisonSummary).path("applicationDeadline");
+            return value.isString() ? value.asString().strip() : null;
+        } catch (RuntimeException exception) {
+            return null;
+        }
     }
 
     private DocumentDetectionDetailResponse.Proposal parseProposal(String proposalDirection) {
@@ -85,7 +96,7 @@ public class DocumentDetectionDetailService {
             ));
         }
         DocumentDetectionDetailResponse.Proposal proposal = objectMapper.readValue(
-                normalized,
+                PreparationCompatibility.normalize(normalized, objectMapper),
                 DocumentDetectionDetailResponse.Proposal.class
         );
         return new DocumentDetectionDetailResponse.Proposal(
@@ -99,7 +110,8 @@ public class DocumentDetectionDetailService {
                 proposal.templateSections() == null ? List.of() : proposal.templateSections(),
                 proposal.draftSections() == null ? List.of() : proposal.draftSections(),
                 proposal.preparation(),
-                proposal.preparationSchemaVersion() == null ? 1 : proposal.preparationSchemaVersion()
+                proposal.preparationSchemaVersion() == null ? 1 : proposal.preparationSchemaVersion(),
+                proposal.usesDemoProfile()
         );
     }
 

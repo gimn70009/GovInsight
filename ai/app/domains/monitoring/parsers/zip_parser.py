@@ -1,3 +1,4 @@
+import hashlib
 import tempfile
 import zipfile
 from collections.abc import Mapping
@@ -9,6 +10,7 @@ from app.domains.monitoring.parsers.base import (
     AttachmentTextParser,
     ParsedAttachment,
 )
+from app.domains.monitoring.parsers.detected_parser import detect_document_extension
 
 COPY_CHUNK_SIZE = 64 * 1024
 
@@ -32,6 +34,8 @@ class ZipParser:
         try:
             with zipfile.ZipFile(file_path) as archive:
                 entries = [entry for entry in archive.infolist() if not entry.is_dir()]
+                if not entries:
+                    raise ZipParseError("ZIP 내부에 문서가 없습니다.")
                 self._validate_archive(entries)
                 return self._parse_entries(archive, entries)
         except ZipParseError:
@@ -50,40 +54,53 @@ class ZipParser:
         archive: zipfile.ZipFile,
         entries: list[zipfile.ZipInfo],
     ) -> ParsedAttachment:
-        supported_entries = [
-            (entry, self.parsers.get(attachment_file_extension(entry.filename)))
-            for entry in entries
-            if self.parsers.get(attachment_file_extension(entry.filename)) is not None
-        ]
-        if not supported_entries:
-            raise ZipParseError("ZIP 파일에 분석할 수 있는 문서가 없습니다.")
-
-        parsed_sections: list[str] = []
+        manifest: list[dict] = []
+        documents: list[tuple[int, str, str, str]] = []
         extracted_size = 0
         with tempfile.TemporaryDirectory(prefix="govinsight-zip-") as directory:
-            temporary_directory = Path(directory)
-            for index, (entry, parser) in enumerate(supported_entries):
-                extension = attachment_file_extension(entry.filename)
-                target = temporary_directory / f"{index}{extension}"
+            for index, entry in enumerate(entries):
+                name = _display_name(_entry_name(entry))
+                declared = attachment_file_extension(entry.filename)
+                item = {"fileName": name, "status": "UNSUPPORTED", "partIndex": None,
+                        "reason": "미지원 형식", "actualFormat": None}
+                manifest.append(item)
+                if declared not in self.parsers:
+                    continue
+                target = Path(directory) / f"{index}{declared}"
                 try:
-                    extracted_size = self._copy_entry(
-                        archive,
-                        entry,
-                        target,
-                        extracted_size,
-                    )
-                    parsed = parser.parse(target) if parser is not None else None
+                    extracted_size = self._copy_entry(archive, entry, target, extracted_size)
+                    actual = detect_document_extension(target, declared)
+                    item["actualFormat"] = actual.removeprefix(".").upper()
+                    parsed = self.parsers.get(actual, self.parsers[declared]).parse(target)
+                    if not parsed.text.strip():
+                        raise AttachmentParseError("문서에서 본문을 찾지 못했습니다.")
+                    documents.append((index, name, parsed.text.strip(), actual))
+                    item.update(status="COMPLETED", reason="")
                 except ZipParseError:
                     raise
                 except (AttachmentParseError, OSError, RuntimeError, zipfile.BadZipFile):
-                    continue
-                if parsed is not None:
-                    display_name = _display_name(entry.filename)
-                    parsed_sections.append(f"[파일: {display_name}]\n{parsed.text}")
+                    item.update(status="FAILED", reason="읽기 실패")
 
-        if not parsed_sections:
-            raise ZipParseError("ZIP 내부 문서를 읽을 수 없습니다.")
-        return ParsedAttachment(text="\n\n".join(parsed_sections))
+        groups: dict[str, list[tuple[int, str, str, str]]] = {}
+        for document in documents:
+            # Preserve wording, numbers and line breaks; only normalize surrounding whitespace.
+            normalized = "\n".join(line.strip() for line in document[2].splitlines()).strip()
+            digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+            groups.setdefault(digest, []).append(document)
+        representatives = []
+        for group in groups.values():
+            representative = min(group, key=lambda doc: (
+                attachment_file_extension(doc[1]) != doc[3], doc[0]))
+            representatives.append((representative, group))
+        representatives.sort(key=lambda pair: pair[0][0])
+        sections = []
+        for part_index, (representative, group) in enumerate(representatives):
+            sections.append(f"[파일: {representative[1]}]\n{representative[2]}")
+            for document in group:
+                manifest[document[0]]["partIndex"] = part_index
+                if document[0] != representative[0]:
+                    manifest[document[0]]["status"] = "DUPLICATE"
+        return ParsedAttachment(text="\n\n".join(sections), archive_entries=tuple(manifest))
 
     def _copy_entry(
         self,
@@ -101,5 +118,21 @@ class ZipParser:
         return extracted_size
 
 
+def _entry_name(entry: zipfile.ZipInfo) -> str:
+    value = entry.filename
+    # Respect explicit UTF-8 metadata. Legacy Korean ZIPs often have no encoding flag.
+    if entry.flag_bits & 0x800 or not any("\u2500" <= char <= "\u259f" for char in value):
+        return value
+    try:
+        raw_name = value.encode("cp437")
+        decoded = raw_name.decode("cp949")
+        if any("가" <= char <= "힣" for char in decoded) and decoded.encode("cp949") == raw_name:
+            return decoded
+    except UnicodeError:
+        pass
+    return value
+
+
 def _display_name(value: str) -> str:
-    return value.replace("\\", "/").rsplit("/", maxsplit=1)[-1] or "이름 없는 문서"
+    name = value.replace("\\", "/").rsplit("/", maxsplit=1)[-1]
+    return name.replace("\r", " ").replace("\n", " ")[:500] or "이름 없는 문서"

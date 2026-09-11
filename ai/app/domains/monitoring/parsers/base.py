@@ -6,6 +6,7 @@ from typing import Protocol
 @dataclass(frozen=True)
 class ParsedAttachment:
     text: str
+    archive_entries: tuple[dict, ...] = ()
 
 
 class AttachmentParseError(Exception):

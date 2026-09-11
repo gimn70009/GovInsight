@@ -66,7 +66,7 @@ public class DocumentDetectionQueryService {
         return PageResponse.from(summaries.map(this::toResponse));
     }
 
-    private DocumentDetectionSummaryResponse toResponse(DocumentDetectionSummaryRow row) {
+    DocumentDetectionSummaryResponse toResponse(DocumentDetectionSummaryRow row) {
         OpportunitySummary opportunity = opportunity(row);
         return new DocumentDetectionSummaryResponse(
                 row.runId(),

@@ -19,6 +19,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest(properties = {
+    "app.telegram.commands.enabled=false",
         "spring.autoconfigure.exclude="
                 + "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration,"
                 + "org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration",
@@ -33,6 +34,15 @@ class OpenApiDocumentationIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @MockitoBean
+    private com.publicmonitor.backend.domain.telegram.service.TelegramSettingsService telegramSettings;
+    @MockitoBean
+    private com.publicmonitor.backend.domain.telegram.service.TelegramConnectionService telegramConnection;
+    @MockitoBean
+    private com.publicmonitor.backend.domain.telegram.service.TelegramReportQueryService telegramReports;
+    @MockitoBean
+    private com.publicmonitor.backend.domain.telegram.TelegramReportDeliveryService telegramDelivery;
 
     @MockitoBean
     private UserRepository userRepository;
@@ -52,6 +62,29 @@ class OpenApiDocumentationIntegrationTest {
     @MockitoBean
     private AnalysisResultService analysisResultService;
 
+    @MockitoBean
+    private com.publicmonitor.backend.domain.document.service.DocumentBookmarkService bookmarkService;
+
+    @Test
+    void bookmarkEndpointsUseAuthenticatedAccountAndRejectInvalidIds() throws Exception {
+        var account = com.publicmonitor.backend.domain.user.entity.User.create("bookmark-user", "test",
+                com.publicmonitor.backend.domain.user.entity.Role.ADMIN);
+        org.springframework.test.util.ReflectionTestUtils.setField(account, "id", 42L);
+        var principal = new com.publicmonitor.backend.global.security.CustomUserDetails(account);
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/bookmarks/versions/7")
+                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user(principal)))
+                .andExpect(status().isOk());
+        org.mockito.Mockito.verify(bookmarkService).set(42L, 7L, true);
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/bookmarks/versions/7")
+                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user(principal)))
+                .andExpect(status().isOk());
+        org.mockito.Mockito.verify(bookmarkService).set(42L, 7L, false);
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/bookmarks/versions/0")
+                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user(principal)))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/bookmarks/versions")).andExpect(status().isUnauthorized());
+    }
+
     @Test
     void 공개_API_OpenAPI_문서에_현재_엔드포인트와_JWT_스키마가_포함된다() throws Exception {
         mockMvc.perform(get("/v3/api-docs/public-api"))
@@ -64,6 +97,8 @@ class OpenApiDocumentationIntegrationTest {
                 .andExpect(jsonPath("$.paths['/api/monitoring-runs'].post").exists())
                 .andExpect(jsonPath("$.paths['/api/monitoring-runs'].get").exists())
                 .andExpect(jsonPath("$.paths['/api/document-detections'].get").exists())
+                .andExpect(jsonPath("$.paths['/api/telegram/settings'].get").exists())
+                .andExpect(jsonPath("$.paths['/api/telegram/deliveries/{deliveryId}/retry'].post").exists())
                 .andExpect(jsonPath("$.components.securitySchemes.bearerAuth.type").value("http"))
                 .andExpect(jsonPath("$.components.securitySchemes.bearerAuth.scheme").value("bearer"))
                 .andExpect(jsonPath("$.paths['/api/monitoring-sources'].get.security[0].bearerAuth").exists())

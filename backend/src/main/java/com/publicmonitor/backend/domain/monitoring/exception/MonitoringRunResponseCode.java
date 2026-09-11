@@ -9,6 +9,8 @@ import org.springframework.http.HttpStatus;
 @RequiredArgsConstructor
 public enum MonitoringRunResponseCode implements BaseResponseCode {
 
+    NOT_FOUND("MONITORING_RUN_404_1", 404, "모니터링 실행 이력을 찾을 수 없습니다."),
+
     NO_ACTIVE_SOURCE(
             "MONITORING_RUN_422_1",
             HttpStatus.UNPROCESSABLE_CONTENT.value(),

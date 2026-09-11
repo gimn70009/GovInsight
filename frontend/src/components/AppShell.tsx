@@ -1,4 +1,4 @@
-import { FileSearch2, LogOut, Radar, ShieldCheck } from 'lucide-react'
+import { FileSearch2, LogOut, Radar, Send, ShieldCheck } from 'lucide-react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { authStore } from '../api/client'
 
@@ -13,8 +13,9 @@ export default function AppShell() {
       <aside className="sidebar">
         <div className="brand"><span className="brand__mark"><ShieldCheck size={19} /></span><span>GovInsight</span></div>
         <nav className="side-nav" aria-label="주요 메뉴">
-          <NavLink to="/monitoring"><Radar size={18} /><span>모니터링</span></NavLink>
-          <NavLink to="/documents"><FileSearch2 size={18} /><span>감지된 게시글</span></NavLink>
+          <NavLink to="/monitoring" aria-label="모니터링"><Radar size={18} /><span>모니터링</span></NavLink>
+          <NavLink to="/documents" aria-label="감지된 게시글"><FileSearch2 size={18} /><span>감지된 게시글</span></NavLink>
+          <NavLink to="/telegram" aria-label="텔레그램"><Send size={18} /><span>텔레그램</span></NavLink>
         </nav>
         <div className="sidebar__footer">
           <div className="admin-profile"><span className="avatar">A</span><div><strong>관리자</strong><small>운영 계정</small></div></div>

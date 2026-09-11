@@ -34,7 +34,8 @@ public record DocumentDetectionDetailResponse(
             AnalysisEligibility eligibility,
             AnalysisFavorability favorableOrNot,
             Proposal proposal,
-            Opportunity opportunity
+            Opportunity opportunity,
+            String applicationDeadline
     ) {
     }
 
@@ -48,8 +49,22 @@ public record DocumentDetectionDetailResponse(
             List<String> templateSections,
             List<Section> draftSections,
             Preparation preparation,
-            Integer preparationSchemaVersion
+            Integer preparationSchemaVersion,
+            Boolean usesDemoProfile
     ) {
+        public Proposal {
+            usesDemoProfile = Boolean.TRUE.equals(usesDemoProfile);
+        }
+
+        public Proposal(
+                List<Section> sections, String documentType, String draftStatus, String draftReason,
+                List<String> sourceAttachmentNames, List<String> templateSections,
+                List<Section> draftSections, Preparation preparation, Integer preparationSchemaVersion
+        ) {
+            this(sections, documentType, draftStatus, draftReason, sourceAttachmentNames,
+                    templateSections, draftSections, preparation, preparationSchemaVersion, false);
+        }
+
         public Proposal(List<Section> sections) {
             this(sections, "REVIEW_REQUIRED", "NOT_APPLICABLE",
                     "기존 분석 결과에는 제안서 판정 정보가 없습니다.",
@@ -74,7 +89,6 @@ public record DocumentDetectionDetailResponse(
             List<String> meetingAgenda,
             List<PreparationItem> eligibilityChecklist,
             List<PreparationItem> submissionDocuments,
-            List<PreparationItem> companyInputs,
             String applicationDeadline,
             StrategyOnePage strategy
     ) {

@@ -1,6 +1,8 @@
+import { useSearchParams } from 'react-router-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft,
+  Bookmark,
   CalendarDays,
   CircleHelp,
   ChevronDown,
@@ -8,8 +10,6 @@ import {
   ExternalLink,
   File,
   FileSearch2,
-  GitCompareArrows,
-  Lightbulb,
   Paperclip,
   RefreshCw,
   RotateCcw,
@@ -19,8 +19,11 @@ import {
   X,
 } from 'lucide-react'
 import { api } from '../api/client'
+import { ProposalWriter } from '../components/ProposalWriter'
 import type { ChangeType, DocumentAnalysis, DocumentDetail, DocumentDetection, MonitoringRun, OpportunityDimensionType, OpportunityPriority, ProposalPreparationItem, SimilarNoticeResult } from '../api/types'
 import { Badge, EmptyState, InlineError, Loading, Pagination } from '../components/ui'
+
+import { isApplicationExpired, normalizeLegalNarrative } from '../utils/noticePresentation'
 
 const opportunityLabels: Record<OpportunityDimensionType, string> = {
   COMPANY_FIT: '회사 적합도',
@@ -81,7 +84,7 @@ function getChangeImpact(detail: DocumentDetail, value: NonNullable<DocumentDeta
 }
 
 function proposalHeading() {
-  return '회사 관점에서 정리했어요'
+  return '우리 회사가 주목할 공고 포인트'
 }
 
 const strategyDecision = {
@@ -113,7 +116,6 @@ const requirementStageLabel = {
   REPORTING: '결과보고',
 } as const
 
-const expiredDeadlinePattern = /(?:마감\s*(?:지남|경과)|접수(?:기한|기간|마감)[^.]{0,40}(?:지났|경과|종료|불가능))/u
 const formReferencePattern = /\s*[（(]\s*((?:양식|서식)\s*\d+)\s*[)）]\s*/gu
 const readableSentence = (value: string) => value.replace(/\s+·\s+/gu, ', ')
 const genericAppliesTo = new Set(['신청기관', '모든 신청기관', '전체 신청기관', '해당 기관', '참여기관'])
@@ -122,11 +124,6 @@ const formatEvidenceSource = (parts: Array<string | null | undefined>) => {
   if (values.length === 0) return null
   if (values.length === 1) return `출처는 ${values[0]}입니다.`
   return `출처는 ${values.slice(0, -1).join(', ')}이며 위치는 ${values.at(-1)}입니다.`
-}
-
-function isExpiredApplication(detail: DocumentDetail) {
-  const urgencyReason = detail.analysis?.opportunity?.dimensions.find(({ type }) => type === 'URGENCY')?.reason ?? ''
-  return expiredDeadlinePattern.test(`${urgencyReason} ${detail.analysis?.summary ?? ''}`)
 }
 
 function PreparationChecklist({
@@ -200,9 +197,17 @@ const formatProposalDraftBody = (body: string) =>
   )
   .replace(/\.\s*\./gu, '.')
 export default function DocumentsPage() {
+  const [searchParams] = useSearchParams()
+  const linkedRunId = Number(searchParams.get('runId'))
+  const [savedOnly, setSavedOnly] = useState(false)
+  const [bookmarkIds, setBookmarkIds] = useState<number[]>([])
+  const [bookmarkReady, setBookmarkReady] = useState(false)
+  const [savingIds, setSavingIds] = useState<number[]>([])
+  const savingRef = useRef(new Set<number>())
+  const loadSequence = useRef(0)
   const [documents, setDocuments] = useState<DocumentDetection[]>([])
   const [runs, setRuns] = useState<MonitoringRun[]>([])
-  const [selectedRunId, setSelectedRunId] = useState<number | 'ALL' | null>(null)
+  const [selectedRunId, setSelectedRunId] = useState<number | 'ALL' | null>(() => Number.isSafeInteger(linkedRunId) && linkedRunId > 0 ? linkedRunId : null)
   const [page, setPage] = useState(0)
   const [pages, setPages] = useState(0)
   const [total, setTotal] = useState(0)
@@ -217,6 +222,8 @@ export default function DocumentsPage() {
   const [appliedTo, setAppliedTo] = useState('')
   const [showDateFilter, setShowDateFilter] = useState(false)
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [selectedVersionId, setSelectedVersionId] = useState<number | null>(null)
+  const [bookmarkError, setBookmarkError] = useState('')
 
   const loadRuns = useCallback(async () => {
     try {
@@ -225,12 +232,13 @@ export default function DocumentsPage() {
       setSelectedRunId((current) => current ?? data.content[0]?.runId ?? 'ALL')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '모니터링 실행 이력을 불러오지 못했습니다.')
-      setSelectedRunId('ALL')
+      setSelectedRunId((current) => current ?? 'ALL')
     }
   }, [])
 
   const load = useCallback(async () => {
     if (selectedRunId === null) return
+    const sequence = ++loadSequence.current
     setLoading(true)
     setError('')
     try {
@@ -239,18 +247,23 @@ export default function DocumentsPage() {
         20,
         appliedFrom || undefined,
         appliedTo || undefined,
-        selectedRunId === 'ALL' ? undefined : selectedRunId,
+        savedOnly || selectedRunId === 'ALL' ? undefined : selectedRunId,
         orderByOpportunityScore ? 'OPPORTUNITY_SCORE' : 'LATEST',
+        savedOnly,
       )
+      if (sequence !== loadSequence.current) return
       setDocuments(data.content)
       setPages(data.totalPages)
       setTotal(data.totalElements)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '감지 문서를 불러오지 못했습니다.')
+      if (sequence === loadSequence.current) setError(cause instanceof Error ? cause.message : '감지 문서를 불러오지 못했습니다.')
     } finally {
-      setLoading(false)
+      if (sequence === loadSequence.current) setLoading(false)
     }
-  }, [page, appliedFrom, appliedTo, selectedRunId, orderByOpportunityScore])
+  }, [page, appliedFrom, appliedTo, selectedRunId, orderByOpportunityScore, savedOnly])
+
+  const currentLoad = useRef(load)
+  useEffect(() => { currentLoad.current = load }, [load])
 
   useEffect(() => {
     void loadRuns()
@@ -259,6 +272,39 @@ export default function DocumentsPage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    let active = true
+    api.getBookmarkIds().then((ids) => {
+      if (active) { setBookmarkIds(ids); setBookmarkReady(true) }
+    }).catch((cause) => {
+      if (active) setError(cause instanceof Error ? cause.message : '저장한 게시글을 불러오지 못했습니다.')
+    })
+    return () => { active = false }
+  }, [])
+
+  const toggleBookmark = async (versionId: number) => {
+    if (!bookmarkReady || savingRef.current.has(versionId)) return
+    setBookmarkError('')
+    const saved = !bookmarkIds.includes(versionId)
+    savingRef.current.add(versionId)
+    setSavingIds([...savingRef.current])
+    try {
+      await api.setBookmark(versionId, saved)
+      setBookmarkIds((ids) => saved ? [...new Set([...ids, versionId])] : ids.filter((id) => id !== versionId))
+      if (savedOnly && !saved) {
+        if (documents.length === 1 && page > 0) setPage(page - 1)
+        else await currentLoad.current()
+      }
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : '게시글 저장 상태를 변경하지 못했습니다.'
+      setError(message)
+      setBookmarkError(message)
+    } finally {
+      savingRef.current.delete(versionId)
+      setSavingIds([...savingRef.current])
+    }
+  }
 
   const filtered = useMemo(
     () =>
@@ -306,7 +352,7 @@ export default function DocumentsPage() {
           <p>새로 올라오거나 달라진 공고를 확인하고, 우리 회사에 필요한 내용을 살펴보세요.</p>
         </div>
         <div className="header-stat">
-          <small>확인된 문서</small>
+          <small>{savedOnly ? '저장한 게시글' : '확인된 문서'}</small>
           <strong>{total.toLocaleString()}<em>건</em></strong>
         </div>
       </header>
@@ -316,15 +362,15 @@ export default function DocumentsPage() {
       <section className="panel documents-panel">
         <div className="run-filter-bar">
           <div className="run-filter-bar__copy">
-            <span>표시할 실행</span>
-            <strong>{selectedRunId === 'ALL' ? '전체 실행 결과' : '최근 실행 결과'}</strong>
+            <span>{savedOnly ? '내 북마크' : '표시할 실행'}</span>
+            <strong>{savedOnly ? '저장한 게시글' : selectedRunId === 'ALL' ? '전체 실행 결과' : '최근 실행 결과'}</strong>
             <small>
-              {selectedRun
+              {savedOnly ? '저장한 모든 버전을 보여드려요. 변경 없이 다시 수집된 글은 한 번만 표시됩니다.' : selectedRun
                 ? `${formatDateTime(selectedRun.requestedAt)} · ${selectedRun.totalSourceCount}개 소스 · ${selectedRun.detectedDocumentCount}건`
                 : '모든 실행에서 감지한 게시글을 함께 보여드려요.'}
             </small>
           </div>
-          <label className="run-select">
+          {!savedOnly && <label className="run-select">
             <select
               value={selectedRunId ?? ''}
               onChange={(event) => {
@@ -334,6 +380,9 @@ export default function DocumentsPage() {
               disabled={selectedRunId === null}
             >
               <option value="ALL">전체 실행 결과</option>
+              {typeof selectedRunId === 'number' && selectedRunId !== runs[0]?.runId && (
+                <option value={selectedRunId}>선택한 실행 #{selectedRunId}</option>
+              )}
               {runs[0] && (
                 <option value={runs[0].runId}>
                   최근 실행 결과 · {formatDateTime(runs[0].requestedAt)} · {runs[0].detectedDocumentCount}건
@@ -341,10 +390,15 @@ export default function DocumentsPage() {
               )}
             </select>
             <ChevronDown size={15} />
-          </label>
+          </label>}
         </div>
         <div className="panel-header document-filter-header">
           <div className="document-filter-header__filters">
+            <button className={`saved-filter${savedOnly ? ' active' : ''}`} aria-pressed={savedOnly}
+              onClick={() => { setSavedOnly(!savedOnly); setPage(0); setQuery(''); setPriorityFilter('ALL'); resetDateRange() }}>
+              <Bookmark size={15} fill={savedOnly ? 'currentColor' : 'none'} />저장한 게시글
+              {bookmarkReady && <span>{bookmarkIds.length}</span>}
+            </button>
             <div className="filter-tabs">
               {(['ALL', 'HIGH', 'NORMAL', 'LOW'] as const).map((value) => (
                 <button
@@ -417,13 +471,14 @@ export default function DocumentsPage() {
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={<FileSearch2 />}
-            title="조건에 맞는 게시글이 없어요"
-            description="검색어, 대응 우선순위 또는 확인 일시를 바꿔 다시 확인해 보세요."
+            title={savedOnly && bookmarkIds.length === 0 ? "아직 저장한 게시글이 없어요" : "조건에 맞는 게시글이 없어요"}
+            description={savedOnly && bookmarkIds.length === 0 ? "목록 오른쪽 북마크를 눌러 다시 보고 싶은 게시글을 저장하세요." : "검색어, 대응 우선순위 또는 확인 일시를 바꿔 다시 확인해 보세요."}
           />
         ) : (
           <div className="document-list">
             {filtered.map((item) => (
-              <button className="document-row" key={item.detectionId} onClick={() => setSelectedId(item.detectionId)}>
+              <div className="document-row-shell" key={item.detectionId}>
+              <button className="document-row" onClick={() => { setSelectedId(item.detectionId); setSelectedVersionId(item.versionId); setBookmarkError('') }}>
                 <div className="document-row__org">
                   <span className="source-logo">{item.organizationName.slice(0, 1)}</span>
                   <span><strong>{item.organizationName}</strong><small>{item.boardName}</small></span>
@@ -449,18 +504,36 @@ export default function DocumentsPage() {
                 </div>
                 <time>{formatDateTime(item.lastCheckedAt)}</time>
               </button>
+              <button className={`bookmark-button${bookmarkIds.includes(item.versionId) ? ' active' : ''}`}
+                disabled={!bookmarkReady || savingIds.includes(item.versionId)}
+                aria-pressed={bookmarkIds.includes(item.versionId)}
+                aria-label={`${item.title} ${bookmarkIds.includes(item.versionId) ? '저장 해제' : '저장'}`}
+                title={bookmarkIds.includes(item.versionId) ? '저장 해제' : '게시글 저장'}
+                onClick={() => void toggleBookmark(item.versionId)}>
+                <Bookmark size={18} strokeWidth={1.7} fill={bookmarkIds.includes(item.versionId) ? 'currentColor' : 'none'} />
+              </button>
+              </div>
             ))}
           </div>
         )}
         <Pagination page={page} totalPages={pages} onChange={setPage} />
       </section>
 
-      {selectedId && <DocumentDrawer detectionId={selectedId} onClose={() => setSelectedId(null)} />}
+      {selectedId && selectedVersionId && <DocumentDrawer detectionId={selectedId} onClose={() => setSelectedId(null)}
+        bookmarked={bookmarkIds.includes(selectedVersionId)} bookmarkPending={!bookmarkReady || savingIds.includes(selectedVersionId)}
+        bookmarkError={bookmarkError} onToggleBookmark={() => void toggleBookmark(selectedVersionId)} />}
     </div>
   )
 }
 
-function DocumentDrawer({ detectionId, onClose }: { detectionId: number; onClose: () => void }) {
+function DocumentDrawer({ detectionId, onClose, bookmarked, bookmarkPending, bookmarkError, onToggleBookmark }: {
+  detectionId: number
+  onClose: () => void
+  bookmarked: boolean
+  bookmarkPending: boolean
+  bookmarkError: string
+  onToggleBookmark: () => void
+}) {
   const [detail, setDetail] = useState<DocumentDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -468,20 +541,31 @@ function DocumentDrawer({ detectionId, onClose }: { detectionId: number; onClose
   const [similarLoading, setSimilarLoading] = useState(true)
 
   useEffect(() => {
+    let active = true
     setLoading(true)
+    setError('')
+    setDetail(null)
+    setSimilarNotices(null)
     api.getDocument(detectionId)
-      .then(setDetail)
-      .catch((cause) => setError(cause instanceof Error ? cause.message : '상세 내용을 불러오지 못했습니다.'))
-      .finally(() => setLoading(false))
+      .then((value) => { if (active) setDetail(value) })
+      .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : '상세 내용을 불러오지 못했습니다.') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
   }, [detectionId])
 
   useEffect(() => {
-    if (!detail?.analysis) return
+    let active = true
+    setSimilarNotices(null)
+    if (!detail?.analysis) {
+      setSimilarLoading(false)
+      return
+    }
     setSimilarLoading(true)
     api.getSimilarNotices(detectionId)
-      .then(setSimilarNotices)
-      .catch(() => setSimilarNotices(null))
-      .finally(() => setSimilarLoading(false))
+      .then((value) => { if (active) setSimilarNotices(value) })
+      .catch(() => { if (active) setSimilarNotices(null) })
+      .finally(() => { if (active) setSimilarLoading(false) })
+    return () => { active = false }
   }, [detectionId, Boolean(detail?.analysis)])
 
   useEffect(() => {
@@ -497,8 +581,17 @@ function DocumentDrawer({ detectionId, onClose }: { detectionId: number; onClose
       <aside className="drawer drawer--detail">
         <div className="drawer__top">
           <button className="button button--subtle" onClick={onClose}><ArrowLeft size={17} />목록으로</button>
-          {detail && <a className="button button--secondary" href={detail.originalUrl} target="_blank" rel="noreferrer">원문 보기<ExternalLink size={16} /></a>}
+          <div className="drawer__actions">
+            <button className={`button detail-bookmark${bookmarked ? ' active' : ''}`} disabled={bookmarkPending}
+              aria-pressed={bookmarked} aria-label={bookmarked ? '게시글 저장 해제' : '게시글 저장'}
+              onClick={onToggleBookmark}>
+              <Bookmark size={17} fill={bookmarked ? 'currentColor' : 'none'} />
+              {bookmarkPending ? '확인 중' : bookmarked ? '저장됨' : '저장'}
+            </button>
+            {detail && <a className="button button--secondary" href={detail.originalUrl} target="_blank" rel="noreferrer">원문 보기<ExternalLink size={16} /></a>}
+          </div>
         </div>
+        {bookmarkError && <InlineError message={bookmarkError} />}
         {loading ? <Loading label="문서 내용을 정리하고 있어요" /> : error ? <InlineError message={error} /> : detail && <DocumentContent detail={detail} similarNotices={similarNotices} similarLoading={similarLoading} />}
       </aside>
     </div>
@@ -567,14 +660,20 @@ function OpportunityScore({ opportunity }: { opportunity: NonNullable<DocumentAn
 function DocumentContent({ detail, similarNotices, similarLoading }: { detail: DocumentDetail; similarNotices: SimilarNoticeResult | null; similarLoading: boolean }) {
   const [activeDetailTab, setActiveDetailTab] = useState<'ANALYSIS' | 'PROPOSAL' | 'SIMILAR'>('ANALYSIS')
   const analysis = detail.analysis
-  const applicationExpired = isExpiredApplication(detail)
+  const applicationExpired = isApplicationExpired(detail.analysis)
   const eligible = analysis
     ? applicationExpired ? ['지원 불가능', 'danger'] as const : eligibility[analysis.eligibility]
     : null
   const changeImpact = analysis ? getChangeImpact(detail, analysis.favorableOrNot) : null
-  const proposalSections = analysis?.proposal.sections ?? []
+  const proposalSections = (analysis?.proposal.sections ?? [])
+    .filter((section) => !['공고 해석', '현재 정보로 확인되지 않은 부분'].includes(section.title))
+  const insightTitles = ['우리 회사와 연결되는 부분', '이 공고에서 중요하게 볼 점']
+  const hasNoticeInsights = proposalSections.length === 2
+    && proposalSections.every((section, index) => section.title === insightTitles[index])
   const proposalDraft = analysis?.proposal
   const showProposalTab = Boolean(proposalDraft)
+  const showProposalWriter = proposalDraft?.draftStatus === 'READY'
+    && Boolean(proposalDraft.preparation || proposalDraft.draftSections.length > 0)
   const proposalSummary = proposalDraft?.draftSections.find((section) => isProposalSummary(section.title))
   const proposalWritingSections = proposalDraft?.draftSections.filter((section) => !isProposalSummary(section.title)) ?? []
   const proposalUnavailableReason = analysis && proposalDraft
@@ -583,11 +682,11 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
   const applicationDocuments = proposalDraft?.preparation?.submissionDocuments.filter((item) => !item.stage || item.stage === 'APPLICATION') ?? []
   const laterDocuments = proposalDraft?.preparation?.submissionDocuments.filter((item) => item.stage && item.stage !== 'APPLICATION') ?? []
   const preparation = proposalDraft?.preparation
+  const highlights = selectPreparationHighlights(preparation)
   const proposalSectionsOverview = preparation ? [
     { id: 'proposal-agenda', label: '회의 안건', count: preparation.meetingAgenda.length, suffix: '건' },
     { id: 'proposal-eligibility', label: '확인할 지원 조건', count: preparation.eligibilityChecklist.length, suffix: '건' },
     { id: 'proposal-documents', label: '준비할 제출 서류', count: preparation.submissionDocuments.length, suffix: '건' },
-    { id: 'proposal-company', label: '회사 확인 정보', count: preparation.companyInputs.length, suffix: '건' },
   ] : []
 
   useEffect(() => {
@@ -611,7 +710,7 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
         <nav className="detail-tabs" aria-label="문서 상세 보기">
           <button className={activeDetailTab === 'ANALYSIS' ? 'active' : ''} onClick={() => setActiveDetailTab('ANALYSIS')}>공고 분석</button>
           {showProposalTab && <button className={activeDetailTab === 'PROPOSAL' ? 'active' : ''} onClick={() => setActiveDetailTab('PROPOSAL')}>사업 제안</button>}
-          <button className={activeDetailTab === 'SIMILAR' ? 'active' : ''} onClick={() => setActiveDetailTab('SIMILAR')}>유사 공고 비교{!similarLoading && ` ${similarNotices?.similarNotices.length ?? 0}`}</button>
+          <button className={activeDetailTab === 'SIMILAR' ? 'active' : ''} onClick={() => setActiveDetailTab('SIMILAR')}>유사 공고 비교{!similarLoading && similarNotices && ` ${similarNotices.similarNotices.length}`}</button>
         </nav>
       )}
 
@@ -645,14 +744,14 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
               <p>{changeImpact!.description}</p>
             </section>
           </div>
-          <section className="detail-section reason-box"><h3>이렇게 판단했어요</h3><p>{analysis.reason}</p></section>
-          <section className="detail-section proposal-box">
+          <section className="detail-section proposal-box notice-insights">
             <span className="proposal-box__icon"><Sparkles size={18} /></span>
             <div className="proposal-box__content">
               <h3>{proposalHeading()}</h3>
+              {!hasNoticeInsights && <p className="notice-insights__legacy-note">이전에 생성된 분석 내용입니다. 새 공고 포인트는 다음 분석부터 제공됩니다.</p>}
               <div className="proposal-steps">
                 {proposalSections.map((section, index) => (
-                  <article className="proposal-step" key={`${section.title ?? 'insight'}-${index}`}>
+                  <article className="proposal-step" key={`${section.title}-${index}`}>
                     <span>{index + 1}</span>
                     <div>
                       <h4>{section.title}</h4>
@@ -693,10 +792,6 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
                       </div>
                     )}
                   </details>
-                  <details className="preparation-block preparation-block--collapsible" id="proposal-company">
-                    <summary className="preparation-block__header"><span>05</span><div><h4>회사에서 확인·준비할 정보</h4><p>공고만으로 확인할 수 없어 회사 담당자가 직접 확인하거나 작성해야 하는 항목입니다.</p></div><em>{proposalDraft.preparation.companyInputs.length}건 <ChevronDown size={16} /></em></summary>
-                    <PreparationChecklist items={proposalDraft.preparation.companyInputs} />
-                  </details>
                   <section className="preparation-block strategy-one-page" id="proposal-strategy">
                     <div className="preparation-block__header"><span>01</span><div><h4>제안 전략 한 장 <em className="ai-recommendation-label">AI 제안</em></h4><p>공고 근거와 회사 정보를 바탕으로 제안한 방향이며 담당자 확정이 필요합니다.</p></div></div>
                     {proposalDraft.preparation.strategy.decision ? (
@@ -715,28 +810,17 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
                         </div>
                         <div className="strategy-gaps">
                           <div className="strategy-gaps__header">
-                            <h6>우선 조치 항목</h6>
-                            <p>신청을 진행하기 위해 우선 처리해야 할 미확인·미완료 항목입니다.</p>
+                            <h6>먼저 확인할 핵심 항목</h6>
+                            <p>세 목록에서 신청 단계의 필수 조건과 준비 자료를 우선해 최대 4개를 모았습니다.</p>
                           </div>
-                          {proposalDraft.preparation.strategy.criticalGaps?.map((item) => (
-                            <article key={item.gap}>
-                              <strong>{readableSentence(item.gap)}</strong>
-                              <p>{readableSentence(item.nextAction)}</p>
-                              <div className="strategy-gap-meta">
-                                <span><b>담당 부서</b>{item.owner}</span>
-                                <span className="strategy-gap-deadline">
-                                  <b>내부 완료 목표일</b>
-                                  {item.targetDate ?? readableSentence(item.targetTiming)}
-                                  {item.scheduleBasis && (
-                                    <span className="strategy-gap-tooltip">
-                                      <button type="button" aria-label="내부 완료 목표일 계산 근거">
-                                        <CircleHelp size={12} aria-hidden="true" />
-                                      </button>
-                                      <span role="tooltip">{item.scheduleBasis}</span>
-                                    </span>
-                                  )}
-                                </span>
-                              </div>
+                          {highlights.map((item) => (
+                            <article key={`${item.section}-${item.title}`}>
+                              <strong>{item.title}</strong>
+                              {item.action && <p>{item.action}</p>}
+                              <a href={`#${item.section}`} onClick={() => {
+                                const section = document.getElementById(item.section)
+                                if (section instanceof HTMLDetailsElement) section.open = true
+                              }}>{item.label}에서 보기</a>
                             </article>
                           ))}
                         </div>
@@ -789,12 +873,14 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
               )}
             </section>
           ) : activeDetailTab === 'SIMILAR' ? (
-            <SimilarNoticeComparison result={similarNotices} loading={similarLoading} currentTitle={detail.title} currentOriginalUrl={detail.originalUrl} />
+            <SimilarNoticeComparison currentId={detail.detectionId} result={similarNotices} loading={similarLoading} currentTitle={detail.title} currentOriginalUrl={detail.originalUrl} />
           ) : null}
         </>
       ) : (
         <EmptyState icon={<Sparkles />} title="AI 분석을 준비하고 있어요" description="분석이 완료되면 핵심 내용과 대응 방향을 여기에서 확인할 수 있어요." />
       )}
+
+      {showProposalWriter && <ProposalWriter key={detail.detectionId} detectionId={detail.detectionId} active={activeDetailTab === 'PROPOSAL'} expired={applicationExpired} />}
 
       {activeDetailTab === 'ANALYSIS' && <section className="detail-section attachments">
         <div className="section-title-row"><h3>첨부파일</h3><Badge>{detail.attachments.length}개</Badge></div>
@@ -828,18 +914,19 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
   )
 }
 
-function SimilarNoticeComparison({ result, loading, currentTitle, currentOriginalUrl }: { result: SimilarNoticeResult | null; loading: boolean; currentTitle: string; currentOriginalUrl: string }) {
+function SimilarNoticeComparison({ currentId, result, loading, currentTitle, currentOriginalUrl }: { currentId: number; result: SimilarNoticeResult | null; loading: boolean; currentTitle: string; currentOriginalUrl: string }) {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [expandedCell, setExpandedCell] = useState<{ title: string; content: string } | null>(null)
   useEffect(() => { setSelectedIndex(0) }, [result])
 
   if (loading) return <Loading label="기존 공고와 사업 목적과 수행 내용을 비교하고 있어요" />
-  if (!result || result.similarNotices.length === 0) {
+  if (!result) return <InlineError message="비교 결과를 불러오지 못했습니다. 분석 완료 여부를 확인하고 문서를 다시 열어주세요." />
+  if (result.similarNotices.length === 0) {
     return (
       <section className="detail-section similar-notice-empty">
         <span><Search size={22} /></span>
-        <h3>충분히 유사한 공고가 없습니다</h3>
-        <p>제목이나 일부 일반 단어만 비슷한 공고는 비교 대상에서 제외했어요.</p>
+        <h3>현재 비교 기준을 충족하는 공고가 없습니다</h3>
+        <p>분석된 공고 중 하이브리드 검색과 최종 선택 기준을 충족하는 결과가 없습니다.</p>
       </section>
     )
   }
@@ -849,18 +936,17 @@ function SimilarNoticeComparison({ result, loading, currentTitle, currentOrigina
     overallStatus: 'REVIEW_REQUIRED' as const,
     summary: '현재 저장된 비교 결과에는 법률 위험 분석이 없어 추가 확인이 필요합니다.',
     checks: [
-      ['DUPLICATE_SUPPORT', '중복지원', '두 공고 담당기관에 동일·유사 과제의 중복 신청 가능 여부를 확인합니다.'],
-      ['COST_DOUBLE_COUNTING', '사업비·인건비 중복계상', '동일 인력·기간·비용이 두 과제에 중복 계상되는지 확인합니다.'],
-      ['RESULT_IP_REUSE', '성과물·지식재산 재사용', '기존 성과물의 소유권·사용권과 신규성 요구를 확인합니다.'],
-      ['CONFIDENTIALITY', '비밀정보·영업비밀', '기존 협약과 비공개 자료의 사용 권한을 확인합니다.'],
-      ['PROPOSAL_TEXT_REUSE', '제안서 문장·자료 재사용', '기존 제안서 문장·표·도표의 재사용 허용 범위를 확인합니다.'],
-    ].map(([type, label, action]) => ({
+      ['DUPLICATE_SUPPORT', '중복지원'],
+      ['COST_DOUBLE_COUNTING', '사업비·인건비 중복계상'],
+      ['RESULT_IP_REUSE', '성과물·지식재산 재사용'],
+      ['CONFIDENTIALITY', '비밀정보·영업비밀'],
+      ['PROPOSAL_TEXT_REUSE', '제안서 문장·자료 재사용'],
+    ].map(([type, label]) => ({
       type,
       label,
       status: 'REVIEW_REQUIRED' as const,
       finding: '원문 기반 분석 결과를 아직 확인하지 못했습니다.',
       evidence: '',
-      action,
     })),
     disclaimer: '공고 원문 기반의 사전 위험 점검이며 법률 자문이 아닙니다. 최종 신청 전 공고 담당기관과 법무·재무 담당자의 확인이 필요합니다.',
   }
@@ -876,8 +962,7 @@ function SimilarNoticeComparison({ result, loading, currentTitle, currentOrigina
   return (
     <section className="detail-section similar-notice-panel">
       <div className="similar-notice-panel__header">
-        <div><small>SIMILAR NOTICE</small><h3>유사 공고 비교</h3><p>사업 목적과 수행 내용이 모두 충분히 유사한 공고만 표시해요.</p></div>
-        <Badge tone="info">{selected.similarityScore >= 88 ? '의미 유사도 매우 높음' : '의미 유사도 높음'}</Badge>
+        <div><small>SIMILAR NOTICE</small><h3>유사 공고 비교</h3><p>공통점과 신청 조건을 비교해 보세요.</p></div>
       </div>
       {result.similarNotices.length > 1 && (
         <label className="similar-notice-select"><span>비교할 공고</span><select value={selectedIndex} onChange={(event) => setSelectedIndex(Number(event.target.value))}>{result.similarNotices.map((notice, index) => <option key={notice.detectionId} value={index}>{notice.title}</option>)}</select></label>
@@ -888,17 +973,13 @@ function SimilarNoticeComparison({ result, loading, currentTitle, currentOrigina
           <tbody>{rows.map((row) => <tr key={row.label}><th>{row.label}</th><td><ExpandableComparisonCell content={row.current} onExpand={() => setExpandedCell({ title: ['현재 공고', row.label].join(' · '), content: row.current })} /></td><td><ExpandableComparisonCell content={row.similar} onExpand={() => setExpandedCell({ title: ['유사 공고', row.label].join(' · '), content: row.similar })} /></td></tr>)}</tbody>
         </table>
       </div>
-      <div className="similar-notice-insights">
-        <article className="similar-insight similar-insight--reason"><span><GitCompareArrows size={18} /></span><div><strong>유사한 이유</strong><p>{similarityReason(selected.commonPoints)}</p></div></article>
-        <article className="similar-insight similar-insight--reuse"><span><Lightbulb size={18} /></span><div><strong>활용 포인트</strong><p>{selected.proposalReuse}</p></div></article>
-      </div>
+
       <section className="legal-review">
-        <header><span><ShieldCheck size={19} /></span><div><small>LEGAL RISK CHECK</small><h4>중복·재사용 위험 점검</h4></div></header>
-        <p className={`legal-review__overview${legalReview.overallStatus === 'HIGH' ? ' legal-review__overview--high' : ''}`}>{legalReview.summary}</p>
+        <LegalPairInsightPanel key={`${currentId}-${selected.detectionId}`} currentId={currentId} similarId={selected.detectionId} review={selected.legalReview} />
         <div className="legal-review__check-list">{legalReview.checks.map((check) => {
-          const findings = splitLegalComparison(check.finding)
+          const findings = splitLegalComparison(formatLegalFinding(check.finding))
           const evidence = splitLegalComparison(check.evidence)
-          return <details key={check.type}><summary><strong>{check.label}</strong><span aria-hidden="true"><ChevronDown size={15} /></span></summary><div className="legal-review__detail"><div className="legal-review__sources"><section><small>현재 공고</small><p>{findings.current}</p>{evidence.current && <blockquote><b>원문 근거</b>{evidence.current}</blockquote>}</section><section><small>유사 공고</small><p>{findings.similar}</p>{evidence.similar && <blockquote><b>원문 근거</b>{evidence.similar}</blockquote>}</section></div><div className="legal-review__action"><strong>신청 전 확인</strong><p>{check.action}</p></div></div></details>
+          return <details key={check.type}><summary><strong>{check.label}</strong><span aria-hidden="true"><ChevronDown size={15} /></span></summary><div className="legal-review__detail"><div className="legal-review__sources"><section><small>현재 공고</small><p>{normalizeLegalNarrative(findings.current)}</p>{evidence.current && <blockquote><b>관련 원문</b><ExpandableComparisonCell content={evidence.current} onExpand={() => setExpandedCell({ title: '현재 공고 원문 근거', content: evidence.current })} /></blockquote>}</section><section><small>유사 공고</small><p>{normalizeLegalNarrative(findings.similar)}</p>{evidence.similar && <blockquote><b>관련 원문</b><ExpandableComparisonCell content={evidence.similar} onExpand={() => setExpandedCell({ title: '유사 공고 원문 근거', content: evidence.similar })} /></blockquote>}</section></div></div></details>
         })}</div>
         <p className="legal-review__disclaimer">{legalReview.disclaimer}</p>
       </section>
@@ -938,6 +1019,87 @@ function ComparisonCellDialog({ title, content, onClose }: { title: string; cont
   return <div className="comparison-dialog-backdrop" role="presentation" onMouseDown={onClose}><section className="comparison-dialog" role="dialog" aria-modal="true" aria-labelledby="comparison-dialog-title" onMouseDown={(event) => event.stopPropagation()}><header><div><small>전체 내용</small><h3 id="comparison-dialog-title">{title}</h3></div><button type="button" aria-label="닫기" onClick={onClose}><X size={20} /></button></header><div className="comparison-dialog__content">{content}</div><footer><button type="button" className="button button--primary" onClick={onClose}>확인</button></footer></section></div>
 }
 
+function LegalPairInsightPanel({ currentId, similarId, review }: { currentId: number; similarId: number; review: unknown }) {
+  const [result, setResult] = useState<Awaited<ReturnType<typeof api.compareLegalPair>> | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const active = useRef<AbortController | null>(null)
+  useEffect(() => {
+    setResult(null)
+    setLoading(false)
+    setError('')
+    return () => active.current?.abort()
+  }, [review])
+  const labels: Record<string, string> = {
+    DUPLICATE_SUPPORT: '중복지원', COST_DOUBLE_COUNTING: '사업비·인건비 중복계상',
+    RESULT_IP_REUSE: '성과물·지식재산 재사용', CONFIDENTIALITY: '비밀정보·영업비밀',
+    PROPOSAL_TEXT_REUSE: '제안서 문장·자료 재사용',
+  }
+  const unavailableMessage = '요약을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요. 아래 공고별 내용은 바로 확인할 수 있습니다.'
+  const statusMessage = loading
+    ? '공고에 적힌 조건을 비교하고 있습니다. 잠시만 기다려 주세요.'
+    : error || (result?.status === 'NEEDS_EVIDENCE'
+      ? '비교에 필요한 조항이 부족해 요약을 만들지 못했습니다. 아래 항목을 펼쳐 공고별 내용과 관련 원문을 확인해 주세요.'
+      : result?.status === 'UNAVAILABLE' ? unavailableMessage : '')
+  const canCompare = !result || result.status === 'UNAVAILABLE'
+  const retrying = Boolean(error) || result?.status === 'UNAVAILABLE'
+
+  async function compare() {
+    active.current?.abort()
+    const controller = new AbortController()
+    active.current = controller
+    setLoading(true)
+    setError('')
+    try {
+      const response = await api.compareLegalPair(currentId, similarId, controller.signal)
+      if (!controller.signal.aborted) setResult(response)
+    } catch {
+      if (!controller.signal.aborted) setError(unavailableMessage)
+    } finally {
+      if (!controller.signal.aborted) setLoading(false)
+    }
+  }
+  return <div className="legal-pair-insight">
+    <div className="legal-pair-insight__header">
+      <div className="legal-pair-insight__heading">
+        <span className="legal-pair-insight__icon" aria-hidden="true"><ShieldCheck size={19} /></span>
+        <div>
+          <h4>함께 신청할 때 주의할 점</h4>
+          <p className="legal-pair-insight__description">두 공고의 중복지원 제한, 비용 중복 청구, 제안서 재사용 조건을 비교합니다.</p>
+        </div>
+      </div>
+      {canCompare && <button type="button" className="legal-pair-insight__button" disabled={loading} onClick={compare}>
+        {loading ? <RefreshCw size={14} className="legal-pair-insight__spinner" aria-hidden="true" /> : <Sparkles size={14} aria-hidden="true" />}
+        {loading ? '요약 중…' : retrying ? '다시 시도' : '주의사항 요약'}
+      </button>}
+    </div>
+    <div role="status" aria-live="polite" aria-atomic="true">
+      {statusMessage && <p className="legal-pair-insight__status">{statusMessage}</p>}
+      {result?.status === 'COMPLETED' && <p className="legal-pair-insight__status">확인된 조항을 바탕으로 정리한 주의사항입니다. 자세한 원문은 아래 항목에서 확인할 수 있습니다.</p>}
+    </div>
+    {result?.status === 'COMPLETED' && <div className="legal-pair-insight__results">
+      {result.insights.map((item) => <article key={item.type}>
+        <h5>{labels[item.type] ?? '신청 조건'}</h5>
+        <dl>
+          <dt>공고별 조건</dt><dd>{normalizeLegalNarrative(item.comparison)}</dd>
+          <dt>주의할 점</dt><dd>{normalizeLegalNarrative(item.implication)}</dd>
+          <dt>직접 확인할 내용</dt><dd>{normalizeLegalNarrative(item.verification)}</dd>
+        </dl>
+      </article>)}
+    </div>}
+  </div>
+}
+
+function formatLegalFinding(value: string) {
+  return value
+    .replace(/\s*첨부\s*\d+개의\s*추출\s*텍스트가 없어 전체 자료 확인은 미완료입니다\./g, '')
+    .replaceAll('자동 분석에서 이 항목의 검토 결과가 반환되지 않았습니다.', '검토가 완료되지 않았습니다. 원문을 확인해 주세요.')
+    .replaceAll('자동 분석 중 오류가 발생하여 검토를 완료하지 못했습니다.', '검토 중 문제가 발생했습니다. 원문을 확인해 주세요.')
+    .replaceAll('분석 결과의 근거를 원문과 대조하지 못해 판단을 보류했습니다.', '판단의 근거를 확인하지 못했습니다. 원문 확인이 필요합니다.')
+    .replaceAll('관련 후보 문구를 찾았으나 의미를 자동 확정하지 못했습니다.', '관련 문구가 있으나, 제한 여부는 추가 확인이 필요합니다.')
+    .trim()
+}
+
 function splitLegalComparison(value: string) {
   const normalized = value.trim().replace(/[“”]/g, '')
   if (!normalized) return { current: '', similar: '' }
@@ -957,13 +1119,6 @@ function splitLegalComparison(value: string) {
     return { current: '', similar: normalized.slice(similarPrefix.length).trim() }
   }
   return { current: normalized, similar: '' }
-}
-function similarityReason(commonPoints: string) {
-  const exposesInternalProfile = /proposal|request|business|notice|공고명|핵심어는|유형[, ]/i.test(commonPoints)
-  if (!commonPoints || exposesInternalProfile) {
-    return '두 공고는 사업 목적과 수행 방식이 유사하며 같은 유형의 지원사업으로 분류됐습니다.'
-  }
-  return commonPoints
 }
 
 function getProposalUnavailableReason(detail: DocumentDetail, analysis: DocumentAnalysis) {
@@ -1000,4 +1155,24 @@ function getProposalUnavailableReason(detail: DocumentDetail, analysis: Document
   }
   blockers.push('따라서 현재 확인된 조건으로는 사업 제안 준비안을 생성할 수 없습니다.')
   return blockers.join(' ')
+}
+
+function selectPreparationHighlights(preparation: DocumentAnalysis['proposal']['preparation'] | undefined) {
+  if (!preparation) return []
+  const rank = (item: ProposalPreparationItem) =>
+    (item.stage && item.stage !== 'APPLICATION' ? 100 : 0)
+    + ({ MANDATORY: 0, CONDITIONAL: 10, RECOMMENDED: 20, OPTIONAL: 30 }[item.requirementLevel ?? 'RECOMMENDED'])
+    + (['OFFICIAL_DOCUMENT', 'USER_CONFIRMED'].includes(item.companyEvidenceLevel ?? '') ? 1 : 0)
+  const groups = [
+    { items: preparation.eligibilityChecklist, section: 'proposal-eligibility', label: '지원 조건 체크리스트' },
+    { items: preparation.submissionDocuments, section: 'proposal-documents', label: '제출 서류 체크리스트' },
+  ].map(group => [...group.items].sort((a, b) => rank(a) - rank(b)).map(item => ({
+    title: item.title, action: item.nextAction, section: group.section, label: group.label, rank: rank(item),
+  })))
+  const selected = groups.flatMap(group => group.slice(0, 1))
+  if (preparation.meetingAgenda.length) selected.push({
+    title: preparation.meetingAgenda[0], action: '', section: 'proposal-agenda', label: '회의 안건', rank: 0,
+  })
+  const remaining = groups.flatMap(group => group.slice(1)).sort((a, b) => a.rank - b.rank)
+  return [...selected, ...remaining].slice(0, 4)
 }

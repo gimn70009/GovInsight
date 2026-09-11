@@ -53,13 +53,16 @@ class LegalRiskStatus(StrEnum):
     RESTRICTION_FOUND = "RESTRICTION_FOUND"
     CAUTION = "CAUTION"
     NOT_FOUND = "NOT_FOUND"
+    DATA_INSUFFICIENT = "DATA_INSUFFICIENT"
+    ASSESSMENT_INCOMPLETE = "ASSESSMENT_INCOMPLETE"
 
 
 class LegalRiskFinding(CamelCaseModel):
     type: LegalRiskType
     status: LegalRiskStatus
     summary: str = Field(min_length=5, max_length=500)
-    evidence_excerpt: str | None = Field(default=None, max_length=300)
+    evidence_excerpt: str | None = Field(default=None, max_length=3000)
+    failure_reason: str | None = Field(default=None, max_length=40)
 
 
 class ComparisonSummary(CamelCaseModel):
@@ -311,7 +314,7 @@ class StrategyOnePage(CamelCaseModel):
     recommended_participation: str = Field(min_length=10, max_length=500)
     alternative_participation: str = Field(min_length=10, max_length=500)
     capability_matches: list[StrategyCapabilityMatch] = Field(min_length=1, max_length=4)
-    critical_gaps: list[StrategyGap] = Field(min_length=1, max_length=4)
+    critical_gaps: list[StrategyGap] = Field(default_factory=list, max_length=4)
     stop_criteria: list[StrategyStopCriterion] = Field(min_length=1, max_length=4)
 
     @field_validator(
@@ -326,10 +329,11 @@ class StrategyOnePage(CamelCaseModel):
 
 
 class ProposalPreparation(CamelCaseModel):
-    meeting_agenda: list[str] = Field(min_length=3, max_length=8)
+    meeting_agenda: list[str] = Field(default_factory=list)
     eligibility_checklist: list[PreparationChecklistItem] = Field(min_length=1, max_length=12)
-    submission_documents: list[PreparationChecklistItem] = Field(min_length=1, max_length=15)
-    company_inputs: list[PreparationChecklistItem] = Field(min_length=1, max_length=12)
+    # Preserve up to 12 document items reclassified from the eligibility checklist.
+    submission_documents: list[PreparationChecklistItem] = Field(min_length=1, max_length=27)
+    company_inputs: list[PreparationChecklistItem] = Field(default_factory=list, exclude=True)
     application_deadline: str | None = Field(default=None, max_length=10)
     strategy: StrategyOnePage
 
@@ -339,6 +343,7 @@ class ProposalPreparation(CamelCaseModel):
         return [_normalize_user_sentence(value) for value in values]
 
 class ProposalStrategy(CamelCaseModel):
+    uses_demo_profile: bool = False
     sections: list[ProposalSection] = Field(min_length=1, max_length=6)
     document_type: ProposalDocumentType = ProposalDocumentType.REVIEW_REQUIRED
     draft_status: ProposalDraftStatus = ProposalDraftStatus.NOT_APPLICABLE
@@ -349,7 +354,7 @@ class ProposalStrategy(CamelCaseModel):
     template_sections: list[str] = Field(default_factory=list, max_length=30)
     draft_sections: list[ProposalSection] = Field(default_factory=list, max_length=8)
     preparation: ProposalPreparation | None = None
-    preparation_schema_version: int = Field(default=1, ge=1, le=11)
+    preparation_schema_version: int = Field(default=1, ge=1, le=12)
 
     @field_validator("draft_reason")
     @classmethod

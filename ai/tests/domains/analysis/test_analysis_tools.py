@@ -48,6 +48,9 @@ def test_analysis_inputs_include_required_sources_without_agent_loop() -> None:
     combined = "\n".join(sections)
     assert "<current_document>" in combined
     assert "<company_profile>" in combined
+    assert "BISTelligence" in combined
+    assert "SYNTHETIC_DEMO" in combined
+    assert "DEMO-NEED-GPU" in combined
     assert "<attachments>" in combined
     assert "<previous_version_diff>" in combined
     assert used_tools == [
@@ -116,3 +119,14 @@ def test_truncate_preserves_both_start_and_end_within_same_budget() -> None:
     assert truncated.startswith("시작 조건")
     assert truncated.endswith("최종 제출기한")
     assert "중간 부분 생략" in truncated
+
+
+def test_runtime_company_context_can_explicitly_disable_demo() -> None:
+    context = AnalysisToolContext(
+        document=document(), max_text_chars=10_000, include_demo_profile=False,
+    )
+    sections, _ = _analysis_inputs(context)
+    combined = "\n".join(sections)
+    assert "BISTelligence" in combined
+    assert "SYNTHETIC_DEMO" not in combined
+    assert "DEMO-NEED-GPU" not in combined

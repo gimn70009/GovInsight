@@ -25,7 +25,7 @@ public class InternalAnalysisResultController {
 
     @Operation(
             summary = "AI 문서 분석 결과 수신",
-            description = "Python이 생성한 문서별 요약과 중요도 결과를 검증하여 Oracle에 저장합니다. 외부 사용자용 API가 아닙니다."
+            description = "Python이 생성한 문서별 분석 또는 legalResults의 법률 전용 결과를 검증해 저장합니다. 법률 전용 갱신은 기존 요약·제안·벡터를 보존합니다. 외부 사용자용 API가 아닙니다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "분석 결과 저장 성공"),

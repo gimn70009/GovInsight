@@ -87,6 +87,14 @@ class CollectionResultServiceTest {
     }
 
     @Test
+    void 수집_콜백은_게시판_실패의_안전한_경고를_같이_기록한다() {
+        service.receive(new CollectionResultRequest(10L, "3ed1132b-8d61-45d9-bfab-06c1ed96f202",
+                List.of(new SourceResult(1L, CollectionSourceStatus.FAILED, "TimeoutError secret", List.of()))));
+        assertThat(run.getWarningCount()).isEqualTo(1);
+        assertThat(runSource.getWarningDetailsJson()).contains("SOURCE_COLLECTION", "산업통상부").doesNotContain("secret");
+    }
+
+    @Test
     void 처음_수집한_문서와_버전_첨부파일_감지결과를_저장한다() {
         given(documentRepository.findByMonitoringSourceIdAndOriginalUrl(1L, "https://example.com/notice/1"))
                 .willReturn(Optional.empty());
@@ -111,6 +119,7 @@ class CollectionResultServiceTest {
             assertThat(attachment.getFileSize()).isEqualTo(1024L);
             assertThat(attachment.getFileHash()).isEqualTo("a".repeat(64));
             assertThat(attachment.getExtractedText()).isEqualTo("HWPX 추출 본문");
+            assertThat(attachment.getArchiveEntriesJson()).contains("양식.hwpx");
             assertThat(attachment.getParseStatus()).isEqualTo(AttachmentParseStatus.COMPLETED);
             return List.of(attachment);
         });
@@ -129,6 +138,7 @@ class CollectionResultServiceTest {
         assertThat(runSource.getDetectedDocumentCount()).isEqualTo(1);
         assertThat(run.getStatus()).isEqualTo(MonitoringRunStatus.COLLECTED);
         assertThat(run.getCompletedAt()).isNull();
+        assertThat(runSource.getWarningDetailsJson()).isEqualTo("[]");
     }
 
     @Test
@@ -175,6 +185,7 @@ class CollectionResultServiceTest {
         assertThat(storedAttachment.getFileSize()).isEqualTo(1024L);
         assertThat(storedAttachment.getFileHash()).isEqualTo("a".repeat(64));
         assertThat(storedAttachment.getExtractedText()).isEqualTo("HWPX 추출 본문");
+        assertThat(storedAttachment.getArchiveEntriesJson()).contains("양식.hwpx");
         verify(versionRepository, never()).save(any());
         verify(attachmentRepository, never()).saveAll(any());
         verify(detectionRepository).save(any());
@@ -195,7 +206,8 @@ class CollectionResultServiceTest {
                         "a".repeat(64),
                         "HWPX 추출 본문",
                         AttachmentParseStatus.COMPLETED,
-                        null
+                        null,
+                        "[{\"fileName\":\"양식.hwpx\",\"status\":\"COMPLETED\",\"partIndex\":0}]"
                 ))
         );
         return new CollectionResultRequest(

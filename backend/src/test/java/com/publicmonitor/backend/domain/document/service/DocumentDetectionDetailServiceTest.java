@@ -40,6 +40,32 @@ class DocumentDetectionDetailServiceTest {
     @Mock DocumentAttachmentRepository attachmentRepository;
 
     @Test
+    void 데모_사용_표시는_저장_JSON을_거쳐_유지되고_기존_결과는_미사용으로_표시한다() {
+        ObjectMapper mapper = new ObjectMapper();
+        var incoming = mapper.readValue(
+                "{\"sections\":[],\"usesDemoProfile\":true}",
+                com.publicmonitor.backend.domain.analysis.web.dto.AnalysisResultRequest.Proposal.class
+        );
+        String stored = mapper.writeValueAsString(incoming);
+        com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionDetailResponse.Proposal parsed =
+                ReflectionTestUtils.invokeMethod(service(), "parseProposal", stored);
+        assertThat(parsed.usesDemoProfile()).isTrue();
+        com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionDetailResponse.Proposal legacy =
+                ReflectionTestUtils.invokeMethod(service(), "parseProposal", "{\"sections\":[]}");
+        assertThat(legacy.usesDemoProfile()).isFalse();
+        var legacyInput = mapper.readValue(
+                "{\"sections\":[]}",
+                com.publicmonitor.backend.domain.analysis.web.dto.AnalysisResultRequest.Proposal.class
+        );
+        assertThat(legacyInput.usesDemoProfile()).isFalse();
+        var pair = mapper.readValue(
+                "{\"status\":\"COMPLETED\",\"insights\":[],\"message\":null,\"usesDemoProfile\":true}",
+                com.publicmonitor.backend.domain.document.web.dto.LegalPairResponse.class
+        );
+        assertThat(pair.usesDemoProfile()).isTrue();
+    }
+
+    @Test
     void 프론트가_바로_사용할_수_있는_구조화된_상세를_반환한다() {
         LocalDateTime now = LocalDateTime.of(2026, 8, 24, 9, 0);
         MonitoringSource source = MonitoringSource.create(
@@ -73,6 +99,7 @@ class DocumentDetectionDetailServiceTest {
                 "mock-model",
                 now
         );
+        analysis.updateComparisonSummary("{\"applicationDeadline\":\"2026-10-01 18:00\"}");
         DocumentAttachment attachment = DocumentAttachment.create(
                 version, "공고문.hwpx", "https://example.com/file/1", "hwpx",
                 "application/zip", 100L, "b".repeat(64), "추출 본문",
@@ -89,6 +116,7 @@ class DocumentDetectionDetailServiceTest {
         assertThat(response.title()).isEqualTo("AI 지원사업");
         assertThat(response.attachments()).hasSize(1);
         assertThat(response.analysis().keyPoints()).containsExactly("신청 자격 확인", "제출 기한 확인");
+        assertThat(response.analysis().applicationDeadline()).isEqualTo("2026-10-01 18:00");
         assertThat(response.analysis().eligibility()).isEqualTo(AnalysisEligibility.REVIEW_REQUIRED);
         assertThat(response.analysis().opportunity().totalScore()).isEqualTo(75);
         assertThat(response.analysis().opportunity().priority().name()).isEqualTo("HIGH");
@@ -110,6 +138,14 @@ class DocumentDetectionDetailServiceTest {
 
         assertThatThrownBy(() -> service().findById(999L))
                 .isInstanceOf(DocumentDetectionException.class);
+    }
+
+    @Test
+    void 마감일이_없는_기존_결과나_손상된_JSON도_조회한다() {
+        for (String json : new String[] {null, "", "{}", "null", "{broken", "{\"applicationDeadline\":12}"}) {
+            String deadline = ReflectionTestUtils.invokeMethod(service(), "parseApplicationDeadline", json);
+            assertThat(deadline).isNull();
+        }
     }
 
     private String opportunityJson() {

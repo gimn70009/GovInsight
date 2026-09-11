@@ -4,14 +4,21 @@ import logging
 import re
 import time
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Protocol
 
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from app.core.schemas import CamelCaseModel
 from app.domains.analysis.config import AnalysisSettings
-from app.domains.analysis.context_tools import read_company_profile
+from app.domains.analysis.context_tools import (
+    COMPANY_CONTEXT_INSTRUCTIONS,
+    NOTICE_APPLICABILITY_INSTRUCTIONS,
+    normalize_company_narrative,
+    read_company_profile,
+    uses_demo_profile,
+)
 from app.domains.analysis.preparation_scoring import score_preparation
 from app.domains.analysis.schemas.request import AnalysisDocumentRequest
 from app.domains.analysis.schemas.result import (
@@ -30,6 +37,7 @@ from app.domains.analysis.schemas.result import (
     RequirementStage,
     StrategyCapabilityMatch,
     StrategyDecision,
+    StrategyGap,
     StrategyStopCriterion,
 )
 from app.domains.analysis.tools import AnalysisToolContext
@@ -78,7 +86,7 @@ DRAFT_PROMPT = """
 다음 기준을 반드시 적용합니다.
 - 완성된 제안서 본문을 흉내 내지 말고 회의와 지원 준비에 직접 필요한 정보를 제공합니다.
 - 실제 근거로 사용한 첨부파일 이름을 sourceAttachmentNames에 기록하고,
-  meetingAgenda, eligibilityChecklist, submissionDocuments, companyInputs와
+  meetingAgenda, eligibilityChecklist, submissionDocuments와
   strategy를 모두 작성합니다.
 - 체크리스트의 충족·준비 상태는 판단하지 않습니다. 원문 요구사항, 현재 확인 가능한 사실과
   담당자가 수행할 다음 행동만 작성합니다.
@@ -103,8 +111,11 @@ DRAFT_PROMPT = """
 - eligibilityChecklist에는 신청 자격, 결격 사유와 필수 보유 상태만 기록합니다.
   접수 마감일 자체와 사업계획서, 확인서, 증명서, 확약서, 등기부등본 같은 제출 파일은 넣지 않습니다.
 - submissionDocuments에는 실제로 작성, 발급, 날인 또는 업로드할 문서만 기록합니다.
-- companyInputs에는 회사 내부에서 확정할 수치, 인력, 실적, 역할과 계획만 기록합니다.
-  외부기관이 발급하는 확인서나 제출 파일을 넣지 않습니다.
+- meetingAgenda에는 참여 방식, 투입 인력과 예산 등 회사가 결정해야 할 사항만 기록합니다.
+- 회사가 확인할 자격은 eligibilityChecklist의 detail과 nextAction에, 문서 작성에 필요한
+  수치·실적·인력 자료는 해당 submissionDocuments의 detail과 nextAction에 통합합니다.
+- 같은 확인 행동을 회의 안건에 다시 나열하지 않습니다. 자격과 그 증빙 문서는 별개로 유지합니다.
+- 회사 확인 정보를 별도 목록으로 생성하지 않습니다. 세 목록 내부에는 필수 항목부터 배치합니다.
 - 하나의 요건이나 문서를 여러 체크리스트에 반복하지 않습니다. 자격 요건과 그 증빙 문서를
   모두 보여줘야 한다면 eligibilityChecklist에는 자격 상태만,
   submissionDocuments에는 문서만 기록합니다.
@@ -116,7 +127,7 @@ DRAFT_PROMPT = """
   국내 파트너 DOMESTIC_PARTNER, 해외 파트너 INTERNATIONAL_PARTNER,
   법무·계약 LEGAL_CONTRACT, 기타 OTHER 중 하나로 분류합니다.
 - 컨소시엄처럼 회사 내부 증거가 없는 조건은 LIKELY로 추정하지 않고 NEEDS_CONFIRMATION으로 둡니다.
-- criticalGaps에도 workType을 기록합니다. 소요일, 목표일, 점수와 산식 설명은 출력하지 않습니다.
+- 소요일, 목표일, 점수와 산식 설명은 출력하지 않습니다. 핵심 요약은 코드가 세 목록에서 선택합니다.
 - nextAction은 `다음 행동`, 콜론, 가운데점 같은 접두어 없이
   주어와 서술어를 갖춘 완전한 한 문장으로 씁니다.
 - 괄호 안에 조건이나 설명을 덧붙이지 말고,
@@ -147,9 +158,7 @@ DRAFT_PROMPT = """
   않고 승인기업을 대상으로 한 별도 영업 기회라고 명확히 구분합니다.
 - capabilityMatches의 confirmedFact에는 공고 또는 회사 공개정보에서 확인된 사실만 적고,
   strategicInterpretation에는 그 사실이 참여 전략에 갖는 의미를 AI 판단으로 분리해 적습니다.
-- criticalGaps는 selectionRationale를 반복하지 않습니다. 각 항목에 부족한 정보, 바로 수행할 행동,
-  담당 부서나 역할, 공고 일정에 근거한 확인 시점을 각각 작성합니다.
-- stopCriteria는 criticalGaps의 행동을 반복하지 않고 지원을 중단할 조건과 이유만 작성합니다.
+- stopCriteria는 체크리스트의 행동을 반복하지 않고 지원을 중단할 조건과 이유만 작성합니다.
   공고가 직접 정한 필수조건은 OFFICIAL_REQUIREMENT, AI가 설정한 내부 판단 시점은
   INTERNAL_RECOMMENDATION으로 구분합니다. 임의의 2주 같은 기간은 이유 없이 만들지 않습니다.
 - 모든 문자열 필드는 여러 판단을 세미콜론으로 연결하지 말고 하나의 완전한 문장으로 작성합니다.
@@ -171,6 +180,7 @@ DRAFT_PROMPT = """
 
 
 class ProposalDraftOutput(BaseModel):
+    uses_demo_profile: bool = False
     source_attachment_names: list[str] = Field(min_length=1, max_length=10)
     preparation: ProposalPreparation
 
@@ -189,14 +199,6 @@ class ProposalChecklistModelOutput(CamelCaseModel):
     work_type: PreparationWorkType = PreparationWorkType.OTHER
 
 
-class ProposalStrategyGapModelOutput(CamelCaseModel):
-    gap: str = Field(min_length=5, max_length=300)
-    next_action: str = Field(min_length=5, max_length=300)
-    owner: str = Field(min_length=2, max_length=100)
-    target_timing: str = Field(min_length=3, max_length=150)
-    work_type: PreparationWorkType = PreparationWorkType.OTHER
-
-
 class ProposalStrategyModelOutput(CamelCaseModel):
     decision: StrategyDecision
     decision_reason: str = Field(min_length=10, max_length=500)
@@ -204,15 +206,13 @@ class ProposalStrategyModelOutput(CamelCaseModel):
     recommended_participation: str = Field(min_length=10, max_length=500)
     alternative_participation: str = Field(min_length=10, max_length=500)
     capability_matches: list[StrategyCapabilityMatch] = Field(min_length=1, max_length=4)
-    critical_gaps: list[ProposalStrategyGapModelOutput] = Field(min_length=1, max_length=4)
     stop_criteria: list[StrategyStopCriterion] = Field(min_length=1, max_length=4)
 
 
 class ProposalPreparationModelOutput(CamelCaseModel):
-    meeting_agenda: list[str] = Field(min_length=3, max_length=8)
+    meeting_agenda: list[str] = Field(max_length=8)
     eligibility_checklist: list[ProposalChecklistModelOutput] = Field(min_length=1, max_length=12)
     submission_documents: list[ProposalChecklistModelOutput] = Field(min_length=1, max_length=15)
-    company_inputs: list[ProposalChecklistModelOutput] = Field(min_length=1, max_length=12)
     application_deadline: str | None = Field(default=None, max_length=10)
     strategy: ProposalStrategyModelOutput
 
@@ -261,7 +261,8 @@ class LangChainProposalGenerationRunner:
             min(self._settings.max_text_chars, PROPOSAL_CONTEXT_MAX_CHARS),
         )
         draft_input = (
-            f"{DRAFT_PROMPT}\n\n"
+            f"{DRAFT_PROMPT}\n{COMPANY_CONTEXT_INSTRUCTIONS}\n{NOTICE_APPLICABILITY_INSTRUCTIONS}\n\n"
+            f"분석 기준일: {datetime.now(timezone(timedelta(hours=9))).date().isoformat()}\n\n"
             f"공고 제목:\n{document.title}\n\n"
             f"공고 분석:\n{_compact_analysis_context(analysis)}\n\n"
             f"회사 프로필:\n{read_company_profile(context)}\n\n"
@@ -277,6 +278,21 @@ class LangChainProposalGenerationRunner:
         async with asyncio.timeout(self._settings.proposal_timeout_seconds):
             response = await self._draft_model.ainvoke(draft_input)
         draft, raw_response = _parse_model_response(response)
+        draft.uses_demo_profile = uses_demo_profile(context)
+        if draft.uses_demo_profile:
+            preparation = draft.preparation
+            preparation.meeting_agenda = [
+                normalize_company_narrative(item) for item in preparation.meeting_agenda
+            ]
+            for item in preparation.eligibility_checklist + preparation.submission_documents:
+                item.detail = normalize_company_narrative(item.detail)
+                item.next_action = normalize_company_narrative(item.next_action)
+            strategy = preparation.strategy
+            for field in (
+                "decision_reason", "recommended_project", "recommended_participation",
+                "alternative_participation",
+            ):
+                setattr(strategy, field, normalize_company_narrative(getattr(strategy, field)))
         usage = _token_usage(raw_response)
         logger.info(
             "사업 제안 모델 응답 완료. detection_id=%s elapsed_seconds=%.2f "
@@ -290,6 +306,7 @@ class LangChainProposalGenerationRunner:
         _retain_verified_source_references(draft, document)
         _normalize_preparation_structure(draft)
         _apply_strategy_eligibility_guardrails(draft)
+        _build_preparation_highlights(draft.preparation)
         score_preparation(draft.preparation)
         return draft
 
@@ -398,9 +415,13 @@ class TwoStageAnalysisWorkflow:
                     "template_sections": expected_titles,
                     "draft_sections": [],
                     "preparation": draft.preparation,
-                    "preparation_schema_version": 11,
+                    "uses_demo_profile": (
+                        result.proposal.uses_demo_profile or draft.uses_demo_profile
+                    ),
+                    "preparation_schema_version": 12,
                 }
             )
+            result = DocumentAnalysisResult.model_validate(result.model_dump())
             result.used_tools = list(
                 dict.fromkeys(
                     [*result.used_tools, "map_proposal_sources", "build_proposal_preparation"]
@@ -424,7 +445,7 @@ class TwoStageAnalysisWorkflow:
                     "template_sections": [],
                     "draft_sections": [],
                     "preparation": None,
-                    "preparation_schema_version": 11,
+                    "preparation_schema_version": 12,
                 }
             )
         return DocumentAnalysisResult.model_validate(result.model_dump())
@@ -823,8 +844,6 @@ def _normalize_preparation_structure(draft: ProposalDraftOutput) -> None:
     preparation = draft.preparation
     eligibility: list[PreparationChecklistItem] = []
     documents = list(preparation.submission_documents)
-    company_inputs: list[PreparationChecklistItem] = []
-
     for item in preparation.eligibility_checklist:
         if _contains_any(item.title, _SCHEDULE_ONLY_TERMS):
             continue
@@ -833,26 +852,67 @@ def _normalize_preparation_structure(draft: ProposalDraftOutput) -> None:
         else:
             eligibility.append(item)
 
+    # Legacy inputs remain readable, but are never emitted as a fourth list.
     for item in preparation.company_inputs:
         if _is_submission_document(item):
             documents.append(item)
+        elif (
+            item.source
+            and item.source.origin in {EvidenceOrigin.NOTICE_BODY, EvidenceOrigin.ATTACHMENT}
+            and item.requirement_level in {RequirementLevel.MANDATORY, RequirementLevel.CONDITIONAL}
+        ):
+            eligibility.append(item)
         else:
-            company_inputs.append(item)
-
+            source = item.source
+            evidence = (
+                f" 근거: {source.attachment_name or source.origin} "
+                f"{source.section_title} {source.location or ''} {source.excerpt}"
+                if source else ""
+            )
+            preparation.meeting_agenda.append(
+                f"{item.title}: {item.detail} {item.next_action}{evidence}"
+            )
+    preparation.company_inputs = []
     preparation.eligibility_checklist = _deduplicate_items(eligibility)
     preparation.submission_documents = _deduplicate_items(documents)
-    used = {
-        _item_identity(item)
-        for item in (
-            *preparation.eligibility_checklist,
-            *preparation.submission_documents,
+    actions = {_normalize_evidence(item.next_action) for item in (*eligibility, *documents)}
+    preparation.meeting_agenda = list(dict.fromkeys(
+        agenda for agenda in preparation.meeting_agenda
+        if _normalize_evidence(agenda) not in actions
+    ))
+
+
+def _build_preparation_highlights(preparation: ProposalPreparation) -> None:
+    """Select existing list entries without another model call or new claims."""
+    def rank(item: PreparationChecklistItem) -> tuple[int, int, int]:
+        return (
+            0 if item.stage == RequirementStage.APPLICATION else 1,
+            {RequirementLevel.MANDATORY: 0, RequirementLevel.CONDITIONAL: 1,
+             RequirementLevel.RECOMMENDED: 2, RequirementLevel.OPTIONAL: 3}[item.requirement_level],
+            1 if item.company_evidence_level in {
+                CompanyEvidenceLevel.OFFICIAL_DOCUMENT, CompanyEvidenceLevel.USER_CONFIRMED,
+            } else 0,
         )
-    }
-    preparation.company_inputs = [
-        item
-        for item in _deduplicate_items(company_inputs)
-        if _item_identity(item) not in used
-    ]
+    groups = [sorted(preparation.eligibility_checklist, key=rank),
+              sorted(preparation.submission_documents, key=rank)]
+    selected = [group[0] for group in groups if group]
+    gaps = [StrategyGap(gap=item.title, next_action=item.next_action,
+                        owner="담당자 지정 필요", target_timing="신청 일정에 맞춰 확인합니다.",
+                        work_type=item.work_type) for item in selected]
+    if preparation.meeting_agenda:
+        agenda = preparation.meeting_agenda[0]
+        gaps.append(StrategyGap(gap=agenda[:300], next_action=agenda[:300],
+                                owner="회의 참석자", target_timing="내부 회의에서 결정합니다.",
+                                work_type=PreparationWorkType.INTERNAL_CONFIRMATION))
+    remaining = [item for group in groups for item in group if item not in selected]
+    for item in sorted(remaining, key=rank):
+        if len(gaps) >= 4:
+            break
+        gaps.append(StrategyGap(gap=item.title, next_action=item.next_action,
+                                owner="담당자 지정 필요",
+                                target_timing="신청 일정에 맞춰 확인합니다.",
+                                work_type=item.work_type))
+    preparation.strategy.critical_gaps = gaps
 
 
 def _is_submission_document(item: PreparationChecklistItem) -> bool:
@@ -870,9 +930,10 @@ def _deduplicate_items(
     items: list[PreparationChecklistItem],
 ) -> list[PreparationChecklistItem]:
     deduplicated: list[PreparationChecklistItem] = []
-    seen: set[str] = set()
+    seen: set[tuple] = set()
     for item in items:
-        identity = _item_identity(item)
+        identity = (_item_identity(item), item.stage, item.applies_to,
+                    item.source.excerpt if item.source else "", item.detail, item.next_action)
         if identity in seen:
             continue
         deduplicated.append(item)
@@ -1190,6 +1251,8 @@ def _relevant_excerpt(text: str, limit: int) -> str:
 
 
 def _safe_error(exception: Exception) -> str:
+    if isinstance(exception, ValidationError):
+        return "생성된 지원 준비 정보가 결과 형식 검증을 통과하지 못했습니다."
     message = str(exception).strip()
     if "length limit was reached" in message.casefold():
         return "모델 출력 한도에 도달했습니다."

@@ -9,6 +9,7 @@ from app.domains.analysis.agent import LangChainAnalysisRunner
 from app.domains.analysis.clients import AnalysisResultClient, AnalysisResultClientError
 from app.domains.analysis.config import AnalysisConfigurationError, AnalysisSettings
 from app.domains.analysis.graph import AnalysisWorkflowError, DocumentAnalysisWorkflow
+from app.domains.analysis.notice_search_text import build_search_profile
 from app.domains.analysis.proposal_drafting import (
     LangChainProposalGenerationRunner,
     TwoStageAnalysisWorkflow,
@@ -18,12 +19,14 @@ from app.domains.analysis.proposal_drafting import (
 from app.domains.analysis.schemas.delivery import (
     AnalysisFailureResult,
     AnalysisResultRequest,
+    LegalReviewResult,
     ProposalResultRequest,
     ProposalUpdateResult,
 )
 from app.domains.analysis.schemas.request import (
     AnalysisDocumentRequest,
     AnalysisJobRequest,
+    AnalysisScope,
 )
 from app.domains.analysis.schemas.result import (
     DocumentAnalysisResult,
@@ -37,7 +40,7 @@ class AnalysisWorkflow(Protocol):
     async def analyze(
         self,
         document: AnalysisDocumentRequest,
-    ) -> DocumentAnalysisResult: ...
+    ) -> DocumentAnalysisResult | LegalReviewResult: ...
 
 
 async def run_analysis_job(job_id: UUID, request: AnalysisJobRequest) -> None:
@@ -50,8 +53,9 @@ async def run_analysis_job(job_id: UUID, request: AnalysisJobRequest) -> None:
 
     try:
         settings = AnalysisSettings.from_env()
+        analysis_runner = LangChainAnalysisRunner(settings)
         base_workflow = DocumentAnalysisWorkflow(
-            runner=LangChainAnalysisRunner(settings),
+            runner=analysis_runner,
             max_attempts=settings.max_attempts,
         )
         proposal_runner = LangChainProposalGenerationRunner(settings)
@@ -64,11 +68,13 @@ async def run_analysis_job(job_id: UUID, request: AnalysisJobRequest) -> None:
         )
         return
 
-    results, failures = await _analyze_documents(
-        base_workflow,
+    outcomes, failures = await _analyze_documents(
+        _ScopedAnalysisWorkflow(base_workflow, analysis_runner),
         request.documents,
         settings.concurrency,
     )
+    results = [item for item in outcomes if isinstance(item, DocumentAnalysisResult)]
+    legal_results = [item for item in outcomes if isinstance(item, LegalReviewResult)]
     await _attach_similarity_embeddings(results, request.documents, settings)
     documents_by_version = {document.version_id: document for document in request.documents}
     for result in results:
@@ -102,6 +108,7 @@ async def run_analysis_job(job_id: UUID, request: AnalysisJobRequest) -> None:
         job_id=job_id,
         results=results,
         failures=failures,
+        legal_results=legal_results,
     )
     try:
         result_client = AnalysisResultClient(
@@ -180,6 +187,8 @@ async def _attach_similarity_embeddings(
         if document is None:
             continue
         profile = _build_similarity_profile(document, result)
+        if not profile:
+            continue
         profiles.append(profile)
         target_results.append(result)
 
@@ -190,8 +199,10 @@ async def _attach_similarity_embeddings(
             model=settings.embedding_model_name,
             api_key=settings.api_key,
             max_retries=1,
+            request_timeout=15.0,
         )
-        vectors = await embeddings.aembed_documents(profiles)
+        async with asyncio.timeout(30.0):
+            vectors = await embeddings.aembed_documents(profiles)
     except Exception as exception:
         logger.warning(
             "유사 공고 임베딩 생성 실패. document_count=%s reason=%s",
@@ -210,13 +221,24 @@ def _build_similarity_profile(
     document: AnalysisDocumentRequest,
     result: DocumentAnalysisResult,
 ) -> str:
-    comparison = result.comparison_summary
-    return (
-        f"핵심 주제: {document.title}\n"
-        f"사업 목적: {comparison.purpose if comparison else result.summary}\n"
-        f"지원 대상: {comparison.eligibility if comparison else '확인되지 않음'}\n"
-        f"협력 구조: {comparison.required_partner if comparison else '확인되지 않음'}"
-    )[:3000]
+    return build_search_profile(
+        document.title, document.content_text, result.summary, result.comparison_summary
+    )
+
+
+class _ScopedAnalysisWorkflow:
+    def __init__(self, base, legal_runner):
+        self.base = base
+        self.legal_runner = legal_runner
+
+    async def analyze(self, document):
+        if document.analysis_scope == AnalysisScope.LEGAL_ONLY:
+            return LegalReviewResult(
+                detection_id=document.detection_id, document_id=document.document_id,
+                version_id=document.version_id,
+                legal_risks=await self.legal_runner.review_legal_only(document),
+            )
+        return await self.base.analyze(document)
 
 
 class _CompletedBaseWorkflow:
@@ -250,7 +272,7 @@ async def _generate_and_deliver_proposals(
         )
         async with semaphore:
             completed = await workflow.analyze(document)
-        if completed.proposal.preparation_schema_version != 11:
+        if completed.proposal.preparation_schema_version != 12:
             return None
         return ProposalUpdateResult(
             detection_id=document.detection_id,
@@ -282,12 +304,12 @@ async def _analyze_documents(
     workflow: AnalysisWorkflow,
     documents: list[AnalysisDocumentRequest],
     concurrency: int,
-) -> tuple[list[DocumentAnalysisResult], list[AnalysisFailureResult]]:
+) -> tuple[list[DocumentAnalysisResult | LegalReviewResult], list[AnalysisFailureResult]]:
     semaphore = asyncio.Semaphore(concurrency)
 
     async def analyze_one(
         document: AnalysisDocumentRequest,
-    ) -> tuple[DocumentAnalysisResult | None, AnalysisFailureResult | None]:
+    ) -> tuple[DocumentAnalysisResult | LegalReviewResult | None, AnalysisFailureResult | None]:
         async with semaphore:
             try:
                 return await workflow.analyze(document), None

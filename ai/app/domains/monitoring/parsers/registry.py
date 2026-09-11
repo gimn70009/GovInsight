@@ -1,6 +1,7 @@
 from app.core.config import ZIP_MAX_ENTRY_COUNT, ZIP_MAX_UNCOMPRESSED_SIZE_BYTES
 from app.domains.monitoring.file_names import attachment_file_extension
 from app.domains.monitoring.parsers.base import AttachmentTextParser
+from app.domains.monitoring.parsers.detected_parser import DetectedDocumentParser
 from app.domains.monitoring.parsers.hwp_parser import HwpParser
 from app.domains.monitoring.parsers.hwpx_parser import HwpxParser
 from app.domains.monitoring.parsers.pdf_parser import PdfParser
@@ -15,7 +16,8 @@ class AttachmentParserRegistry:
             ".pdf": PdfParser(),
         }
         self._parsers = {
-            **document_parsers,
+            **{extension: DetectedDocumentParser(extension, document_parsers)
+               for extension in document_parsers},
             ".zip": ZipParser(
                 document_parsers,
                 max_entry_count=ZIP_MAX_ENTRY_COUNT,

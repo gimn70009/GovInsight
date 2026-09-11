@@ -81,6 +81,18 @@ public class MonitoringReport extends BaseEntity {
     @Column(name = "telegram_error_message", length = 2000)
     private String telegramErrorMessage;
 
+    @Column(name = "telegram_chat_id", length = 100)
+    private String telegramChatId;
+
+    @Column(name = "telegram_recipient_name", length = 100)
+    private String telegramRecipientName;
+
+    @Column(name = "telegram_attempted_at")
+    private LocalDateTime telegramAttemptedAt;
+
+    @Column(name = "telegram_attempt_count", nullable = false, columnDefinition = "NUMBER(10) DEFAULT 0")
+    private int telegramAttemptCount;
+
     private MonitoringReport(MonitoringRun monitoringRun) {
         this.monitoringRun = monitoringRun;
     }
@@ -111,6 +123,13 @@ public class MonitoringReport extends BaseEntity {
 
     public boolean isTelegramSent() {
         return telegramSentAt != null;
+    }
+
+    public void beginTelegramDelivery(String chatId, String recipientName, LocalDateTime attemptedAt) {
+        this.telegramChatId = chatId;
+        this.telegramRecipientName = recipientName;
+        this.telegramAttemptedAt = attemptedAt;
+        this.telegramAttemptCount++;
     }
 
     public void completeTelegramDelivery(Long messageId, LocalDateTime sentAt) {

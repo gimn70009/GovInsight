@@ -18,6 +18,7 @@ class CollectedAttachment(BaseModel):
     file_size: int | None = Field(default=None, ge=0)
     file_hash: str | None = Field(default=None, min_length=64, max_length=64)
     extracted_text: str | None = None
+    archive_entries_json: str | None = Field(default=None, max_length=100_000)
     parse_status: AttachmentParseStatus = AttachmentParseStatus.PENDING
     error_message: str | None = Field(default=None, max_length=2000)
 
