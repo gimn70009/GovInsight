@@ -30,19 +30,19 @@ if (!(Test-Path src/main/resources/application.properties)) {
 
 ## 실행
 
-새로 만든 **빈 개발용 Oracle 스키마**에서는 예시의 `update` 설정으로 테이블을 준비할 수 있습니다.
+개발 DB를 처음부터 다시 준비할 때는 `create`로 현재 엔티티 기준의 테이블과 시퀀스를 생성합니다. 기존 데이터는 초기화되며 별도 SQL 파일은 필요하지 않습니다.
 
 ```powershell
-.\gradlew.bat bootRun --args="--spring.jpa.hibernate.ddl-auto=update"
+.\gradlew.bat bootRun --args="--spring.jpa.hibernate.ddl-auto=create"
 ```
 
-기존 데이터가 있는 DB는 필요한 마이그레이션 적용 후 자동 DDL을 끄고 실행합니다. 두 명령 중 DB 상태에 맞는 하나를 사용합니다.
+스키마를 생성한 뒤 데이터를 유지하며 다시 실행할 때는 자동 DDL을 끕니다. 초기화 여부에 맞는 명령 하나를 사용합니다.
 
 ```powershell
 .\gradlew.bat bootRun --args="--spring.jpa.hibernate.ddl-auto=none"
 ```
 
-기존 DB에 `create`·`create-drop`을 사용하면 데이터가 삭제될 수 있습니다. 기존 Oracle 열은 `validate`에서 타입 불일치가 날 수 있어 명시적 SQL 적용 후 `none`을 사용합니다.
+`none`은 테이블을 생성하거나 변경하지 않으므로 현재 엔티티에 맞는 스키마가 준비되어 있어야 합니다.
 
 ## 수정 공고의 비교 입력
 
@@ -67,21 +67,6 @@ if (!(Test-Path src/main/resources/application.properties)) {
 ```powershell
 .\gradlew.bat test
 ```
-
-<details>
-<summary>기존 DB에서 기능을 추가할 때</summary>
-
-현재 스키마를 확인하고 아직 적용하지 않은 SQL만 순서대로 적용합니다. 데이터 이관을 포함한 SQL은 Hibernate `update`만으로 대체할 수 없습니다.
-
-| 기능 | 마이그레이션 |
-| --- | --- |
-| 북마크 | [기본 테이블](../docs/migrations/20260907_document_bookmarks.sql) → [버전 연결](../docs/migrations/20260907_bookmark_versions.sql) |
-| 초안 저장·재작성 | [초안 저장](../docs/migrations/20260909_saved_proposal_drafts.sql) → [재작성·복원](../docs/migrations/20260910_proposal_regeneration.sql) |
-| Telegram | [발송 관리](../docs/migrations/20260909_telegram_management.sql) → [다중 수신자](../docs/migrations/20260909_telegram_multi_recipient.sql) |
-| ZIP 내부 파일 목록 | [메타데이터 열](../docs/migrations/20260909_zip_entry_metadata.sql) |
-| 실행 경고 도움말 | [경고 상세 열](../docs/migrations/20260910_monitoring_warning_details.sql) |
-
-</details>
 
 <details>
 <summary>선택 기능: Telegram 설정</summary>
