@@ -3,6 +3,8 @@ from fastapi import APIRouter, BackgroundTasks, status
 from app.domains.analysis.legal_pair import LegalPairRequest, LegalPairResponse, pair_reviewer
 from app.domains.analysis.proposal_writer import (
     ProposalWriteRequest,
+    TemplateInspectRequest,
+    TemplateInspectResponse,
     ProposalWriteResponse,
     proposal_writer,
 )
@@ -38,3 +40,8 @@ async def compare_legal_pair(request: LegalPairRequest) -> LegalPairResponse:
 @router.post("/proposal-write", response_model=ProposalWriteResponse)
 async def write_proposal(request: ProposalWriteRequest) -> ProposalWriteResponse:
     return await proposal_writer.write(request)
+
+
+@router.post("/proposal-template", response_model=TemplateInspectResponse)
+async def inspect_proposal_template(request: TemplateInspectRequest) -> TemplateInspectResponse:
+    return await proposal_writer.inspect(request)

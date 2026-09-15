@@ -118,7 +118,7 @@ def test_non_template_decision_is_not_retried_into_completed():
     assert writer.ainvoke.await_count == 0
 
 
-def test_outline_repair_and_invalid_body_never_exceed_three_total_model_calls():
+def test_outline_and_body_repairs_are_bounded_to_four_total_model_calls():
     async def scenario():
         outline = AsyncMock(side_effect=[selection(999), selection(30, 32)])
         body = AsyncMock(return_value=written(ENGLISH_BODY + " We will develop and"))
@@ -139,7 +139,7 @@ def test_outline_repair_and_invalid_body_never_exceed_three_total_model_calls():
         assert result.status == "UNAVAILABLE"
         assert not writer.cache
         assert outline.await_count == 2
-        assert body.await_count == 1
+        assert body.await_count == 2
 
     asyncio.run(scenario())
 
@@ -223,3 +223,36 @@ def test_generic_korean_and_multiline_candidates_preserve_order_and_typos():
 def test_explicit_narrative_instructions_preserve_other_forms_metric_sections(title):
     text = title + "\nDescribe the business model, implementation plan and expected results."
     assert heading_candidates(text)[0]["text"] == title
+
+
+def test_outline_retry_keeps_one_body_repair_opportunity():
+    bad = written(ENGLISH_BODY + " We will develop and")
+    result, outline, writer = asyncio.run(compose(
+        [selection(999), selection(30, 32)], [bad, written()]
+    ))
+    assert result.status == "COMPLETED"
+    assert outline.ainvoke.await_count == writer.ainvoke.await_count == 2
+
+
+def test_generated_model_keeps_short_body_for_local_validation_and_repair():
+    from app.domains.analysis.proposal_writer import GeneratedProposal
+
+    bad = written()
+    bad["sections"][0]["body"] = "Our company will comply."
+    parsed = GeneratedProposal.model_validate(bad)
+    result, _, writer = asyncio.run(compose(
+        [selection(30, 32)], [parsed, GeneratedProposal.model_validate(written())]
+    ))
+    assert result.status == "COMPLETED"
+    assert writer.ainvoke.await_count == 2
+    messages = writer.ainvoke.call_args.args[0]
+    assert json.loads(messages[-2][1]) == bad
+    assert "string_too_short" in messages[-1][1]
+
+
+def test_repeated_short_bodies_are_never_published():
+    from app.domains.analysis.proposal_writer import GeneratedProposal
+
+    short = GeneratedProposal.model_validate(written("Our company will comply."))
+    with pytest.raises(ValidationError):
+        asyncio.run(compose([selection(30, 32)], [short, short]))
