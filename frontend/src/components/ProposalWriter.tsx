@@ -43,10 +43,11 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
   const resultHeading = useRef<HTMLDivElement>(null)
   const focusResult = useRef(false)
   const savedByKey = new Map(savedDrafts.map((item) => [sourceKey(item), item]))
-  const checkedSources = sources.map((source) => inspectedSource(source, inspections[sourceKey(source)]))
-  const pendingSources = sources.filter((source) => source.available && !inspections[sourceKey(source)])
+  const savedSourceKeys = JSON.stringify(savedDrafts.map(sourceKey).sort())
+  const checkedSources = sources.map((source) => inspectedSource(source, inspections[sourceKey(source)], savedByKey.has(sourceKey(source))))
+  const pendingSources = sources.filter((source) => source.available && !savedByKey.has(sourceKey(source)) && !inspections[sourceKey(source)])
   const failedSources = sources.filter((source) => source.available
-    && inspections[sourceKey(source)]?.status === 'UNAVAILABLE')
+    && !savedByKey.has(sourceKey(source)) && inspections[sourceKey(source)]?.status === 'UNAVAILABLE')
   const allSources: ProposalSource[] = [...checkedSources, ...savedDrafts
     .filter((item) => !sources.some((source) => sourceKey(source) === sourceKey(item)))
     .map((item) => ({ attachmentId: item.attachmentId, partIndex: item.partIndex,
@@ -155,9 +156,10 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
       (source, signal) => api.inspectProposalSource(detectionId, source.attachmentId, source.partIndex, signal),
       (source, result) => setInspections((previous) => ({ ...previous, [sourceKey(source)]: result })),
       controller.signal,
+      new Set<string>(JSON.parse(savedSourceKeys)),
     )
     return () => controller.abort()
-  }, [active, loaded, sources, detectionId, inspectionRetry])
+  }, [active, loaded, sources, detectionId, inspectionRetry, savedSourceKeys])
 
   function retryInspection() {
     setInspections((previous) => Object.fromEntries(
@@ -197,7 +199,8 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
   }
 
   async function submit(kind: 'GENERATE' | 'REGENERATE' | 'RESTORE') {
-    if (!current?.available || writing || pending.current) return
+    if (!current || writing || pending.current) return
+    if (kind !== 'RESTORE' && !current.available) return
     if (kind === 'GENERATE' ? Boolean(draft) : !saved) return
     if (kind === 'RESTORE' && !saved?.canRestorePrevious) return
     const key = sourceKey(current)
@@ -326,9 +329,9 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
         <div className="proposal-writer__result-heading" ref={resultHeading} tabIndex={-1}>
           <strong>{draft.sections.length}개 항목 초안</strong>
           <div className="proposal-writer__result-actions">
+            {saved?.canRestorePrevious && <button type="button" disabled={writing}
+              onClick={() => void submit('RESTORE')}>이전 초안으로 복원</button>}
             {current?.available && <>
-              {saved?.canRestorePrevious && <button type="button" disabled={writing}
-                onClick={() => void submit('RESTORE')}>이전 초안으로 복원</button>}
               <button type="button" disabled={writing} aria-expanded={rewriteOpen}
                 aria-controls="proposal-rewrite-form" onClick={() => setRewriteOpen((value) => !value)}>
                 <RefreshCw size={15} />다시 작성

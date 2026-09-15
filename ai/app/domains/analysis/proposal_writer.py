@@ -55,6 +55,8 @@ class TemplateInspectResponse(CamelCaseModel):
 class PreviousDraftSection(CamelCaseModel):
     title: str = Field(min_length=1, max_length=180)
     body: str = Field(min_length=1, max_length=2600)
+    source_quote: str = Field(min_length=2, max_length=1000)
+    selection_reason: str = Field(min_length=5, max_length=240)
 
 
 class ProposalWriteRequest(CamelCaseModel):
@@ -559,7 +561,20 @@ class ProposalWriter:
             max_tokens=8500,
         )
         logger.info("제안 모델 설정 model=%s", settings.proposal_model_name)
-        outline, _ = await self._template_outline(model, request, settings.proposal_model_name)
+        if request.generation_id:
+            if not request.previous_sections:
+                raise ValueError("재작성할 저장 초안의 항목이 없습니다.")
+            # The backend supplies these fields from the saved draft, not the browser.
+            # Verify the original evidence without asking the model to reclassify it.
+            outline = verify_outline(TemplateOutline(
+                is_writing_template=True,
+                sections=[TemplateSection(
+                    title=item.title, source_quote=item.source_quote,
+                    selection_reason=item.selection_reason,
+                ) for item in request.previous_sections],
+            ), request.template_text)
+        else:
+            outline, _ = await self._template_outline(model, request, settings.proposal_model_name)
         language = template_writing_language(request.file_name, request.template_text)
         if not outline:
             return ProposalWriteResponse(

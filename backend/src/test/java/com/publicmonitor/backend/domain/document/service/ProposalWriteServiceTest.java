@@ -172,7 +172,7 @@ class ProposalWriteServiceTest {
         verify(writer).write(input.capture());
         assertThat(input.getValue().generationId()).isEqualTo("7:2:0:" + operation);
         assertThat(input.getValue().feedback()).isEqualTo("협력 계획을 강조해 주세요.");
-        assertThat(input.getValue().previousSections()).containsExactly(new PythonProposalWriteRequest.PreviousSection("목표", "본문"));
+        assertThat(input.getValue().previousSections()).containsExactly(new PythonProposalWriteRequest.PreviousSection("목표", "본문", "원문", "이유"));
         verify(drafts, never()).reuse(any(), any(), any());
         verify(drafts).replace(7L, 1L, request, 0, operation.toString(), completed);
     }

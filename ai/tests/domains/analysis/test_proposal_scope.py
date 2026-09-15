@@ -34,10 +34,19 @@ def test_business_plan_with_notice_in_name_reaches_content_classifier_and_genera
             payload = json.loads(selector.ainvoke.call_args.args[0][1][1])
             assert payload["document_text"] == data.template_text
             assert payload["file_name"] == data.file_name
-            assert (await writer._compose(data, PROFILE, settings(), "2026-09-15")).status == "COMPLETED"
-            assert (await writer._compose(data.model_copy(update={"generation_id": "new"}),
-                                          PROFILE, settings(), "2026-09-15")).status == "COMPLETED"
-        assert selector.ainvoke.await_count == 1
+            saved = await writer._compose(data, PROFILE, settings(), "2026-09-15")
+            assert saved.status == "COMPLETED"
+            writer.template_cache.clear()
+            selector.ainvoke.return_value = {"is_writing_template": False, "sections": []}
+            assert (await writer.inspect(data)).status == "NOT_WRITABLE"
+            rewrite = type(data).model_validate(data.model_dump() | {
+                "generation_id": "new",
+                "previous_sections": [section.model_dump() for section in saved.sections],
+            })
+            regenerated = await writer._compose(rewrite, PROFILE, settings(), "2026-09-15")
+            assert regenerated.status == "COMPLETED"
+            assert [item.title for item in regenerated.sections] == [item.title for item in saved.sections]
+        assert selector.ainvoke.await_count == 2
         assert body.ainvoke.await_count == 2
     asyncio.run(scenario())
 

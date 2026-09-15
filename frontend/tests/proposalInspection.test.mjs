@@ -71,3 +71,25 @@ test('a malformed positive response becomes a retryable failure', async () => {
     (_, value) => { result = value }, new AbortController().signal)
   assert.equal(result.status, 'UNAVAILABLE')
 })
+
+
+test('saved drafts remain writable when inspection expires, rejects, or fails', () => {
+  for (const result of [undefined, writable,
+    { status: 'NOT_WRITABLE', sectionTitles: [], message: 'no fields' },
+    { status: 'UNAVAILABLE', sectionTitles: [], message: 'retry' }]) {
+    assert.equal(inspectedSource(source(1), result, true).available, true)
+  }
+  // Regeneration still requires readable source text; restore uses DB alone.
+  assert.equal(inspectedSource({ ...source(1), available: false }, undefined, true).available, false)
+})
+
+test('saved files are excluded from inspection while unsaved files are still checked', async () => {
+  const inspected = []
+  const published = []
+  await inspectSources([source(1), source(2)], async (item) => {
+    inspected.push(item.attachmentId)
+    return writable
+  }, (item) => published.push(item.attachmentId), new AbortController().signal, new Set(['1:0']))
+  assert.deepEqual(inspected, [2])
+  assert.deepEqual(published, [2])
+})
