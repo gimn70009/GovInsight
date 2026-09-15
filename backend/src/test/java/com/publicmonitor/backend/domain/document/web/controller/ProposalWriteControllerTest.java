@@ -115,6 +115,23 @@ class ProposalWriteControllerTest {
         verifyNoInteractions(writer);
     }
 
+    @Test
+    void 본문_판별_상태와_작성항목을_반환하고_잘못된_첨부는_검증한다() throws Exception {
+        for (String result : List.of("WRITABLE", "NOT_WRITABLE", "UNAVAILABLE")) {
+            when(writer.inspect(1L, new ProposalWriteRequest(2L, 0))).thenReturn(
+                    new ProposalTemplateResponse(result, "WRITABLE".equals(result) ? List.of("사업 필요성") : List.of(), ""));
+            mvc.perform(post("/api/document-detections/1/proposal-sources/inspect")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"attachmentId\":2,\"partIndex\":0}"))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value(result));
+        }
+        clearInvocations(writer);
+        mvc.perform(post("/api/document-detections/1/proposal-sources/inspect")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"attachmentId\":0,\"partIndex\":-1}"))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(writer);
+    }
+
     @AfterEach
     void clearAuthentication() { SecurityContextHolder.clearContext(); }
 

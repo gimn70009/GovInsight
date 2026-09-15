@@ -13,8 +13,6 @@ import com.publicmonitor.backend.domain.document.web.dto.ProposalWriteRequest;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -31,13 +29,6 @@ public class ProposalSourceService {
     @Transactional(readOnly = true)
     public List<ProposalSourceResponse> list(Long detectionId) {
         return sources(version(detectionId)).stream().map(Source::summary).toList();
-    }
-
-    @Transactional(readOnly = true)
-    public Map<ProposalWriteRequest, ProposalSourceResponse> excludedFromDrafting(Long detectionId) {
-        return sources(version(detectionId)).stream().filter(Source::excluded)
-                .collect(Collectors.toMap(source -> new ProposalWriteRequest(
-                        source.summary().attachmentId(), source.summary().partIndex()), Source::summary));
     }
 
     // Finish reading LOBs and close the transaction before waiting for the AI service.
@@ -115,7 +106,7 @@ public class ProposalSourceService {
                 result.add(new Source(new ProposalSourceResponse(summary.attachmentId(), index,
                         summary.fileName(), summary.attachmentName(), summary.available(), summary.reason(),
                         group.size() > 1 ? group.stream().map(ZipArchiveContent.Entry::fileName).toList() : List.of()),
-                        parsed.text(), parsed.excluded()));
+                        parsed.text()));
             }
             int unavailableIndex = raw.size();
             for (var entry : manifest) {
@@ -145,13 +136,9 @@ public class ProposalSourceService {
         } else if (text.length() > MAX_TEMPLATE_CHARS) {
             reason = "문서가 너무 길어 현재 초안 생성 범위(8만 자)를 초과합니다.";
         }
-        String exclusion = text.isBlank() ? "" : ProposalDraftScope.exclusion(text);
-        if (reason.isEmpty()) reason = exclusion;
         return new Source(new ProposalSourceResponse(file.getId(), index, name, file.getFileName(),
-                reason.isEmpty(), reason), text, !exclusion.isEmpty());
+                reason.isEmpty(), reason), text);
     }
 
-    private record Source(ProposalSourceResponse summary, String text, boolean excluded) {
-        Source(ProposalSourceResponse summary, String text) { this(summary, text, false); }
-    }
+    private record Source(ProposalSourceResponse summary, String text) {}
 }

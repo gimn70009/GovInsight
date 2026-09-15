@@ -30,8 +30,6 @@ public class ProposalWriteService {
     public ProposalWriteResponse regenerate(Long userId, Long detectionId, ProposalRegenerateRequest request) {
         String id = request.operationId().toString();
         return execute(userId, detectionId, request.source(), "REGENERATE", id, request, () -> {
-            var rejected = excluded(detectionId, request.source());
-            if (rejected != null) return rejected;
             var previous = drafts.beforeChange(userId, detectionId, request.source(), request.expectedRevision(), id);
             if (id.equals(previous.lastOperationId())) return previous.result();
             String generationId = userId + ":" + request.attachmentId() + ":" + request.partIndex() + ":" + id;
@@ -46,8 +44,7 @@ public class ProposalWriteService {
     public ProposalWriteResponse restore(Long userId, Long detectionId, ProposalRestoreRequest request) {
         String id = request.operationId().toString();
         return execute(userId, detectionId, request.source(), "RESTORE", id, request, () -> {
-            var rejected = excluded(detectionId, request.source());
-            return rejected != null ? rejected : drafts.restore(userId, detectionId, request.source(),
+            return drafts.restore(userId, detectionId, request.source(),
                     request.expectedRevision(), id);
         });
     }
@@ -91,10 +88,8 @@ public class ProposalWriteService {
         return new ProposalDraftStateResponse(drafts.list(userId, detectionId), pending);
     }
 
-    private ProposalWriteResponse excluded(Long detectionId, ProposalWriteRequest request) {
-        var source = sources.excludedFromDrafting(detectionId).get(request);
-        return source == null ? null : new ProposalWriteResponse("NEEDS_TEMPLATE", source.fileName(), false,
-                java.util.List.of(), source.reason());
+    public ProposalTemplateResponse inspect(Long detectionId, ProposalWriteRequest source) {
+        return writer.inspect(sources.prepare(detectionId, source));
     }
 
     private boolean completed(ProposalWriteResponse response) {
@@ -102,8 +97,6 @@ public class ProposalWriteService {
     }
 
     private ProposalWriteResponse generate(Long userId, Long detectionId, ProposalWriteRequest request) {
-        var rejected = excluded(detectionId, request);
-        if (rejected != null) return rejected;
         var saved = drafts.reuse(userId, detectionId, request);
         if (saved.isPresent()) return saved.get();
         var response = writer.write(sources.prepare(detectionId, request));
