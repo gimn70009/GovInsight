@@ -3,6 +3,7 @@ import type {
   TelegramSettings, TelegramSettingsPayload, TelegramConnection,
   TelegramReport, TelegramReportDetail, TelegramDeliveryStatus, TelegramRecipientDelivery,
   ProposalSource,
+  ProposalTemplateInspection,
   ProposalWrittenDraft,
   SavedProposalDraft,
   ProposalDraftState,
@@ -128,6 +129,10 @@ export const api = {
     request<LegalPairResult>(`/api/document-detections/${currentId}/similar-notices/${similarId}/legal-review`, { method: 'POST', signal }),
   getProposalSources: (detectionId: number, signal?: AbortSignal) =>
     request<ProposalSource[]>(`/api/document-detections/${detectionId}/proposal-sources`, { signal }),
+  inspectProposalSource: (detectionId: number, attachmentId: number, partIndex: number, signal?: AbortSignal) =>
+    request<ProposalTemplateInspection>(`/api/document-detections/${detectionId}/proposal-sources/inspect`, {
+      method: 'POST', body: JSON.stringify({ attachmentId, partIndex }), signal,
+    }),
   getProposalDrafts: (detectionId: number, signal?: AbortSignal) =>
     request<SavedProposalDraft[]>(`/api/document-detections/${detectionId}/proposal-drafts`, { signal }),
   getProposalDraftState: (detectionId: number, signal?: AbortSignal) =>

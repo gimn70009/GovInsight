@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, Copy, FilePenLine, RefreshCw, Sparkles, X } from 'lucide-react'
 import { api, ApiError } from '../api/client'
-import type { ProposalDraftState, ProposalSource, SavedProposalDraft } from '../api/types'
+import { inspectedSource, inspectSources } from '../utils/proposalInspection'
+import type { ProposalTemplateInspection, ProposalDraftState, ProposalSource, SavedProposalDraft } from '../api/types'
 
 const sourceKey = (source: { attachmentId: number; partIndex: number }) => `${source.attachmentId}:${source.partIndex}`
 const sourceName = (source: { attachmentName: string; fileName: string }) =>
@@ -14,6 +15,8 @@ const displayTemplateText = (text: string) =>
 
 export function ProposalWriter({ detectionId, active, expired }: { detectionId: number; active: boolean; expired: boolean }) {
   const [sources, setSources] = useState<ProposalSource[]>([])
+  const [inspections, setInspections] = useState<Record<string, ProposalTemplateInspection>>({})
+  const [inspectionRetry, setInspectionRetry] = useState(0)
   const [savedDrafts, setSavedDrafts] = useState<SavedProposalDraft[]>([])
   const [selected, setSelected] = useState('')
   const [loading, setLoading] = useState(false)
@@ -40,12 +43,18 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
   const resultHeading = useRef<HTMLDivElement>(null)
   const focusResult = useRef(false)
   const savedByKey = new Map(savedDrafts.map((item) => [sourceKey(item), item]))
-  const allSources: ProposalSource[] = [...sources, ...savedDrafts
+  const checkedSources = sources.map((source) => inspectedSource(source, inspections[sourceKey(source)]))
+  const pendingSources = sources.filter((source) => source.available && !inspections[sourceKey(source)])
+  const failedSources = sources.filter((source) => source.available
+    && inspections[sourceKey(source)]?.status === 'UNAVAILABLE')
+  const allSources: ProposalSource[] = [...checkedSources, ...savedDrafts
     .filter((item) => !sources.some((source) => sourceKey(source) === sourceKey(item)))
     .map((item) => ({ attachmentId: item.attachmentId, partIndex: item.partIndex,
       fileName: item.result.fileName, attachmentName: item.attachmentName, available: false, reason: '' }))]
   const selectableSources = allSources.filter((source) => source.available || savedByKey.has(sourceKey(source)))
-  const unavailableSources = allSources.filter((source) => !source.available && !savedByKey.has(sourceKey(source)))
+  const unavailableSources = allSources.filter((source) => !source.available && !savedByKey.has(sourceKey(source))
+    && (!sources.find((item) => sourceKey(item) === sourceKey(source))?.available
+      || inspections[sourceKey(source)]?.status === 'NOT_WRITABLE'))
   const current = allSources.find((source) => sourceKey(source) === selected)
   const saved = savedByKey.get(selected)
   const draft = saved?.result
@@ -137,6 +146,25 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
     timer = setTimeout(poll, 1500)
     return () => { clearTimeout(timer); controller.abort() }
   }, [active, detectionId, loaded, needsStatus])
+
+  useEffect(() => {
+    if (!active || !loaded) return
+    const controller = new AbortController()
+    void inspectSources(
+      sources,
+      (source, signal) => api.inspectProposalSource(detectionId, source.attachmentId, source.partIndex, signal),
+      (source, result) => setInspections((previous) => ({ ...previous, [sourceKey(source)]: result })),
+      controller.signal,
+    )
+    return () => controller.abort()
+  }, [active, loaded, sources, detectionId, inspectionRetry])
+
+  function retryInspection() {
+    setInspections((previous) => Object.fromEntries(
+      Object.entries(previous).filter(([, result]) => result.status !== 'UNAVAILABLE'),
+    ))
+    setInspectionRetry((previous) => previous + 1)
+  }
 
   function rememberSelection(source: { attachmentId: number; partIndex: number }, revision: number) {
     // Keep the last viewed draft in click order without blocking card selection.
@@ -234,6 +262,9 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
       ) : loaded && <div className="proposal-writer__picker">
         <div className="proposal-writer__picker-heading"><span>첨부 양식</span><small>{selectableSources.length}개</small></div>
         {allSources.length === 0 ? <p className="proposal-writer__empty">수집된 첨부파일이 없습니다. 첨부 양식이 있는 공고에서 작성할 수 있어요.</p> : <>
+          {pendingSources.length > 0 && <p className="proposal-writer__empty" role="status">
+            첨부 양식을 확인하고 있습니다.
+          </p>}
           <div className="proposal-writer__sources" role="group" aria-label="첨부 양식">
             {selectableSources.map((source) => {
               const key = sourceKey(source)
@@ -264,6 +295,14 @@ export function ProposalWriter({ detectionId, active, expired }: { detectionId: 
                 <li key={sourceKey(source)}><span>{source.fileName}</span>
                   <small>{source.reason || '본문을 읽지 못한 파일입니다.'}</small></li>)}</ul>
             </details>}
+          {failedSources.length > 0 && <details className="proposal-writer__unavailable-files">
+            <summary>확인하지 못한 파일 {failedSources.length}개</summary>
+            <ul>{failedSources.map((source) => <li key={sourceKey(source)}>
+              <span>{source.fileName}</span>
+              <small>양식을 확인하지 못했습니다. 다시 확인해 주세요.</small>
+            </li>)}</ul>
+            <button type="button" onClick={retryInspection}>다시 확인</button>
+          </details>}
           {current && !draft && <div className="proposal-writer__actions">
             <span>작성한 초안은 자동 저장됩니다.</span>
             <button type="button" className="proposal-writer__generate" disabled={!current.available || writing} onClick={() => void submit('GENERATE')}>

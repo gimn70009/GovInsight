@@ -48,7 +48,7 @@ class ProposalDraftPersistenceTest {
                     "다른 원문", "선택 이유", List.of(), List.of())), "안내");
 
     @Test
-    void 잘못_저장된_공고_초안은_목록에서_제외하지만_DB와_정상_초안은_보존한다() {
+    void 저장본은_파일명_판별로_숨기지_않고_계정과_버전_범위에서_보존한다() {
         store.save(first.getId(), detection.getId(), request(0), result);
         var notice = DocumentAttachment.create(version, "공고.hwpx", "https://example.org/notice", "hwpx",
                 null, 100L, null, "선정 공고\n지원 대상\n평가 기준", AttachmentParseStatus.COMPLETED, null);
@@ -56,8 +56,9 @@ class ProposalDraftPersistenceTest {
         var historical = DocumentProposalDraft.create(first, notice, 0,
                 new ObjectMapper().writeValueAsString(result), LocalDateTime.now());
         em.persist(historical); em.flush(); em.clear();
-        assertThat(store.list(first.getId(), detection.getId())).hasSize(1)
-                .allSatisfy(item -> assertThat(item.attachmentId()).isEqualTo(attachment.getId()));
+        assertThat(store.list(first.getId(), detection.getId())).hasSize(2)
+                .extracting(SavedProposalDraftResponse::attachmentId)
+                .containsExactlyInAnyOrder(attachment.getId(), notice.getId());
         assertThat(drafts.findById(historical.getId())).isPresent();
         assertThat(drafts.count()).isEqualTo(2);
     }

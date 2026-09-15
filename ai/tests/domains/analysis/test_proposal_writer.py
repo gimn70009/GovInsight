@@ -234,7 +234,7 @@ def test_non_template_does_not_call_writer_and_invalid_outline_is_not_published(
                 request("개인정보 처리 동의서\n서명"), {}, settings(), "2026-09-08"
             )
         assert result.status == "NEEDS_TEMPLATE"
-        assert model.ainvoke.await_count == 0
+        assert model.ainvoke.await_count == 1
 
     asyncio.run(scenario())
 
@@ -434,7 +434,8 @@ def test_regeneration_feedback_and_previous_body_reach_writer_without_extra_call
                 ProposalWriteRequest.model_validate(data), profile, settings(), "2026-09-10"
             )
         assert result.status == "COMPLETED"
-        assert outline_model.ainvoke.await_count == writing_model.ainvoke.await_count == 1
+        assert outline_model.ainvoke.await_count == 1
+        assert writing_model.ainvoke.await_count == 1
         messages = writing_model.ainvoke.call_args.args[0]
         payload = json.loads(messages[1][1])
         assert payload["rewrite_feedback"] == data["feedback"]
@@ -451,3 +452,30 @@ def test_regeneration_request_limits_and_optional_feedback():
                     {"previousSections": [{"title": "목표", "body": "x" * 2601}]}):
         with pytest.raises(ValidationError):
             ProposalWriteRequest.model_validate(data | invalid)
+
+
+@pytest.mark.parametrize("kind", ["deadline", "sdk", "validation", "unexpected"])
+def test_generation_failure_message_distinguishes_safe_categories(kind):
+    from openai import APITimeoutError
+    from httpx import Request
+
+    failure = {
+        "deadline": TimeoutError("private"),
+        "sdk": APITimeoutError(request=Request("POST", "https://example.invalid")),
+        "validation": ValueError("private"),
+        "unexpected": RuntimeError("private"),
+    }[kind]
+
+    async def scenario():
+        writer = ProposalWriter()
+        with patch.object(writer, "_compose", side_effect=failure):
+            result = await writer._generate("key", request(), {}, settings(), "2026-09-15")
+        assert result.status == "UNAVAILABLE"
+        assert not writer.cache
+        assert "private" not in result.message
+        if kind in {"deadline", "sdk"}:
+            assert "제한 시간" in result.message
+        elif kind == "validation":
+            assert "검증" in result.message
+
+    asyncio.run(scenario())

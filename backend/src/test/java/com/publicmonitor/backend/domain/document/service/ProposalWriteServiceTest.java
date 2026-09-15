@@ -24,18 +24,16 @@ class ProposalWriteServiceTest {
             List.of(new ProposalWriteResponse.Section("목표", "본문", "원문", "이유", List.of(), List.of())), "");
 
     @Test
-    void 비대상_문서는_기존_저장본이_있어도_재사용과_생성을_차단한다() {
-        when(sources.excludedFromDrafting(1L)).thenReturn(java.util.Map.of(request,
-                new ProposalSourceResponse(2L, 0, "선정 공고.hwpx", "선정 공고.hwpx", false, "초안 대상 아님")));
-        var response = service.write(7L, 1L, request);
-        assertThat(response.status()).isEqualTo("NEEDS_TEMPLATE");
-        assertThat(response.sections()).isEmpty();
-        assertThat(response.message()).isEqualTo("초안 대상 아님");
-        verify(drafts, never()).reuse(any(), any(), any());
-        verify(drafts, never()).save(any(), any(), any(), any());
-        verify(sources, never()).prepare(any(), any());
-        verifyNoInteractions(writer);
-        assertThat(service.state(7L, 1L).running()).isEmpty();
+    void 본문_판별은_선택한_파일만_준비하고_저장본은_변경하지_않는다() {
+        var input = new PythonProposalWriteRequest("공고", "", "사업계획서(공고).hwp", "사업 목표");
+        when(sources.prepare(1L, request)).thenReturn(input);
+        var result = new ProposalTemplateResponse("WRITABLE", List.of("사업 목표"), "");
+        when(writer.inspect(input)).thenReturn(result);
+        assertThat(service.inspect(1L, request)).isEqualTo(result);
+        var order = inOrder(sources, writer);
+        order.verify(sources).prepare(1L, request);
+        order.verify(writer).inspect(input);
+        verifyNoInteractions(drafts);
     }
 
     @BeforeEach
@@ -48,7 +46,6 @@ class ProposalWriteServiceTest {
     void 저장된_초안은_원문_준비와_모델_호출_없이_그대로_반환한다() {
         when(drafts.reuse(7L, 1L, request)).thenReturn(Optional.of(completed));
         assertThat(service.write(7L, 1L, request)).isEqualTo(completed);
-        verify(sources).excludedFromDrafting(1L);
         verify(sources, never()).prepare(any(), any());
         verifyNoInteractions(writer);
         verify(drafts, never()).save(any(), any(), any(), any());
@@ -209,17 +206,12 @@ class ProposalWriteServiceTest {
     }
 
     @Test
-    void 복원은_모델을_호출하지_않으며_비대상_문서의_재작성과_복원은_차단한다() {
+    void 복원은_모델이나_파일명_분류를_호출하지_않는다() {
         var restore = new ProposalRestoreRequest(2L, 0, 1L, operation);
         when(drafts.restore(7L, 1L, request, 1, operation.toString())).thenReturn(completed);
         assertThat(service.restore(7L, 1L, restore)).isEqualTo(completed);
-        when(sources.excludedFromDrafting(1L)).thenReturn(java.util.Map.of(request,
-                new ProposalSourceResponse(2L, 0, "공고", "공고", false, "초안 대상 아님")));
-        assertThat(service.regenerate(7L, 1L, rewrite()).status()).isEqualTo("NEEDS_TEMPLATE");
-        assertThat(service.restore(7L, 1L, restore).status()).isEqualTo("NEEDS_TEMPLATE");
-        verify(drafts, times(1)).restore(any(), any(), any(), anyLong(), any());
-        verify(drafts, never()).beforeChange(any(), any(), any(), anyLong(), any());
-        verifyNoInteractions(writer);
+        verify(drafts).restore(7L, 1L, request, 1, operation.toString());
+        verifyNoInteractions(writer, sources);
     }
 
     @Test

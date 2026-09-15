@@ -8,6 +8,7 @@ import com.publicmonitor.backend.global.security.CustomUserDetails;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import com.publicmonitor.backend.domain.document.service.ProposalWriteService;
 import com.publicmonitor.backend.domain.document.web.dto.ProposalSourceResponse;
+import com.publicmonitor.backend.domain.document.web.dto.ProposalTemplateResponse;
 import com.publicmonitor.backend.domain.document.web.dto.ProposalWriteRequest;
 import com.publicmonitor.backend.domain.document.web.dto.ProposalWriteResponse;
 import com.publicmonitor.backend.domain.document.web.dto.ProposalRegenerateRequest;
@@ -37,10 +38,18 @@ public class ProposalWriteController {
     }
 
     @Operation(summary = "제안서 작성에 사용할 첨부 및 ZIP 내부 문서 목록",
-            description = "읽기 실패 및 명확한 비작성 문서는 available=false와 사유를 반환합니다.")
+            description = "본문 읽기 가능 여부를 반환합니다. 작성 대상 여부는 별도 본문 판별 API로 확인합니다.")
     @GetMapping("/proposal-sources")
     public SuccessResponse<List<ProposalSourceResponse>> sources(@PathVariable @Min(1) Long detectionId) {
         return SuccessResponse.ok(sources.list(detectionId));
+    }
+
+    @Operation(summary = "첨부 본문에서 실제 서술형 작성란 확인",
+            description = "파일명으로 제외하지 않습니다. WRITABLE, NOT_WRITABLE, UNAVAILABLE과 확인한 항목명을 반환합니다.")
+    @PostMapping("/proposal-sources/inspect")
+    public SuccessResponse<ProposalTemplateResponse> inspect(@PathVariable @Min(1) Long detectionId,
+            @RequestBody @Valid ProposalWriteRequest request) {
+        return SuccessResponse.ok(writer.inspect(detectionId, request));
     }
 
     @Operation(summary = "선택한 양식의 핵심 항목 최대 4개 초안 생성",

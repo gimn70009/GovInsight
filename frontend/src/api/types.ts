@@ -287,6 +287,12 @@ export interface LegalPairResult {
   }>
 }
 
+export interface ProposalTemplateInspection {
+  status: 'WRITABLE' | 'NOT_WRITABLE' | 'UNAVAILABLE'
+  sectionTitles: string[]
+  message: string
+}
+
 export interface ProposalSource {
   relatedFileNames?: string[]
   attachmentId: number
