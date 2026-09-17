@@ -825,11 +825,11 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
                           ))}
                         </div>
                         <details className="strategy-supporting-details">
-                          <summary>회사 역량과 지원 중단 기준 보기 <ChevronDown size={15} /></summary>
+                          <summary>공고 주요 요건과 지원 중단 기준 보기 <ChevronDown size={15} /></summary>
                           <div className="strategy-capabilities">
-                            <h6>공고와 연결되는 회사 역량</h6>
+                            <h6>공고 주요 요건과 준비 사항</h6>
                             {proposalDraft.preparation.strategy.capabilityMatches?.map((item) => (
-                              <div key={`${item.confirmedFact}-${item.strategicInterpretation}`}><p><span>확인된 사실</span>{item.confirmedFact}</p><p><span>AI 해석</span>{item.strategicInterpretation}</p></div>
+                              <div key={`${item.confirmedFact}-${item.strategicInterpretation}`}><p><span>공고 요구사항</span>{item.confirmedFact}</p><p><span>AI 준비 제안</span>{item.strategicInterpretation}</p></div>
                             ))}
                           </div>
                           <div className="strategy-stop">
