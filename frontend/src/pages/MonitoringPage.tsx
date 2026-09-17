@@ -1,7 +1,7 @@
 import './MonitoringPage.css'
 import { RunWarningTooltip } from '../components/RunWarningTooltip'
 import { useToast } from '../hooks/useToast'
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Activity, Building2, CalendarDays, CirclePlus, Clock3, Pencil, Play, RefreshCw, Save, Search, X } from 'lucide-react'
 import { api } from '../api/client'
 import type { MonitoringRun, MonitoringSchedule, MonitoringScheduleFrequency, MonitoringSource, MonitoringSourcePayload, RunStatus, Weekday } from '../api/types'
@@ -29,11 +29,15 @@ export default function MonitoringPage() {
   const [running, setRunning] = useState(false)
   const [toast, setToast] = useToast()
   const [schedule, setSchedule] = useState<MonitoringSchedule>(defaultSchedule)
+  const [savedSchedule, setSavedSchedule] = useState<MonitoringSchedule | null>(null)
   const [savingSchedule, setSavingSchedule] = useState(false)
+  const scheduleSaveRef = useRef(false)
+  const scheduleRevision = useRef(0)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
+    const revision = scheduleRevision.current
     try {
       const [sourceData, runData, scheduleData] = await Promise.all([
         api.getSources(),
@@ -43,9 +47,10 @@ export default function MonitoringPage() {
       setSources(sourceData)
       setRuns(runData.content)
       setRunPages(runData.totalPages)
-      if (scheduleData) {
+      if (scheduleData && revision === scheduleRevision.current && !scheduleSaveRef.current) {
         setSchedule({ ...scheduleData, executionTime: scheduleData.executionTime.slice(0, 5) })
-      } else {
+        setSavedSchedule(scheduleData)
+      } else if (!scheduleData) {
         setError('자동 모니터링 설정을 불러오지 못했습니다. Backend를 최신 코드로 다시 시작해 주세요.')
       }
     } catch (cause) {
@@ -113,18 +118,26 @@ export default function MonitoringPage() {
     }))
   }
 
-  const saveSchedule = async () => {
-    if (schedule.frequency === 'CUSTOM' && schedule.customDays.length === 0) {
+  const saveSchedule = async (nextSchedule = schedule, enabledOnly = false) => {
+    if (scheduleSaveRef.current || loading || !savedSchedule) return
+    if (nextSchedule.frequency === 'CUSTOM' && nextSchedule.customDays.length === 0) {
       setError('자동 실행할 요일을 하나 이상 선택해 주세요.')
       return
     }
+    scheduleSaveRef.current = true
+    scheduleRevision.current++
     setSavingSchedule(true); setError('')
     try {
-      const updated = await api.updateMonitoringSchedule(schedule)
-      setSchedule({ ...updated, executionTime: updated.executionTime.slice(0, 5) })
-      setToast(updated.enabled ? '자동 모니터링 일정을 저장했어요.' : '자동 모니터링을 껐어요.')
+      const updated = await api.updateMonitoringSchedule(nextSchedule)
+      setSavedSchedule(updated)
+      setSchedule((current) => enabledOnly
+        ? { ...current, enabled: updated.enabled }
+        : { ...updated, executionTime: updated.executionTime.slice(0, 5) })
+      setToast(enabledOnly
+        ? updated.enabled ? '자동 모니터링을 켰어요.' : '자동 모니터링을 껐어요.'
+        : '자동 모니터링 일정을 저장했어요.')
     } catch (cause) { setError(cause instanceof Error ? cause.message : '자동 모니터링 일정을 저장하지 못했습니다.') }
-    finally { setSavingSchedule(false) }
+    finally { scheduleRevision.current++; scheduleSaveRef.current = false; setSavingSchedule(false) }
   }
 
   return (
@@ -138,12 +151,12 @@ export default function MonitoringPage() {
       </section>
 
       <section className="panel schedule-panel">
-        <div className="panel-header"><div><h2>자동 모니터링</h2><p>한국 시간 기준으로 선택한 요일과 시각에 활성 소스를 자동으로 확인하고 Telegram 보고서를 보내요.</p></div><button className={`schedule-switch ${schedule.enabled ? 'schedule-switch--on' : ''}`} onClick={() => setSchedule((current) => ({ ...current, enabled: !current.enabled }))}><span>{schedule.enabled ? '사용 중' : '사용 안 함'}</span><i /></button></div>
+        <div className="panel-header"><div><h2>자동 모니터링</h2><p>한국 시간 기준으로 선택한 요일과 시각에 활성 소스를 자동으로 확인하고 Telegram 보고서를 보내요.</p></div><button className={`schedule-switch ${schedule.enabled ? 'schedule-switch--on' : ''}`} role="switch" aria-label="자동 모니터링 사용" aria-checked={schedule.enabled} aria-busy={savingSchedule} disabled={loading || savingSchedule || !savedSchedule} onClick={() => { if (savedSchedule) void saveSchedule({ ...savedSchedule, enabled: !savedSchedule.enabled }, true) }}><span>{schedule.enabled ? '사용 중' : '사용 안 함'}</span><i /></button></div>
         <div className="schedule-panel__body">
-          <div className="schedule-field"><span><CalendarDays size={16} />실행 주기</span><div className="schedule-frequency">{([['DAILY', '매일'], ['WEEKDAYS', '평일'], ['CUSTOM', '요일 선택']] as Array<[MonitoringScheduleFrequency, string]>).map(([value, label]) => <button key={value} className={schedule.frequency === value ? 'active' : ''} onClick={() => changeFrequency(value)}>{label}</button>)}</div></div>
-          {schedule.frequency === 'CUSTOM' && <div className="schedule-field"><span>실행 요일</span><div className="weekday-picker">{weekdays.map((day) => <button key={day.value} className={schedule.customDays.includes(day.value) ? 'active' : ''} onClick={() => toggleDay(day.value)}>{day.label}</button>)}</div></div>}
-          <label className="schedule-field schedule-time"><span><Clock3 size={16} />실행 시각</span><input type="time" value={schedule.executionTime} onChange={(event) => setSchedule((current) => ({ ...current, executionTime: event.target.value }))} /></label>
-          <button className="button button--primary schedule-save" onClick={() => void saveSchedule()} disabled={savingSchedule}><Save size={16} />{savingSchedule ? '저장 중...' : '일정 저장'}</button>
+          <div className="schedule-field"><span><CalendarDays size={16} />실행 주기</span><div className="schedule-frequency">{([['DAILY', '매일'], ['WEEKDAYS', '평일'], ['CUSTOM', '요일 선택']] as Array<[MonitoringScheduleFrequency, string]>).map(([value, label]) => <button key={value} className={schedule.frequency === value ? 'active' : ''} disabled={loading || savingSchedule || !savedSchedule} onClick={() => changeFrequency(value)}>{label}</button>)}</div></div>
+          {schedule.frequency === 'CUSTOM' && <div className="schedule-field"><span>실행 요일</span><div className="weekday-picker">{weekdays.map((day) => <button key={day.value} className={schedule.customDays.includes(day.value) ? 'active' : ''} disabled={loading || savingSchedule || !savedSchedule} onClick={() => toggleDay(day.value)}>{day.label}</button>)}</div></div>}
+          <label className="schedule-field schedule-time"><span><Clock3 size={16} />실행 시각</span><input type="time" disabled={loading || savingSchedule || !savedSchedule} value={schedule.executionTime} onChange={(event) => setSchedule((current) => ({ ...current, executionTime: event.target.value }))} /></label>
+          <button className="button button--primary schedule-save" onClick={() => void saveSchedule()} disabled={loading || savingSchedule || !savedSchedule}><Save size={16} />{savingSchedule ? '저장 중...' : '일정 저장'}</button>
         </div>
       </section>
 
