@@ -11,7 +11,6 @@ from app.domains.analysis.agent import (
     SYSTEM_PROMPT,
     AgentAnalysis,
     LangChainAnalysisRunner,
-    _default_analysis_plan,
     _normalize_base_proposal,
     _strategy_instruction,
 )
@@ -40,6 +39,7 @@ from app.domains.analysis.schemas.result import (
     ProposalStrategy,
 )
 from app.domains.analysis.tasks import _analyze_documents
+from tests.domains.analysis.evidence_fakes import collect_all_evidence
 
 
 def document(change_type: str = "NEW_DOCUMENT") -> AnalysisDocumentRequest:
@@ -819,7 +819,7 @@ def test_general_analysis_reads_both_profiles_and_final_result_retains_demo_flag
     runner._settings = SimpleNamespace(
         max_text_chars=20_000, timeout_seconds=5, model_name="mock-model",
     )
-    runner._plan_analysis = AsyncMock(return_value=_default_analysis_plan(document().change_type))
+    runner._evidence_agent = SimpleNamespace(collect=collect_all_evidence)
     draft = analysis(Favorability.NOT_APPLICABLE).draft
     draft.proposal.sections[0].body = (
         "데모 가정에서는 우리 회사는 GPU 한 대를 두 팀이 공유하고 있습니다."
@@ -1188,7 +1188,7 @@ def test_updated_attachment_evidence_and_change_focus_reach_model_and_saved_insi
     request = AnalysisDocumentRequest.model_validate(payload)
     runner = LangChainAnalysisRunner.__new__(LangChainAnalysisRunner)
     runner._settings = SimpleNamespace(max_text_chars=20_000, timeout_seconds=5, model_name="mock-model")
-    runner._plan_analysis = AsyncMock(return_value=_default_analysis_plan(request.change_type))
+    runner._evidence_agent = SimpleNamespace(collect=collect_all_evidence)
     draft = analysis(Favorability.REVIEW_REQUIRED).draft
     insight = (
         "이전에는 신청서만 요구했지만 수정 공고에는 납세증명서가 추가되었습니다. "
@@ -1238,7 +1238,7 @@ def test_retry_shrinks_sources_and_guides_complete_output_only_for_timeouts(
     runner._settings = SimpleNamespace(
         max_text_chars=source_limit, timeout_seconds=5, model_name="mock-model",
     )
-    runner._plan_analysis = AsyncMock(return_value=_default_analysis_plan(request.change_type))
+    runner._evidence_agent = SimpleNamespace(collect=collect_all_evidence)
     runner._assess_legal_risks = AsyncMock(return_value=draft.comparison_summary.legal_risks)
     runner._analysis_model = AsyncMock()
     runner._analysis_model.ainvoke.side_effect = [errors[failure_kind], draft.model_dump()]
