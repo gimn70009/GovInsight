@@ -59,7 +59,20 @@ def _protected_spans(line: str):
     stack = []
     spans = []
     for index, char in enumerate(line):
-        if char in pairs:
+        if char in {"\"", "'"}:
+            # Apostrophes in English names/possessives are not quote delimiters.
+            if (
+                char == "'" and 0 < index < len(line) - 1
+                and re.fullmatch(r"[A-Za-z0-9]", line[index - 1])
+                and re.fullmatch(r"[A-Za-z0-9]", line[index + 1])
+            ):
+                continue
+            if stack and stack[-1][1] == char:
+                begin, _ = stack.pop()
+                spans.append((begin, index + 1))
+            else:
+                stack.append((index, char))
+        elif char in pairs:
             stack.append((index, pairs[char]))
         elif stack and char == stack[-1][1]:
             begin, _ = stack.pop()
