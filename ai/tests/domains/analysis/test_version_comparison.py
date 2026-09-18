@@ -2,10 +2,11 @@ import json
 
 import pytest
 
-from app.domains.analysis.agent import _analysis_inputs, _strategy_instruction
+from app.domains.analysis.agent import _strategy_instruction
 from app.domains.analysis.schemas.request import AnalysisChangeType, AnalysisDocumentRequest
 from app.domains.analysis.tools import AnalysisToolContext, compare_with_previous_version
 from app.domains.analysis.version_comparison import MAX_SOURCE_CHARS
+from tests.domains.analysis.evidence_fakes import collected_inputs
 
 
 def attachment(id, text, name="공고문.pdf"):
@@ -50,7 +51,7 @@ def test_attachment_only_change_reaches_analysis_input_with_before_and_after():
     assert file["previousAttachmentIds"] == [10]
     assert file["currentAttachmentIds"] == [20]
     assert result["complete"] is True
-    sections, tools = _analysis_inputs(AnalysisToolContext(doc, 10_000))
+    sections, tools = collected_inputs(AnalysisToolContext(doc, 10_000))
     assert "attachmentComparison" in "\n".join(sections)
     assert "-기한: 9월 20일" in "\n".join(sections)
     assert tools.count("compare_previous_version") == 1
@@ -159,7 +160,7 @@ def test_only_updated_notice_uses_change_first_instructions_and_uncertainty_rule
     for kind in (AnalysisChangeType.NEW_DOCUMENT, AnalysisChangeType.UNCHANGED_DOCUMENT):
         assert "변경 중심 해석 규칙" not in _strategy_instruction(kind)
         doc = document().model_copy(update={"change_type": kind})
-        _, tools = _analysis_inputs(AnalysisToolContext(doc, 10_000))
+        _, tools = collected_inputs(AnalysisToolContext(doc, 10_000))
         assert "compare_previous_version" not in tools
 
 

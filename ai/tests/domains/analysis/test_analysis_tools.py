@@ -1,6 +1,6 @@
 import json
 
-from app.domains.analysis.agent import _analysis_inputs, _default_analysis_plan
+from app.domains.analysis.evidence_agent import required_evidence_tools
 from app.domains.analysis.schemas.request import AnalysisChangeType, AnalysisDocumentRequest
 from app.domains.analysis.tools import (
     AnalysisToolContext,
@@ -10,6 +10,7 @@ from app.domains.analysis.tools import (
     read_attachment_texts,
     read_document_content,
 )
+from tests.domains.analysis.evidence_fakes import collected_inputs
 
 
 def document() -> AnalysisDocumentRequest:
@@ -40,10 +41,10 @@ def document() -> AnalysisDocumentRequest:
     )
 
 
-def test_analysis_inputs_include_required_sources_without_agent_loop() -> None:
+def test_agent_reads_required_sources_and_passes_original_evidence() -> None:
     context = AnalysisToolContext(document=document(), max_text_chars=10_000)
 
-    sections, used_tools = _analysis_inputs(context)
+    sections, used_tools = collected_inputs(context)
 
     combined = "\n".join(sections)
     assert "<current_document>" in combined
@@ -61,12 +62,11 @@ def test_analysis_inputs_include_required_sources_without_agent_loop() -> None:
     ]
 
 
-def test_default_agent_plan_prioritizes_change_review_for_updated_document() -> None:
-    plan = _default_analysis_plan(AnalysisChangeType.UPDATED_DOCUMENT)
-
-    assert "change_review" in plan.focus_areas
-    assert "eligibility" in plan.focus_areas
-    assert "deadline" in plan.focus_areas
+def test_updated_document_requires_previous_version_comparison() -> None:
+    assert "compare_previous_version" in required_evidence_tools(document())
+    for kind in (AnalysisChangeType.NEW_DOCUMENT, AnalysisChangeType.UNCHANGED_DOCUMENT):
+        assert "compare_previous_version" not in required_evidence_tools(
+            document().model_copy(update={"change_type": kind}))
 
 
 def test_read_document_and_attachment_texts() -> None:
@@ -125,7 +125,7 @@ def test_runtime_company_context_can_explicitly_disable_demo() -> None:
     context = AnalysisToolContext(
         document=document(), max_text_chars=10_000, include_demo_profile=False,
     )
-    sections, _ = _analysis_inputs(context)
+    sections, _ = collected_inputs(context)
     combined = "\n".join(sections)
     assert "BISTelligence" in combined
     assert "SYNTHETIC_DEMO" not in combined
