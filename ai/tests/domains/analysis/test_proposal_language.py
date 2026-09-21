@@ -211,6 +211,6 @@ def test_generation_routes_language_without_extra_model_call_and_keeps_one_retry
         else:
             assert WRITING_INSTRUCTIONS in messages[0][1]
         if retry:
-            assert "영어" in messages[-1][1] if language == "en" else "합니다체" in messages[-1][1]
+            assert "영어" in messages[-1][1] if language == "en" else "한국어" in messages[-1][1]
 
     asyncio.run(scenario())
