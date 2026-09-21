@@ -162,12 +162,14 @@ def test_generation_avoids_format_retry_and_bounds_real_failure(mode):
                 settings,
                 "2026-09-11",
             )
-        assert response.status == ("UNAVAILABLE" if mode == "persistent_failure" else "COMPLETED")
+        assert response.status == "COMPLETED"
         assert selector.ainvoke.await_count == 1
         assert writer.ainvoke.await_count == (1 if mode == "formatting" else 2)
-        if response.status == "COMPLETED":
-            assert response.sections[0].body == BODY
-            assert response.sections[0].confirmation_items == ["데이터 접근 승인을 확인합니다."]
+        expected_body = bad["sections"][0]["body"] if mode == "persistent_failure" else BODY
+        assert response.sections[0].body == expected_body
+        assert response.sections[0].confirmation_items == ["데이터 접근 승인을 확인합니다."]
+        if mode == "persistent_failure":
+            assert "문장 표현" in response.message
         if mode != "formatting":
             messages = writer.ainvoke.call_args.args[0]
             assert "section=1 sentence=13" in messages[-2][1]
@@ -285,3 +287,99 @@ def test_unsolicited_rewrites_of_valid_sections_are_ignored():
     merged = merge_korean_repairs(original, repaired, {4})
     assert merged.sections[0].body == BODY
     assert "승인 없이" not in merged.sections[0].body
+
+
+@pytest.mark.parametrize("text", [
+    '당사는 "기술거래기관 지정. 운영계획"이라는 항목에 맞춰 작성합니다.',
+    "당사는 '성과 재사용 금지. 별도 승인 예외.'라는 조건을 확인하겠습니다.",
+    '당사는 "성과 활용(승인 필요. 별도 협의.)"이라는 조건을 확인하겠습니다.',
+    '당사는 "검토가 필요합니다."라는 안내를 확인하겠습니다.',
+    '"당사는 승인 이후에만 추진하겠습니다."',
+    "당사는 'company's scope. prior approval.' 조건을 확인하겠습니다.",
+    "당사는 company's scope에 해당하는 내용을 검토하겠습니다.",
+])
+def test_ascii_quotes_do_not_split_source_labels_or_quoted_conditions(text):
+    assert normalize_korean_body(text) == text
+    verify_korean_body(text)
+
+
+@pytest.mark.parametrize("text", [
+    '당사는 "승인 필요. 검토하겠습니다.',
+    "당사는 '승인 필요. 검토하겠습니다.",
+    '당사는 "승인 필요."라는 조건을 확인함.',
+    '당사는 "승인 필요."라는 조건을 확인하겠습니다. 추가 검토 권장함.',
+    "당사는 company's scope를 확인함. 이후 추진하겠습니다.",
+])
+def test_ascii_quote_protection_does_not_accept_incomplete_or_nonformal_outer_prose(text):
+    with pytest.raises(KoreanBodyFormatError):
+        verify_korean_body(normalize_korean_body(text))
+
+
+def test_writing_preserves_quoted_condition_without_unnecessary_style_repair():
+    body = '당사는 "승인 필요. 별도 협의."라는 조건을 확인하겠습니다. ' + BODY
+    result = verify_writing(output(body), [SECTION], ["service: 제조 AI 운영"], "양식", False)
+    assert result.status == "COMPLETED"
+    assert result.sections[0].body == body
+
+
+@pytest.mark.parametrize("repair_failure", ["short", "missing", "style", "network"])
+def test_optional_style_failure_preserves_validated_original_draft(repair_failure):
+    async def scenario():
+        original = output(BODY + " 성과 활용을 검토함.")
+        if repair_failure == "short":
+            repaired = output("성과 활용을 검토하겠습니다.")
+        elif repair_failure == "missing":
+            repaired = {"sections": []}
+        elif repair_failure == "style":
+            repaired = output(BODY + " 다른 표현으로 검토함.")
+        else:
+            repaired = RuntimeError("PRIVATE_NETWORK_DETAIL")
+        generator = AsyncMock()
+        generator.ainvoke.side_effect = [original, repaired]
+        model = SimpleNamespace(with_structured_output=lambda schema: generator)
+        writer = ProposalWriter()
+        req = ProposalWriteRequest(
+            title="제조 AI", notice_text="실증 공고입니다.", file_name="양식",
+            template_text="사업 목표",
+        )
+        with (
+            patch("app.domains.analysis.proposal_writer.ChatOpenAI", return_value=model),
+            patch.object(writer, "_template_outline", AsyncMock(return_value=([SECTION], 0))),
+        ):
+            result = await writer._compose(
+                req, {"service": "제조 데이터 통합과 AI 모델 운영 서비스를 제공합니다."},
+                SimpleNamespace(proposal_model_name="test", api_key="test"), "2026-09-18",
+            )
+        assert result.status == "COMPLETED"
+        assert result.sections[0].body == original["sections"][0]["body"]
+        assert (
+            result.sections[0].confirmation_items == original["sections"][0]["confirmation_items"]
+        )
+        assert "문장 표현" in result.message
+        assert "4개보다 적어" in result.message
+        assert generator.ainvoke.await_count == 2
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("invalid", ["evidence", "short", "instruction"])
+def test_style_fallback_requires_hard_validation_of_every_section(invalid):
+    data = output(BODY + " 검토함.")
+    other = {**output()["sections"][0], "section_id": 2}
+    if invalid == "evidence":
+        other["company_evidence_ids"] = [999]
+    elif invalid == "short":
+        other["body"] = "확인합니다."
+    else:
+        other["body"] += " 귀사는 자료를 작성해야 합니다."
+    data["sections"].append(other)
+    with pytest.raises(ValueError):
+        verify_writing(data, [SECTION, SECTION], ["service: 제조 AI 운영"], "양식", False,
+                       check_korean_style=False)
+
+
+
+def test_style_fallback_does_not_accept_an_english_body_for_korean_template():
+    data = output("Our company will review the project scope and access permissions. " * 12)
+    with pytest.raises(ValueError, match="한국어"):
+        verify_writing(data, [SECTION], ["service: 제조 AI 운영"], "양식", False,
+                       check_korean_style=False)
