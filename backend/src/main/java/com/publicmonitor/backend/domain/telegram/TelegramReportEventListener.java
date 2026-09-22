@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+@lombok.extern.slf4j.Slf4j
 @Component
 public class TelegramReportEventListener {
 
@@ -17,6 +18,7 @@ public class TelegramReportEventListener {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void deliver(ReportCompletedEvent event) {
-        deliveryService.deliver(event.runId());
+        try { deliveryService.deliver(event.runId()); }
+        catch (RuntimeException exception) { log.error("Telegram 보고서 발송 준비 실패. runId={}, errorType={}", event.runId(), exception.getClass().getSimpleName()); }
     }
 }

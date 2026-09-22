@@ -1,0 +1,89 @@
+.delivery-page { --delivery-ink:#24354d; --delivery-muted:#8390a3; }
+.delivery-page [hidden] { display:none!important; }
+.delivery-page-header { padding:4px 2px 12px; align-items:center; }
+.delivery-page .delivery-page-header h1 { font-size:29px; letter-spacing:-1.2px; line-height:1.4; margin-top:10px; }
+.delivery-page-header p { margin-top:9px; font-size:13px; color:#8290a3; }
+.delivery-heading-dot { color:#4288f5; }
+.delivery-header-symbol { position:relative; display:grid; place-items:center; width:66px; height:66px; margin-right:12px; color:#327ff0; background:linear-gradient(145deg,#e7f0ff,#f5f9ff); border:1px solid #dfebfd; border-radius:22px; transform:rotate(-7deg); }
+.delivery-header-symbol>span { display:grid; place-items:center; position:absolute; bottom:-7px; right:-9px; width:32px; height:32px; color:#8b72c8; background:#fff; border:1px solid #eee8f7; border-radius:11px; transform:rotate(7deg); box-shadow:0 5px 12px #1c315a09; }
+.delivery-channels { padding:25px 25px 0; background:#edf2f8; border:1px solid #cdd8e6; border-radius:20px; box-shadow:0 4px 16px #24354d03; margin-bottom:28px; }
+.delivery-section-heading { display:flex; gap:18px; justify-content:space-between; align-items:center; margin-bottom:22px; }
+.delivery-section-heading h2 { margin:0; font-size:16px; color:var(--delivery-ink); }
+.delivery-section-heading p { margin:6px 0 0; color:#62758e; font-size:12px; }
+.delivery-state { color:#919ca9; background:#f0f3f6; border-radius:6px; padding:4px 7px; font-size:10px; white-space:nowrap; flex:none; }
+.delivery-state.is-on { color:#328774; background:#eaf7f1; }
+.delivery-history { border-radius:20px; overflow:hidden; box-shadow:0 4px 16px #24354d03; }
+.delivery-history>.panel-header { min-height:90px; padding:22px 25px; background:#edf2f8; border-bottom:1px solid #d5dfeb; }
+.delivery-history-heading { display:flex; align-items:center; gap:12px; }
+.delivery-history-heading h2 { font-size:15px; }
+.delivery-history-heading p { margin:6px 0 0; font-size:11px; color:#939faf; }
+.delivery-history-icon { display:grid; place-items:center; width:36px; height:36px; border-radius:10px; background:#f3f6fa; color:#8194ae; }
+.delivery-history-controls { display:flex; align-items:center; justify-content:space-between; padding:14px 25px; background:#f7f9fc; }
+.delivery-history-tabs { display:flex; gap:3px; background:#f4f6f9; padding:4px; border-radius:9px; }
+.delivery-history-tabs button { color:#8b97a8; background:transparent; border:1px solid transparent; padding:7px 12px; font-size:11px; border-radius:7px; }
+.delivery-history-tabs button[aria-pressed=true] { color:#42658f; background:#fff; border-color:#e5ebf3; box-shadow:0 2px 4px #21375406; font-weight:600; }
+.delivery-history-caption { font-size:10px; color:#a1abba; }
+.delivery-history .telegram-filter-details { padding:13px 25px; }
+.delivery-report-row { display:flex; align-items:center; gap:17px; width:100%; text-align:left; padding:23px 25px; background:#fff; border-top:1px solid #edf1f6; color:var(--delivery-ink); transition:background .15s; }
+.delivery-report-row:hover { background:#fafcff; }
+.delivery-file-icon { display:grid; place-items:center; flex:none; width:42px; height:48px; color:#98a9bf; background:#f7f9fc; border:1px solid #edf1f7; border-radius:10px; }
+.delivery-report-info { display:grid; min-width:0; flex:1; gap:6px; }
+.delivery-report-info>strong { font-size:13px; font-weight:600; line-height:1.7; overflow-wrap:anywhere; }
+.delivery-report-info>small { font-size:11px; color:#98a4b4; }
+.delivery-report-results { display:flex; align-items:center; flex-wrap:wrap; gap:7px; margin-top:4px; }
+.delivery-result { display:inline-flex; align-items:center; gap:5px; padding:5px 8px; border-radius:6px; font-size:10px; line-height:1.4; color:#8b98a9; background:#f3f5f8; }
+.delivery-result>strong { font-weight:500; padding-left:5px; border-left:1px solid #aebaca40; }
+.delivery-result--sent { background:#edf8f3; color:#448e7b; }
+.delivery-result--partial, .delivery-result--failed, .delivery-result--report_failed { background:#fff3ec; color:#ba805b; }
+.delivery-result--sending, .delivery-result--preparing { background:#edf4ff; color:#5885c1; }
+.delivery-report-open { display:flex; align-items:center; gap:7px; font-size:11px; color:#a0acbb; flex:none; }
+.delivery-load-error { padding:16px 25px; }
+.delivery-dialog .delivery-dialog-intro { margin:-7px 0 22px; }
+.delivery-provider { display:flex; align-items:center; gap:12px; padding:18px; background:#f8f9fc; border:1px solid #edf0f5; border-radius:13px; margin-bottom:20px; }
+.delivery-provider>div { flex:1; min-width:0; }
+.delivery-provider strong { font-size:14px; }
+.delivery-provider p { margin:4px 0 0; overflow-wrap:anywhere; }
+.delivery-setup-steps { padding-left:20px; font-size:12px; color:#78879a; line-height:2.2; }
+.delivery-provider-links { display:flex; flex-wrap:wrap; gap:15px; padding:14px 0; }
+.delivery-provider-links a { display:flex; align-items:center; gap:5px; color:#4282d7; font-size:12px; }
+.delivery-dialog .telegram-delivery-row>div { flex:1; min-width:0; }
+.delivery-target-channel { display:grid; place-items:center; width:30px; height:30px; color:#6096df; background:#edf4fd; border-radius:9px; flex:none; }
+.delivery-target-channel.is-email { color:#9b80bf; background:#f3eff9; }
+.delivery-dialog .delivery-detail-note { font-size:11px; color:#96a0af; }
+.delivery-page button:focus-visible, .delivery-page summary:focus-visible { outline:3px solid #b8d8ff; outline-offset:3px; }
+@media(max-width:760px) {
+ .delivery-page .delivery-page-header h1 { font-size:23px; letter-spacing:-.9px; word-break:keep-all; } .delivery-header-symbol { display:none; }
+ .delivery-channels { padding:20px 17px 0; border-radius:16px; } .delivery-section-heading { align-items:flex-start; gap:10px; flex-direction:column; }
+ .delivery-history>.panel-header { padding:20px 17px; flex-direction:row; } .delivery-history-heading { gap:8px; } .delivery-history-heading p { font-size:10px; } .delivery-history-icon { display:none; }
+ .delivery-history-controls { padding:0 17px 16px; } .delivery-history-caption { display:none; } .delivery-history .telegram-filter-details { padding:13px 17px; }
+ .delivery-report-row { padding:20px 17px; gap:12px; } .delivery-file-icon { display:none; } .delivery-report-open { font-size:0; gap:0; }
+ .delivery-report-info>strong { font-size:12px; } .delivery-report-results { gap:5px; } .delivery-result { font-size:10px; padding:5px 6px; }
+ .delivery-dialog .telegram-delivery-row { flex-wrap:wrap; } .delivery-dialog .telegram-delivery-row>div { min-width:150px; }
+}
+@media(prefers-reduced-motion:reduce) { .delivery-channel-tab,.delivery-report-row { transition:none; } }
+
+/* Channel selection is navigation; sending and recipient selection live below it. */
+.delivery-section-heading { margin-bottom:18px; }
+.delivery-channel-tabs { display:flex; gap:6px; width:fit-content; padding:5px; border:1px solid #ccd8e8; border-radius:12px; background:#dde6f1; }
+.delivery-channel-tab { display:flex; justify-content:center; align-items:center; gap:9px; min-width:144px; padding:12px 22px; border:1px solid transparent; border-radius:8px; background:transparent; color:#506580; font-size:14px; font-weight:600; transition:color .15s,background .15s; }
+.delivery-channel-tab:hover { color:#245eab; background:#eaf1fa; }
+.delivery-channel-tab.is-selected { color:#fff; background:#2d74de; border-color:#2167cf; box-shadow:0 3px 7px #285cac20; }
+.delivery-dialog .email-setup-intro { margin:0 0 20px; font-size:13px; color:#607189; }
+.email-setup-guide { border:1px solid #e5ebf3; border-radius:10px; padding:13px 15px; }
+.email-setup-guide summary { display:flex; align-items:center; justify-content:space-between; gap:10px; list-style:none; color:#637891; font-size:12px; cursor:pointer; }
+.email-setup-guide summary::-webkit-details-marker { display:none; }
+.email-setup-guide[open] summary svg { transform:rotate(180deg); }
+.email-setup-guide dl { margin:12px 0; padding:12px; background:#f7f9fc; border-radius:8px; }
+.email-setup-guide dl>div { display:grid; grid-template-columns:1.25fr 1fr; gap:8px; padding:6px 0; font-size:11px; line-height:1.6; }
+.email-setup-guide dt { color:#586b84; overflow-wrap:anywhere; }
+.email-setup-guide dd { margin:0; color:#748398; }
+.delivery-dialog .email-setup-feedback { padding:12px 14px; border-radius:8px; background:#f1f6fc; color:#486c94; font-size:12px; }
+.delivery-dialog .email-setup-footnote { margin-top:16px; color:#78879b; font-size:12px; }
+.delivery-dialog .email-setup-footer { flex-wrap:wrap; }
+.email-setup-footer .button { font-size:12px; }
+@media(max-width:760px) {
+ .delivery-channel-tabs { width:100%; gap:4px; }
+ .delivery-channel-tab { min-width:0; flex:1; padding:14px 12px; font-size:13px; }
+ .email-setup-guide dl>div { grid-template-columns:1fr; gap:2px; }
+ .email-setup-footer .button { padding:10px 12px; }
+}

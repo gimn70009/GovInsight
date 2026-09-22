@@ -39,3 +39,9 @@ app.telegram.connect-timeout=${TELEGRAM_CONNECT_TIMEOUT:3s}
 app.telegram.read-timeout=${TELEGRAM_READ_TIMEOUT:10s}
 # Enable on only one server per bot; replies to new private /start messages.
 app.telegram.commands.enabled=${TELEGRAM_COMMANDS_ENABLED:false}
+
+# Gmail or Naver SMTP. Keep app passwords in environment/local ignored configuration.
+app.email.provider=${EMAIL_PROVIDER:GMAIL}
+app.email.username=${EMAIL_USERNAME:}
+app.email.password=${EMAIL_PASSWORD:}
+app.email.sender-name=${EMAIL_SENDER_NAME:GovInsight}

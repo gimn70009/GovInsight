@@ -1,5 +1,5 @@
 import type {
-  ApiResponse,
+  ApiResponse, EmailSettings, EmailSettingsPayload, EmailRecipientDelivery, ReportDelivery, ReportDeliveryDetail, DeliveryChannel,
   TelegramSettings, TelegramSettingsPayload, TelegramConnection,
   TelegramReport, TelegramReportDetail, TelegramDeliveryStatus, TelegramRecipientDelivery,
   ProposalSource,
@@ -55,6 +55,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  getEmailSettings: () => request<EmailSettings>('/api/email/settings'),
+  updateEmailSettings: (payload: EmailSettingsPayload) => request<EmailSettings>('/api/email/settings', { method: 'PUT', body: JSON.stringify(payload) }),
+  sendEmailTest: (expectedAddress: string) => request<{ sent: boolean; message: string }>('/api/email/test-message', { method: 'POST', body: JSON.stringify({ expectedAddress }) }),
+  retryEmailReport: (deliveryId: number, expectedAddress: string, expectedAttemptCount: number) => request<EmailRecipientDelivery>(`/api/email/deliveries/${deliveryId}/retry`, { method: 'POST', body: JSON.stringify({ expectedAddress, expectedAttemptCount }) }),
+  getReportDeliveries: (page: number, from: string, to: string, channel: DeliveryChannel, status: TelegramDeliveryStatus | '', signal?: AbortSignal) => {
+    const params = new URLSearchParams({ page: String(page), size: '10', channel })
+    if (from) params.set('from', from)
+    if (to) params.set('to', to)
+    if (status) params.set('status', status)
+    return request<PageResponse<ReportDelivery>>(`/api/report-deliveries?${params}`, { signal })
+  },
+  getReportDelivery: (id: number, signal?: AbortSignal) => request<ReportDeliveryDetail>(`/api/report-deliveries/${id}`, { signal }),
   getTelegramSettings: () => request<TelegramSettings>('/api/telegram/settings'),
   updateTelegramSettings: (payload: TelegramSettingsPayload) =>
     request<TelegramSettings>('/api/telegram/settings', { method: 'PUT', body: JSON.stringify(payload) }),

@@ -370,3 +370,23 @@ export interface TelegramReportDetail {
   body: string | null
   deliveries: TelegramRecipientDelivery[]
 }
+
+
+export interface EmailRecipient { address: string; name: string; enabled: boolean }
+export interface EmailSettings {
+  version: number | null; enabled: boolean; configured: boolean
+  provider: 'GMAIL' | 'NAVER'; senderAddress: string; senderName: string
+  recipients: EmailRecipient[]; updatedAt: string | null
+}
+export type EmailSettingsPayload = Pick<EmailSettings, 'version' | 'enabled' | 'recipients'>
+export type EmailRecipientDelivery = Omit<TelegramRecipientDelivery, 'chatId'> & { address: string }
+export type DeliveryChannel = 'ALL' | 'TELEGRAM' | 'EMAIL'
+export type ChannelDeliverySummary = Pick<TelegramReport, 'status' | 'recipientCount' | 'sentCount' | 'failedCount' | 'errorMessage'>
+export interface ReportDelivery {
+  reportId: number; runId: number; title: string | null; createdAt: string; generatedAt: string | null
+  telegram: ChannelDeliverySummary; email: ChannelDeliverySummary
+}
+export interface ReportDeliveryDetail {
+  report: ReportDelivery; body: string | null
+  telegramDeliveries: TelegramRecipientDelivery[]; emailDeliveries: EmailRecipientDelivery[]
+}

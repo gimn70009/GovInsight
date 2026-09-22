@@ -32,6 +32,11 @@ import org.springframework.test.web.servlet.MockMvc;
 @AutoConfigureMockMvc
 class OpenApiDocumentationIntegrationTest {
 
+    @MockitoBean private com.publicmonitor.backend.domain.email.service.EmailSettingsService emailSettings;
+    @MockitoBean private com.publicmonitor.backend.domain.email.service.EmailConnectionService emailConnection;
+    @MockitoBean private com.publicmonitor.backend.domain.email.EmailReportDeliveryService emailDelivery;
+    @MockitoBean private com.publicmonitor.backend.domain.report.service.ReportDeliveryQueryService reportDeliveryQuery;
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -97,6 +102,9 @@ class OpenApiDocumentationIntegrationTest {
                 .andExpect(jsonPath("$.paths['/api/monitoring-runs'].post").exists())
                 .andExpect(jsonPath("$.paths['/api/monitoring-runs'].get").exists())
                 .andExpect(jsonPath("$.paths['/api/document-detections'].get").exists())
+                .andExpect(jsonPath("$.paths['/api/email/settings'].get").exists())
+                .andExpect(jsonPath("$.paths['/api/email/test-message'].post").exists())
+                .andExpect(jsonPath("$.paths['/api/report-deliveries'].get").exists())
                 .andExpect(jsonPath("$.paths['/api/telegram/settings'].get").exists())
                 .andExpect(jsonPath("$.paths['/api/telegram/deliveries/{deliveryId}/retry'].post").exists())
                 .andExpect(jsonPath("$.components.securitySchemes.bearerAuth.type").value("http"))
