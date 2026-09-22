@@ -33,6 +33,10 @@ class EmailClientTest {
         assertThat(EmailClient.html("<title>", "<script>\n&본문")).contains("&lt;title&gt;", "&lt;script&gt;<br>&amp;본문").doesNotContain("<script>");
         verify(sender).send(message);
     }
+    @Test void namedDownloadLinksAreClickableInHtml() {
+        assertThat(EmailClient.html("보고서", "• [신청서](https://example.org/f?a=1&b=2)"))
+            .contains("href=\"https://example.org/f?a=1&amp;b=2\">신청서</a>");
+    }
     @Test void authenticationErrorsDoNotExposeProviderCredentials() {
         var sender = mock(JavaMailSender.class);
         when(sender.createMimeMessage()).thenReturn(new MimeMessage(Session.getInstance(new Properties())));

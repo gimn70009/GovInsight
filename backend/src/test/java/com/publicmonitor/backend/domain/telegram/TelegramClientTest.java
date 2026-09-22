@@ -56,6 +56,16 @@ class TelegramClientTest {
     }
 
     @Test
+    void rendersNamedDownloadLinksUsingEscapedHtml() {
+        server.expect(requestTo("https://api.telegram.org/bottest-token/sendMessage"))
+                .andExpect(org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath("$.parse_mode").value("HTML"))
+                .andExpect(org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath("$.text").value("&lt;안내&gt; <a href=\"https://example.org/f?a=1&amp;b=2\">신청서</a>"))
+                .andRespond(withSuccess("{\"ok\":true,\"result\":{\"message_id\":778}}", MediaType.APPLICATION_JSON));
+        assertThat(client.send("123456", "<안내> [신청서](https://example.org/f?a=1&b=2)")).isEqualTo(778L);
+        server.verify();
+    }
+
+    @Test
     void 봇과_채팅_확인은_메시지를_발송하지_않는다() {
         server.expect(requestTo("https://api.telegram.org/bottest-token/getMe"))
                 .andRespond(withSuccess("""

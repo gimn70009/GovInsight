@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 from playwright.async_api import async_playwright, expect
 
+REPORT_BODY = (Path(os.environ['DELIVERY_REPORT_BODY']).read_text(encoding='utf-8') if os.getenv('DELIVERY_REPORT_BODY') else '공공기관 모니터링 보고서\n첨부파일: [신청서.hwp](https://example.go.kr/file?id=1&part=2)')
+
 BASE = os.getenv('DELIVERY_PREVIEW_URL', 'http://127.0.0.1:4173')
 OUT = Path(os.getenv('DELIVERY_SCREENSHOT_DIR', 'frontend/dist/delivery-checks'))
 
@@ -60,7 +62,7 @@ async def main():
             elif path.startswith('report-deliveries?'):
                 data=dict(content=[report],totalPages=1,totalElements=1,page=0,size=10)
             elif path=='report-deliveries/1':
-                data=dict(report=report,body='공공기관 모니터링 보고서\n사업 공고와 주요 변경 사항을 정리했습니다.',
+                data=dict(report=report,body=REPORT_BODY,
                     telegramDeliveries=[dict(deliveryId=1,chatId='123456789',name='운영 담당자',status='SENT',attemptCount=1,attemptedAt=None,sentAt='2026-09-22T08:00:00',errorMessage=None)],
                     emailDeliveries=[dict(deliveryId=11,address='business@gmail.com',name='사업 담당자',status='SENT',attemptCount=1,attemptedAt=None,sentAt='2026-09-22T08:00:00',errorMessage=None),delivery])
             elif path=='email/test-message':
@@ -165,6 +167,19 @@ async def main():
         await page.locator('.delivery-report-row').click()
         dialog=page.get_by_role('dialog',name='보고서 발송 상세',exact=True)
         await expect(dialog.get_by_text('planning@naver.com',exact=False)).to_be_visible()
+        await dialog.get_by_text('보고서 내용',exact=True).click()
+        report_links=dialog.locator('.report-body a')
+        assert await report_links.count() >= 1
+        for link in await report_links.all():
+            assert (await link.get_attribute('href')).startswith(('https://','http://'))
+            await expect(link).to_have_attribute('target','_blank')
+        await dialog.locator('.report-body').screenshot(path=str(OUT/'report-action-brief-desktop.png'))
+        await page.set_viewport_size(dict(width=390,height=844))
+        assert await dialog.evaluate('(el) => el.scrollWidth <= el.clientWidth'), 'Report body mobile overflow'
+        await report_links.last.scroll_into_view_if_needed()
+        await dialog.screenshot(path=str(OUT/'report-action-brief-mobile.png'))
+        await page.set_viewport_size(dict(width=1440,height=1100))
+
         await dialog.get_by_role('button',name='재전송',exact=True).click()
         confirmation=page.get_by_role('dialog',name='보고서 재전송',exact=True)
         await confirmation.get_by_role('button',name='다시 보내기',exact=True).click()

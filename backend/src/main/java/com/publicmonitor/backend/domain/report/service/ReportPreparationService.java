@@ -4,6 +4,8 @@ import com.publicmonitor.backend.domain.analysis.entity.DocumentAnalysis;
 import com.publicmonitor.backend.domain.analysis.repository.AnalysisDocumentDetectionRepository;
 import com.publicmonitor.backend.domain.analysis.repository.DocumentAnalysisRepository;
 import com.publicmonitor.backend.domain.document.entity.DocumentDetection;
+import com.publicmonitor.backend.domain.document.entity.AttachmentParseStatus;
+import com.publicmonitor.backend.domain.document.repository.DocumentAttachmentRepository;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRun;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRunStatus;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunRepository;
@@ -37,6 +39,7 @@ public class ReportPreparationService {
     private final DocumentAnalysisRepository analysisRepository;
     private final MonitoringReportRepository reportRepository;
     private final ObjectMapper objectMapper;
+    private final DocumentAttachmentRepository attachmentRepository;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<PythonReportJobRequest> prepare(Long runId) {
@@ -113,8 +116,28 @@ public class ReportPreparationService {
                 analysis.getReason(),
                 analysis.getEligibility(),
                 analysis.getOpportunityScore(),
-                objectMapper.readTree(analysis.getProposalDirection())
+                objectMapper.readTree(analysis.getProposalDirection()),
+                excerpt(detection.getDocumentVersion().getContentText(), 80_000),
+                analysis.getComparisonSummary() == null ? null : objectMapper.readTree(analysis.getComparisonSummary()),
+                reportAttachments(detection.getDocumentVersion().getId())
         );
+    }
+
+    private List<PythonReportDocumentRequest.Attachment> reportAttachments(Long versionId) {
+        int remaining = 120_000;
+        var result = new java.util.ArrayList<PythonReportDocumentRequest.Attachment>();
+        for (var attachment : attachmentRepository.findAllByDocumentVersionId(versionId)) {
+            String text = attachment.getParseStatus() == AttachmentParseStatus.COMPLETED
+                    ? excerpt(attachment.getExtractedText(), Math.min(remaining, 40_000)) : null;
+            if (text != null) remaining -= text.length();
+            result.add(new PythonReportDocumentRequest.Attachment(
+                    attachment.getFileName(), attachment.getDownloadUrl(), text));
+        }
+        return result;
+    }
+
+    private String excerpt(String value, int limit) {
+        return value == null || limit <= 0 ? null : value.substring(0, Math.min(value.length(), limit));
     }
 
     private List<String> parseKeyPoints(String keyPoints) {

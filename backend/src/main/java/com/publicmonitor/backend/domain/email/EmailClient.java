@@ -1,11 +1,11 @@
 package com.publicmonitor.backend.domain.email;
 import lombok.RequiredArgsConstructor;
+import com.publicmonitor.backend.domain.report.ReportEmailTemplate;
 import org.springframework.mail.MailAuthenticationException;
 import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Component;
-import org.springframework.web.util.HtmlUtils;
 @Component @RequiredArgsConstructor
 public class EmailClient {
     private final JavaMailSender reportMailSender;
@@ -28,12 +28,6 @@ public class EmailClient {
         }
     }
     static String html(String title, String body) {
-        return "<html lang=\"ko\"><body style=\"margin:0;background:#f5f7fb;color:#243247;font-family:Arial,sans-serif\">"
-            + "<div style=\"max-width:680px;margin:32px auto;background:#fff;border:1px solid #e5ebf3;border-radius:16px;padding:32px\">"
-            + "<p style=\"color:#317cf5;font-size:12px;font-weight:bold;letter-spacing:2px\">GOVINSIGHT REPORT</p>"
-            + "<h1 style=\"font-size:22px;line-height:1.5\">" + HtmlUtils.htmlEscape(title) + "</h1>"
-            + "<div style=\"font-size:14px;line-height:1.9;overflow-wrap:anywhere\">"
-            + HtmlUtils.htmlEscape(body).replace("\r\n", "\n").replace("\n", "<br>") + "</div>"
-            + "<p style=\"margin-top:32px;border-top:1px solid #e5ebf3;padding-top:20px;color:#66778e;font-size:12px\">GovInsight · 공공기관 모니터링 보고서</p></div></body></html>";
+        return ReportEmailTemplate.render(title, body);
     }
 }

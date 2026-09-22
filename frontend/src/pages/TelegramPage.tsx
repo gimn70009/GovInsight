@@ -1,3 +1,4 @@
+import ReportBody from '../components/ReportBody'
 import { useToast } from '../hooks/useToast'
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
@@ -291,7 +292,7 @@ export default function TelegramPage({ embedded = false, onSettingsChange, onNot
           </div>
         })}</div>
         {detail.report.errorMessage && <InlineError message={detail.report.errorMessage} />}
-        <details className="telegram-body-details"><summary>보고서 내용<ChevronDown size={14} /></summary><div className="telegram-report-body">{detail.body || '본문이 없습니다.'}</div></details>
+        <details className="telegram-body-details"><summary>보고서 내용<ChevronDown size={14} /></summary><ReportBody body={detail.body || '본문이 없습니다.'} /></details>
         <footer><Link className="button button--subtle" to={'/documents?runId=' + detail.report.runId}>게시글 보기<ArrowUpRight size={15} /></Link></footer>
       </>}
     </Dialog>}
