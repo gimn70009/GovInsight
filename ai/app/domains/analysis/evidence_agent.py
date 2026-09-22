@@ -9,6 +9,7 @@ from langchain.agents.middleware import ModelCallLimitMiddleware, ToolCallLimitM
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import ToolMessage
 
+from app.domains.analysis.context_tools import EVIDENCE_COVERAGE_INSTRUCTIONS
 from app.domains.analysis.schemas.request import AnalysisChangeType, AnalysisDocumentRequest
 from app.domains.analysis.tools import ANALYSIS_TOOLS, AnalysisToolContext
 
@@ -70,6 +71,11 @@ def evidence_inputs(
     ]
     if missing:
         raise EvidenceCollectionError("필수 근거 조회가 누락되었습니다: " + ", ".join(missing))
+    current = json.loads(context.result_cache["get_document_content"])
+    attachments = json.loads(context.result_cache.get("get_attachment_texts", "[]"))
+    if not any(item.get("coverage", {}).get("selectedChars", 0) > 0
+               for item in [current, *attachments]):
+        raise EvidenceCollectionError("분석에 사용할 완전한 원문 구간이 없습니다.")
     sections = [
         f"<{SOURCE_TAGS[name]}>\n{context.result_cache[name]}\n</{SOURCE_TAGS[name]}>"
         for name in dict.fromkeys(used_tools)
@@ -91,7 +97,7 @@ class AnalysisEvidenceAgent:
         agent = create_agent(
             model=self._model,
             tools=[tool for tool in ANALYSIS_TOOLS if tool.name in required],
-            system_prompt=EVIDENCE_PROMPT,
+            system_prompt=EVIDENCE_PROMPT + "\n" + EVIDENCE_COVERAGE_INSTRUCTIONS,
             context_schema=AnalysisToolContext,
             middleware=[
                 ModelCallLimitMiddleware(run_limit=MAX_MODEL_CALLS, exit_behavior="error"),

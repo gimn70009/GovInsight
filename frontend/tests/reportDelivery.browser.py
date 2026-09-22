@@ -173,6 +173,13 @@ async def main():
         for link in await report_links.all():
             assert (await link.get_attribute('href')).startswith(('https://','http://'))
             await expect(link).to_have_attribute('target','_blank')
+        if '제출 준비 서류 ↓' in REPORT_BODY:
+            rows=dialog.locator('.report-submission-link')
+            await expect(rows).to_have_count(5)
+            await expect(dialog.locator('.report-submission-card')).to_have_count(0)
+            await expect(rows.first.get_by_role('link',name='사업계획서 (ZIP)')).to_have_attribute('href','https://example.go.kr/download?id=1&seq=2')
+            await expect(rows.nth(2)).to_have_text('납세증명서(해당 시)')
+            await expect(dialog.locator('.report-body').get_by_text('공고문.pdf',exact=True)).to_have_count(0)
         await dialog.locator('.report-body').screenshot(path=str(OUT/'report-action-brief-desktop.png'))
         await page.set_viewport_size(dict(width=390,height=844))
         assert await dialog.evaluate('(el) => el.scrollWidth <= el.clientWidth'), 'Report body mobile overflow'

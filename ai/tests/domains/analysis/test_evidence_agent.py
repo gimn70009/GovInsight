@@ -271,3 +271,11 @@ def test_outer_timeout_cancels_legal_review_when_final_model_is_pending():
     with pytest.raises(TimeoutError):
         asyncio.run(runner.analyze(document(attachments=False)))
     assert cancelled == [True, True]
+
+
+def test_no_complete_source_prevents_final_analysis_even_after_tools_ran():
+    model = ScriptedEvidenceModel(steps=[
+        calls("get_document_content", "get_company_profile"), AIMessage(content="완료")])
+    context = AnalysisToolContext(document(attachments=False), 0)
+    with pytest.raises(EvidenceCollectionError, match="완전한 원문 구간"):
+        asyncio.run(AnalysisEvidenceAgent(model).collect(context))

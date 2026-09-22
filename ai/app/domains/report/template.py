@@ -7,6 +7,7 @@ from app.domains.analysis.schemas.result import DocumentImportance
 from app.domains.report.facts import submission_facts
 from app.domains.report.schemas.request import ReportDocumentRequest, ReportJobRequest
 from app.domains.report.schemas.result import ReportDraft
+from app.domains.report.submission_documents import submission_documents
 
 _MAX_DISPLAY_UNITS = 3_900  # Reserve room for the title; Java/Telegram use UTF-16 offsets.
 _MAX_STORAGE_UNITS = 20_000
@@ -105,35 +106,37 @@ def _document_block(document: ReportDocumentRequest, compact: bool = False) -> s
         f"• 제출 주체·대상: {_field(facts.applicant, compact)}",
         f"• 제출·의견 기한: {_field(facts.deadline, compact)}",
         f"• 제출처·방법: {_field(facts.destination, compact)}",
-        f"• 제출 서류: {_field(facts.documents, compact)}",
         f"• 문의 담당: {_field(facts.contact, compact)}",
         "",
-        "첨부파일 ↓",
+        "제출 준비 서류 ↓",
     ]
-    links = []
-    seen = set()
-    for attachment in document.attachments:
-        url = _safe_url(attachment.download_url)
-        if not url or url in seen:
-            continue
-        seen.add(url)
-        links.append(f"• [{_shorten(attachment.file_name, 55 if compact else 80)}]({url})")
-    shown = links[: 3 if compact else 8]
-    # Very long signed URLs cannot consume the entire stored report.
+    required = submission_documents(document)
+    shown = 0
     used = 0
-    kept = []
-    for link in shown:
-        if used + _utf16_units(link) > (2_500 if compact else 6_000):
+    seen = set()
+    entries = []
+    for item in required:
+        form = item.form
+        url = _safe_url(form.url) if form and form.url else None
+        label = _text(item.title)
+        # A member has no public URL of its own: identify the archive download honestly.
+        if form and form.archive and url:
+            label += " (ZIP)"
+        key = (label, url)
+        if key in seen:
+            continue
+        seen.add(key)
+        entries.append(f"• [{label}]({url})" if url else f"• {label}")
+    for entry in entries[: 3 if compact else 6]:
+        if used + _utf16_units(entry) > (2_500 if compact else 6_000):
             break
-        kept.append(link)
-        used += _utf16_units(link)
-    lines.extend(kept)
-    if len(kept) < len(links):
-        lines.append(f"• 추가 첨부 {len(links) - len(kept)}개: 원문에서 확인")
-    if len(seen) < len(document.attachments) and not links:
-        lines.append("• 다운로드 링크는 원문에서 확인")
-    elif not document.attachments:
-        lines.append("• 등록된 첨부파일 없음")
+        lines.append(entry)
+        used += _utf16_units(entry)
+        shown += 1
+    if shown < len(entries):
+        lines.append(f"추가 제출서류 {len(entries) - shown}종: 전체 목록은 원문 확인")
+    if not entries:
+        lines.append("확인된 제출 서류가 없습니다. 원문을 확인하세요.")
     original = _safe_url(document.original_url)
     lines.extend(
         [

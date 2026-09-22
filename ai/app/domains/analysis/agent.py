@@ -12,6 +12,7 @@ from app.core.schemas import CamelCaseModel
 from app.domains.analysis.config import AnalysisSettings
 from app.domains.analysis.context_tools import (
     COMPANY_CONTEXT_INSTRUCTIONS,
+    EVIDENCE_COVERAGE_INSTRUCTIONS,
     NOTICE_APPLICABILITY_INSTRUCTIONS,
     normalize_company_narrative,
     uses_demo_profile,
@@ -226,7 +227,7 @@ class LangChainAnalysisRunner:
             *input_sections,
         ])
         prompt = "\n".join(prompt_parts)
-        system_prompt = SYSTEM_PROMPT + "\n" + COMPANY_CONTEXT_INSTRUCTIONS + "\n" + NOTICE_APPLICABILITY_INSTRUCTIONS
+        system_prompt = SYSTEM_PROMPT + "\n" + COMPANY_CONTEXT_INSTRUCTIONS + "\n" + NOTICE_APPLICABILITY_INSTRUCTIONS + "\n" + EVIDENCE_COVERAGE_INSTRUCTIONS
         if compact_retry:
             system_prompt += "\n" + COMPACT_RETRY_INSTRUCTIONS
         logger.info(

@@ -1255,8 +1255,13 @@ def test_retry_shrinks_sources_and_guides_complete_output_only_for_timeouts(
     def input_body(messages):
         data = messages[1]["content"].split("<current_document>\n", 1)[1].split("\n</current_document>", 1)[0]
         return json.loads(data)["contentText"]
-    assert len(input_body(prompts[0])) == source_limit
-    assert len(input_body(prompts[1])) == (source_limit if failure_kind == "validation" else min(source_limit, 24_000))
+    assert 0 < len(input_body(prompts[0])) <= source_limit
+    retry_limit = source_limit if failure_kind == "validation" else min(source_limit, 24_000)
+    assert 0 < len(input_body(prompts[1])) <= retry_limit
+    for prompt, expected_limit in zip(prompts, [source_limit, retry_limit]):
+        content = prompt[1]["content"].split("<current_document>\n", 1)[1]
+        content = content.split("\n</current_document>", 1)[0]
+        assert json.loads(content)["coverage"]["budgetChars"] == expected_limit
     assert "2026년 9월 30일 18시" in input_body(prompts[1])
     assert "자부담 비율은 20%" in input_body(prompts[1])
     retry_system = prompts[1][0]["content"]

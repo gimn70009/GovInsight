@@ -44,4 +44,24 @@ class ReportEmailTemplateTest {
         java.nio.file.Files.createDirectories(output.getParent());
         java.nio.file.Files.writeString(output, html);
     }
+    @Test void rendersSubmissionChecklistAndWritesPreview() throws Exception {
+        String body = java.nio.file.Files.readString(java.nio.file.Path.of("src/test/resources/reports/submission-checklist.txt"));
+        String html = ReportEmailTemplate.render("보고서 · 제출 준비 안내", body);
+        assertThat(html).contains("제출 준비 서류</h3>", "사업계획서 (ZIP)</a>", "개인정보동의서 (ZIP)</a>",
+                "납세증명서(해당 시)", "신청서</a>", "사업자등록증 사본");
+        assertThat(html).doesNotContain("data-submission-card", "준비 담당", "ZIP 내부 파일", "◆ ", "첨부파일 <span");
+        var output = java.nio.file.Path.of("build/report-preview/submission-checklist.html");
+        java.nio.file.Files.createDirectories(output.getParent());
+        java.nio.file.Files.writeString(output, html);
+    }
+
+    @Test void submissionCardsEscapeSourceAndKeepOriginalLinkOutsideLastCard() {
+        String body = "▸ 공고\n요약: 안내\n제출 준비 서류 ↓\n◆ 필수 │ <신청서>\n"
+                + "제출 주체: 주관기관\n준비 담당(권장): 사업 담당\n양식: [양식](https://example.org/form)\n"
+                + "원문: [게시글 보기](https://example.org/notice)";
+        String html = ReportEmailTemplate.render("보고서", body);
+        assertThat(html).contains("필수 │ &lt;신청서&gt;", "href=\"https://example.org/form\"");
+        assertThat(html).doesNotContain("<신청서>");
+        assertThat(html).contains("</div></div><div style=\"margin-top:22px");
+    }
 }

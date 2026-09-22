@@ -22,4 +22,12 @@ class ReportBodyFormatterTest {
         assertThat(ReportBodyFormatter.telegramHtml("▸ <제목>\n• 제출 서류: 신청서\n첨부파일 ↓\n• [서식](https://example.org/a)"))
                 .isEqualTo("<b>▸ &lt;제목&gt;</b>\n<b>• 제출 서류:</b> 신청서\n<b>첨부파일 ↓</b>\n• <a href=\"https://example.org/a\">서식</a>");
     }
+    @Test void telegramKeepsChecklistRolesAndArchiveLink() {
+        String body = "제출 준비 서류 ↓\n◆ 조건부 │ 납세증명서\n제출 주체: 해당 기관\n"
+                + "준비 담당(권장): 재무 담당\n양식: [ZIP 다운로드](https://example.org/zip?id=1&seq=2)\n"
+                + "ZIP 내부 파일: 서식/납세증명서.pdf";
+        assertThat(ReportBodyFormatter.telegramHtml(body)).contains("<b>제출 준비 서류 ↓</b>",
+                "<b>◆ 조건부 │ 납세증명서</b>", "준비 담당(권장): 재무 담당", "ZIP 내부 파일: 서식/납세증명서.pdf",
+                "href=\"https://example.org/zip?id=1&amp;seq=2\"");
+    }
 }
