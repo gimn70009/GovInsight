@@ -1,0 +1,8 @@
+.report-body { margin-top:16px; color:#42556e; font-size:13px; line-height:1.85; }
+.report-body-overview { padding:14px 16px; background:#eaf1fb; border:1px solid #d2dff0; border-radius:10px; }
+.report-body-card { margin-top:14px; padding:18px; border:1px solid #d9e3ef; border-radius:12px; background:#fff; }
+.report-body-card h3 { margin:0 0 8px; font-size:15px; line-height:1.6; color:#243e61; }
+.report-body-line { white-space:pre-wrap; overflow-wrap:anywhere; }
+.report-body-space { height:12px; }
+.report-body a { color:#2166bb; text-decoration:underline; text-underline-offset:3px; }
+.report-body a:focus-visible { outline:2px solid #327ce4; outline-offset:3px; }

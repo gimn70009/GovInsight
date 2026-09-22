@@ -1,0 +1,15 @@
+import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { X } from 'lucide-react'
+
+export default function DeliveryDialog({ title, children, onClose, busy = false }: {
+  title: string; children: ReactNode; onClose: () => void; busy?: boolean
+}) {
+  const ref = useRef<HTMLDialogElement>(null)
+  const titleId = useId()
+  useEffect(() => { const dialog = ref.current; dialog?.showModal(); return () => dialog?.close() }, [])
+  return <dialog ref={ref} className="telegram-dialog delivery-dialog" aria-labelledby={titleId}
+    onCancel={event => { event.preventDefault(); if (!busy) onClose() }}>
+    <header><h2 id={titleId}>{title}</h2><button type="button" className="icon-button" aria-label="닫기" disabled={busy} onClick={onClose}><X size={20} /></button></header>
+    {children}
+  </dialog>
+}

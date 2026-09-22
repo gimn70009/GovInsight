@@ -71,8 +71,43 @@ if (!(Test-Path src/main/resources/application.properties)) {
 <details>
 <summary>선택 기능: Telegram 설정</summary>
 
-서버에 `TELEGRAM_BOT_TOKEN`을 설정하고 `/telegram` 화면에서 수신자와 발송 여부를 관리합니다. 최초 저장 전에는 `TELEGRAM_ENABLED`·`TELEGRAM_CHAT_ID` 기본 설정을 사용합니다.
+서버에 `TELEGRAM_BOT_TOKEN`을 설정하고 `/reports` 화면에서 수신자와 발송 여부를 관리합니다. 최초 저장 전에는 `TELEGRAM_ENABLED`·`TELEGRAM_CHAT_ID` 기본 설정을 사용합니다.
 
 개인 채팅의 `/start`에 채팅 ID를 답장하려면 `TELEGRAM_COMMANDS_ENABLED=true`로 설정합니다. 봇당 서버 한 대에서만 켜며 다른 `getUpdates` 수신기나 웹훅과 함께 사용하지 않습니다. 받은 ID를 관리 화면에 등록해야 보고서 수신자가 됩니다.
 
 </details>
+
+
+## Gmail·네이버 이메일 보고서
+
+`/reports`에서 이메일 수신자를 등록하고 테스트 메일을 보낸 뒤 이메일 발송을 켭니다. 발신 서비스는 Gmail 또는 네이버 중 하나를 선택하며, 수신자는 두 서비스와 다른 유효한 이메일 주소를 함께 사용할 수 있습니다.
+
+서버 프로세스의 환경변수로 설정합니다. `APP_EMAIL_*`는 Spring 설정에 직접 매핑되므로 기존 로컬 설정 파일에서도 동작합니다. 예시 설정 파일을 복사한 경우 `EMAIL_PROVIDER`·`EMAIL_USERNAME`·`EMAIL_PASSWORD`·`EMAIL_SENDER_NAME`도 사용할 수 있습니다. 비밀번호는 코드·문서·Git에 저장하지 않습니다.
+
+| 환경변수 | 값 |
+| --- | --- |
+| `APP_EMAIL_PROVIDER` | `GMAIL`(기본) 또는 `NAVER` |
+| `APP_EMAIL_USERNAME` | 전체 발신 이메일 주소. SMTP 인증 및 From 주소로 사용 |
+| `APP_EMAIL_PASSWORD` | 서비스에서 발급한 앱 비밀번호 |
+| `APP_EMAIL_SENDER_NAME` | 표시 이름. 기본 `GovInsight` |
+
+- Gmail은 2단계 인증 후 [앱 비밀번호 안내](https://support.google.com/accounts/answer/185833?hl=ko)를 확인합니다. 조직 정책으로 앱 비밀번호를 사용할 수 없는 계정은 이 방식으로 연결할 수 없습니다. OAuth 로그인 연동은 이번 기능에 포함하지 않습니다.
+- 네이버는 메일 환경설정에서 IMAP/SMTP 사용 설정과 계정의 앱 비밀번호 요구 사항을 확인합니다. [네이버 공식 연결 안내](https://help.naver.com/service/30029/contents/21351?osType=COMMONOS)를 따릅니다.
+- [Gmail 공식 SMTP 안내](https://support.google.com/mail/answer/7104828?hl=ko) 및 네이버 공식 안내의 587/STARTTLS를 사용합니다. 인증·암호화와 서버 인증서 검증을 끌 수 없으며 서버 주소는 선택한 서비스에 고정합니다.
+- 설정을 적용하려면 백엔드를 재시작합니다. 화면의 `설정됨`은 인증 정보 등록 여부이며, 실제 연결은 테스트 메일로 확인합니다. 메일 완료는 SMTP 접수를 뜻하므로 수신함·스팸함도 확인합니다.
+- 새 `email_settings`, `email_recipients`, `email_deliveries` 테이블 및 이메일 발송 시퀀스가 필요합니다. 기존 `ddl-auto=none` DB에는 자동 생성되지 않습니다. 앞의 개발 DB 초기화 절은 **기존 데이터를 삭제**하므로 데이터 보존이 필요한 DB에 그대로 실행하지 마세요. 이번 작업은 로컬 DB 초기화를 수행하지 않았습니다.
+
+### 이메일 및 통합 이력 API
+
+모든 아래 API는 관리자 JWT를 요구합니다. 기존 `/api/telegram/**` API도 유지합니다. 실제 계약과 검증 제약은 Swagger에서 확인할 수 있습니다.
+
+| 메서드·경로 | 내용 |
+| --- | --- |
+| `GET /api/email/settings` | version, enabled, configured, provider, senderAddress, senderName, recipients, updatedAt |
+| `PUT /api/email/settings` | `{version, enabled, recipients: [{address, name, enabled}]}` 저장. 최대 20개, 주소 최대 254자, 이름 최대 100자 |
+| `POST /api/email/test-message` | `{expectedAddress}`에 해당하는 저장된 수신자로 테스트 발송 |
+| `POST /api/email/deliveries/{id}/retry` | `{expectedAddress, expectedAttemptCount}` 검증 후 실패한 한 건 재전송 |
+| `GET /api/report-deliveries` | page, size(1~100), from, to, channel(ALL/TELEGRAM/EMAIL), status 필터. 보고서별 telegram/email 상태와 발송 수 |
+| `GET /api/report-deliveries/{id}` | report, body, telegramDeliveries, emailDeliveries. 수신자별 발송 시각·오류·시도 횟수 |
+
+설정 충돌·이미 처리된 재전송·변경된 수신자는 409, 중복 주소·잘못된 입력·기간은 400, 미설정 계정·발송 꺼짐은 422를 반환합니다. 발신 인증 비밀번호와 SMTP 원본 예외는 응답하지 않습니다.

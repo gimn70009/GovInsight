@@ -1,5 +1,6 @@
 package com.publicmonitor.backend.domain.telegram.service;
 import com.publicmonitor.backend.domain.report.entity.MonitoringReportStatus;
+import com.publicmonitor.backend.domain.report.ReportBodyFormatter;
 import com.publicmonitor.backend.domain.telegram.*;
 import com.publicmonitor.backend.domain.telegram.entity.*;
 import com.publicmonitor.backend.domain.telegram.exception.*;
@@ -54,7 +55,7 @@ public class TelegramDeliveryWorker {
         if (properties.botToken().isBlank()) { d.fail("서버의 봇 토큰을 확인해 주세요."); return; }
         var report = d.getReport();
         String message = report.getTitle() + "\n\n" + report.getSummary();
-        if (message.length() > 4096) { d.fail("Telegram 메시지 최대 길이를 초과했습니다."); return; }
+        if (ReportBodyFormatter.displayLength(message) > 4096) { d.fail("Telegram 메시지 최대 길이를 초과했습니다."); return; }
         try { d.complete(client.send(d.getChatId(), message), now()); }
         catch (TelegramClientException e) { d.fail(e.getMessage()); }
     }

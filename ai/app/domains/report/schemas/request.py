@@ -6,6 +6,18 @@ from app.core.schemas import CamelCaseModel
 from app.domains.analysis.schemas.result import DocumentImportance, ProposalStrategy
 
 
+class ReportAttachmentRequest(CamelCaseModel):
+    file_name: str
+    download_url: str
+    extracted_text: str | None = None
+
+
+class ReportComparisonRequest(CamelCaseModel):
+    purpose: str | None = None
+    application_deadline: str | None = None
+    eligibility: str | None = None
+
+
 class ReportDocumentRequest(CamelCaseModel):
     detection_id: int = Field(gt=0)
     document_id: int = Field(gt=0)
@@ -23,6 +35,9 @@ class ReportDocumentRequest(CamelCaseModel):
     eligibility: str | None = Field(default=None, max_length=30)
     opportunity_score: int | None = Field(default=None, ge=0, le=100)
     proposal: ProposalStrategy | None = None
+    content_text: str | None = None
+    comparison_summary: ReportComparisonRequest | None = None
+    attachments: list[ReportAttachmentRequest] = Field(default_factory=list)
 
 
 class ReportJobRequest(CamelCaseModel):
