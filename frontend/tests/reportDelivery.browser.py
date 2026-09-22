@@ -179,6 +179,8 @@ async def main():
             await expect(dialog.locator('.report-submission-card')).to_have_count(0)
             await expect(rows.first.get_by_role('link',name='사업계획서 (ZIP)')).to_have_attribute('href','https://example.go.kr/download?id=1&seq=2')
             await expect(rows.nth(2)).to_have_text('납세증명서(해당 시)')
+            await expect(dialog.locator('.report-body-note')).to_have_count(1)
+            await expect(dialog.locator('.report-body-note')).to_have_text('미확인 항목: 제출처·방법, 문의 담당')
             await expect(dialog.locator('.report-body').get_by_text('공고문.pdf',exact=True)).to_have_count(0)
         await dialog.locator('.report-body').screenshot(path=str(OUT/'report-action-brief-desktop.png'))
         await page.set_viewport_size(dict(width=390,height=844))

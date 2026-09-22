@@ -9,6 +9,14 @@ public record PythonReportJobRequest(
         int totalSourceCount,
         int detectedDocumentCount,
         int warningCount,
-        List<PythonReportDocumentRequest> documents
+        List<PythonReportDocumentRequest> documents,
+        java.util.UUID jobId
 ) {
+    public PythonReportJobRequest(Long runId, LocalDateTime requestedAt, int totalSourceCount,
+            int detectedDocumentCount, int warningCount, List<PythonReportDocumentRequest> documents) {
+        this(runId, requestedAt, totalSourceCount, detectedDocumentCount, warningCount, documents, null);
+    }
+    public PythonReportJobRequest withJobId(String value) {
+        return new PythonReportJobRequest(runId, requestedAt, totalSourceCount, detectedDocumentCount, warningCount, documents, java.util.UUID.fromString(value));
+    }
 }

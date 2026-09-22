@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface EmailDeliveryRepository extends JpaRepository<EmailDelivery, Long> {
+    boolean existsByReportMonitoringRunIdAndStatus(Long runId, com.publicmonitor.backend.domain.email.entity.EmailDeliveryState status);
     List<EmailDelivery> findByReportIdOrderById(Long reportId);
     List<EmailDelivery> findByReportIdInOrderById(Collection<Long> reportIds);
     @Lock(LockModeType.PESSIMISTIC_WRITE)

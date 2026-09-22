@@ -37,7 +37,20 @@ class PdfParser:
         extract_text = getattr(page, "extract_text", None)
         if not callable(extract_text):
             return ""
-        return _normalize_page_text(extract_text() or "")
+        plain = _normalize_page_text(extract_text() or "")
+        lines = plain.splitlines()
+        # Layout is more expensive on long reference PDFs. Use it only when text
+        # runs have collapsed into a dominant line, as in the KIAT notice tables.
+        collapsed = bool(lines and max(map(len, lines)) > max(120, len(plain) * 0.7))
+        if collapsed:
+            try:
+                layout = _normalize_page_text(extract_text(extraction_mode="layout") or "")
+                if layout:
+                    return layout
+            except (TypeError, ValueError, NotImplementedError):
+                pass
+        return plain
+
 
 
 def _normalize_page_text(value: str) -> str:

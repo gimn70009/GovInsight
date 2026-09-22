@@ -41,6 +41,7 @@ public class PythonReportClient {
     private boolean isValid(PythonReportJobResponse response, PythonReportJobRequest request) {
         return response != null
                 && response.jobId() != null
+                && (request.jobId() == null || request.jobId().equals(response.jobId()))
                 && response.status() == PythonReportJobStatus.ACCEPTED
                 && response.documentCount() == request.documents().size();
     }

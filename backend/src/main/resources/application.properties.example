@@ -45,3 +45,8 @@ app.email.provider=${EMAIL_PROVIDER:GMAIL}
 app.email.username=${EMAIL_USERNAME:}
 app.email.password=${EMAIL_PASSWORD:}
 app.email.sender-name=${EMAIL_SENDER_NAME:GovInsight}
+
+# Resume durable report generation/delivery tasks after restart.
+app.report.recovery.enabled=${REPORT_RECOVERY_ENABLED:true}
+app.report.recovery.interval-ms=${REPORT_RECOVERY_INTERVAL_MS:5000}
+app.report.recovery.initial-delay-ms=${REPORT_RECOVERY_INITIAL_DELAY_MS:10000}

@@ -23,6 +23,8 @@ async def main():
         await expect(page.get_by_role('link',name='개인정보동의서 (ZIP)')).to_be_visible()
         await expect(page.get_by_text('납세증명서(해당 시)',exact=True)).to_be_visible()
         await expect(page.get_by_text('준비 담당',exact=False)).to_have_count(0)
+        await expect(page.locator('[data-report-note]')).to_have_count(1)
+        await expect(page.locator('[data-report-note]')).to_have_text('미확인 항목: 제출처·방법, 문의 담당')
         assert await page.locator('a').count()==5
         assert await page.locator('script').count()==0
         await page.screenshot(path=str(OUT/'submission-email-desktop.png'),full_page=True)

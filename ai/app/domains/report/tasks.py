@@ -2,6 +2,7 @@ import logging
 from uuid import UUID
 
 from app.domains.report.clients import ReportResultClient, ReportResultClientError
+from app.domains.report.enrichment import prepare_report_briefs
 from app.domains.report.schemas.delivery import ReportResultRequest, ReportResultStatus
 from app.domains.report.schemas.request import ReportJobRequest
 from app.domains.report.template import TemplateReportGenerator
@@ -18,7 +19,8 @@ async def run_report_job(job_id: UUID, request: ReportJobRequest) -> None:
     )
 
     try:
-        draft = TemplateReportGenerator().generate(request)
+        briefs = await prepare_report_briefs(request)
+        draft = TemplateReportGenerator().generate(request, briefs=briefs)
         result = ReportResultRequest(
             run_id=request.run_id,
             job_id=job_id,

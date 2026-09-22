@@ -17,7 +17,10 @@ public final class ReportEmailTemplate {
                 current = new ArrayList<>();
                 cards.add(current);
             }
-            if (!line.strip().matches("─{3,}")) current.add(line);
+            if (line.startsWith("  ↳ ") && !current.isEmpty()
+                    && current.getLast().startsWith("• ")) {
+                current.set(current.size() - 1, current.getLast() + "\n" + line.substring(4));
+            } else if (!line.strip().matches("─{3,}")) current.add(line);
         }
         var html = new StringBuilder("<!doctype html><html lang=\"ko\"><head><meta charset=\"UTF-8\">"
                 + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head>"
@@ -47,6 +50,7 @@ public final class ReportEmailTemplate {
                 + "<p style=\"margin:0 0 10px;font-size:11px;font-weight:700;letter-spacing:1px;color:#4c709d\">공고 " + String.format("%02d", index) + "</p>"
                 + "<h2 style=\"margin:0;color:#153957;font-size:22px;line-height:1.5;font-weight:700;overflow-wrap:anywhere;word-break:keep-all\">");
         html.append(ReportBodyFormatter.html(content.getFirst().substring(2))).append("</h2>");
+        boolean hasSubmissionFacts = content.stream().anyMatch(line -> line.startsWith("• 제출"));
         boolean headerOpen = true;
         boolean factsOpen = false;
         boolean attachmentsOpen = false;
@@ -103,7 +107,8 @@ public final class ReportEmailTemplate {
                         .append(linked(line.substring(4))).append("</p>");
             } else if (line.startsWith("• ") && !attachmentsOpen && line.contains(": ")) {
                 if (!factsOpen) {
-                    html.append("<h3 style=\"margin:0 0 12px;font-size:15px;color:#243f5e\">제출 안내</h3>")
+                    html.append("<h3 style=\"margin:0 0 12px;font-size:15px;color:#243f5e\">"
+                            + (hasSubmissionFacts ? "제출 안내" : "문의 안내") + "</h3>")
                             .append("<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"table-layout:fixed;border:1px solid #dde5ef;border-radius:10px\">");
                     factsOpen = true;
                 }
@@ -116,7 +121,7 @@ public final class ReportEmailTemplate {
                         .append(ReportBodyFormatter.html(label)).append("</div>")
                         .append("<div style=\"font-size:14px;line-height:1.85;overflow-wrap:anywhere;")
                         .append(unknown ? "color:#78879a" : label.contains("기한") ? "color:#215fa8;font-weight:700" : "color:#253d59")
-                        .append("\">").append(linked(value)).append("</div></td></tr>");
+                        .append("\">").append(factValues(value)).append("</div></td></tr>");
             } else {
                 if (factsOpen) { html.append("</table>"); factsOpen = false; }
                 if (line.equals("제출 준비 서류 ↓")) {
@@ -125,6 +130,10 @@ public final class ReportEmailTemplate {
                 } else if (line.equals("첨부파일 ↓")) {
                     html.append("<h3 style=\"margin:24px 0 12px;font-size:15px;color:#243f5e\">첨부파일 <span style=\"font-weight:400;font-size:12px;color:#718399\">파일명을 눌러 다운로드</span></h3>");
                     attachmentsOpen = true;
+                } else if ((line.startsWith("미확인 항목: ") || line.startsWith("안내: "))) {
+                    attachmentsOpen = false;
+                    html.append("<p data-report-note style=\"margin:16px 0 0;font-size:12px;line-height:1.7;color:#687c95;overflow-wrap:anywhere\">")
+                            .append(ReportBodyFormatter.html(line)).append("</p>");
                 } else if (line.startsWith("원문: ")) {
                     attachmentsOpen = false;
                     html.append("<div style=\"margin-top:22px;padding-top:16px;border-top:1px solid #dce5ef;font-size:14px;font-weight:700\">")
@@ -140,6 +149,15 @@ public final class ReportEmailTemplate {
         if (submissionCardOpen) html.append("</div>");
         if (factsOpen) html.append("</table>");
         return html.append("</td></tr></table></td></tr>").toString();
+    }
+
+    private static String factValues(String value) {
+        var result = new StringBuilder();
+        for (String item : value.split("\n")) {
+            result.append("<div data-report-fact-item style=\"padding:4px 0;line-height:1.65;word-break:keep-all;overflow-wrap:anywhere\">")
+                    .append(linked(item)).append("</div>");
+        }
+        return result.toString();
     }
 
     private static String linked(String text) {

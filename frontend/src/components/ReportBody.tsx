@@ -39,11 +39,25 @@ function reportLines(block: string): ReactNode[] {
           return <div key={index}><dt>{detail.slice(0, colon)}</dt><dd>{linkedText(detail.slice(colon + 2))}</dd></div>
         })}</dl>
       </article>)
+    } else if (!submissionSection && /^• (제출|문의)/.test(line) && line.includes(': ')) {
+      const key = i
+      const colon = line.indexOf(': ')
+      const values = [line.slice(colon + 2)]
+      while (i + 1 < lines.length && lines[i + 1].startsWith('  ↳ ')) {
+        values.push(lines[++i].slice(4))
+      }
+      rendered.push(<dl className="report-fact" key={key}>
+        <dt>{line.slice(2, colon)}</dt>
+        <dd><ul>{values.map((value, index) => <li key={index}>{linkedText(value)}</li>)}</ul></dd>
+      </dl>)
     } else if (submissionSection && line.startsWith('• ')) {
       rendered.push(<div className="report-submission-link" key={i}>{linkedText(line.slice(2))}</div>)
     } else if (line === '제출 준비 서류 ↓') {
       submissionSection = true
       rendered.push(<h4 className="report-submission-heading" key={i}>제출 준비 서류</h4>)
+    } else if ((line.startsWith('미확인 항목: ') || line.startsWith('안내: '))) {
+      submissionSection = false
+      rendered.push(<p className="report-body-note" key={i}>{line}</p>)
     } else if (line.startsWith('▸ ')) {
       rendered.push(<h3 key={i}>{line.slice(2)}</h3>)
     } else {

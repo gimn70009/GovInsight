@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from app.domains.report.schemas.request import ReportDocumentRequest
+from app.domains.report.submission_documents import _parts, source_priority
 
 _UNKNOWN = "원문 확인 필요"
 
@@ -14,13 +15,48 @@ class SubmissionFacts:
     applicant: str
     deadline: str
     destination: str
-    documents: str
     contact: str
 
 
-def submission_facts(document: ReportDocumentRequest) -> SubmissionFacts:
+def submission_routes(document: ReportDocumentRequest) -> str | None:
+    """Keep adjacent country rows and simultaneous-submission instructions together."""
+    routes = []
+    conditions = []
+    for part in _parts(document):
+        if source_priority(part) != 0:
+            continue
+        lines = [" ".join(line.split()) for line in part.text.splitlines()]
+        for index, line in enumerate(lines):
+            if re.search(r"(?:계획서|신청서|제안서)\s*접수\s*\(", line) and re.search(
+                r"www\.|https?://|홈페이지|시스템", line
+            ):
+                values = [line]
+                for following in lines[index + 1 : index + 4]:
+                    if not re.match(r"^\([^()]{1,30}\)", following):
+                        break
+                    if not re.search(r"www\.|https?://|홈페이지|시스템", following):
+                        break
+                    values.append(following)
+                route = " / ".join(values)
+                if route not in routes:
+                    routes.append(route)
+            if "동시에" in line and re.search(r"신청|접수|제출", line):
+                values = [re.sub(r"^[○ㅇ•\s]+", "", line)]
+                following = lines[index + 1] if index + 1 < len(lines) else ""
+                if re.match(r"접수|신청|제출", following) and "제외" in following:
+                    values.append(following)
+                condition = " ".join(values)
+                if condition not in conditions:
+                    conditions.append(condition)
+    joined = " / ".join(routes + conditions)
+    return joined if routes and len(joined) <= 300 else None
+
+
+def submission_facts(
+    document: ReportDocumentRequest, *, source_only: bool = False
+) -> SubmissionFacts:
     sources = [document.content_text or ""]
-    sources.extend(a.extracted_text or "" for a in document.attachments)
+    sources.extend(part.text for part in _parts(document)[1:] if source_priority(part) == 0)
     lines = _source_lines(sources)
     # Only preserve short, complete source passages. Long sections stay in the original.
     applicant = _find(
@@ -30,7 +66,9 @@ def submission_facts(document: ReportDocumentRequest) -> SubmissionFacts:
         lines,
         r"(?:접수|신청|제출|의견\s*제출)\s*(?:기간|기한|마감|일시)\s*[:：]",
     )
-    destination = _find(lines, r"(?:접수|신청|제출)\s*(?:방법|방식|처|장소|경로)\s*[:：]")
+    destination = submission_routes(document) or _find(
+        lines, r"(?:접수|신청|제출)\s*(?:방법|방식|처|장소|경로)\s*[:：]"
+    )
     if not destination:
         # An inquiry address alone must never become a submission address.
         destination = _find(
@@ -41,33 +79,17 @@ def submission_facts(document: ReportDocumentRequest) -> SubmissionFacts:
     contact = _find(
         lines, r"(?:문의(?:처|사항)?|담당(?:자|부서))\s*[:：]", r"@|\d{2,}|팀|과|부|센터"
     )
-    documents = _find(lines, r"(?:제출|신청|구비)\s*서류\s*[:：]")
     comparison = document.comparison_summary
-    if comparison:
+    if comparison and not source_only:
         applicant = applicant or _usable_applicant(comparison.eligibility)
         deadline = deadline or _usable_deadline(comparison.application_deadline)
     preparation = document.proposal.preparation if document.proposal else None
-    if preparation:
+    if preparation and not source_only:
         deadline = deadline or _usable_deadline(preparation.application_deadline)
-        if not documents:
-            official = [
-                f"{item.title}"
-                + (f" ({item.applies_to})" if item.requirement_level == "CONDITIONAL" else "")
-                for item in preparation.submission_documents
-                if item.stage == "APPLICATION"
-                and item.source
-                and item.source.origin in {"NOTICE_BODY", "ATTACHMENT"}
-                and item.requirement_level in {"MANDATORY", "CONDITIONAL"}
-            ]
-            if official:
-                documents = " · ".join(official[:3])
-                if len(official) > 3:
-                    documents += f" 외 {len(official) - 3}종 (전체 목록은 원문 확인)"
     return SubmissionFacts(
         applicant or _UNKNOWN,
         deadline or _UNKNOWN,
         destination or _UNKNOWN,
-        documents or _UNKNOWN,
         contact or _UNKNOWN,
     )
 
@@ -86,6 +108,12 @@ _SECTION_BOUNDARY = re.compile(
 _BULLET = re.compile(r"^[\s○□ㅇ•※*\-▷▶▸‣◆◇■●◎]+")
 _TABLE_HEADERS = {
     "역할",
+    "국내주관기관",
+    "국내공동기관",
+    "주관기관",
+    "공동기관",
+    "국내주관기관자격",
+    "국내공동기관자격",
     "구분",
     "대상",
     "기관명",
@@ -174,12 +202,22 @@ def _find(
         if required and not re.search(required, normalized):
             continue
         value = normalized[match.end() :].strip()
+        if match.group().endswith((":", "：")):
+            # Flattened HTML/PDF rows may contain several labelled fields on one line.
+            following = _ANY_LABEL.search(value)
+            if following:
+                value = value[: following.start()].rstrip(" /-·")
+            value = re.split(r"\s*※\s*(?:붙임|첨부)|\s+[\-•]\s*붙임", value, maxsplit=1)[0].strip()
         if (match.group().endswith((":", "：")) and _placeholder(value)) or (
             applicant and not _usable_applicant(value)
         ):
             continue
-        if match.start() == 0 and match.group().endswith((":", "：")):
-            normalized = value
+        if match.group().endswith((":", "：")):
+            prefix = normalized[: match.start()].strip()
+            # Retain country/round context, never repeat the preceding unrelated field.
+            if len(prefix) > 30 or _ANY_LABEL.search(prefix):
+                prefix = ""
+            normalized = f"{prefix} {match.group()} {value}" if prefix else value
         if normalized not in matches:
             matches.append(normalized)
     if not matches:
@@ -229,6 +267,12 @@ def _usable_deadline(value: str | None) -> str | None:
             segments = segments[:index]
             break
     candidate = " / ".join(segments)
+    first_date = _DATE.search(candidate)
+    if first_date:
+        following = _ANY_LABEL.search(candidate, first_date.end())
+        if following:
+            candidate = candidate[: following.start()].rstrip(" /-·")
+        candidate = re.split(r"\s*※\s*(?:붙임|첨부)", candidate, maxsplit=1)[0].strip()
     dates = list(_DATE.finditer(candidate))
     if not dates:
         return (
@@ -246,7 +290,16 @@ def _usable_deadline(value: str | None) -> str | None:
             return None
     # A damaged range cannot safely be presented as its one readable endpoint.
     if re.search(r"[~∼～]|부터", candidate) and len(dates) < 2:
-        return None
+        # A leading tilde means "until", not a damaged two-ended date range.
+        before_date = candidate[: dates[0].start()] if dates else ""
+        until = bool(
+            len(dates) == 1
+            and re.fullmatch(r"(?:[^0-9~∼～:\n]{1,30}:\s*)?[\s~∼～’'‘]*", before_date)
+            and "까지" in candidate
+            and not re.search(r"[~∼～]|부터", candidate[dates[0].end() :])
+        )
+        if not until:
+            return None
     return candidate
 
 
