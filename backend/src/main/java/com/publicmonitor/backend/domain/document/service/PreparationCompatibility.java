@@ -7,10 +7,10 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /** Adapts legacy company inputs for display without modifying stored analyses. */
-final class PreparationCompatibility {
+public final class PreparationCompatibility {
     private PreparationCompatibility() {}
 
-    static String normalize(String json, ObjectMapper mapper) {
+    public static String normalize(String json, ObjectMapper mapper) {
         JsonNode root = mapper.readTree(json);
         if (!(root.path("preparation") instanceof ObjectNode preparation)) return json;
         JsonNode inputs = preparation.remove("companyInputs");

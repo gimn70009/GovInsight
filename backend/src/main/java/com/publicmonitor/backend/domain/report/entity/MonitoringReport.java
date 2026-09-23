@@ -110,6 +110,11 @@ public class MonitoringReport extends BaseEntity {
         this.generatedAt = null;
     }
 
+    public void saveMinimum(String title, String summary) {
+        if (status != MonitoringReportStatus.PENDING) throw new IllegalStateException("대기 중인 보고서만 준비할 수 있습니다.");
+        this.title = title; this.summary = summary;
+    }
+
     public void complete(String title, String summary, LocalDateTime generatedAt) {
         if (status != MonitoringReportStatus.PENDING) {
             throw new IllegalStateException("대기 중인 보고서만 완료할 수 있습니다.");

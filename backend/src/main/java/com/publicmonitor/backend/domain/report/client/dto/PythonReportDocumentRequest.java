@@ -22,6 +22,10 @@ public record PythonReportDocumentRequest(
         String reason,
         AnalysisEligibility eligibility,
         Integer opportunityScore,
-        Object proposal
+        Object proposal,
+        String contentText,
+        Object comparisonSummary,
+        List<Attachment> attachments
 ) {
+    public record Attachment(String fileName, String downloadUrl, String extractedText) {}
 }

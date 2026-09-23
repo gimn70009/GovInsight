@@ -36,6 +36,7 @@ class ReportResultServiceTest {
     @Mock MonitoringRunRepository runRepository;
     @Mock MonitoringReportRepository reportRepository;
     @Mock ApplicationEventPublisher eventPublisher;
+    @Mock com.publicmonitor.backend.domain.report.repository.ReportTaskRepository tasks;
 
     private ReportResultService service;
     private MonitoringRun run;
@@ -46,6 +47,7 @@ class ReportResultServiceTest {
         service = new ReportResultService(
                 runRepository,
                 reportRepository,
+                tasks,
                 Clock.fixed(Instant.parse("2026-08-21T01:00:00Z"), ZoneOffset.UTC),
                 eventPublisher
         );
@@ -54,7 +56,7 @@ class ReportResultServiceTest {
         ReflectionTestUtils.setField(run, "status", MonitoringRunStatus.COLLECTED);
         report = MonitoringReport.pending(run);
         ReflectionTestUtils.setField(report, "id", 20L);
-        given(runRepository.findById(10L)).willReturn(Optional.of(run));
+        given(runRepository.findForUpdate(10L)).willReturn(Optional.of(run));
         given(reportRepository.findByMonitoringRunId(10L)).willReturn(Optional.of(report));
     }
 

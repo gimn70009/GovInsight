@@ -1,6 +1,7 @@
 package com.publicmonitor.backend.domain.telegram;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.publicmonitor.backend.domain.report.ReportBodyFormatter;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
@@ -19,7 +20,7 @@ public class TelegramClient {
     }
 
     public long send(String chatId, String text) {
-        var response = call("sendMessage", new MessageRequest(chatId, text, new LinkPreviewOptions(true)), MessageResponse.class);
+        var response = call("sendMessage", new MessageRequest(chatId, ReportBodyFormatter.telegramHtml(text), "HTML", new LinkPreviewOptions(true)), MessageResponse.class);
         if (response == null || !response.ok() || response.result() == null) {
             throw invalidResponse();
         }
@@ -103,6 +104,7 @@ public class TelegramClient {
     private record UpdatesResponse(boolean ok, List<Update> result) {}
     private record WebhookResponse(boolean ok, WebhookInfo result) {}
     private record MessageRequest(@JsonProperty("chat_id") String chatId, String text,
+                                  @JsonProperty("parse_mode") String parseMode,
                                   @JsonProperty("link_preview_options") LinkPreviewOptions linkPreviewOptions) {}
     private record LinkPreviewOptions(@JsonProperty("is_disabled") boolean disabled) {}
     private record ChatRequest(@JsonProperty("chat_id") String chatId) {}

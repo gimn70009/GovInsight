@@ -1,0 +1,53 @@
+.channel-panel { display:grid; gap:16px; padding:20px 0 24px; }
+.channel-automation { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:22px; background:#e3edfc; border:1px solid #bed1ec; border-radius:14px; }
+.channel-automation-copy { display:flex; align-items:center; gap:14px; min-width:0; }
+.channel-automation-icon { display:grid; place-items:center; width:42px; height:42px; flex:none; color:#346cb5; border:1px solid #c7d8ee; border-radius:12px; background:#f5f9ff; }
+.channel-automation h3 { margin:0; color:#263c59; font-size:14px; }
+.channel-automation p { margin:7px 0 0; color:#526b8b; font-size:12px; line-height:1.7; word-break:keep-all; }
+.channel-automation-actions { display:flex; align-items:center; gap:24px; flex:none; }
+.channel-automation-actions .schedule-switch { min-height:40px; gap:10px; font-size:12px; color:#526b8b; }
+.channel-automation-actions .schedule-switch--on { color:#2165c4; }
+.channel-settings-button { display:inline-flex; align-items:center; gap:7px; min-height:38px; padding:8px 12px; border:1px solid #b8cde8; border-radius:8px; background:#f8fbff; color:#3d5c82; font-size:12px; white-space:nowrap; }
+.channel-settings-button:hover { background:#fff; border-color:#6697d7; }
+.channel-recipients { overflow:hidden; border:1px solid #ccd7e5; border-radius:14px; background:#fff; }
+.channel-recipient-header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:21px 22px; background:#e5ebf3; border-bottom:1px solid #ccd7e5; }
+.channel-recipient-header h2 { display:flex; align-items:center; gap:8px; margin:0; color:#283d57; font-size:14px; }
+.channel-count { display:inline-grid; place-items:center; min-width:23px; padding:3px 6px; background:#fff; border:1px solid #ced9e8; border-radius:6px; color:#42648e; font-size:11px; }
+.channel-recipient-header p { display:flex; flex-wrap:wrap; gap:10px; margin:7px 0 0; color:#586d87; font-size:12px; line-height:1.6; }
+.channel-recipient-header p>span { padding-left:10px; border-left:1px solid #b7c7db; color:#375e91; font-weight:600; }
+.channel-recipient-row { display:flex; align-items:center; justify-content:space-between; gap:16px; min-height:87px; padding:17px 22px; border-left:3px solid transparent; background:#fff; }
+.channel-recipient-row+.channel-recipient-row { border-top:1px solid #dbe4ef; }
+.channel-recipient-row.is-selected { border-left-color:#347fed; background:#f0f6ff; }
+.channel-recipient-choice { display:flex; align-items:center; gap:13px; min-height:44px; min-width:0; flex:1; cursor:pointer; }
+.channel-recipient-choice input { flex:none; width:18px; height:18px; margin:0; accent-color:#2873df; cursor:pointer; }
+.channel-recipient-choice input:focus-visible { outline:3px solid #7daff2; outline-offset:4px; }
+.channel-recipient-avatar { display:grid; place-items:center; width:36px; height:36px; border:1px solid #d5dfed; border-radius:10px; background:#fff; color:#6582a8; flex:none; }
+.channel-recipient-person { display:grid; gap:5px; min-width:0; }
+.channel-recipient-person strong { color:#293f5c; font-size:13px; font-weight:600; overflow-wrap:anywhere; }
+.channel-recipient-person small { color:#617691; font-size:12px; overflow-wrap:anywhere; }
+.channel-recipient-row.is-unselected .channel-recipient-person strong { color:#66768b; }
+.channel-recipient-actions { display:flex; align-items:center; gap:6px; flex:none; }
+.channel-recipient-actions .icon-button { width:36px; height:36px; color:#637b98; border-radius:8px; }
+.channel-recipient-actions .icon-button:hover { color:#2165c4; background:#dceafd; }
+.channel-test-button { display:inline-flex; align-items:center; gap:6px; min-height:36px; padding:8px 11px; margin-right:5px; border:1px solid #ccd9ea; border-radius:8px; color:#486990; background:#fff; font-size:12px; }
+.channel-test-button:hover { color:#2165c4; border-color:#83a8d9; }
+.channel-setup-guide .telegram-help-steps { grid-template-columns:1fr; }
+.channel-setup-guide .telegram-help-note { color:#53657b; font-size:12px; line-height:1.8; }
+.channel-registration-hint { font-size:12px; color:#60738d; line-height:1.8; }
+@media(max-width:760px) {
+ .channel-panel { gap:12px; padding:14px 0 16px; }
+ .channel-automation { padding:17px 15px; flex-wrap:wrap; gap:14px; }
+ .channel-automation-copy { gap:10px; align-items:flex-start; }
+ .channel-automation-icon { width:34px; height:34px; border-radius:9px; }
+ .channel-automation p { font-size:11px; }
+ .channel-automation-actions { width:100%; justify-content:space-between; gap:12px; }
+ .channel-recipient-header { display:grid; grid-template-columns:minmax(0,1fr) auto; padding:17px 14px; align-items:start; gap:10px; }
+ .channel-recipient-header .button { padding:10px; font-size:12px; gap:5px; }
+ .channel-recipient-header p { font-size:11px; gap:4px 8px; }
+ .channel-recipient-header p>span { border:0; padding:0; }
+ .channel-recipient-row { display:grid; grid-template-columns:minmax(0,1fr); gap:8px; padding:15px 12px; }
+ .channel-recipient-choice { gap:10px; }
+ .channel-recipient-avatar { width:30px; height:32px; }
+ .channel-recipient-actions { justify-self:end; gap:8px; }
+ .channel-recipient-actions .icon-button,.channel-test-button { min-height:40px; }
+}

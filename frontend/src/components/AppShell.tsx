@@ -15,7 +15,7 @@ export default function AppShell() {
         <nav className="side-nav" aria-label="주요 메뉴">
           <NavLink to="/monitoring" aria-label="모니터링"><Radar size={18} /><span>모니터링</span></NavLink>
           <NavLink to="/documents" aria-label="감지된 게시글"><FileSearch2 size={18} /><span>감지된 게시글</span></NavLink>
-          <NavLink to="/telegram" aria-label="텔레그램"><Send size={18} /><span>텔레그램</span></NavLink>
+          <NavLink to="/reports" aria-label="보고서 발송"><Send size={18} /><span>보고서 발송</span></NavLink>
         </nav>
         <div className="sidebar__footer">
           <div className="admin-profile"><span className="avatar">A</span><div><strong>관리자</strong><small>운영 계정</small></div></div>

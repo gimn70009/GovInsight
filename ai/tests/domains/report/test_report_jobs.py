@@ -59,3 +59,14 @@ def test_reject_report_job_without_documents() -> None:
     response = client.post("/internal/monitoring/report-jobs", json=request)
 
     assert response.status_code == 422
+
+
+def test_preserves_backend_attempt_id_for_recovery(monkeypatch):
+    request = valid_request()
+    request["jobId"] = "fe4ff289-c26b-4f10-96ef-819124590030"
+    background = Mock()
+    monkeypatch.setattr("app.domains.report.api.run_report_job", background)
+    response = client.post("/internal/monitoring/report-jobs", json=request)
+    assert response.status_code == 202
+    assert response.json()["jobId"] == request["jobId"]
+    assert str(background.call_args.args[0]) == request["jobId"]

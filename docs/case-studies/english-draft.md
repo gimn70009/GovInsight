@@ -35,12 +35,12 @@
 <details>
 <summary>검증 코드와 실행 방법</summary>
 
-[본문 정리·검증 코드](../../ai/app/domains/analysis/proposal_language.py) · [형식 회귀 테스트](../../ai/tests/domains/analysis/test_english_body_format.py) · [언어 판정 테스트](../../ai/tests/domains/analysis/test_proposal_language.py)
+[본문 정리·검증 코드](../../ai/app/domains/analysis/proposals/language.py) · [형식 회귀 테스트](../../ai/tests/domains/analysis/proposals/test_english_body_format.py) · [언어 판정 테스트](../../ai/tests/domains/analysis/proposals/test_language.py)
 
 `ai` 폴더에서 실행합니다. 외부 모델은 호출하지 않습니다.
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests/domains/analysis/test_english_body_format.py tests/domains/analysis/test_proposal_language.py
+.\.venv\Scripts\python.exe -m pytest tests/domains/analysis/proposals/test_english_body_format.py tests/domains/analysis/proposals/test_language.py
 ```
 
 </details>

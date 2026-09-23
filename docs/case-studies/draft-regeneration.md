@@ -31,7 +31,7 @@
 <details>
 <summary>검증 코드와 실행 방법</summary>
 
-[백엔드 저장·재작성 테스트](../../backend/src/test/java/com/publicmonitor/backend/domain/document/service/ProposalWriteServiceTest.java) · [AI 생성 테스트](../../ai/tests/domains/analysis/test_proposal_writer.py)
+[백엔드 저장·재작성 테스트](../../backend/src/test/java/com/publicmonitor/backend/domain/document/service/ProposalWriteServiceTest.java) · [AI 생성 테스트](../../ai/tests/domains/analysis/proposals/test_writer.py)
 
 각 모듈 폴더에서 실행합니다. 외부 모델은 호출하지 않습니다.
 
@@ -40,7 +40,7 @@
 .\gradlew.bat test --tests "*ProposalWriteServiceTest"
 
 # ai
-.\.venv\Scripts\python.exe -m pytest tests/domains/analysis/test_proposal_writer.py
+.\.venv\Scripts\python.exe -m pytest tests/domains/analysis/proposals/test_writer.py
 ```
 
 </details>
