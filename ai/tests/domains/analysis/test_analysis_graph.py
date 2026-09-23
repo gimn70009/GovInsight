@@ -469,7 +469,7 @@ def test_graph_normalizes_high_importance_without_company_relevance() -> None:
 
 def test_system_prompt_calibrates_importance_and_opportunity_scores() -> None:
     assert "마감일이 임박했다는 사실만으로 HIGH" in SYSTEM_PROMPT
-    assert "핵심 산업: 반도체·디스플레이·철강과 직접 일치 40점" in SYSTEM_PROMPT
+    assert "핵심 산업: 회사 프로필의 targetIndustries와 직접 일치 40점" in SYSTEM_PROMPT
     assert "단순 모니터링·관제·데이터 수집·시각화·플랫폼 통합·시스템 운영 0점" in SYSTEM_PROMPT
     assert "직접 경제가치: 계약·지원 금액과 회사 수혜가 명시됨 35점" in SYSTEM_PROMPT
     assert "신청·입찰 자격: 회사가 직접 충족함이 확인됨 30점" in SYSTEM_PROMPT
@@ -814,7 +814,7 @@ def test_notice_insights_retry_incomplete_or_labeled_text(bad_body: str) -> None
     assert result.proposal.sections[1].body == valid.draft.proposal.sections[1].body
 
 
-def test_general_analysis_reads_both_profiles_and_final_result_retains_demo_flag() -> None:
+def test_general_analysis_uses_actual_profile_and_marks_new_result_without_demo() -> None:
     runner = LangChainAnalysisRunner.__new__(LangChainAnalysisRunner)
     runner._settings = SimpleNamespace(
         max_text_chars=20_000, timeout_seconds=5, model_name="mock-model",
@@ -822,7 +822,7 @@ def test_general_analysis_reads_both_profiles_and_final_result_retains_demo_flag
     runner._evidence_agent = SimpleNamespace(collect=collect_all_evidence)
     draft = analysis(Favorability.NOT_APPLICABLE).draft
     draft.proposal.sections[0].body = (
-        "데모 가정에서는 우리 회사는 GPU 한 대를 두 팀이 공유하고 있습니다."
+        "우리 회사는 제조 AI 에이전트 개발 역량을 보유하고 있습니다."
     )
     runner._assess_legal_risks = AsyncMock(return_value=draft.comparison_summary.legal_risks)
     runner._analysis_model = AsyncMock()
@@ -833,13 +833,13 @@ def test_general_analysis_reads_both_profiles_and_final_result_retains_demo_flag
 
     messages = runner._analysis_model.ainvoke.call_args.args[0]
     assert "BISTelligence" in messages[1]["content"]
-    assert "SYNTHETIC_DEMO" in messages[1]["content"]
-    assert "DEMO-NEED-GPU" in messages[1]["content"]
-    assert generated.proposal.uses_demo_profile is True
+    assert "SYNTHETIC_DEMO" not in messages[1]["content"]
+    assert "DEMO-NEED-GPU" not in messages[1]["content"]
+    assert generated.proposal.uses_demo_profile is False
     assert generated.proposal.sections[0].body == (
-        "우리 회사는 GPU 한 대를 두 팀이 공유하고 있습니다."
+        "우리 회사는 제조 AI 에이전트 개발 역량을 보유하고 있습니다."
     )
-    assert generated.model_dump(by_alias=True)["proposal"]["usesDemoProfile"] is True
+    assert generated.model_dump(by_alias=True)["proposal"]["usesDemoProfile"] is False
 
 
 @pytest.mark.parametrize("deadline", ["2026-04-20 11:00", "2026-03-19~2026-04-20"])

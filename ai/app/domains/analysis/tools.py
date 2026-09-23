@@ -7,7 +7,6 @@ from langchain.tools import ToolRuntime, tool
 
 from app.domains.analysis.company_profile import (
     BISTELLIGENCE_PROFILE,
-    USE_DEMO_COMPANY_PROFILE,
     CompanyProfile,
 )
 from app.domains.analysis.context_tools import (
@@ -24,7 +23,6 @@ class AnalysisToolContext:
     document: AnalysisDocumentRequest
     max_text_chars: int
     company_profile: CompanyProfile = BISTELLIGENCE_PROFILE
-    include_demo_profile: bool = USE_DEMO_COMPANY_PROFILE
     result_cache: dict[str, str] = field(
         default_factory=dict,
         compare=False,

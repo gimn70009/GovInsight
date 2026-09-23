@@ -12,12 +12,11 @@ from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field, ValidationError
 
 from app.core.schemas import CamelCaseModel
-from app.domains.analysis.company_profile import BISTELLIGENCE_PROFILE, USE_DEMO_COMPANY_PROFILE
+from app.domains.analysis.company_profile import BISTELLIGENCE_PROFILE
 from app.domains.analysis.config import AnalysisSettings
 from app.domains.analysis.context_tools import (
     COMPANY_CONTEXT_INSTRUCTIONS,
     NOTICE_APPLICABILITY_INSTRUCTIONS,
-    normalize_company_narrative,
     serialize_company_profile,
 )
 from app.domains.analysis.legal_risks import unsupported_consequences
@@ -91,7 +90,7 @@ def _verified_checks(request: LegalPairRequest):
 def pair_prompt(request: LegalPairRequest, company_profile: dict | None = None) -> str:
     if company_profile is None:
         company_profile = json.loads(serialize_company_profile(
-            BISTELLIGENCE_PROFILE, include_demo=USE_DEMO_COMPANY_PROFILE,
+            BISTELLIGENCE_PROFILE,
         ))
     evidence = [
         {key: value for key, value in item.items() if key != "interpretation"}
@@ -191,7 +190,7 @@ class LegalPairReviewer:
                 ),
             )
         company_profile = json.loads(serialize_company_profile(
-            BISTELLIGENCE_PROFILE, include_demo=USE_DEMO_COMPANY_PROFILE,
+            BISTELLIGENCE_PROFILE,
         ))
         prompt = pair_prompt(request, company_profile)
         key = hashlib.sha256(prompt.encode()).hexdigest()
@@ -206,13 +205,13 @@ class LegalPairReviewer:
                     message="다른 비교를 처리하고 있습니다. 잠시 후 다시 확인해 주세요.",
                 )
             task = asyncio.create_task(self._generate_and_cache(
-                key, request, prompt, "demoProfile" in company_profile,
+                key, request, prompt,
             ))
             self.inflight[key] = task
             task.add_done_callback(lambda finished: self.inflight.pop(key, None))
         return await asyncio.shield(self.inflight[key])
 
-    async def _generate_and_cache(self, key, request, prompt, uses_demo):
+    async def _generate_and_cache(self, key, request, prompt):
         started = time.monotonic()
         try:
             async with asyncio.timeout(30):
@@ -255,11 +254,7 @@ class LegalPairReviewer:
             )
         if response.status != "COMPLETED" and not response.message:
             response.message = "추가 해석을 완료하지 못했습니다. 공고별 결과를 확인해 주세요."
-        response.uses_demo_profile = uses_demo and response.status == "COMPLETED"
-        if response.uses_demo_profile:
-            for insight in response.insights:
-                for field in ("comparison", "implication", "verification"):
-                    setattr(insight, field, normalize_company_narrative(getattr(insight, field)))
+        response.uses_demo_profile = False
         ttl = 3600 if response.status == "COMPLETED" else 30
         self.cache[key] = (time.monotonic() + ttl, response)
         self.cache.move_to_end(key)

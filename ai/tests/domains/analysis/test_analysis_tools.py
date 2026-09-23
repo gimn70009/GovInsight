@@ -49,8 +49,8 @@ def test_agent_reads_required_sources_and_passes_original_evidence() -> None:
     assert "<current_document>" in combined
     assert "<company_profile>" in combined
     assert "BISTelligence" in combined
-    assert "SYNTHETIC_DEMO" in combined
-    assert "DEMO-NEED-GPU" in combined
+    assert "SYNTHETIC_DEMO" not in combined
+    assert "DEMO-NEED-GPU" not in combined
     assert "<attachments>" in combined
     assert "<previous_version_diff>" in combined
     assert used_tools == [
@@ -108,9 +108,9 @@ def test_reuses_cached_tool_result_within_document_context() -> None:
     assert calls == 1
 
 
-def test_runtime_company_context_can_explicitly_disable_demo() -> None:
+def test_runtime_company_context_contains_only_actual_profile() -> None:
     context = AnalysisToolContext(
-        document=document(), max_text_chars=10_000, include_demo_profile=False,
+        document=document(), max_text_chars=10_000,
     )
     sections, _ = collected_inputs(context)
     combined = "\n".join(sections)

@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -6,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from app.domains.analysis.company_profile import BISTELLIGENCE_PROFILE
 from app.domains.analysis.proposal_writer import (
     ProposalWriter,
     ProposalWriteRequest,
@@ -144,7 +146,7 @@ def test_less_than_four_real_sections_are_disclosed_and_input_limit_is_enforced(
         request("가" * 80_001)
 
 
-def test_profile_evidence_retains_actual_and_demo_values_and_constraints():
+def test_profile_evidence_keeps_unknown_fields_and_excludes_legacy_demo_data():
     limitation = "고객 데이터의 외부 전송 승인 문서는 아직 확보하지 못했습니다."
     capacity = "공유 GPU를 활용하며 신규 개발 작업의 가용 인력은 제한적입니다."
     evidence = company_evidence(
@@ -155,7 +157,7 @@ def test_profile_evidence_retains_actual_and_demo_values_and_constraints():
         }
     )
     assert f"unknownFields[0]: {limitation}" in evidence
-    assert f"demoProfile.capacity: {capacity}" in evidence
+    assert not any("demoProfile" in value or capacity in value for value in evidence)
     assert not any("DEMO-NEED" in value for value in evidence)
 
 
@@ -174,7 +176,11 @@ def test_single_flight_cache_profile_change_and_failed_result_not_cached():
             assert first is second
             assert (await writer.write(request())).status == "COMPLETED"
             assert compose.await_count == 1
-            with patch("app.domains.analysis.proposal_writer.USE_DEMO_COMPANY_PROFILE", False):
+            profile = compose.call_args.args[1]
+            assert "demoProfile" not in profile
+            assert profile["verifiedFacts"] == list(BISTELLIGENCE_PROFILE.verified_facts)
+            updated = replace(BISTELLIGENCE_PROFILE, description="수정된 실제 회사 소개입니다.")
+            with patch("app.domains.analysis.proposal_writer.BISTELLIGENCE_PROFILE", updated):
                 await writer.write(request())
             assert compose.await_count == 2
             compose.side_effect = RuntimeError("sensitive internal data")
@@ -217,6 +223,9 @@ def test_two_stage_generation_and_one_bounded_validation_retry():
             }
             result = await writer._compose(request(), profile, settings(), "2026-09-08")
         assert result.status == "COMPLETED"
+        assert result.uses_demo_profile is False
+        assert "SYNTHETIC_DEMO" not in str(writing_model.ainvoke.call_args.args)
+        assert "demoProfile" not in str(writing_model.ainvoke.call_args.args)
         assert outline_model.ainvoke.await_count == 1
         assert writing_model.ainvoke.await_count == 2
 

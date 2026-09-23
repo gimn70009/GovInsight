@@ -104,13 +104,13 @@ def test_invented_pair_sanction_is_rejected_even_with_valid_evidence_id():
     assert validate_pair_output(answer, request()).status == "UNAVAILABLE"
 
 
-def test_pair_uses_both_profiles_and_invalidates_cache_when_company_context_changes():
+def test_pair_uses_actual_profile_and_invalidates_cache_when_company_context_changes():
     async def scenario():
         reviewer = LegalPairReviewer()
-        model = AsyncMock()
+        model = AsyncMock(return_value=None)
         answer = output()
         answer["insights"][0]["verification"] = (
-            "데모 가정에서는 두 신청 과제의 목표와 수행 범위를 대조합니다."
+            "두 신청 과제의 목표와 수행 범위를 대조합니다."
         )
         model.ainvoke.return_value = answer
         module = "app.domains.analysis.legal_pair"
@@ -122,32 +122,22 @@ def test_pair_uses_both_profiles_and_invalidates_cache_when_company_context_chan
             settings.return_value.api_key = "test-key"
             factory.return_value.with_structured_output.return_value = model
             result = await reviewer.review(request())
-            assert result.uses_demo_profile is True
-            assert result.insights[0].verification == (
-                "두 신청 과제의 목표와 수행 범위를 대조합니다."
-            )
-            assert result.model_dump(by_alias=True)["usesDemoProfile"] is True
+            assert result.uses_demo_profile is False
+            assert result.model_dump(by_alias=True)["usesDemoProfile"] is False
             prompt = model.ainvoke.call_args.args[0]
             assert "BISTelligence" in prompt
-            assert "SYNTHETIC_DEMO" in prompt and "DEMO-NEED-GPU" in prompt
+            assert "SYNTHETIC_DEMO" not in prompt and "DEMO-NEED-GPU" not in prompt
             await reviewer.review(request())
             assert model.ainvoke.await_count == 1
-            with patch(f"{module}.USE_DEMO_COMPANY_PROFILE", False):
-                result = await reviewer.review(request())
-                assert result.uses_demo_profile is False
-                assert "SYNTHETIC_DEMO" not in model.ainvoke.call_args.args[0]
-            assert model.ainvoke.await_count == 2
             updated = replace(
                 BISTELLIGENCE_PROFILE,
-                demo_profile=replace(
-                    BISTELLIGENCE_PROFILE.demo_profile, scenario_name="변경된 데모 설정",
-                ),
+                evidence_limitations=("추가 증빙 확인이 필요한 회사 정보입니다.",),
             )
             with patch(f"{module}.BISTELLIGENCE_PROFILE", updated):
                 result = await reviewer.review(request())
-                assert result.uses_demo_profile is True
-                assert "변경된 데모 설정" in model.ainvoke.call_args.args[0]
-            assert model.ainvoke.await_count == 3
+                assert result.uses_demo_profile is False
+                assert "추가 증빙 확인이 필요한 회사 정보입니다." in model.ainvoke.call_args.args[0]
+            assert model.ainvoke.await_count == 2
 
     asyncio.run(scenario())
 

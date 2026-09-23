@@ -14,12 +14,11 @@ from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
 from app.core.schemas import CamelCaseModel
-from app.domains.analysis.company_profile import BISTELLIGENCE_PROFILE, USE_DEMO_COMPANY_PROFILE
+from app.domains.analysis.company_profile import BISTELLIGENCE_PROFILE
 from app.domains.analysis.config import AnalysisSettings
 from app.domains.analysis.context_tools import (
     COMPANY_CONTEXT_INSTRUCTIONS,
     NOTICE_APPLICABILITY_INSTRUCTIONS,
-    normalize_company_narrative,
     serialize_company_profile,
 )
 from app.domains.analysis.proposal_guidance import (
@@ -202,7 +201,9 @@ def company_evidence(profile: dict) -> list[str]:
     def visit(value, path):
         if isinstance(value, dict):
             for key, item in value.items():
-                if key not in {"sourceUrls", "usagePolicy", "dataType", "isVerifiedCompanyFact"}:
+                if key not in {
+                    "sourceUrls", "usagePolicy", "dataType", "isVerifiedCompanyFact", "demoProfile",
+                }:
                     visit(item, f"{path}.{key}" if path else key)
         elif isinstance(value, (list, tuple)):
             for index, item in enumerate(value):
@@ -234,7 +235,6 @@ def verify_outline(output, text):
 
 
 def normalize_draft_body(text):
-    text = normalize_company_narrative(text)
     # Provenance is presented in separate evidence cards; keep it out of submission prose.
     text = re.sub(r"[\(\[](?:근거|증거|출처)\s*:[^()\[\]\n]*[\)\]]", "", text)
     # Remove numeric metadata only; retain the structured company evidence field.
@@ -376,7 +376,7 @@ previous_sections는 수정 대상인 이전 초안이며 사실 근거나 새�
 모든 문장은 합니다체(합니다/있습니다/입니다)와 마침표로 끝냅니다.
 회사 작성자 관점에서 '당사'로 호칭을 통일하고 같은 첫 문장과 회사 소개를 반복하지 않습니다.
 항목당 반드시 400자 이상, 보통 2~3개 문단과 500~900자로 충분히 설명합니다.
-본문에 데모나 회사 프로필을 참고했다는 내부 설명과 작성 과정 설명을 쓰지 않습니다.
+본문에 회사 프로필을 참고했다는 내부 설명과 작성 과정 설명을 쓰지 않습니다.
 가장 적합한 회사 업무 하나를 이번 제안의 중심 과제로 정하고 모든 항목에서 같은 범위를 유지합니다.
 회사에 여러 고객 업무가 있어도 반도체·디스플레이·철강 과제를 모두 한 사업으로 묶지 않습니다.
 다른 산업의 사례는 구분된 수행 역량 근거로만 활용하며 새 과업으로 추가하지 않습니다.
@@ -411,7 +411,7 @@ Keep plans distinct from existing facts. Do not invent achievements, figures or 
 Use complete sentences and terminal punctuation. Do not output writing instructions or placeholders.
 Return plain paragraphs only. Separate paragraphs with a blank line, never wrap a sentence manually.
 Do not include section headings, markdown, code fences, citations or evidence annotations in body.
-Keep internal evidence labels, source notes and demo profile commentary out of the body.
+Keep internal evidence labels, source notes and internal profile commentary out of the body.
 Never append company_evidence_ids or evidence_ids to body; use only the separate JSON field.
 Keep each body between 400 and 2,600 characters, usually two or three concise paragraphs.
 confirmation_items는 사용자가 확인할 사항이므로 기존처럼 한국어로 씁니다.
@@ -594,7 +594,6 @@ class ProposalWriter:
         profile = json.loads(
             serialize_company_profile(
                 BISTELLIGENCE_PROFILE,
-                include_demo=USE_DEMO_COMPANY_PROFILE,
             )
         )
         try:
@@ -758,11 +757,11 @@ class ProposalWriter:
                     output = merge_korean_repairs(repair_original, output, repair_ids)
                 # Validate all hard requirements before optional style repair.
                 validated_draft = verify_writing(
-                    output, outline, evidence, request.file_name, "demoProfile" in profile,
+                    output, outline, evidence, request.file_name, False,
                     language, check_korean_style=False,
                 )
                 return verify_writing(
-                    output, outline, evidence, request.file_name, "demoProfile" in profile, language
+                    output, outline, evidence, request.file_name, False, language
                 )
             except Exception as exception:
                 logger.warning("제안 검증 실패 stage=body attempt=%s detail=%s",
