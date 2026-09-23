@@ -1,5 +1,6 @@
 package com.publicmonitor.backend.domain.report;
 
+import com.publicmonitor.backend.global.presentation.YearNotation;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -8,7 +9,7 @@ public final class ReportEmailTemplate {
     private ReportEmailTemplate() {}
 
     public static String render(String title, String body) {
-        String normalized = body.replace("\r\n", "\n");
+        String normalized = YearNotation.display(body).replace("\r\n", "\n");
         var intro = new ArrayList<String>();
         var cards = new ArrayList<List<String>>();
         List<String> current = intro;

@@ -53,9 +53,25 @@ Windows용 UUID·해시 호환 모듈을 사용하도록 `ai` 폴더의 가상�
 
 AI 호출은 횟수와 시간을 제한합니다. 결과를 스키마로 검증하고, 첨부 하나의 읽기 실패는 가능한 경우 경고로 남겨 나머지 처리를 이어갑니다. 사업 제안 후속 처리까지 끝난 뒤 보고서 단계로 넘어가며, 양식 초안은 사용자가 별도로 요청합니다.
 
+### 분석 폴더 구조
+
+`api.py`·`service.py`·`tasks.py`·`config.py`는 분석 API, 작업 접수·실행, 설정을 담당합니다. 세부 기능은 다음 폴더에서 찾을 수 있습니다.
+
+| 폴더 | 역할 |
+| --- | --- |
+| [context](app/domains/analysis/context) | 회사 프로필, 이전 분석 조회, 공통 입력 지시 |
+| [evidence](app/domains/analysis/evidence) | 근거 조사 에이전트·도구, 긴 원문 선택, 버전 비교 |
+| [legal](app/domains/analysis/legal) | 법률 검토, 공고 간 비교, 설명 문체 |
+| [proposals](app/domains/analysis/proposals) | 사업 제안, 준비도 점수, 양식·초안 작성과 언어 검증 |
+| [workflow](app/domains/analysis/workflow) | 분석 에이전트·그래프, 재시도, 기회 점수, 검색용 텍스트 |
+| [schemas](app/domains/analysis/schemas) | 요청·응답·결과·전송 형식 |
+| [clients](app/domains/analysis/clients) | 백엔드 결과 전송 |
+
+[분석 테스트](tests/domains/analysis)도 같은 역할별 폴더로 구분합니다. 양식 테스트 자료는 `proposals/fixtures`에 있습니다.
+
 ## 회사 정보 입력
 
-[회사 프로필](app/domains/analysis/company_profile.py)의 실제 회사 소개·역량·공개 수행 사례와 확인 필요 항목만 분석에 사용합니다. 가상 고객 업무·GPU 수요·예산·인력·서류 상태를 담은 데모 프로필은 제거했습니다.
+[회사 프로필](app/domains/analysis/context/company_profile.py)의 실제 회사 소개·역량·공개 수행 사례와 확인 필요 항목만 분석에 사용합니다. 가상 고객 업무·GPU 수요·예산·인력·서류 상태를 담은 데모 프로필은 제거했습니다.
 
 변경은 AI 서버 재시작 후 새로 생성하는 공고 분석·사업 제안·양식 초안·공고 간 비교에 적용됩니다. 기존 저장 결과는 자동 갱신되지 않습니다. 호환용 `usesDemoProfile` 필드는 유지하지만 새로 생성하는 결과에는 false를 설정합니다.
 

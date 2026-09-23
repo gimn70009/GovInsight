@@ -7,6 +7,7 @@ import com.publicmonitor.backend.domain.analysis.entity.OpportunityDimensionType
 import com.publicmonitor.backend.domain.analysis.entity.OpportunityPriority;
 import com.publicmonitor.backend.domain.document.entity.AttachmentParseStatus;
 import com.publicmonitor.backend.domain.document.entity.DocumentChangeType;
+import com.publicmonitor.backend.global.presentation.YearNotation;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -37,6 +38,12 @@ public record DocumentDetectionDetailResponse(
             Opportunity opportunity,
             String applicationDeadline
     ) {
+        public Analysis {
+            summary = YearNotation.display(summary);
+            keyPoints = displayLines(keyPoints);
+            reason = YearNotation.display(reason);
+            applicationDeadline = YearNotation.display(applicationDeadline);
+        }
     }
 
     @Schema(description = "회사 활용·대응 전략")
@@ -53,6 +60,7 @@ public record DocumentDetectionDetailResponse(
             Boolean usesDemoProfile
     ) {
         public Proposal {
+            draftReason = YearNotation.display(draftReason);
             usesDemoProfile = Boolean.TRUE.equals(usesDemoProfile);
         }
 
@@ -92,6 +100,10 @@ public record DocumentDetectionDetailResponse(
             String applicationDeadline,
             StrategyOnePage strategy
     ) {
+        public Preparation {
+            meetingAgenda = displayLines(meetingAgenda);
+            applicationDeadline = YearNotation.display(applicationDeadline);
+        }
     }
 
     public record PreparationItem(
@@ -111,6 +123,13 @@ public record DocumentDetectionDetailResponse(
             Integer estimatedBusinessDays,
             List<String> scoreBasis
     ) {
+        public PreparationItem {
+            title = YearNotation.display(title);
+            detail = YearNotation.display(detail);
+            nextAction = YearNotation.display(nextAction);
+            appliesTo = YearNotation.display(appliesTo);
+            scoreBasis = displayLines(scoreBasis);
+        }
     }
 
     public record RequirementSource(
@@ -163,6 +182,10 @@ public record DocumentDetectionDetailResponse(
 
     @Schema(description = "회사 활용·대응 전략의 한 단계")
     public record Section(String title, String body) {
+        public Section {
+            title = YearNotation.display(title);
+            body = YearNotation.display(body);
+        }
     }
 
     @Schema(description = "AI 기회 점수와 대응 우선순위", nullable = true)
@@ -179,6 +202,13 @@ public record DocumentDetectionDetailResponse(
             Integer score,
             String reason
     ) {
+        public OpportunityDimension {
+            reason = YearNotation.display(reason);
+        }
+    }
+
+    private static List<String> displayLines(List<String> values) {
+        return values == null ? null : values.stream().map(YearNotation::display).toList();
     }
 
     @Schema(description = "첨부파일")

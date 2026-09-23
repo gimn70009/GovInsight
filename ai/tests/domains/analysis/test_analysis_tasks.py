@@ -1,8 +1,8 @@
 import asyncio
 
-from app.domains.analysis.graph import AnalysisWorkflowError
 from app.domains.analysis.schemas.request import AnalysisDocumentRequest
 from app.domains.analysis.tasks import _analyze_documents
+from app.domains.analysis.workflow.graph import AnalysisWorkflowError
 
 
 class SlowFailingWorkflow:
@@ -69,7 +69,8 @@ def test_analyze_documents_isolates_unexpected_document_errors() -> None:
 def test_legal_only_task_never_invokes_base_analysis_and_has_valid_delivery():
     from unittest.mock import AsyncMock
     from uuid import uuid4
-    from app.domains.analysis.legal_risks import no_candidate_legal_risks
+
+    from app.domains.analysis.legal.risks import no_candidate_legal_risks
     from app.domains.analysis.schemas.delivery import AnalysisResultRequest, LegalReviewResult
     from app.domains.analysis.schemas.request import AnalysisScope
     from app.domains.analysis.tasks import _ScopedAnalysisWorkflow

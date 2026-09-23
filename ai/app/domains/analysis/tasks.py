@@ -5,12 +5,9 @@ from uuid import UUID
 
 from langchain_openai import OpenAIEmbeddings
 
-from app.domains.analysis.agent import LangChainAnalysisRunner
 from app.domains.analysis.clients import AnalysisResultClient, AnalysisResultClientError
 from app.domains.analysis.config import AnalysisConfigurationError, AnalysisSettings
-from app.domains.analysis.graph import AnalysisWorkflowError, DocumentAnalysisWorkflow
-from app.domains.analysis.notice_search_text import build_search_profile
-from app.domains.analysis.proposal_drafting import (
+from app.domains.analysis.proposals.drafting import (
     LangChainProposalGenerationRunner,
     TwoStageAnalysisWorkflow,
     _requires_proposal_generation,
@@ -32,6 +29,9 @@ from app.domains.analysis.schemas.result import (
     DocumentAnalysisResult,
     ProposalDraftStatus,
 )
+from app.domains.analysis.workflow.agent import LangChainAnalysisRunner
+from app.domains.analysis.workflow.graph import AnalysisWorkflowError, DocumentAnalysisWorkflow
+from app.domains.analysis.workflow.search_text import build_search_profile
 
 logger = logging.getLogger(__name__)
 

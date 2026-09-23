@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.domains.analysis.evidence_selection import allocate_budgets, select_evidence
+from app.domains.analysis.evidence.selection import allocate_budgets, select_evidence
 from app.domains.report.facts import (
     SubmissionFacts,
     _placeholder,
