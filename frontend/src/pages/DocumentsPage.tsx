@@ -24,6 +24,7 @@ import type { ChangeType, DocumentAnalysis, DocumentDetail, DocumentDetection, M
 import { Badge, EmptyState, InlineError, Loading, Pagination } from '../components/ui'
 
 import { isApplicationExpired, normalizeLegalNarrative } from '../utils/noticePresentation'
+import { companyCapabilities } from '../utils/companyCapabilities'
 
 const opportunityLabels: Record<OpportunityDimensionType, string> = {
   COMPANY_FIT: '회사 적합도',
@@ -683,6 +684,8 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
   const laterDocuments = proposalDraft?.preparation?.submissionDocuments.filter((item) => item.stage && item.stage !== 'APPLICATION') ?? []
   const preparation = proposalDraft?.preparation
   const highlights = selectPreparationHighlights(preparation)
+  const capabilities = companyCapabilities(preparation?.strategy.capabilityMatches)
+  const hasLegacyCapabilities = (preparation?.strategy.capabilityMatches?.length ?? 0) > capabilities.length
   const proposalSectionsOverview = preparation ? [
     { id: 'proposal-agenda', label: '회의 안건', count: preparation.meetingAgenda.length, suffix: '건' },
     { id: 'proposal-eligibility', label: '확인할 지원 조건', count: preparation.eligibilityChecklist.length, suffix: '건' },
@@ -828,9 +831,15 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
                           <summary>기업 역량·활용 방향 및 지원 중단 기준 보기 <ChevronDown size={15} /></summary>
                           <div className="strategy-capabilities">
                             <h6>기업 역량과 활용 방향</h6>
-                            {proposalDraft.preparation.strategy.capabilityMatches?.map((item) => (
-                              <div key={`${item.confirmedFact}-${item.strategicInterpretation}`}><p><span>보유 역량·실적</span>{item.confirmedFact}</p><p><span>활용 방향</span>{item.strategicInterpretation}</p></div>
+                            {capabilities.map((item) => (
+                              <div key={item.companyEvidenceId}><p><span>회사 역량·사례</span>{item.confirmedFact}</p><p><span>공고 활용 방향</span>{item.strategicInterpretation}</p></div>
                             ))}
+                            {hasLegacyCapabilities && (
+                              <p className="strategy-capability-note">이전 분석은 회사 역량과 공고 조건을 구분하지 않아 해당 항목을 표시하지 않습니다. 다음 모니터링에서 새 사업 제안이 생성되면 확인할 수 있습니다.</p>
+                            )}
+                            {!capabilities.length && !hasLegacyCapabilities && (
+                              <p className="strategy-capability-note">이 공고와 연결해 제시할 회사 역량·사례가 확인되지 않았습니다.</p>
+                            )}
                           </div>
                           <div className="strategy-stop">
                             <h6>지원 중단 기준</h6>

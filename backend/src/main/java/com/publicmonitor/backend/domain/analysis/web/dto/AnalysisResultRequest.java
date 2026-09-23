@@ -191,13 +191,14 @@ public record AnalysisResultRequest(
             @NotBlank @Size(max = 120) String recommendedProject,
             @NotBlank @Size(max = 500) String recommendedParticipation,
             @NotBlank @Size(max = 500) String alternativeParticipation,
-            @NotNull @Size(min = 1, max = 4) List<@Valid StrategyCapabilityMatch> capabilityMatches,
+            @NotNull @Size(max = 4) List<@Valid StrategyCapabilityMatch> capabilityMatches,
             @NotNull @Size(min = 1, max = 4) List<@Valid StrategyGap> criticalGaps,
             @NotNull @Size(min = 1, max = 4) List<@Valid StrategyStopCriterion> stopCriteria
     ) {
     }
 
     public record StrategyCapabilityMatch(
+            @Size(max = 80) String companyEvidenceId,
             @NotBlank @Size(max = 500) String confirmedFact,
             @NotBlank @Size(max = 500) String strategicInterpretation
     ) {

@@ -26,6 +26,7 @@ from app.domains.analysis.schemas.request import (
     AnalysisScope,
 )
 from app.domains.analysis.schemas.result import (
+    PREPARATION_SCHEMA_VERSION,
     DocumentAnalysisResult,
     ProposalDraftStatus,
 )
@@ -272,7 +273,7 @@ async def _generate_and_deliver_proposals(
         )
         async with semaphore:
             completed = await workflow.analyze(document)
-        if completed.proposal.preparation_schema_version != 12:
+        if completed.proposal.preparation_schema_version != PREPARATION_SCHEMA_VERSION:
             return None
         return ProposalUpdateResult(
             detection_id=document.detection_id,
