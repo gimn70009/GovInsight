@@ -67,21 +67,67 @@ def test_generate_report_without_model_call() -> None:
     assert "신규 1건 │ 수정 1건 │ 변경 없음 1건" in draft.summary
     assert "▸ 변경 없는 안내" in draft.summary
     assert "변경 없음 │ 기회점수: 82점" in draft.summary
-    assert "• 제출·의견 기한: 원문 확인 필요" in draft.summary
-    assert "• 제출처·방법: 원문 확인 필요" in draft.summary
+    assert "• 제출·의견 기한:" not in draft.summary
+    assert "• 제출처·방법:" not in draft.summary
     assert "원문: [게시글 보기](https://example.go.kr/1)" in draft.summary
     assert "참여를 권장" not in draft.summary
+
+
+def proposal_with_checklist(items):
+    def item(value):
+        data = {"title": value} if isinstance(value, str) else value
+        return {
+            "detail": "신청을 위해 준비할 제출 서류입니다.",
+            "nextAction": "접수 전에 해당 자료를 준비합니다.",
+            "requirementLevel": "MANDATORY",
+            "stage": "APPLICATION",
+            **data,
+        }
+
+    return {
+        "sections": [{"title": "사업 제안", "body": "공고와 회사 정보를 검토한 사업 제안입니다."}],
+        "documentType": "BUSINESS_NOTICE",
+        "draftStatus": "READY",
+        "preparation": {
+            "submissionDocuments": [item(value) for value in items],
+            "eligibilityChecklist": [item("신청 자격 확인")],
+            "strategy": {
+                "decision": "CONDITIONAL_GO",
+                "decisionReason": "필요한 증빙을 확보한 후 신청 여부를 결정합니다.",
+                "recommendedProject": "기술 실증 사업 참여 검토",
+                "recommendedParticipation": "제출 자료를 준비한 후 주관기관으로 참여합니다.",
+                "alternativeParticipation": "신청 자격이 부족하면 협력기관으로 참여합니다.",
+                "capabilityMatches": [
+                    {
+                        "confirmedFact": "회사는 관련 기술을 보유하고 있습니다.",
+                        "strategicInterpretation": "보유 기술의 적용 가능성을 검토합니다.",
+                    }
+                ],
+                "stopCriteria": [
+                    {
+                        "type": "OFFICIAL_REQUIREMENT",
+                        "condition": "신청 자격을 충족하지 못하면 신청하지 않습니다.",
+                        "rationale": "공고에서 요구하는 자격 충족이 필요합니다.",
+                    }
+                ],
+            },
+        },
+    }
 
 
 def with_document(**updates):
     request = report_request()
     data = request.documents[1].model_dump(by_alias=True)
+    checklist = updates.pop("checklist", None)
+    if checklist is not None:
+        updates["proposal"] = proposal_with_checklist(checklist)
     data.update(updates)
     return request.model_copy(update={"documents": [ReportDocumentRequest.model_validate(data)]})
 
 
 def test_action_fields_keep_source_subject_deadline_time_and_real_downloads():
     request = with_document(
+        checklist=["신청 공문", "신청서", "계획서"],
         contentText="신청대상: 비수도권 지방자치단체\n"
         "접수기간: 2026-11-02 09:00 ~ 2026-11-06 16:00 (한국시간)\n"
         "제출처: 사업 담당 부서 / submit@example.go.kr\n제출서류: 신청 공문, 신청서, 계획서\n"
@@ -102,9 +148,9 @@ def test_action_fields_keep_source_subject_deadline_time_and_real_downloads():
     assert "비수도권 지방자치단체" in body
     assert "2026-11-06 16:00 (한국시간)" in body
     assert "submit@example.go.kr" in body
-    assert "신청 공문, 신청서, 계획서" in body
+    assert all(title in body for title in ["신청 공문", "신청서", "계획서"])
     assert "사업지원팀 (02-0000-0000)" in body
-    assert "[신청서 ［서식］.hwp](https://example.go.kr/file?id=1&name=form%281%29.hwp)" in body
+    assert "[신청서](https://example.go.kr/file?id=1&name=form%281%29.hwp)" in body
     assert "요약: 지역 실증사업 후보과제를 모집합니다." in body
 
 
@@ -122,9 +168,10 @@ def test_inquiry_address_is_not_submission_address_and_filenames_are_not_require
         )
         .summary
     )
-    assert "• 제출처·방법: 원문 확인 필요" in body
-    assert "• 제출·의견 기한: 원문 확인 필요" in body
-    assert "• 제출 서류: 원문 확인 필요" in body
+    assert "• 제출처·방법:" not in body
+    assert "• 제출·의견 기한:" not in body
+    assert "제출 준비 서류 ↓" not in body
+    assert "안내:" in body and "체크리스트 미작성" not in body
     assert "• 문의 담당: 상담팀 help@example.go.kr" in body
 
 
@@ -171,12 +218,14 @@ def test_unsafe_and_duplicate_urls_are_not_rendered_as_downloads():
         TemplateReportGenerator()
         .generate(
             with_document(
+                checklist=["신청서"],
+                contentText="제출서류: 신청서",
                 attachments=[
                     {"fileName": "악성 파일", "downloadUrl": "javascript:alert(1)"},
                     {"fileName": "정보 노출", "downloadUrl": "https://user:secret@example.go.kr/f"},
                     {"fileName": "신청서.hwp", "downloadUrl": "https://example.go.kr/form.hwp"},
                     {"fileName": "중복", "downloadUrl": "https://example.go.kr/form.hwp"},
-                ]
+                ],
             )
         )
         .summary
@@ -187,9 +236,11 @@ def test_unsafe_and_duplicate_urls_are_not_rendered_as_downloads():
 
 def test_long_links_survive_and_display_budget_uses_utf16():
     request = with_document(
+        checklist=["신청서"],
+        contentText="제출서류: 신청서",
         attachments=[
             {"fileName": "신청서.hwp", "downloadUrl": "https://example.go.kr/f?token=" + "a" * 2500}
-        ]
+        ],
     )
     body = TemplateReportGenerator().generate(request).summary
     assert "a" * 2500 in body
@@ -199,9 +250,11 @@ def test_long_links_survive_and_display_budget_uses_utf16():
 
 def test_many_documents_report_omissions_without_broken_links():
     request = with_document(
+        checklist=["신청서"],
+        contentText="제출서류: 신청서",
         attachments=[
             {"fileName": "😀신청서.hwp", "downloadUrl": "https://example.go.kr/f?q=" + "b" * 700}
-        ]
+        ],
     )
     request = request.model_copy(update={"documents": request.documents * 50})
     body = TemplateReportGenerator().generate(request).summary
@@ -209,7 +262,9 @@ def test_many_documents_report_omissions_without_broken_links():
     assert len(body.encode("utf-16-le")) // 2 <= 20000
     assert "그 외" in body
     assert "원문: [게시글 보기](https://example.go.kr/2)" in body
-    assert body.count("](https://") == body.count(")")
+    assert body.count("](https://") == len(
+        __import__("re").findall(r"\]\(https://[^\s()]+\)", body)
+    )
 
 
 def test_source_markdown_is_not_interpreted_as_generated_link():
@@ -264,19 +319,20 @@ def test_bullet_labels_are_removed_and_split_table_values_are_found():
         TemplateReportGenerator()
         .generate(
             with_document(
+                checklist=["신청 공문", "신청서"],
                 contentText=(
                     "▷ 제출서류 : 신청 공문, 신청서\n"
                     "▶ 제출서류: 신청 공문, 신청서\n"
                     "제출처\nsubmit@example.go.kr\n"
                     "문의처:\n사업지원팀 (02-0000-0000)"
-                )
+                ),
             )
         )
         .summary
     )
-    assert "• 제출 서류: 신청 공문, 신청서" in body
+    assert "• 신청 공문" in body and "• 신청서" in body
     assert "▷ 제출서류" not in body
-    assert body.count("신청 공문, 신청서") == 1
+    assert body.count("• 신청 공문") == 1
     assert "• 제출처·방법: submit@example.go.kr" in body
     assert "• 문의 담당: 사업지원팀 (02-0000-0000)" in body
 
@@ -287,5 +343,167 @@ def test_empty_submission_heading_does_not_absorb_next_inquiry_heading():
         .generate(with_document(contentText="제출처:\n문의처: help@example.go.kr"))
         .summary
     )
-    assert "• 제출처·방법: 원문 확인 필요" in body
+    assert "• 제출처·방법:" not in body
     assert "• 문의 담당: help@example.go.kr" in body
+
+
+def test_table_role_header_is_not_reported_as_applicant():
+    body = (
+        TemplateReportGenerator()
+        .generate(
+            with_document(
+                contentText="신청대상\n역 할\n구분\n수행기관\n문의처: 사업지원팀 02-0000-0000",
+                comparisonSummary={"eligibility": "역 할"},
+            )
+        )
+        .summary
+    )
+    assert "• 제출 주체·대상:" not in body
+    assert "• 문의 담당: 사업지원팀 02-0000-0000" in body
+
+
+def test_numbered_documents_and_applicant_exception_are_kept_together():
+    body = (
+        TemplateReportGenerator()
+        .generate(
+            with_document(
+                checklist=["지정신청서 및 정관 사본", "사업계획서", "납세증명서"],
+                contentText=(
+                    "신청대상: 중소기업\n단, 휴업·폐업 기업은 제외합니다.\n"
+                    "제출서류\n1. 지정신청서 및 정관 사본\n2. 사업계획서\n3. 납세증명서\n"
+                    "문의처: 사업지원팀 02-0000-0000"
+                ),
+            )
+        )
+        .summary
+    )
+    assert "단, 휴업·폐업 기업은 제외합니다." in body
+    titles = [line for line in body.splitlines() if line.startswith("• ")]
+    assert all(
+        any(value in title for title in titles)
+        for value in ["지정신청서", "사업계획서", "납세증명서"]
+    )
+    assert all("문의처" not in title for title in titles)
+
+
+def test_empty_form_cells_are_not_actual_submission_values():
+    body = (
+        TemplateReportGenerator()
+        .generate(with_document(contentText="신청기관: ○○○\n제출처: __________\n담당자: 성 명"))
+        .summary
+    )
+    assert "• 제출 주체·대상:" not in body
+    assert "• 제출처·방법:" not in body
+
+
+def test_long_filename_uses_short_document_name_without_changing_download_url():
+    name = "중소벤처기업부_" + "아주긴사업명_" * 30 + "규제특례_신청서_최종.hwpx"
+    body = (
+        TemplateReportGenerator()
+        .generate(
+            with_document(
+                checklist=["신청서"],
+                contentText="제출서류: 신청서",
+                attachments=[
+                    {"fileName": name, "downloadUrl": "https://example.go.kr/file?id=ABC&seq=2"}
+                ],
+            )
+        )
+        .summary
+    )
+    assert "[신청서](https://example.go.kr/file?id=ABC&seq=2)" in body
+    assert name not in body
+
+
+def test_applicant_example_does_not_become_eligibility():
+    body = (
+        TemplateReportGenerator()
+        .generate(
+            with_document(
+                contentText="신청기관: 예시: 중소기업",
+                comparisonSummary={"eligibility": "작성예시: 중소기업"},
+            )
+        )
+        .summary
+    )
+    assert "• 제출 주체·대상:" not in body
+
+
+def test_windows_line_endings_preserve_numbered_document_list():
+    body = (
+        TemplateReportGenerator()
+        .generate(
+            with_document(
+                checklist=["신청서", "납세증명서"],
+                contentText="제출서류\r\n1. 신청서\r\n2. 납세증명서\r\n"
+                "문의처: 사업지원팀 02-0000-0000",
+            )
+        )
+        .summary
+    )
+    assert "• 신청서" in body and "• 납세증명서" in body
+
+
+def test_damaged_deadline_is_unknown_instead_of_any_line_containing_digits():
+    from app.domains.report.facts import submission_facts
+
+    for value in [
+        "월 수 시까지 / 수요조사서 접수는 접수마감일 시 이전까지 제출 완료되어야 함 18※ / "
+        "수요조사서 작성 제출시 유의사항 / .",
+        "2026년 2월 30일",
+        "2026-13-12",
+        "2026-09-09 ~ 월 일",
+    ]:
+        document = with_document(
+            contentText="접수기간: " + value, comparisonSummary={"applicationDeadline": value}
+        ).documents[0]
+        assert submission_facts(document).deadline == "원문 확인 필요", value
+
+
+def test_deadline_stops_before_next_section_and_preserves_both_endpoints():
+    from app.domains.report.facts import submission_facts
+
+    value = "2026년 9월 9일(수) ~ 2026년 10월 12일(월)"
+    for separator in ["\n", " / "]:
+        document = with_document(
+            contentText="접수기간: " + value + separator + "접수 및 문의처"
+        ).documents[0]
+        assert submission_facts(document).deadline == value
+
+
+def test_invalid_deadline_does_not_hide_later_valid_source():
+    from app.domains.report.facts import submission_facts
+
+    document = with_document(
+        contentText="접수기간: 월 수 시까지 18※\n제출기한: 2026-10-12 16:00"
+    ).documents[0]
+    assert submission_facts(document).deadline == "2026-10-12 16:00"
+
+
+def test_unknown_fields_are_collapsed_once_and_known_fields_stay_visible():
+    request = with_document(
+        checklist=["사업자등록증 사본"],
+        comparisonSummary={"applicationDeadline": "2027-01-28 16:00"},
+    )
+    body = TemplateReportGenerator().generate(request).summary
+    assert "• 제출·의견 기한: 2027-01-28 16:00" in body
+    assert "• 제출처·방법:" not in body and "• 문의 담당:" not in body
+    assert body.count("안내:") == 1
+    assert "안내: 일부 접수 정보는 원문에서 확인해 주세요." in body
+    assert "원문 확인 필요" not in body
+    assert "• 사업자등록증 사본" in body
+
+
+def test_all_confirmed_fields_have_no_unknown_notice():
+    body = (
+        TemplateReportGenerator()
+        .generate(
+            with_document(
+                checklist=["사업계획서"],
+                contentText="신청대상: 중소기업\n접수기간: 2026-10-12 16:00\n"
+                "제출처: 온라인 시스템\n문의처: 지원팀 02-0000-0000",
+            )
+        )
+        .summary
+    )
+    assert "미확인 항목:" not in body

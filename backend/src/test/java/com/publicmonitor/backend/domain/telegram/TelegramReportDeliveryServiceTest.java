@@ -19,7 +19,8 @@ class TelegramReportDeliveryServiceTest {
     final TelegramSettingsService settings = mock(TelegramSettingsService.class);
     final TelegramClient client = mock(TelegramClient.class);
     final TelegramProperties properties = new TelegramProperties(true, "test-token", "123", Duration.ofSeconds(1), Duration.ofSeconds(1), "");
-    final TelegramDeliveryWorker worker = new TelegramDeliveryWorker(repository, settings, client, properties, Clock.systemUTC());
+    final TelegramDeliveryWorker worker = new TelegramDeliveryWorker(repository, settings, client, properties, Clock.systemUTC(), new com.publicmonitor.backend.domain.report.service.ReportDeliveryAttemptService(
+            mock(com.publicmonitor.backend.domain.email.repository.EmailDeliveryRepository.class), repository, Clock.systemUTC()));
     TelegramDelivery target;
     @BeforeEach void setup() {
         var report = MonitoringReport.pending(MonitoringRun.create(MonitoringTriggerType.MANUAL, 1, LocalDateTime.now()));

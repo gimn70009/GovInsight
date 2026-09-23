@@ -33,7 +33,7 @@ import org.springframework.transaction.support.TransactionTemplate;
     "app.local-admin.enabled=false", "app.monitoring.schedule.enabled=false", "spring.jpa.show-sql=false"
 })
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, TelegramReportDeliveryService.class, TelegramDeliveryWorker.class,
+@Import({com.publicmonitor.backend.domain.report.service.ReportDeliveryAttemptService.class, JpaAuditingConfig.class, TelegramReportDeliveryService.class, TelegramDeliveryWorker.class,
         TelegramDeliveryPreparationService.class, TelegramSettingsService.class, TelegramReportQueryService.class,
         TelegramPersistenceIntegrationTest.Config.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)

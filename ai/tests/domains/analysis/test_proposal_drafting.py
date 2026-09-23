@@ -702,14 +702,15 @@ def test_duplicate_documents_keep_distinct_stage_and_evidence() -> None:
     assert {row.stage for row in matches} == {item.stage, RequirementStage.AGREEMENT}
 
 
-def test_proposal_generation_reads_both_profiles_and_persists_demo_usage() -> None:
+def test_proposal_generation_uses_actual_profile_and_clears_model_demo_flag() -> None:
     async def scenario():
         runner = LangChainProposalGenerationRunner.__new__(LangChainProposalGenerationRunner)
         runner._settings = SimpleNamespace(max_text_chars=20_000, proposal_timeout_seconds=5)
         draft = await ProposalRunner().generate(document(), result())
         draft.preparation.eligibility_checklist[0].detail = (
-            "데모 가정에서는 회사에 관련 역량이 있지만 원본 증빙 확인이 필요합니다."
+            "회사에 관련 역량이 있지만 원본 증빙 확인이 필요합니다."
         )
+        draft.uses_demo_profile = True
         original_source = draft.preparation.eligibility_checklist[0].source.model_dump()
         runner._draft_model = AsyncMock()
         runner._draft_model.ainvoke.return_value = draft
@@ -717,12 +718,12 @@ def test_proposal_generation_reads_both_profiles_and_persists_demo_usage() -> No
         generated = await workflow.analyze(document())
         prompt = runner._draft_model.ainvoke.call_args.args[0]
         assert "BISTelligence" in prompt
-        assert "SYNTHETIC_DEMO" in prompt and "DEMO-NEED-GPU" in prompt
-        assert generated.proposal.uses_demo_profile is True
+        assert "SYNTHETIC_DEMO" not in prompt and "DEMO-NEED-GPU" not in prompt
+        assert generated.proposal.uses_demo_profile is False
         checklist = generated.proposal.preparation.eligibility_checklist[0]
         assert "데모 가정" not in checklist.detail
         assert checklist.source.model_dump() == original_source
-        assert generated.model_dump(by_alias=True)["proposal"]["usesDemoProfile"] is True
+        assert generated.model_dump(by_alias=True)["proposal"]["usesDemoProfile"] is False
 
     asyncio.run(scenario())
 

@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.*;
 
+import com.publicmonitor.backend.domain.report.service.ReportDeliveryAttemptService;
 @Lazy @Service @RequiredArgsConstructor
 public class EmailDeliveryWorker {
     private final EmailDeliveryRepository deliveries;
@@ -18,11 +19,13 @@ public class EmailDeliveryWorker {
     private final EmailClient client;
     private final EmailProperties properties;
     private final Clock clock;
+    private final ReportDeliveryAttemptService attempts;
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void sendPending(Long id) {
+        if (!attempts.claimEmail(id)) return;
         var d = locked(id);
-        if (d.getStatus() != EmailDeliveryState.PENDING || d.getAttemptCount() > 0) return;
-        attempt(d);
+        if (d.getStatus() != EmailDeliveryState.PENDING) return;
+        attempt(d, false);
     }
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public EmailRecipientDeliveryResponse retry(Long id, EmailRetryRequest request) {
@@ -35,22 +38,22 @@ public class EmailDeliveryWorker {
         if (!settings.isEnabled()) throw new EmailException(EmailResponseCode.DISABLED);
         if (!settingsService.validateTarget(settings, request.expectedAddress()).isEnabled())
             throw new EmailException(EmailResponseCode.RECIPIENT_CHANGED);
-        attempt(d);
+        attempt(d, true);
         return EmailRecipientDeliveryResponse.from(d);
     }
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void recordUncertainFailure(Long id) {
         var d = locked(id);
         if (d.getStatus() == EmailDeliveryState.PENDING) {
-            d.begin(now());
+            if (d.getAttemptCount() == 0) d.begin(now());
             d.fail("발송 결과를 저장하지 못했습니다. 메일함에서 수신 여부를 확인해 주세요.");
         }
     }
     private EmailDelivery locked(Long id) {
         return deliveries.findForUpdate(id).orElseThrow(() -> new EmailException(EmailResponseCode.REPORT_NOT_FOUND));
     }
-    private void attempt(EmailDelivery d) {
-        d.begin(now());
+    private void attempt(EmailDelivery d, boolean begin) {
+        if (begin) d.begin(now());
         if (!properties.configured()) { d.fail("서버의 메일 발신 계정을 확인해 주세요."); return; }
         var settings = settingsService.effective();
         if (!settings.isEnabled() || settings.getRecipients().stream().noneMatch(r -> r.getAddress().equals(d.getAddress()) && r.isEnabled())) {

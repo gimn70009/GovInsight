@@ -28,8 +28,8 @@ public final class ReportBodyFormatter {
 
     public static String telegramHtml(String body) {
         return body.lines().map(line -> {
-            if (line.startsWith("▸ ")) return "<b>" + html(line) + "</b>";
-            if (line.equals("첨부파일 ↓")) return "<b>" + html(line) + "</b>";
+            if (line.startsWith("▸ ") || line.startsWith("◆ ")) return "<b>" + html(line) + "</b>";
+            if (line.equals("첨부파일 ↓") || line.equals("제출 준비 서류 ↓")) return "<b>" + html(line) + "</b>";
             if (line.startsWith("• ") && line.contains(": ")) {
                 int colon = line.indexOf(": ") + 1;
                 return "<b>" + html(line.substring(0, colon)) + "</b>" + html(line.substring(colon));

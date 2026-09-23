@@ -1,3 +1,4 @@
+import hashlib
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -6,13 +7,13 @@ from langchain.tools import ToolRuntime, tool
 
 from app.domains.analysis.company_profile import (
     BISTELLIGENCE_PROFILE,
-    USE_DEMO_COMPANY_PROFILE,
     CompanyProfile,
 )
 from app.domains.analysis.context_tools import (
     read_company_profile,
     read_previous_analysis,
 )
+from app.domains.analysis.evidence_selection import allocate_budgets, select_evidence
 from app.domains.analysis.schemas.request import AnalysisDocumentRequest
 from app.domains.analysis.version_comparison import compare_versions
 
@@ -22,7 +23,6 @@ class AnalysisToolContext:
     document: AnalysisDocumentRequest
     max_text_chars: int
     company_profile: CompanyProfile = BISTELLIGENCE_PROFILE
-    include_demo_profile: bool = USE_DEMO_COMPANY_PROFILE
     result_cache: dict[str, str] = field(
         default_factory=dict,
         compare=False,
@@ -32,36 +32,54 @@ class AnalysisToolContext:
 
 def read_document_content(context: AnalysisToolContext) -> str:
     document = context.document
+    excerpt = select_evidence(document.content_text, context.max_text_chars)
     payload = {
         "organizationName": document.organization_name,
         "boardName": document.board_name,
         "title": document.title,
         "publishedAt": document.published_at.isoformat() if document.published_at else None,
         "originalUrl": document.original_url,
-        "contentText": _truncate(document.content_text, context.max_text_chars),
+        "contentText": excerpt.text,
+        "coverage": {**excerpt.metadata(), "budgetChars": context.max_text_chars},
     }
     return json.dumps(payload, ensure_ascii=False)
 
 
 def read_attachment_texts(context: AnalysisToolContext) -> str:
-    remaining = context.max_text_chars
-    attachments: list[dict[str, object]] = []
-
-    for attachment in context.document.attachments:
-        if not attachment.extracted_text or not attachment.extracted_text.strip():
-            continue
-        extracted_text = _truncate(attachment.extracted_text, remaining)
-        attachments.append(
-            {
-                "attachmentId": attachment.attachment_id,
-                "fileName": attachment.file_name,
-                "extractedText": extracted_text,
-            }
+    inventory = context.document.attachments
+    unique = []
+    fingerprints: dict[str, int] = {}
+    duplicates: dict[int, int] = {}
+    for i, attachment in enumerate(inventory):
+        text = attachment.extracted_text or ""
+        fingerprint = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        if text.strip() and fingerprint in fingerprints:
+            duplicates[i] = fingerprints[fingerprint]
+        elif text.strip():
+            fingerprints[fingerprint] = i
+            unique.append(i)
+    budgets = dict(
+        zip(
+            unique,
+            allocate_budgets(
+                [len(inventory[i].extracted_text or "") for i in unique], context.max_text_chars
+            ),
         )
-        remaining -= len(extracted_text or "")
-        if remaining <= 0:
-            break
-
+    )
+    attachments = []
+    for i, attachment in enumerate(inventory):
+        excerpt = select_evidence(attachment.extracted_text, budgets.get(i, 0))
+        item = {
+            "attachmentId": attachment.attachment_id,
+            "fileName": attachment.file_name,
+            "extractedText": excerpt.text,
+            "coverage": excerpt.metadata(),
+        }
+        if i in duplicates:
+            item["duplicateOfAttachmentId"] = inventory[duplicates[i]].attachment_id
+        if not attachment.extracted_text or not attachment.extracted_text.strip():
+            item["unavailableReason"] = "파싱된 원문 없음"
+        attachments.append(item)
     return json.dumps(attachments, ensure_ascii=False)
 
 
@@ -100,6 +118,7 @@ def compare_previous_version(runtime: ToolRuntime[AnalysisToolContext]) -> str:
         lambda: compare_with_previous_version(runtime.context),
     )
 
+
 @tool
 def get_company_profile(runtime: ToolRuntime[AnalysisToolContext]) -> str:
     """회사 사업 분야, 서비스, 기술, 대상 산업과 확인되지 않은 정보를 조회한다."""
@@ -133,7 +152,6 @@ def _cached_result(
     return result
 
 
-
 ANALYSIS_TOOLS = [
     get_document_content,
     get_attachment_texts,
@@ -141,18 +159,3 @@ ANALYSIS_TOOLS = [
     get_company_profile,
     get_previous_analysis,
 ]
-
-
-def _truncate(value: str | None, limit: int) -> str | None:
-    if value is None:
-        return None
-    normalized = value.strip()
-    if len(normalized) <= limit:
-        return normalized
-    marker = "\n...[길이 제한으로 중간 부분 생략]...\n"
-    if limit <= len(marker):
-        return normalized[:limit]
-    available = limit - len(marker)
-    head_length = available * 7 // 10
-    tail_length = available - head_length
-    return f"{normalized[:head_length]}{marker}{normalized[-tail_length:]}"

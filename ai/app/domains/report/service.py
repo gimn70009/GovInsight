@@ -9,7 +9,7 @@ from app.domains.report.schemas.response import (
 
 def accept_report_job(request: ReportJobRequest) -> ReportJobAcceptedResponse:
     return ReportJobAcceptedResponse(
-        job_id=uuid4(),
+        job_id=request.job_id or uuid4(),
         status=ReportJobStatus.ACCEPTED,
         document_count=len(request.documents),
     )

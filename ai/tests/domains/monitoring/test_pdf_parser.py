@@ -59,3 +59,35 @@ def test_rejects_broken_pdf() -> None:
 
         with pytest.raises(PdfParseError, match="읽을 수 없습니다"):
             PdfParser().parse(path)
+
+
+def test_layout_extraction_preserves_physical_table_rows(monkeypatch):
+    class TablePage:
+        def extract_text(self, **kwargs):
+            if kwargs.get("extraction_mode") == "layout":
+                return "주관기관   공동기관\n중소중견   제한없음\n문의처\n사업팀 02-0000-0000"
+            return "주관기관공동기관중소중견제한없음문의처사업팀02-0000-0000" * 10
+
+    monkeypatch.setattr(pdf_parser, "PdfReader", lambda *_a, **_kw: FakeReader([TablePage()]))
+    result = PdfParser().parse(Path("table.pdf"))
+    assert "주관기관 공동기관\n중소중견 제한없음" in result.text
+    assert "문의처\n사업팀" in result.text
+
+
+def test_empty_layout_falls_back_to_plain_extraction(monkeypatch):
+    class Page:
+        def extract_text(self, **kwargs):
+            return "" if kwargs else "기존 추출 내용" * 30
+
+    monkeypatch.setattr(pdf_parser, "PdfReader", lambda *_a, **_kw: FakeReader([Page()]))
+    assert PdfParser().parse(Path("fallback.pdf")).text == "기존 추출 내용" * 30
+
+
+def test_regular_pdf_does_not_pay_for_layout_pass(monkeypatch):
+    class Page:
+        def extract_text(self, **kwargs):
+            assert not kwargs
+            return "본문 한 줄\n다음 안내"
+
+    monkeypatch.setattr(pdf_parser, "PdfReader", lambda *_a, **_kw: FakeReader([Page()]))
+    assert PdfParser().parse(Path("normal.pdf")).text == "본문 한 줄\n다음 안내"

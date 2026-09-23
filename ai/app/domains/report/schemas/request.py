@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import Field
 
@@ -41,6 +42,7 @@ class ReportDocumentRequest(CamelCaseModel):
 
 
 class ReportJobRequest(CamelCaseModel):
+    job_id: UUID | None = None
     run_id: int = Field(gt=0)
     requested_at: datetime | None = None
     total_source_count: int = Field(ge=0)

@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface TelegramDeliveryRepository extends JpaRepository<TelegramDelivery, Long> {
+    boolean existsByReportMonitoringRunIdAndStatus(Long runId, com.publicmonitor.backend.domain.telegram.entity.TelegramDeliveryState status);
     List<TelegramDelivery> findByReportIdOrderById(Long reportId);
     List<TelegramDelivery> findByReportIdInOrderById(Collection<Long> reportIds);
     @Lock(LockModeType.PESSIMISTIC_WRITE)

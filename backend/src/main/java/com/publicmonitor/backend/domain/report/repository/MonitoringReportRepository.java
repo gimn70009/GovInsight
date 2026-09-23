@@ -14,6 +14,9 @@ import org.springframework.data.repository.query.Param;
 public interface MonitoringReportRepository extends JpaRepository<MonitoringReport, Long> {
     Optional<MonitoringReport> findByMonitoringRunId(Long runId);
 
+    @Query("select r.monitoringRun.id from MonitoringReport r where r.status <> com.publicmonitor.backend.domain.report.entity.MonitoringReportStatus.COMPLETED and r.monitoringRun.status = com.publicmonitor.backend.domain.monitoring.entity.MonitoringRunStatus.COLLECTED and not exists (select t.id from ReportTask t where t.report = r) order by r.id")
+    java.util.List<Long> findUnqueued(Pageable pageable);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from MonitoringReport r join fetch r.monitoringRun where r.monitoringRun.id = :runId")
     Optional<MonitoringReport> findForTelegramByRunId(@Param("runId") Long runId);

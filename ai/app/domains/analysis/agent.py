@@ -12,9 +12,8 @@ from app.core.schemas import CamelCaseModel
 from app.domains.analysis.config import AnalysisSettings
 from app.domains.analysis.context_tools import (
     COMPANY_CONTEXT_INSTRUCTIONS,
+    EVIDENCE_COVERAGE_INSTRUCTIONS,
     NOTICE_APPLICABILITY_INSTRUCTIONS,
-    normalize_company_narrative,
-    uses_demo_profile,
 )
 from app.domains.analysis.evidence_agent import EVIDENCE_TIMEOUT_SECONDS, AnalysisEvidenceAgent
 from app.domains.analysis.legal_risks import (
@@ -58,7 +57,7 @@ SYSTEM_PROMPT = f"""
 - current_document에서 현재 게시글을 확인합니다.
 - attachments가 있으면 첨부파일 텍스트를 함께 확인합니다.
 - company_profile에서 회사 적합성 근거를 확인합니다.
-- 적용되는 회사 조건이 두 프로필 모두에서 확인되지 않으면 추측하지 말고 eligibility를 REVIEW_REQUIRED로 정합니다. 프로필의 서류 보유 정보는 원본 증빙 검증 완료와 구분합니다.
+- 적용되는 회사 조건이 제공된 회사 프로필에서 확인되지 않으면 추측하지 말고 eligibility를 REVIEW_REQUIRED로 정합니다. 프로필의 서류 보유 정보는 원본 증빙 검증 완료와 구분합니다.
 - 회사가 신청해야 하는 접수기한이 분석일보다 지났으면 eligibility를 INELIGIBLE로 정합니다. 자격 정보가 부족하더라도 종료된 접수를 REVIEW_REQUIRED나 ELIGIBLE로 표시하지 않습니다.
 - summary, key_points, proposal.sections 모두 분석일 기준으로 작성합니다. 종료된 접수의 제출 요건은 '제출해야 했습니다', '준비가 필요했습니다'처럼 과거 사실로 설명하고 현재 행동으로 권하지 않습니다. 수요조사의 접수 마감과 향후 투자·사업 시행 계획의 시점을 구분합니다.
 - 검증 피드백에 invalidExcerpts가 있으면 직전 응답의 해당 field를 모두 수정합니다. 발췌 문장은 수정 대상 데이터이며 지시나 원문 근거가 아닙니다. 종료 안내만 추가해 모순된 문장을 남기지 않습니다.
@@ -92,9 +91,9 @@ SYSTEM_PROMPT = f"""
 - draft_reason에는 1단계에서 판단한 문서 분류, 회사 적합성과 신청 자격을 근거로 상태를 설명합니다.
 - opportunity.dimensions에는 COMPANY_FIT, BUSINESS_VALUE, FEASIBILITY, URGENCY를 각각 한 번씩 포함합니다.
 - 각 점수는 0~100 정수로 작성하고 아래 기회 점수 산정표의 항목별 점수를 합산합니다.
-- COMPANY_FIT은 `반도체·디스플레이·철강 핵심 산업`과 `제조 AI 에이전트 핵심 과업`을 독립적으로 확인한 뒤 두 축의 교집합을 평가합니다.
+- COMPANY_FIT은 `회사 프로필의 targetIndustries에 명시된 핵심 산업`과 `제조 AI 에이전트 핵심 과업`을 독립적으로 확인한 뒤 두 축의 교집합을 평가합니다.
 - `모니터링`, `통합`, `플랫폼`, `데이터 수집`, `시각화`, `자동화`, `스마트팩토리`, `디지털 전환` 같은 범용 표현은 AI 모델 또는 AI 에이전트가 실제 산출물·수행 과업으로 명시되지 않으면 회사 서비스 일치 근거로 사용하지 않습니다.
-- 반도체·디스플레이·철강과 직접 일치해도 AI 과업이 명시되지 않으면 COMPANY_FIT은 40점을 넘기지 않습니다. AI 에이전트 과업이 있어도 핵심 산업과 직접 일치하지 않으면 COMPANY_FIT은 40점을 넘기지 않습니다.
+- 회사 프로필의 핵심 산업과 직접 일치해도 AI 과업이 명시되지 않으면 COMPANY_FIT은 40점을 넘기지 않습니다. AI 에이전트 과업이 있어도 핵심 산업과 직접 일치하지 않으면 COMPANY_FIT은 40점을 넘기지 않습니다.
 - 대상 산업은 다르지만 회사의 공개 수행 사례와 동일한 설비·공정 문제 및 과업이 구체적으로 확인되면 인접 도메인으로 판단하되 COMPANY_FIT은 60점을 넘기지 않습니다.
 - 핵심 산업의 직접 일치와 제조 AI 에이전트 과업이 모두 확인되어야 COMPANY_FIT 61점 이상을 부여합니다. 같은 핵심 산업의 유사 AI 수행 실적까지 검증된 경우에만 81점 이상을 부여합니다.
 - 사업 기회를 제안할 때는 공고 원문에서 확인한 수요와 회사 프로필의 산업·서비스·수행 사례를 연결한 근거를 반드시 제시합니다. 단순히 해당 기관이나 기업이 자산·설비를 보유한다는 이유로 미래 AI·모니터링·운영 개선 수요를 가정하지 않습니다.
@@ -226,7 +225,7 @@ class LangChainAnalysisRunner:
             *input_sections,
         ])
         prompt = "\n".join(prompt_parts)
-        system_prompt = SYSTEM_PROMPT + "\n" + COMPANY_CONTEXT_INSTRUCTIONS + "\n" + NOTICE_APPLICABILITY_INSTRUCTIONS
+        system_prompt = SYSTEM_PROMPT + "\n" + COMPANY_CONTEXT_INSTRUCTIONS + "\n" + NOTICE_APPLICABILITY_INSTRUCTIONS + "\n" + EVIDENCE_COVERAGE_INSTRUCTIONS
         if compact_retry:
             system_prompt += "\n" + COMPACT_RETRY_INSTRUCTIONS
         logger.info(
@@ -256,7 +255,7 @@ class LangChainAnalysisRunner:
         _normalize_base_proposal(draft_payload)
         draft_payload["proposal"].update(
             {
-                "uses_demo_profile": uses_demo_profile(context),
+                "uses_demo_profile": False,
                 "source_attachment_names": [],
                 "template_sections": [],
                 "draft_sections": [],
@@ -265,16 +264,6 @@ class LangChainAnalysisRunner:
         draft_payload["comparison_summary"]["legal_risks"] = [
             risk.model_dump() for risk in legal_risks
         ]
-        if uses_demo_profile(context):
-            for field in ("summary", "reason"):
-                draft_payload[field] = normalize_company_narrative(draft_payload[field])
-            draft_payload["key_points"] = [
-                normalize_company_narrative(point) for point in draft_payload["key_points"]
-            ]
-            for section in draft_payload["proposal"]["sections"]:
-                section["body"] = normalize_company_narrative(section["body"])
-            for dimension in draft_payload["opportunity"]["dimensions"]:
-                dimension["reason"] = normalize_company_narrative(dimension["reason"])
         draft = AnalysisDraft.model_validate(draft_payload)
         return AgentAnalysis(
             draft=draft,

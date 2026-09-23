@@ -23,7 +23,7 @@ public class TelegramReportDeliveryService {
             catch (RuntimeException e) {
                 log.warn("Telegram 발송 결과 처리 실패. deliveryId={}", id);
                 try { worker.recordUncertainFailure(id); }
-                catch (RuntimeException ignored) { log.error("Telegram 발송 상태 저장 실패. deliveryId={}", id); }
+                catch (RuntimeException ignored) { log.error("Telegram 발송 상태 저장 실패. deliveryId={}", id); throw ignored; }
             }
         }, executor)).toList();
         CompletableFuture.allOf(tasks.toArray(CompletableFuture[]::new)).join();

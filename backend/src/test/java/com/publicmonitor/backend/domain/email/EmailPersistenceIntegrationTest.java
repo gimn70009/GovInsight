@@ -34,7 +34,7 @@ import org.springframework.transaction.support.TransactionTemplate;
     "app.local-admin.enabled=false", "app.monitoring.schedule.enabled=false", "spring.jpa.show-sql=false"
 })
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, EmailReportDeliveryService.class, EmailDeliveryWorker.class,
+@Import({com.publicmonitor.backend.domain.report.service.ReportDeliveryAttemptService.class, JpaAuditingConfig.class, EmailReportDeliveryService.class, EmailDeliveryWorker.class,
     EmailDeliveryPreparationService.class, EmailSettingsService.class, ReportDeliveryQueryService.class, EmailPersistenceIntegrationTest.Config.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class EmailPersistenceIntegrationTest {
@@ -133,4 +133,25 @@ class EmailPersistenceIntegrationTest {
         recipients(person("off@gmail.com", false)); service.deliver(query.detail(report()).report().runId());
         verifyNoInteractions(client);
     }
+    @Test void committedReservationSurvivesSendTransactionRollbackAndPreventsResend() {
+        recipients(person("a@gmail.com", true));
+        Long reportId = report();
+        Long runId = new TransactionTemplate(transactions).execute(tx -> reports.findById(reportId).orElseThrow().getMonitoringRun().getId());
+        Long deliveryId = preparation.prepare(runId).getFirst();
+        doThrow(new IllegalStateException("DB outcome unavailable")).when(client).send(anyString(), anyString(), anyString());
+        assertThatThrownBy(() -> worker.sendPending(deliveryId)).isInstanceOf(IllegalStateException.class);
+        var persisted = deliveries.findById(deliveryId).orElseThrow();
+        assertThat(persisted.getAttemptCount()).isEqualTo(1);
+        assertThat(persisted.getStatus()).isEqualTo(com.publicmonitor.backend.domain.email.entity.EmailDeliveryState.PENDING);
+        worker.sendPending(deliveryId);
+        verify(client, times(1)).send(anyString(), anyString(), anyString());
+        new TransactionTemplate(transactions).executeWithoutResult(tx -> {
+            var d = deliveries.findById(deliveryId).orElseThrow();
+            org.springframework.test.util.ReflectionTestUtils.setField(d, "attemptedAt", java.time.LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul")).minusMinutes(3));
+        });
+        worker.sendPending(deliveryId);
+        assertThat(deliveries.findById(deliveryId).orElseThrow().getStatus()).isEqualTo(com.publicmonitor.backend.domain.email.entity.EmailDeliveryState.FAILED);
+        verify(client, times(1)).send(anyString(), anyString(), anyString());
+    }
+
 }

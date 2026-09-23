@@ -12,6 +12,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.*;
 
+import com.publicmonitor.backend.domain.report.service.ReportDeliveryAttemptService;
 @Lazy @Service @RequiredArgsConstructor
 public class TelegramDeliveryWorker {
     private final TelegramDeliveryRepository deliveries;
@@ -19,11 +20,13 @@ public class TelegramDeliveryWorker {
     private final TelegramClient client;
     private final TelegramProperties properties;
     private final Clock clock;
+    private final ReportDeliveryAttemptService attempts;
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void sendPending(Long id) {
+        if (!attempts.claimTelegram(id)) return;
         var d = locked(id);
-        if (d.getStatus() != TelegramDeliveryState.PENDING || d.getAttemptCount() > 0) return;
-        attempt(d);
+        if (d.getStatus() != TelegramDeliveryState.PENDING) return;
+        attempt(d, false);
     }
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public TelegramRecipientDeliveryResponse retry(Long id, TelegramRetryRequest request) {
@@ -36,22 +39,22 @@ public class TelegramDeliveryWorker {
         if (!settings.isEnabled()) throw new TelegramException(TelegramResponseCode.DISABLED);
         if (!settingsService.validateTarget(settings, request.expectedChatId()).isEnabled())
             throw new TelegramException(TelegramResponseCode.RECIPIENT_CHANGED);
-        attempt(d);
+        attempt(d, true);
         return TelegramRecipientDeliveryResponse.from(d);
     }
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void recordUncertainFailure(Long id) {
         var d = locked(id);
         if (d.getStatus() == TelegramDeliveryState.PENDING) {
-            d.begin(now());
+            if (d.getAttemptCount() == 0) d.begin(now());
             d.fail("발송 결과를 저장하지 못했습니다. 채팅에서 수신 여부를 확인해 주세요.");
         }
     }
     private TelegramDelivery locked(Long id) {
         return deliveries.findForUpdate(id).orElseThrow(() -> new TelegramException(TelegramResponseCode.REPORT_NOT_FOUND));
     }
-    private void attempt(TelegramDelivery d) {
-        d.begin(now());
+    private void attempt(TelegramDelivery d, boolean begin) {
+        if (begin) d.begin(now());
         if (properties.botToken().isBlank()) { d.fail("서버의 봇 토큰을 확인해 주세요."); return; }
         var report = d.getReport();
         String message = report.getTitle() + "\n\n" + report.getSummary();

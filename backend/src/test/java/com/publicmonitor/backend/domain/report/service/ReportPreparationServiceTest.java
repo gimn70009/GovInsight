@@ -26,10 +26,11 @@ class ReportPreparationServiceTest {
         var analyses = mock(DocumentAnalysisRepository.class);
         var reports = mock(MonitoringReportRepository.class);
         var attachments = mock(DocumentAttachmentRepository.class);
+        var tasks = mock(com.publicmonitor.backend.domain.report.repository.ReportTaskRepository.class);
         var run = mock(MonitoringRun.class);
         when(run.getStatus()).thenReturn(MonitoringRunStatus.COLLECTED);
         when(run.getId()).thenReturn(10L);
-        when(runs.findById(10L)).thenReturn(Optional.of(run));
+        when(runs.findForUpdate(10L)).thenReturn(Optional.of(run));
         when(reports.findByMonitoringRunId(10L)).thenReturn(Optional.empty());
         when(reports.save(any())).thenReturn(MonitoringReport.pending(run));
         var detection = mock(DocumentDetection.class, RETURNS_DEEP_STUBS);
@@ -38,7 +39,12 @@ class ReportPreparationServiceTest {
         when(detections.findAllByMonitoringRunSourceMonitoringRunIdOrderByIdAsc(10L)).thenReturn(List.of(detection));
         var analysis = mock(DocumentAnalysis.class, RETURNS_DEEP_STUBS);
         when(analysis.getDocumentVersion().getId()).thenReturn(2L);
-        when(analysis.getProposalDirection()).thenReturn("{}");
+        when(analysis.getProposalDirection()).thenReturn("""
+                {"preparation": {
+                  "submissionDocuments": [{"title":"국문 연구개발계획서","stage":"APPLICATION"}],
+                  "companyInputs": [{"title":"사업자등록증 사본","stage":"APPLICATION"}]
+                }}
+                """);
         when(analysis.getComparisonSummary()).thenReturn("{\"applicationDeadline\":\"2026-10-06 18:00\"}");
         when(analyses.findAllByDocumentVersionIdIn(List.of(2L))).thenReturn(List.of(analysis));
         var good = mock(DocumentAttachment.class);
@@ -51,8 +57,19 @@ class ReportPreparationServiceTest {
         when(failed.getDownloadUrl()).thenReturn("https://example.go.kr/file?id=2");
         when(failed.getParseStatus()).thenReturn(AttachmentParseStatus.FAILED);
         when(attachments.findAllByDocumentVersionId(2L)).thenReturn(List.of(good, failed));
-        var request = new ReportPreparationService(runs, detections, analyses, reports, new ObjectMapper(), attachments)
+        var request = new ReportPreparationService(runs, detections, analyses, reports, new ObjectMapper(), attachments, tasks, java.time.Clock.systemUTC())
                 .prepare(10L).orElseThrow().documents().getFirst();
+        var proposal = new ObjectMapper().readTree(request.proposal().toString());
+        assertThat(proposal.path("preparation").path("submissionDocuments").size()).isEqualTo(2);
+        assertThat(proposal.path("preparation").path("submissionDocuments").get(0).path("title").asText())
+                .isEqualTo("국문 연구개발계획서");
+        assertThat(proposal.path("preparation").path("submissionDocuments").get(1).path("title").asText())
+                .isEqualTo("사업자등록증 사본");
+        assertThat(proposal.path("preparation").has("companyInputs")).isFalse();
+        var savedTask = org.mockito.ArgumentCaptor.forClass(com.publicmonitor.backend.domain.report.entity.ReportTask.class);
+        verify(tasks).save(savedTask.capture());
+        assertThat(savedTask.getValue().getReport().getSummary()).contains("기본 정보로 작성한 보고서");
+        assertThat(savedTask.getValue().getRequestJson()).contains("신청서.hwp");
         assertThat(request.contentText()).isEqualTo("제출처: 온라인 신청 시스템");
         assertThat(request.comparisonSummary().toString()).contains("2026-10-06 18:00");
         assertThat(request.attachments()).hasSize(2);

@@ -1,5 +1,7 @@
 package com.publicmonitor.backend.domain.report.service;
 
+import com.publicmonitor.backend.domain.report.entity.ReportTaskState;
+import com.publicmonitor.backend.domain.report.repository.ReportTaskRepository;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRun;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRunStatus;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunRepository;
@@ -32,12 +34,13 @@ public class ReportResultService {
 
     private final MonitoringRunRepository runRepository;
     private final MonitoringReportRepository reportRepository;
+    private final ReportTaskRepository taskRepository;
     private final Clock clock;
     private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public ReportResultResponse receive(ReportResultRequest request) {
-        MonitoringRun run = runRepository.findById(request.runId())
+        MonitoringRun run = runRepository.findForUpdate(request.runId())
                 .orElseThrow(() -> new ReportException(ReportResponseCode.RUN_NOT_FOUND));
         MonitoringReport report = reportRepository.findByMonitoringRunId(request.runId())
                 .orElseThrow(() -> new ReportException(ReportResponseCode.REPORT_NOT_FOUND));
@@ -47,6 +50,21 @@ public class ReportResultService {
         }
         if (run.getStatus() != MonitoringRunStatus.COLLECTED) {
             throw new ReportException(ReportResponseCode.INVALID_RUN_STATUS);
+        }
+
+        var task = taskRepository.lockByRunId(request.runId()).orElse(null);
+        if (task != null) {
+            if (task.getState() != ReportTaskState.RUNNING
+                    || !task.matches(request.jobId().toString())) {
+                return new ReportResultResponse(run.getId(), report.getId(), report.getStatus(), true);
+            }
+            var now = LocalDateTime.now(clock.withZone(SERVICE_ZONE));
+            boolean valid = request.status() == ReportResultStatus.COMPLETED && request.title() != null
+                    && !request.title().isBlank() && request.summary() != null && !request.summary().isBlank();
+            task.completeGeneration(valid ? request.title().strip() : report.getTitle(),
+                    valid ? request.summary().strip() : report.getSummary(), now,
+                    valid ? null : "상세 보고서 생성 실패 — 기본 보고서 사용");
+            return new ReportResultResponse(run.getId(), report.getId(), report.getStatus(), false);
         }
 
         if (request.status() == ReportResultStatus.FAILED) {
