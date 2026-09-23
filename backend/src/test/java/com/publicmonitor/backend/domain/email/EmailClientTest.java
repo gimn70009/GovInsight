@@ -49,4 +49,31 @@ class EmailClientTest {
         assertThatThrownBy(() -> new EmailClient(sender, new EmailProperties(EmailProperties.Provider.GMAIL, "", "", "GovInsight")).send("a@naver.com", "제목", "본문")).isInstanceOf(EmailClientException.class);
         verifyNoInteractions(sender);
     }
+
+    @Test void expandsDatesInBothMimeAlternativesWithoutSendingRealMail() throws Exception {
+        var sender = mock(JavaMailSender.class);
+        var message = new MimeMessage(Session.getInstance(new Properties()));
+        when(sender.createMimeMessage()).thenReturn(message);
+        new EmailClient(sender, properties(EmailProperties.Provider.GMAIL))
+                .send("recipient@example.org", "’27년 보고서", "’27.3월 제출 / (’23~’25)");
+        message.saveChanges();
+
+        assertThat(message.getSubject()).isEqualTo("2027년 보고서");
+        var texts = new java.util.HashMap<String, String>();
+        collectText(message, texts);
+        assertThat(texts.get("text/plain")).isEqualTo("2027년 3월 제출 / (2023~2025)");
+        assertThat(texts.get("text/html")).contains("2027년 3월 제출 / (2023~2025)");
+        verify(sender).send(message);
+    }
+
+    private void collectText(jakarta.mail.Part part, java.util.Map<String, String> texts) throws Exception {
+        if (part.isMimeType("multipart/*")) {
+            var multipart = (jakarta.mail.Multipart) part.getContent();
+            for (int i = 0; i < multipart.getCount(); i++) collectText(multipart.getBodyPart(i), texts);
+        } else if (part.isMimeType("text/plain")) {
+            texts.put("text/plain", (String) part.getContent());
+        } else if (part.isMimeType("text/html")) {
+            texts.put("text/html", (String) part.getContent());
+        }
+    }
 }

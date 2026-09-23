@@ -1,5 +1,6 @@
 package com.publicmonitor.backend.domain.report;
 
+import com.publicmonitor.backend.global.presentation.YearNotation;
 import java.net.URI;
 import java.util.regex.Pattern;
 
@@ -9,6 +10,7 @@ public final class ReportBodyFormatter {
     private ReportBodyFormatter() {}
 
     public static String html(String body) {
+        body = YearNotation.display(body);
         var matcher = LINK.matcher(body);
         var result = new StringBuilder();
         int end = 0;
@@ -27,6 +29,7 @@ public final class ReportBodyFormatter {
     }
 
     public static String telegramHtml(String body) {
+        body = YearNotation.display(body);
         return body.lines().map(line -> {
             if (line.startsWith("▸ ") || line.startsWith("◆ ")) return "<b>" + html(line) + "</b>";
             if (line.equals("첨부파일 ↓") || line.equals("제출 준비 서류 ↓")) return "<b>" + html(line) + "</b>";
@@ -39,6 +42,7 @@ public final class ReportBodyFormatter {
     }
 
     public static int displayLength(String body) {
+        body = YearNotation.display(body);
         var matcher = LINK.matcher(body);
         int length = body.length();
         while (matcher.find()) {
