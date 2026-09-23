@@ -10,7 +10,7 @@ from pathlib import Path
 from time import perf_counter
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app.domains.analysis.evidence_selection import select_evidence  # noqa: E402
+from app.domains.analysis.evidence.selection import select_evidence  # noqa: E402
 
 
 def old_excerpt(text: str, limit: int) -> str:

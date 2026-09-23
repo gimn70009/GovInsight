@@ -1,11 +1,11 @@
 from fastapi import APIRouter, BackgroundTasks, status
 
-from app.domains.analysis.legal_pair import LegalPairRequest, LegalPairResponse, pair_reviewer
-from app.domains.analysis.proposal_writer import (
+from app.domains.analysis.legal.pair import LegalPairRequest, LegalPairResponse, pair_reviewer
+from app.domains.analysis.proposals.writer import (
     ProposalWriteRequest,
+    ProposalWriteResponse,
     TemplateInspectRequest,
     TemplateInspectResponse,
-    ProposalWriteResponse,
     proposal_writer,
 )
 from app.domains.analysis.schemas.request import AnalysisJobRequest
