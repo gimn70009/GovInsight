@@ -129,6 +129,12 @@ export interface OpportunityAssessment {
   }>
 }
 
+export interface StrategyCapabilityMatch {
+  companyEvidenceId?: string | null
+  confirmedFact: string
+  strategicInterpretation: string
+}
+
 export interface DocumentAnalysis {
   applicationDeadline?: string | null
   summary: string
@@ -158,7 +164,7 @@ export interface DocumentAnalysis {
         recommendedProject?: string | null
         recommendedParticipation?: string | null
         alternativeParticipation?: string | null
-        capabilityMatches?: Array<{ confirmedFact: string; strategicInterpretation: string }> | null
+        capabilityMatches?: StrategyCapabilityMatch[] | null
         criticalGaps?: Array<{
           gap: string
           nextAction: string

@@ -18,9 +18,14 @@ from app.domains.analysis.context.tools import (
     read_company_profile,
 )
 from app.domains.analysis.evidence.tools import AnalysisToolContext
+from app.domains.analysis.proposals.capabilities import (
+    company_capability_catalog,
+    ground_capability_matches,
+)
 from app.domains.analysis.proposals.scoring import score_preparation
 from app.domains.analysis.schemas.request import AnalysisDocumentRequest
 from app.domains.analysis.schemas.result import (
+    PREPARATION_SCHEMA_VERSION,
     CompanyEvidenceLevel,
     DocumentAnalysisResult,
     Eligibility,
@@ -34,7 +39,6 @@ from app.domains.analysis.schemas.result import (
     RequirementLevel,
     RequirementSource,
     RequirementStage,
-    StrategyCapabilityMatch,
     StrategyDecision,
     StrategyGap,
     StrategyStopCriterion,
@@ -154,8 +158,17 @@ DRAFT_PROMPT = """
   과제를 확정한다고 쓰며 회사의 일반 기술 역량만으로 구체적인 과제명을 만들지 않습니다.
 - 직접 신청 자격이 확인되지 않은 회사의 외주 수행 가능성은 이번 공고 신청의 대안 역할로 표현하지
   않고 승인기업을 대상으로 한 별도 영업 기회라고 명확히 구분합니다.
-- capabilityMatches의 confirmedFact에는 공고 또는 회사 공개정보에서 확인된 사실만 적고,
-  strategicInterpretation에는 그 사실이 참여 전략에 갖는 의미를 AI 판단으로 분리해 적습니다.
+- capabilityMatches는 회사 역량·사례와 해당 공고에서의 활용 방향만 연결합니다.
+  제공된 회사 역량·사례 선택 목록에서 공고와 관련된 companyEvidenceId를 선택합니다.
+  confirmedFact는 코드가 회사 목록에서 복사하므로 직접 작성하지 않습니다.
+- 공고의 지원 대상, 평가 배점, 자격 조건, 제출서류와 재무제표 요구를
+  회사 역량으로 선택하지 않습니다.
+  목록 밖 회사 사실, 미확인 고객·파트너 관계, 향후 지향 과제를 보유 역량으로 만들지 않습니다.
+- strategicInterpretation은 선택한 회사 역량을 해당 공고의 과업·참여 역할·평가에서
+  어떻게 활용할지 구체적으로 설명합니다. 공고 요약이나 서류 준비 행동만 반복하지 않습니다.
+  개발 중인 사례는 완료 실적으로, 공개 사례는 공식 실적 인정이나 자격 충족으로 단정하지 않습니다.
+- 관련 있는 회사 역량·사례만 최대 4개 선택하고 같은 ID를 중복하지 않습니다.
+  직접 연결할 근거가 없으면 capabilityMatches를 빈 목록으로 반환합니다.
 - stopCriteria는 체크리스트의 행동을 반복하지 않고 지원을 중단할 조건과 이유만 작성합니다.
   공고가 직접 정한 필수조건은 OFFICIAL_REQUIREMENT, AI가 설정한 내부 판단 시점은
   INTERNAL_RECOMMENDATION으로 구분합니다. 임의의 2주 같은 기간은 이유 없이 만들지 않습니다.
@@ -197,13 +210,18 @@ class ProposalChecklistModelOutput(CamelCaseModel):
     work_type: PreparationWorkType = PreparationWorkType.OTHER
 
 
+class ProposalCapabilityModelOutput(CamelCaseModel):
+    company_evidence_id: str = Field(min_length=1, max_length=80)
+    strategic_interpretation: str = Field(min_length=10, max_length=500)
+
+
 class ProposalStrategyModelOutput(CamelCaseModel):
     decision: StrategyDecision
     decision_reason: str = Field(min_length=10, max_length=500)
     recommended_project: str = Field(min_length=5, max_length=120)
     recommended_participation: str = Field(min_length=10, max_length=500)
     alternative_participation: str = Field(min_length=10, max_length=500)
-    capability_matches: list[StrategyCapabilityMatch] = Field(min_length=1, max_length=4)
+    capability_matches: list[ProposalCapabilityModelOutput] = Field(max_length=4)
     stop_criteria: list[StrategyStopCriterion] = Field(min_length=1, max_length=4)
 
 
@@ -258,12 +276,14 @@ class LangChainProposalGenerationRunner:
             document,
             min(self._settings.max_text_chars, PROPOSAL_CONTEXT_MAX_CHARS),
         )
+        capability_catalog = company_capability_catalog(context.company_profile)
         draft_input = (
             f"{DRAFT_PROMPT}\n{COMPANY_CONTEXT_INSTRUCTIONS}\n{NOTICE_APPLICABILITY_INSTRUCTIONS}\n\n"
             f"분석 기준일: {datetime.now(timezone(timedelta(hours=9))).date().isoformat()}\n\n"
             f"공고 제목:\n{document.title}\n\n"
             f"공고 분석:\n{_compact_analysis_context(analysis)}\n\n"
             f"회사 프로필:\n{read_company_profile(context)}\n\n"
+            f"회사 역량·사례 선택 목록:\n{json.dumps(capability_catalog, ensure_ascii=False)}\n\n"
             f"공고와 첨부파일의 관련 원문:\n{source_context}"
         )
         started_at = time.perf_counter()
@@ -275,7 +295,7 @@ class LangChainProposalGenerationRunner:
         )
         async with asyncio.timeout(self._settings.proposal_timeout_seconds):
             response = await self._draft_model.ainvoke(draft_input)
-        draft, raw_response = _parse_model_response(response)
+        draft, raw_response = _parse_model_response(response, capability_catalog)
         draft.uses_demo_profile = False
         usage = _token_usage(raw_response)
         logger.info(
@@ -295,7 +315,9 @@ class LangChainProposalGenerationRunner:
         return draft
 
 
-def _parse_model_response(response: object) -> tuple[ProposalDraftOutput, object | None]:
+def _parse_model_response(
+    response: object, capability_catalog: dict[str, str],
+) -> tuple[ProposalDraftOutput, object | None]:
     raw_response = None
     parsed: object = response
     if isinstance(response, dict) and "parsed" in response:
@@ -304,14 +326,17 @@ def _parse_model_response(response: object) -> tuple[ProposalDraftOutput, object
             raise parsing_error
         parsed = response.get("parsed")
         raw_response = response.get("raw")
-    if isinstance(parsed, ProposalDraftOutput):
-        return parsed, raw_response
     compact = (
         parsed
-        if isinstance(parsed, ProposalModelOutput)
+        if isinstance(parsed, (ProposalModelOutput, ProposalDraftOutput))
         else ProposalModelOutput.model_validate(parsed)
     )
-    return ProposalDraftOutput.model_validate(compact.model_dump()), raw_response
+    payload = compact.model_dump()
+    strategy = payload["preparation"]["strategy"]
+    strategy["capability_matches"] = ground_capability_matches(
+        strategy["capability_matches"], capability_catalog,
+    )
+    return ProposalDraftOutput.model_validate(payload), raw_response
 
 
 def _token_usage(raw_response: object | None) -> dict[str, int | None]:
@@ -402,7 +427,7 @@ class TwoStageAnalysisWorkflow:
                     "uses_demo_profile": (
                         result.proposal.uses_demo_profile or draft.uses_demo_profile
                     ),
-                    "preparation_schema_version": 12,
+                    "preparation_schema_version": PREPARATION_SCHEMA_VERSION,
                 }
             )
             result = DocumentAnalysisResult.model_validate(result.model_dump())
@@ -429,7 +454,7 @@ class TwoStageAnalysisWorkflow:
                     "template_sections": [],
                     "draft_sections": [],
                     "preparation": None,
-                    "preparation_schema_version": 12,
+                    "preparation_schema_version": PREPARATION_SCHEMA_VERSION,
                 }
             )
         return DocumentAnalysisResult.model_validate(result.model_dump())

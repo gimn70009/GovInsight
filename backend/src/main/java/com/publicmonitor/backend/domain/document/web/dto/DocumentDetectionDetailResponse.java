@@ -162,7 +162,7 @@ public record DocumentDetectionDetailResponse(
     ) {
     }
 
-    public record StrategyCapabilityMatch(String confirmedFact, String strategicInterpretation) {
+    public record StrategyCapabilityMatch(String companyEvidenceId, String confirmedFact, String strategicInterpretation) {
     }
 
     public record StrategyGap(

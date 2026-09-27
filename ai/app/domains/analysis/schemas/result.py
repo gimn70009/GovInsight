@@ -270,7 +270,11 @@ class PreparationChecklistItem(CamelCaseModel):
         return self
 
 
+PREPARATION_SCHEMA_VERSION = 13
+
+
 class StrategyCapabilityMatch(CamelCaseModel):
+    company_evidence_id: str | None = Field(default=None, max_length=80)
     confirmed_fact: str = Field(min_length=10, max_length=500)
     strategic_interpretation: str = Field(min_length=10, max_length=500)
 
@@ -313,7 +317,7 @@ class StrategyOnePage(CamelCaseModel):
     recommended_project: str = Field(min_length=5, max_length=120)
     recommended_participation: str = Field(min_length=10, max_length=500)
     alternative_participation: str = Field(min_length=10, max_length=500)
-    capability_matches: list[StrategyCapabilityMatch] = Field(min_length=1, max_length=4)
+    capability_matches: list[StrategyCapabilityMatch] = Field(default_factory=list, max_length=4)
     critical_gaps: list[StrategyGap] = Field(default_factory=list, max_length=4)
     stop_criteria: list[StrategyStopCriterion] = Field(min_length=1, max_length=4)
 
@@ -354,7 +358,7 @@ class ProposalStrategy(CamelCaseModel):
     template_sections: list[str] = Field(default_factory=list, max_length=30)
     draft_sections: list[ProposalSection] = Field(default_factory=list, max_length=8)
     preparation: ProposalPreparation | None = None
-    preparation_schema_version: int = Field(default=1, ge=1, le=12)
+    preparation_schema_version: int = Field(default=1, ge=1, le=PREPARATION_SCHEMA_VERSION)
 
     @field_validator("draft_reason")
     @classmethod

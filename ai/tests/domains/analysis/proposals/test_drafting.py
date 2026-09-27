@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import ValidationError
 
+from app.domains.analysis.context.company_profile import BISTELLIGENCE_PROFILE
+from app.domains.analysis.proposals.capabilities import company_capability_catalog
 from app.domains.analysis.proposals.drafting import (
     CORE_PROPOSAL_SECTION_TITLES,
     LangChainProposalGenerationRunner,
@@ -209,6 +211,7 @@ class ProposalRunner:
                         ),
                         capability_matches=[
                             StrategyCapabilityMatch(
+                                company_evidence_id="service:1",
                                 confirmed_fact="회사 공개정보에서 제조 AI 사례가 확인됩니다.",
                                 strategic_interpretation=(
                                     "공고의 산업 AI 실증 분야와 연결할 수 있습니다."
@@ -247,7 +250,7 @@ def test_generates_outline_then_draft_only_for_matching_proposal_request() -> No
     assert generated.proposal.preparation is not None
     assert generated.proposal.preparation.strategy.recommended_project.startswith("제조 현장")
     assert generated.proposal.source_attachment_names == ["신청서식.hwp"]
-    assert generated.proposal.preparation_schema_version == 12
+    assert generated.proposal.preparation_schema_version == 13
     assert "map_proposal_sources" in generated.used_tools
     assert "build_proposal_preparation" in generated.used_tools
 
@@ -311,7 +314,7 @@ def test_proposal_stage_failure_preserves_base_analysis() -> None:
     assert generated.summary.startswith("산업 AI 실증")
     assert generated.proposal.draft_status == ProposalDraftStatus.REVIEW_REQUIRED
     assert generated.proposal.draft_sections == []
-    assert generated.proposal.preparation_schema_version == 12
+    assert generated.proposal.preparation_schema_version == 13
     assert "사업 제안 생성 제한 시간을 초과했습니다." in generated.proposal.draft_reason
 
 
@@ -434,7 +437,8 @@ def test_compact_model_output_restores_api_defaults() -> None:
 
     compact = ProposalModelOutput.model_validate(payload)
     restored, raw = _parse_model_response(
-        {"parsed": compact, "raw": None, "parsing_error": None}
+        {"parsed": compact, "raw": None, "parsing_error": None},
+        company_capability_catalog(BISTELLIGENCE_PROFILE),
     )
 
     assert raw is None
