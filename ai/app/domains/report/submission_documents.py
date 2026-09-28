@@ -2,8 +2,17 @@
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
+from app.domains.analysis.proposals.submission_requirements import collect_submission_requirements
+from app.domains.analysis.schemas.result import (
+    PREPARATION_SCHEMA_VERSION,
+    EvidenceOrigin,
+    PreparationChecklistItem,
+    ProposalDocumentType,
+    ProposalDraftStatus,
+    RequirementStage,
+)
 from app.domains.report.schemas.request import ReportDocumentRequest
 
 
@@ -19,6 +28,10 @@ class SourcePart:
 class SubmissionDocument:
     title: str
     form: SourcePart | None
+    requirement_level: str | None = None
+    applies_to: str | None = None
+    detail: str | None = None
+    condition: str | None = None
 
 
 _MARKER = re.compile(r"(?m)^\[파일:\s*([^\]\r\n]+)\]\r?\n")
@@ -135,6 +148,61 @@ def _form(title: str, parts: list[SourcePart]) -> SourcePart | None:
     return next(iter(unique.values())) if len(unique) == 1 else None
 
 
+def _reusable_items(
+    document: ReportDocumentRequest,
+) -> list[PreparationChecklistItem] | None:
+    """Use a complete current application list; do not recheck truncated report text.
+
+    The proposal pipeline already verifies source citations. A missing citation
+    or an unusable proposal sends the whole document through report extraction,
+    rather than silently dropping individual rows from the saved checklist.
+    """
+    proposal = document.proposal
+    if (
+        not proposal
+        or proposal.document_type != ProposalDocumentType.PROPOSAL_REQUEST
+        or proposal.draft_status != ProposalDraftStatus.READY
+        or proposal.preparation_schema_version != PREPARATION_SCHEMA_VERSION
+        or not proposal.preparation
+    ):
+        return None
+    items = [
+        item for item in proposal.preparation.submission_documents
+        if item.stage == RequirementStage.APPLICATION
+    ]
+    return items if items and all(_has_saved_source(item) for item in items) else None
+
+
+def can_reuse_submission_checklist(document: ReportDocumentRequest) -> bool:
+    return _reusable_items(document) is not None
+
+
+def reusable_submission_documents(
+    document: ReportDocumentRequest,
+) -> list[SubmissionDocument] | None:
+    items = _reusable_items(document)
+    if items is None:
+        return None
+    parts = _parts(document)
+    return [
+        SubmissionDocument(
+            item.title, _form(item.title, parts), str(item.requirement_level),
+            item.applies_to, item.detail,
+        )
+        for item in items
+    ]
+
+
+def _has_saved_source(item: PreparationChecklistItem) -> bool:
+    source = item.source
+    return bool(
+        source
+        and source.origin in {EvidenceOrigin.NOTICE_BODY, EvidenceOrigin.ATTACHMENT}
+        and _name_key(source.excerpt)
+        and (source.origin != EvidenceOrigin.ATTACHMENT or source.attachment_name)
+    )
+
+
 def submission_documents(document: ReportDocumentRequest) -> list[SubmissionDocument]:
     """Use the same APPLICATION checklist as the business-proposal screen.
 
@@ -168,3 +236,57 @@ def route_documents(document: ReportDocumentRequest) -> list[SubmissionDocument]
             title = " ".join(match[1].split())
             found[title] = SubmissionDocument(title, _form(title, parts))
     return list(found.values())
+
+
+def source_submission_documents(document: ReportDocumentRequest) -> list[SubmissionDocument]:
+    """Project explicit source requirements before the model's shorter input selection."""
+    parts = [part for part in _parts(document) if source_priority(part) != 2]
+    # Respect the archive's reference classification as well as the inner filename.
+    source_document = document.model_copy(update={
+        "attachments": [a for a in document.attachments
+                        if source_priority(SourcePart(a.file_name, "")) != 2],
+    })
+    requirements = collect_submission_requirements(
+        source_document, include_referenced_enclosures=True
+    )
+    return [
+        SubmissionDocument(
+            row.title, _form(row.title, parts), str(row.level), row.condition or None,
+            row.as_item().detail, row.condition or None,
+        )
+        for row in requirements
+        if row.stage == RequirementStage.APPLICATION
+    ]
+
+
+def supplement_submission_documents(
+    verified: list[SubmissionDocument], extracted: list[SubmissionDocument],
+) -> list[SubmissionDocument]:
+    """Keep each source role/condition; replace exact-name model duplicates only."""
+    merged = []
+    for item in verified:
+        matches = [other for other in extracted if _name_key(other.title) == _name_key(item.title)]
+        # Preserve model details only if each condition clause belongs to this very row.
+        if item.condition is None and len(matches) == 1 and matches[0].condition:
+            def compact(value: str) -> str:
+                return re.sub(r"\s+", "", unicodedata.normalize("NFKC", value))
+            clauses = matches[0].condition.split(";")
+            if all(compact(clause) and compact(clause) in compact(item.detail or "")
+                   for clause in clauses):
+                item = replace(item, condition=matches[0].condition)
+        merged.append(item)
+    names = {_name_key(item.title) for item in verified}
+    return merged + [item for item in extracted if _name_key(item.title) not in names]
+
+
+def fallback_submission_documents(
+    document: ReportDocumentRequest,
+) -> tuple[list[SubmissionDocument], bool]:
+    saved = reusable_submission_documents(document)
+    if saved is not None:
+        return saved, True
+    verified = source_submission_documents(document)
+    if verified:
+        return verified, False
+    legacy = submission_documents(document)
+    return legacy, bool(legacy)

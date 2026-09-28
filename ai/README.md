@@ -27,9 +27,9 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }
 | `OPENAI_API_KEY` | 실제 분석·초안 생성에 필요한 API 키 |
 | `OPENAI_MODEL`, `PROPOSAL_MODEL` | 분석·제안 모델, 기본 `gpt-5-mini` |
 | `SPRING_BOOT_BASE_URL` | 결과를 전달할 백엔드, 기본 `http://127.0.0.1:8080` |
-| `ANALYSIS_CONCURRENCY` | 문서 분석 동시 처리 수, 기본 `2` |
+| `ANALYSIS_CONCURRENCY` | 문서 분석·후속 사업 제안 생성의 단계별 동시 처리 수, 기본 `3` |
 
-처리 시간·재시도·ZIP 제한은 [.env.example](.env.example)에서 확인할 수 있습니다.
+처리 시간·재시도·ZIP 제한은 [.env.example](.env.example)에서 확인할 수 있습니다. 기존 `.env`의 `ANALYSIS_CONCURRENCY`가 `2`이면 `3`으로 변경하고 AI 서버를 재시작합니다. 실행 환경에 별도로 지정한 값은 `.env`와 코드 기본값보다 우선합니다.
 
 ## 실행
 

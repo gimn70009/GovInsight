@@ -1,0 +1,400 @@
+{
+  "method": "Final code; two notices, three repetitions, before/after order B-A/A-B/B-A; same frozen report inputs and model settings. Two concurrent independent one-document jobs. Application cache cold; provider prompt cache not controlled. No DB writes or delivery. Not end-to-end monitoring latency.",
+  "reused_notice_ids": [
+    12,
+    19
+  ],
+  "reused_fields": {
+    "12": {
+      "deadline": "‘26년 9월 23일(수)까지"
+    },
+    "19": {
+      "deadline": "~ 2026. 8. 14.(금) 14:00까지 (한국표준시)",
+      "destination": "제출 서류를 작성하여 이메일 접수 (global_rnd@kiat.or.kr)",
+      "contact": "한국산업기술진흥원 국제협력사업실 유레카 클러스터 담당자(sue4564@kiat.or.kr)"
+    }
+  },
+  "total_frozen_notices": 20,
+  "replay_document_arrays_changed": [],
+  "unchanged_name_inclusion": {
+    "included": 58,
+    "reference_families": 151
+  },
+  "context_median_ms": {
+    "before": 2.0456500351428986,
+    "after": 5.1910001784563065
+  },
+  "metrics": {
+    "before": {
+      "calls": 6,
+      "median_seconds": 18.89576580002904,
+      "timeouts": 1
+    },
+    "after": {
+      "calls": 6,
+      "median_seconds": 26.79929625010118,
+      "timeouts": 2
+    }
+  },
+  "successful_paired_tokens": {
+    "successful_matched_pairs": 3,
+    "input_tokens": {
+      "before": 21382,
+      "after": 21194
+    },
+    "output_tokens": {
+      "before": 4681,
+      "after": 4350
+    },
+    "total_tokens": {
+      "before": 26063,
+      "after": 25544
+    }
+  },
+  "samples": [
+    {
+      "variant": "before",
+      "round": 1,
+      "id": 19,
+      "seconds": 9.971899600233883,
+      "status": "success",
+      "usage": {
+        "input_tokens": 5228,
+        "output_tokens": 1449,
+        "total_tokens": 6677,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 5120
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "document_titles": [
+        "참가신청서(첨부1)"
+      ],
+      "facts": {
+        "applicant": "국내 주관기관: 국제공동연구(R&D)을 희망하는 소프트웨어 분야 국내기업(10개 내외)",
+        "deadline": "접수마감: 2026년 8월 14일(금) 14:00까지 (한국표준시, 14:00까지 접수된 서류만 인정)",
+        "destination": "이메일 접수: 제출 서류를 작성하여 global_rnd@kiat.or.kr로 접수",
+        "contact": "사업지원팀 유레카 클러스터 담당자: sue4564@kiat.or.kr"
+      },
+      "note": null
+    },
+    {
+      "variant": "before",
+      "round": 1,
+      "id": 12,
+      "seconds": 19.54577110009268,
+      "status": "success",
+      "usage": {
+        "input_tokens": 10926,
+        "output_tokens": 2921,
+        "total_tokens": 13847,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 10752
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "document_titles": [
+        "신청서 (국문 및 영문요약)",
+        "별첨자료 - 사업자등록증 사본",
+        "중견기업확인서 사본",
+        "국세지방세완납증명서 원본",
+        "최근 2개 년도 회계감사보고서"
+      ],
+      "facts": {
+        "applicant": "지원대상: 중견기업(중견기업확인서 보유) 또는 대통령령 기준의 중견기업 후보기업(명시된 요건 충족)\n선발규모·기간: 5개 기업 내외 선발, 기업별 지원기간은 2년 이내(평가 통해 연장 가능)",
+        "deadline": "원문 확인 필요",
+        "destination": "접수처·방법: 이메일 접수 (seanpark@kiat.or.kr). 한국산업기술진흥원(www.kiat.or.kr) 공고의 첨부 신청양식 작성 후 제출",
+        "contact": "원문 확인 필요"
+      },
+      "note": null
+    },
+    {
+      "variant": "before",
+      "round": 2,
+      "id": 19,
+      "seconds": 24.62617009971291,
+      "status": "success",
+      "usage": {
+        "input_tokens": 5228,
+        "output_tokens": 1618,
+        "total_tokens": 6846,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 5120
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "document_titles": [
+        "사업자등록증 사본",
+        "기업부설연구소인정서 사본"
+      ],
+      "facts": {
+        "applicant": "국내 주관기관: 국제공동연구(R&D)를 희망하는 소프트웨어 분야 국내기업(10개 내외)",
+        "deadline": "모집기간: 2026년 8월 14일(금) 14:00까지(한국표준시), 14:00까지 접수된 서류까지 인정",
+        "destination": "원문 확인 필요",
+        "contact": "한국산업기술진흥원 국제협력사업실 유레카 클러스터 담당자: sue4564@kiat.or.kr"
+      },
+      "note": null
+    },
+    {
+      "variant": "before",
+      "round": 2,
+      "id": 12,
+      "seconds": 30.031647800002247,
+      "status": "CancelledError",
+      "usage": null,
+      "document_titles": [],
+      "facts": {
+        "applicant": "중견기업 또는 공고가 정의한 중견기업 후보기업이어야 하며 접수 시 중견기업확인서 및 공고에서 요구하는 재무·법적 증빙을 제출해야 합니다.",
+        "deadline": "‘26년 9월 23일(수)까지",
+        "destination": "이메일 접수 (seanpark@kiat.or.kr) / 한국산업기술진흥원 홈페이지(www.kiat.or.kr) 사업공고 확인,",
+        "contact": "원문 확인 필요"
+      },
+      "note": "제출 안내 자동 정리 실패"
+    },
+    {
+      "variant": "before",
+      "round": 3,
+      "id": 12,
+      "seconds": 15.699145799968392,
+      "status": "success",
+      "usage": {
+        "input_tokens": 10926,
+        "output_tokens": 1651,
+        "total_tokens": 12577,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 10752
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "document_titles": [
+        "신청서 (국문 및 영문요약)",
+        "사업자등록증 사본"
+      ],
+      "facts": {
+        "applicant": "국내 주관기관: 중견기업(중견기업확인서 보유)\n국내 공동기관: 중견기업 또는 중견기업 후보기업",
+        "deadline": "접수 마감: ’26년 9월 23일(수)까지",
+        "destination": "원문 확인 필요",
+        "contact": "한국산업기술진흥원 중견기업전략실 홍보·문의: 02-6009-3501 seanpark@kiat.or.kr"
+      },
+      "note": null
+    },
+    {
+      "variant": "before",
+      "round": 3,
+      "id": 19,
+      "seconds": 18.2457604999654,
+      "status": "success",
+      "usage": {
+        "input_tokens": 5228,
+        "output_tokens": 1412,
+        "total_tokens": 6640,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 5120
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "document_titles": [
+        "참가신청서(첨부1)",
+        "ITEA 아이디어 피치 영문자료(첨부2. ITEA Project idea pitch template 2026/표지 포함 5페이지 이내)",
+        "사업자등록증 사본, 기업부설연구소인정서 사본"
+      ],
+      "facts": {
+        "applicant": "국내 주관기관(참가대상): 국제공동연구(R&D)를 희망하는 소프트웨어 분야 국내기업(10개 내외)",
+        "deadline": "원문 확인 필요",
+        "destination": "원문 확인 필요",
+        "contact": "사업지원팀 유레카 클러스터 담당자: sue4564@kiat.or.kr"
+      },
+      "note": null
+    },
+    {
+      "variant": "after",
+      "round": 1,
+      "id": 12,
+      "seconds": 30.01499389996752,
+      "status": "CancelledError",
+      "usage": null,
+      "document_titles": [],
+      "facts": {
+        "applicant": "중견기업 또는 공고가 정의한 중견기업 후보기업이어야 하며 접수 시 중견기업확인서 및 공고에서 요구하는 재무·법적 증빙을 제출해야 합니다.",
+        "deadline": "‘26년 9월 23일(수)까지",
+        "destination": "이메일 접수 (seanpark@kiat.or.kr) / 한국산업기술진흥원 홈페이지(www.kiat.or.kr) 사업공고 확인,",
+        "contact": "원문 확인 필요"
+      },
+      "note": "제출 안내 자동 정리 실패"
+    },
+    {
+      "variant": "after",
+      "round": 1,
+      "id": 19,
+      "seconds": 30.027652200311422,
+      "status": "CancelledError",
+      "usage": null,
+      "document_titles": [],
+      "facts": {
+        "applicant": "소프트웨어 연관 산업 분야의 국제공동R&D 참여 희망 국내기업으로 기업부설연구소 인정서 제출이 필수입니다.",
+        "deadline": "~ 2026. 8. 14.(금) 14:00까지 (한국표준시)",
+        "destination": "제출 서류를 작성하여 이메일 접수 (global_rnd@kiat.or.kr)",
+        "contact": "한국산업기술진흥원 국제협력사업실 유레카 클러스터 담당자(sue4564@kiat.or.kr)"
+      },
+      "note": "제출 안내 자동 정리 실패"
+    },
+    {
+      "variant": "after",
+      "round": 2,
+      "id": 19,
+      "seconds": 11.127936400007457,
+      "status": "success",
+      "usage": {
+        "input_tokens": 5108,
+        "output_tokens": 983,
+        "total_tokens": 6091,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "document_titles": [
+        "참가신청서(첨부1)",
+        "사업자등록증 사본",
+        "기업부설연구소인정서 사본"
+      ],
+      "facts": {
+        "applicant": "국내 주관기관: 국제공동연구(R&D) 희망 소프트웨어 분야 국내기업 (10개 내외)",
+        "deadline": "~ 2026. 8. 14.(금) 14:00까지 (한국표준시)",
+        "destination": "제출 서류를 작성하여 이메일 접수 (global_rnd@kiat.or.kr)",
+        "contact": "한국산업기술진흥원 국제협력사업실 유레카 클러스터 담당자(sue4564@kiat.or.kr)"
+      },
+      "note": null
+    },
+    {
+      "variant": "after",
+      "round": 2,
+      "id": 12,
+      "seconds": 25.06899659987539,
+      "status": "success",
+      "usage": {
+        "input_tokens": 10978,
+        "output_tokens": 3300,
+        "total_tokens": 14278,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 10880
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "document_titles": [
+        "신청서 (국문 및 영문요약)",
+        "사업자등록증 사본 1부",
+        "중견기업확인서 사본 1부",
+        "중소기업확인서 사본 1부",
+        "국세지방세완납증명서 원본 1부(스캔 파일 등)",
+        "최근 2개 년도 회계감사보고서 1부",
+        "신청자격적격성 확인서 원본 1부(스캔 파일 등)",
+        "우대사항 확인서 및 증빙 서류 사본 각1부"
+      ],
+      "facts": {
+        "applicant": "지원대상: 중견기업(중견기업확인서 보유) 또는 대통령령 기준의 중견기업 후보기업(세부요건 충족)\n입주형(A): 한독기술협력센터(獨, 아헨) 입주\n미입주형(B): 한국에서 지원 서비스 활용\n분담금: 입주(A) 연간 4,200유로, 미입주(B) 연간 2,100유로",
+        "deadline": "‘26년 9월 23일(수)까지",
+        "destination": "원문 확인 필요",
+        "contact": "원문 확인 필요"
+      },
+      "note": null
+    },
+    {
+      "variant": "after",
+      "round": 3,
+      "id": 19,
+      "seconds": 6.817166599910706,
+      "status": "success",
+      "usage": {
+        "input_tokens": 5108,
+        "output_tokens": 911,
+        "total_tokens": 6019,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 4992
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "document_titles": [
+        "참가신청서(첨부1)"
+      ],
+      "facts": {
+        "applicant": "국내 주관기관: 국제공동연구(R&D)를 희망하는 소프트웨어 분야 국내기업(10개 내외)",
+        "deadline": "~ 2026. 8. 14.(금) 14:00까지 (한국표준시)",
+        "destination": "제출 서류를 작성하여 이메일 접수 (global_rnd@kiat.or.kr)",
+        "contact": "한국산업기술진흥원 국제협력사업실 유레카 클러스터 담당자(sue4564@kiat.or.kr)"
+      },
+      "note": null
+    },
+    {
+      "variant": "after",
+      "round": 3,
+      "id": 12,
+      "seconds": 28.529595900326967,
+      "status": "success",
+      "usage": {
+        "input_tokens": 10978,
+        "output_tokens": 2456,
+        "total_tokens": 13434,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 10880
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "document_titles": [
+        "신청서 (국문 및 영문요약)",
+        "사업자등록증 사본 1부",
+        "중견기업확인서 사본 1부 (해당할 경우)",
+        "국세지방세완납증명서 원본 1부(스캔 파일 등)"
+      ],
+      "facts": {
+        "applicant": "국내 주관기관: 지원대상은 중견기업(중견기업확인서 보유) 또는 중견기업 후보기업\n국내 공동기관: 지원유형은 A(입주, 한독기술협력센터(獨, 아헨) 입주) 또는 B(미입주, 한국에서 지원)",
+        "deadline": "‘26년 9월 23일(수)까지",
+        "destination": "원문 확인 필요",
+        "contact": "원문 확인 필요"
+      },
+      "note": null
+    }
+  ],
+  "limitations": [
+    "Six attempts per arm; small nonrandom sample, variable output and provider latency. Timeouts retained at the 30-second limit.",
+    "Token comparisons include only paired successful calls; changed generated document counts also affect token use. Not a measured accuracy gain.",
+    "Earlier exploratory run included notice 5. Current source audit found an arrival rule outside its date row; final code does not reuse that date. Exploratory timing is excluded.",
+    "All four facts plus a valid saved checklist skip the model in tests; no such complete case exists in this 20-notice sample."
+  ]
+}

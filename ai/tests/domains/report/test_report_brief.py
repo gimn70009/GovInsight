@@ -94,15 +94,17 @@ def test_no_proposal_still_gets_clean_facts_and_linked_required_documents():
     assert brief.facts.destination == METHOD
     assert [i.title for i in brief.documents] == [
         "제4회 혁신대상 포상 신청서",
-        "정관 사본 (법인에 한함)",
+        "정관 사본",
     ]
     assert brief.documents[0].form.url == "https://example.go.kr/form?id=1"
     assert brief.documents[1].form is None
+    assert brief.documents[1].condition == "법인에 한함"
     body = TemplateReportGenerator().generate(req, briefs={2: brief}).summary
     deadline_line = next(line for line in body.splitlines() if "• 제출·의견 기한:" in line)
     assert METHOD not in deadline_line and "신청서" not in deadline_line
     assert "[제4회 혁신대상 포상 신청서](https://example.go.kr/form?id=1)" in body
-    assert "• 정관 사본 (법인에 한함)" in body
+    assert "• 정관 사본\n" in body
+    assert "법인에 한함" not in body
     assert "미작성" not in body and "원문 확인 필요" not in body
 
 
@@ -110,7 +112,7 @@ def test_existing_checklist_cannot_override_verified_source_documents():
     brief = validate(req=request(checklist=["사업계획서", "납세증명서"]))
     assert [i.title for i in brief.documents] == [
         "제4회 혁신대상 포상 신청서",
-        "정관 사본 (법인에 한함)",
+        "정관 사본",
     ]
 
 
@@ -146,11 +148,10 @@ def test_deadline_cannot_include_method_even_when_quote_is_real():
     "change",
     [
         {"title": "허위 신청서"},
-        {"condition": "중소기업만"},
         {"evidence": {"source_id": "source-0", "quote": "없는 제출서류입니다"}},
     ],
 )
-def test_unsupported_document_title_condition_or_quote_is_removed(change):
+def test_unsupported_document_title_or_quote_is_removed(change):
     doc = output().documents[0].model_dump()
     doc.update(change)
     assert validate(output(documents=[doc])).documents == []
@@ -464,7 +465,8 @@ def test_conditional_form_retains_requirement_and_real_zip_link():
         "form_source_id": "source-1",
     }
     brief = validate(output(documents=[item]), req)
-    assert brief.documents[0].title == title + " (해당 시)"
+    assert brief.documents[0].title == title
+    assert brief.documents[0].condition == "해당 시"
     assert brief.documents[0].form.url == "https://example.go.kr/forms.zip"
     assert "납세증명서" not in TemplateReportGenerator().generate(req, briefs={2: brief}).summary
 
@@ -605,3 +607,157 @@ def test_empty_model_document_list_keeps_explicit_submission_route_document():
     assert [d.title for d in brief.documents] == ["연구개발계획서"]
     assert brief.documents[0].form.url == "https://example.go.kr/forms.zip"
     assert brief.note == "전체 제출서류 목록은 원문 확인 필요"
+
+
+# Exact document rows captured from the real KIAT internship report model output.
+# The original quote is a submission table; model conditions join two bullet points.
+KIAT_FINANCIAL_QUOTE = (
+    "결산재무제표 (기타 업로드) pdf * 참여기업의 최근 3개년도 말 결산 재무제표 "
+    "(’23~‘25) 원본 또는 사본(원본 대조필) * 2개 이상 기업이 참여하는 경우 "
+    "zip파일로 제출 ※ 참여기업 신청자격 확인 必"
+)
+KIAT_SUBMISSION_ROWS = [
+    {
+        "title": "사업계획서",
+        "condition": None,
+        "evidence": {
+            "source_id": "source-0",
+            "quote": (
+                "○ (제출서류) 사업계획서 (【붙임 2】참조) 서류명 파일형식 비고 "
+                "사업계획서 hwp ▶ 붙임2 참고 * 사업계획서 양식 내 [별첨1] 포함하여 제출 "
+                + KIAT_FINANCIAL_QUOTE
+            ),
+        },
+        "form_source_id": "source-2",
+    },
+    {
+        "title": "결산재무제표",
+        "condition": (
+            "참여기업의 최근 3개년도 말 결산 재무제표 (’23~‘25) 원본 또는 사본(원본 대조필); "
+            "2개 이상 기업이 참여하는 경우 zip파일로 제출"
+        ),
+        "evidence": {"source_id": "source-0", "quote": KIAT_FINANCIAL_QUOTE},
+        "form_source_id": None,
+    },
+]
+
+
+def test_semicolon_joined_kiat_conditions_keep_financial_statements_and_names_only():
+    quote = KIAT_SUBMISSION_ROWS[0]["evidence"]["quote"]
+    req = with_document(contentText=quote)
+    brief = validate(output(documents=KIAT_SUBMISSION_ROWS), req)
+    assert [item.title for item in brief.documents] == ["사업계획서", "결산재무제표"]
+    assert brief.documents[1].condition == KIAT_SUBMISSION_ROWS[1]["condition"]
+    assert brief.note is None
+    body = TemplateReportGenerator().generate(req, briefs={2: brief}).summary
+    assert "• 결산재무제표\n" in body
+    assert "zip파일로 제출" not in body
+
+
+def test_unverified_condition_does_not_remove_a_verified_document_or_leak_into_report():
+    item = output().documents[0].model_dump()
+    item["condition"] = "중소기업만"
+    brief = validate(output(documents=[item]))
+    assert [document.title for document in brief.documents] == [item["title"]]
+    assert brief.documents[0].condition is None
+    assert brief.documents[0].form.url == "https://example.go.kr/form?id=1"
+    assert brief.note == "제출 대상·조건 확인 필요"
+    body = TemplateReportGenerator().generate(request(), briefs={2: brief}).summary
+    assert "중소기업만" not in body
+    assert "안내: 서류별 제출 대상·조건 항목은 원문에서 확인해 주세요." in body
+
+
+@pytest.mark.parametrize(
+    "condition",
+    ["주관기관; 공동기관", "주관기관; 반드시 원본만", "중소기업만", "제출 불필요"],
+)
+def test_reordered_partial_or_invented_conditions_are_not_accepted(condition):
+    quote = "제출서류: 확인서 / 공동기관 * 주관기관"
+    item = {
+        "title": "확인서", "condition": condition,
+        "evidence": {"source_id": "source-0", "quote": quote}, "form_source_id": None,
+    }
+    brief = validate(output(documents=[item]), with_document(contentText=quote))
+    assert [document.title for document in brief.documents] == ["확인서"]
+    assert brief.documents[0].condition is None
+    assert brief.note == "제출 대상·조건 확인 필요"
+
+
+def test_condition_from_another_quote_or_file_is_not_attached_to_verified_document():
+    quote = "제출서류: 정관 사본"
+    req = with_document(
+        contentText=quote + "\n별도 사업 안내: 중소기업만",
+        attachments=[{
+            "fileName": "다른 안내문.pdf", "downloadUrl": "https://example.go.kr/another",
+            "extractedText": "제출 대상: 중소기업만",
+        }],
+    )
+    item = {
+        "title": "정관 사본", "condition": "중소기업만",
+        "evidence": {"source_id": "source-0", "quote": quote}, "form_source_id": None,
+    }
+    brief = validate(output(documents=[item]), req)
+    assert brief.documents[0].title == "정관 사본"
+    assert brief.documents[0].condition is None
+    assert brief.note == "제출 대상·조건 확인 필요"
+
+
+@pytest.mark.parametrize("condition", [None, "   ", "모든 기관 필수"])
+def test_adjacent_condition_is_recovered_without_making_it_mandatory(condition):
+    quote = "제출서류: 확인서 (해당 시)"
+    item = {
+        "title": "확인서", "condition": condition,
+        "evidence": {"source_id": "source-0", "quote": quote}, "form_source_id": None,
+    }
+    brief = validate(output(documents=[item]), with_document(contentText=quote))
+    assert brief.documents[0].title == "확인서"
+    assert brief.documents[0].condition == "해당 시"
+    assert brief.documents[0].requirement_level is None
+
+
+@pytest.mark.parametrize(
+    "quote",
+    [
+        "제출서류: 확인서 (제출 불필요)", "제출서류: 확인서 (제출 면제)",
+        "제출서류: 확인서 (제출 생략)", "확인서는 제출하지 않음",
+        "제출서류 작성 참고용: 확인서", "확인서는 선정 후 제출", "확인서는 협약 후 제출",
+        "확인서 양식 작성 예시입니다.",
+    ],
+)
+def test_unverified_condition_cannot_bypass_submission_requirement_checks(quote):
+    item = {
+        "title": "확인서", "condition": "근거 없는 조건",
+        "evidence": {"source_id": "source-0", "quote": quote}, "form_source_id": None,
+    }
+    assert validate(output(documents=[item]), with_document(contentText=quote)).documents == []
+
+
+def test_cached_raw_output_is_revalidated_without_an_extra_model_call():
+    req = with_document(contentText=KIAT_SUBMISSION_ROWS[0]["evidence"]["quote"])
+    runner = SimpleNamespace(extract=AsyncMock(return_value=output(documents=KIAT_SUBMISSION_ROWS)))
+    run(req, runner)
+    brief = run(req, runner)[2]
+    assert [item.title for item in brief.documents] == ["사업계획서", "결산재무제표"]
+    assert brief.documents[1].condition == KIAT_SUBMISSION_ROWS[1]["condition"]
+    runner.extract.assert_awaited_once()
+
+
+
+def test_name_only_display_deduplicates_without_losing_verified_conditions():
+    quote = "제출서류: 확인서 (주관기관), 확인서 (공동기관)"
+    req = with_document(contentText=quote)
+    items = [
+        {
+            "title": "확인서",
+            "condition": condition,
+            "evidence": {"source_id": "source-0", "quote": quote},
+            "form_source_id": None,
+        }
+        for condition in ["주관기관", "공동기관", "주관기관"]
+    ]
+    brief = validate(output(documents=items), req)
+    assert [item.condition for item in brief.documents] == ["주관기관", "공동기관"]
+    assert brief.note is None
+    body = TemplateReportGenerator().generate(req, briefs={2: brief}).summary
+    assert body.count("• 확인서\n") == 1
+    assert "추가 제출서류" not in body
