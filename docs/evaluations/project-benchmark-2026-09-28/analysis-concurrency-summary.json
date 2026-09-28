@@ -1,0 +1,397 @@
+{
+  "method": "Six fixed public KIAT notices. Production run_analysis_job with metadata-only instrumentation and local delivery stubs; analysis, real embeddings, natural proposal gate and proposal generation included. Fresh process each run. Order c2-c3 / c3-c2. No DB writes or notification calls.",
+  "documents": [
+    {
+      "id": 1,
+      "title": "2026년 산업기술국제협력(양자-스페인) 접수 안내",
+      "body_chars": 1829,
+      "attachment_count": 4,
+      "attachment_chars": 752141
+    },
+    {
+      "id": 3,
+      "title": "2026년 첨단분야 인턴십 지원사업 4차 공고",
+      "body_chars": 2882,
+      "attachment_count": 3,
+      "attachment_chars": 35786
+    },
+    {
+      "id": 6,
+      "title": "2026년 기술거래기관 및 사업화전문회사 지정 신청 공고",
+      "body_chars": 2825,
+      "attachment_count": 2,
+      "attachment_chars": 10351
+    },
+    {
+      "id": 11,
+      "title": "2026년 산업융합 규제샌드박스 사업화 지원 프로그램 지원 대상과제 하반기 공고",
+      "body_chars": 5807,
+      "attachment_count": 2,
+      "attachment_chars": 18833
+    },
+    {
+      "id": 14,
+      "title": "「2027년 국가첨단전략산업 소부장 중소·중견기업 투자지원금」투자수요 조사",
+      "body_chars": 1080,
+      "attachment_count": 1,
+      "attachment_chars": 1568
+    },
+    {
+      "id": 16,
+      "title": "2026년도 한-독 2+2 국제공동기술개발사업 공고",
+      "body_chars": 16695,
+      "attachment_count": 5,
+      "attachment_chars": 139850
+    }
+  ],
+  "records": [
+    {
+      "round": 1,
+      "concurrency": 2,
+      "input_sha256": "2292617f1e6141dd8d673bf6010d125c81f9c30bb3984fcc547138830a5a2082",
+      "settings": {
+        "model_name": "gpt-5-mini",
+        "timeout_seconds": 120.0,
+        "proposal_model_name": "gpt-5-mini",
+        "proposal_timeout_seconds": 240.0,
+        "max_attempts": 2,
+        "max_text_chars": 40000,
+        "result_delivery_max_attempts": 3,
+        "concurrency": 2,
+        "embedding_model_name": "text-embedding-3-small"
+      },
+      "total_seconds": 235.55090239970013,
+      "phases": {
+        "analysis": 139.48358240025118,
+        "embedding": 2.794169600121677,
+        "proposal": 92.74284660024568
+      },
+      "successes": 6,
+      "failures": 0,
+      "analysis_attempts": 6,
+      "analysis_retries": 0,
+      "analysis_attempt_timeouts": 0,
+      "proposal_timeouts": 0,
+      "proposal_failures": 0,
+      "rate_limit_responses": 0,
+      "http_5xx": 0,
+      "model_calls": 35,
+      "model_cancellations": 0,
+      "model_errors": [],
+      "peak_active_documents": 2,
+      "peak_overlapping_model_calls": 3,
+      "embedding_results": 6,
+      "input_tokens": 446105,
+      "cached_input_tokens": 179712,
+      "output_tokens": 42508,
+      "model_seconds_sum": 445.02310669980943,
+      "document_seconds": {
+        "3": 44.805804800242186,
+        "1": 46.75709069985896,
+        "6": 41.9581170999445,
+        "11": 48.16776930028573,
+        "14": 27.129967799875885,
+        "16": 44.555224700365216
+      },
+      "document_seconds_median": 44.6805147503037,
+      "proposal_candidates": [
+        3,
+        11,
+        16
+      ],
+      "proposals": [
+        {
+          "id": 3,
+          "status": "READY",
+          "checklist_count": 8
+        },
+        {
+          "id": 11,
+          "status": "READY",
+          "checklist_count": 8
+        },
+        {
+          "id": 16,
+          "status": "READY",
+          "checklist_count": 14
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "concurrency": 3,
+      "input_sha256": "2292617f1e6141dd8d673bf6010d125c81f9c30bb3984fcc547138830a5a2082",
+      "settings": {
+        "model_name": "gpt-5-mini",
+        "timeout_seconds": 120.0,
+        "proposal_model_name": "gpt-5-mini",
+        "proposal_timeout_seconds": 240.0,
+        "max_attempts": 2,
+        "max_text_chars": 40000,
+        "result_delivery_max_attempts": 3,
+        "concurrency": 3,
+        "embedding_model_name": "text-embedding-3-small"
+      },
+      "total_seconds": 228.2153980997391,
+      "phases": {
+        "analysis": 112.96563250012696,
+        "embedding": 1.1573850996792316,
+        "proposal": 113.50593339977786
+      },
+      "successes": 6,
+      "failures": 0,
+      "analysis_attempts": 7,
+      "analysis_retries": 1,
+      "analysis_attempt_timeouts": 0,
+      "proposal_timeouts": 0,
+      "proposal_failures": 0,
+      "rate_limit_responses": 0,
+      "http_5xx": 0,
+      "model_calls": 35,
+      "model_cancellations": 0,
+      "model_errors": [],
+      "peak_active_documents": 3,
+      "peak_overlapping_model_calls": 5,
+      "embedding_results": 6,
+      "input_tokens": 456682,
+      "cached_input_tokens": 314880,
+      "output_tokens": 50111,
+      "model_seconds_sum": 569.3152161980979,
+      "document_seconds": {
+        "6": 44.202374500222504,
+        "3": 46.58816649997607,
+        "1": 48.728693100158125,
+        "11": 45.582501399796456,
+        "16": 47.602764199953526,
+        "14": 66.37228040024638
+      },
+      "document_seconds_median": 47.0954653499648,
+      "proposal_candidates": [
+        1,
+        3,
+        11,
+        16
+      ],
+      "proposals": [
+        {
+          "id": 1,
+          "status": "READY",
+          "checklist_count": 13
+        },
+        {
+          "id": 3,
+          "status": "READY",
+          "checklist_count": 9
+        },
+        {
+          "id": 11,
+          "status": "READY",
+          "checklist_count": 10
+        },
+        {
+          "id": 16,
+          "status": "READY",
+          "checklist_count": 11
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "concurrency": 3,
+      "input_sha256": "2292617f1e6141dd8d673bf6010d125c81f9c30bb3984fcc547138830a5a2082",
+      "settings": {
+        "model_name": "gpt-5-mini",
+        "timeout_seconds": 120.0,
+        "proposal_model_name": "gpt-5-mini",
+        "proposal_timeout_seconds": 240.0,
+        "max_attempts": 2,
+        "max_text_chars": 40000,
+        "result_delivery_max_attempts": 3,
+        "concurrency": 3,
+        "embedding_model_name": "text-embedding-3-small"
+      },
+      "total_seconds": 165.8334210002795,
+      "phases": {
+        "analysis": 106.73005639994517,
+        "embedding": 0.6238885000348091,
+        "proposal": 57.91197660006583
+      },
+      "successes": 6,
+      "failures": 0,
+      "analysis_attempts": 7,
+      "analysis_retries": 1,
+      "analysis_attempt_timeouts": 0,
+      "proposal_timeouts": 0,
+      "proposal_failures": 1,
+      "rate_limit_responses": 0,
+      "http_5xx": 0,
+      "model_calls": 32,
+      "model_cancellations": 0,
+      "model_errors": [],
+      "peak_active_documents": 3,
+      "peak_overlapping_model_calls": 5,
+      "embedding_results": 6,
+      "input_tokens": 408581,
+      "cached_input_tokens": 267264,
+      "output_tokens": 43963,
+      "model_seconds_sum": 422.74302210006863,
+      "document_seconds": {
+        "6": 38.08777010021731,
+        "3": 42.354600000195205,
+        "1": 43.700691000092775,
+        "11": 32.933569399639964,
+        "16": 31.66130039980635,
+        "14": 64.37104680016637
+      },
+      "document_seconds_median": 40.22118505020626,
+      "proposal_candidates": [
+        3,
+        11,
+        16
+      ],
+      "proposals": [
+        {
+          "id": 3,
+          "status": "REVIEW_REQUIRED",
+          "checklist_count": 0
+        },
+        {
+          "id": 11,
+          "status": "READY",
+          "checklist_count": 8
+        },
+        {
+          "id": 16,
+          "status": "READY",
+          "checklist_count": 12
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "concurrency": 2,
+      "input_sha256": "2292617f1e6141dd8d673bf6010d125c81f9c30bb3984fcc547138830a5a2082",
+      "settings": {
+        "model_name": "gpt-5-mini",
+        "timeout_seconds": 120.0,
+        "proposal_model_name": "gpt-5-mini",
+        "proposal_timeout_seconds": 240.0,
+        "max_attempts": 2,
+        "max_text_chars": 40000,
+        "result_delivery_max_attempts": 3,
+        "concurrency": 2,
+        "embedding_model_name": "text-embedding-3-small"
+      },
+      "total_seconds": 305.6029315995984,
+      "phases": {
+        "analysis": 198.97502689994872,
+        "embedding": 1.7400894002057612,
+        "proposal": 104.35133749991655
+      },
+      "successes": 6,
+      "failures": 0,
+      "analysis_attempts": 7,
+      "analysis_retries": 1,
+      "analysis_attempt_timeouts": 1,
+      "proposal_timeouts": 0,
+      "proposal_failures": 0,
+      "rate_limit_responses": 0,
+      "http_5xx": 0,
+      "model_calls": 32,
+      "model_cancellations": 1,
+      "model_errors": [
+        {
+          "id": 6,
+          "stage": "analysis",
+          "status": "CancelledError"
+        }
+      ],
+      "peak_active_documents": 2,
+      "peak_overlapping_model_calls": 3,
+      "embedding_results": 6,
+      "input_tokens": 404205,
+      "cached_input_tokens": 283264,
+      "output_tokens": 43572,
+      "model_seconds_sum": 551.4070174996741,
+      "document_seconds": {
+        "3": 33.71689540008083,
+        "1": 35.671300100162625,
+        "11": 43.35760569991544,
+        "14": 39.79474529996514,
+        "16": 37.625128999818116,
+        "6": 165.25363419996575
+      },
+      "document_seconds_median": 38.70993714989163,
+      "proposal_candidates": [
+        1,
+        11,
+        16
+      ],
+      "proposals": [
+        {
+          "id": 1,
+          "status": "READY",
+          "checklist_count": 12
+        },
+        {
+          "id": 11,
+          "status": "READY",
+          "checklist_count": 9
+        },
+        {
+          "id": 16,
+          "status": "READY",
+          "checklist_count": 12
+        }
+      ]
+    }
+  ],
+  "comparisons": [
+    {
+      "round": 1,
+      "analysis_reduction": 0.19011520527219028,
+      "total_reduction": 0.03114190701555286,
+      "same_proposal_candidates": false,
+      "no_reliability_regression": true,
+      "meets_predeclared_threshold": false
+    },
+    {
+      "round": 2,
+      "analysis_reduction": 0.4636007439586245,
+      "total_reduction": 0.4573565766130975,
+      "same_proposal_candidates": false,
+      "no_reliability_regression": false,
+      "meets_predeclared_threshold": false
+    }
+  ],
+  "meets_adoption_criteria": false,
+  "limitations": [
+    "Two batches per setting, six selected notices; not a random or statistically conclusive sample.",
+    "Collection, download/parsing, backend persistence, reports and notification delivery excluded.",
+    "Provider caching and model output variability are not controlled; input text, runtime limits and input order are identical.",
+    "No HTTP 429 in the sample does not guarantee a larger workload will avoid limits.",
+    "Structured validation and completion are checked; factual accuracy was not re-scored."
+  ],
+  "decision": {
+    "applied": true,
+    "configured_analysis_concurrency": 3,
+    "reason": "Applied after user requested the change: both comparisons had shorter analysis and total durations at concurrency 3, with no observed HTTP 429. The original adoption threshold remains unmet; differing proposal targets, retries and one proposal validation failure prevent a precise general speedup claim. The validation failure was not established as caused by concurrency 3.",
+    "previous_decision": {
+      "applied": false,
+      "retained_analysis_concurrency": 2,
+      "reason": "The predeclared >=10% analysis and total reduction in both comparisons without reliability regression was not met. Round 1 total reduction was 3.1%. Proposal targets differed in both pairs; round 2 c3 had a proposal validation failure while c2 had a recovered analysis timeout. No causal claim that c3 caused the validation failure.",
+      "tests_passed": 944
+    },
+    "runtime_note": "Code default, example and local dotenv are 3. Existing processes require restart; explicit environment values override dotenv and the default.",
+    "tests_passed": 944,
+    "verification": {
+      "default_concurrency": 3,
+      "example_concurrency": 3,
+      "local_dotenv_concurrency": 3,
+      "new_process_effective_concurrency": 3,
+      "explicit_environment_override_preserved": true,
+      "ruff_passed": true,
+      "live_api_benchmark_rerun_for_config_change": false
+    }
+  }
+}
