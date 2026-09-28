@@ -7,9 +7,10 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 class ProposalCapabilityUpgradeTest {
     @Test
-    void oldMixedFactsRequireUpgradeButCurrentCompanyCapabilitiesCanBeReused() {
+    void oldChecklistVersionsRequireUpgradeButCurrentResultsCanBeReused() {
         assertThat(analysis(12, "PROPOSAL_REQUEST").requiresProposalSchemaUpgrade()).isTrue();
-        assertThat(analysis(13, "PROPOSAL_REQUEST").requiresProposalSchemaUpgrade()).isFalse();
+        assertThat(analysis(13, "PROPOSAL_REQUEST").requiresProposalSchemaUpgrade()).isTrue();
+        assertThat(analysis(14, "PROPOSAL_REQUEST").requiresProposalSchemaUpgrade()).isFalse();
         assertThat(analysis(12, "BUSINESS_NOTICE").requiresProposalSchemaUpgrade()).isFalse();
     }
 

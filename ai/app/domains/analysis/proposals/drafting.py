@@ -23,6 +23,7 @@ from app.domains.analysis.proposals.capabilities import (
     ground_capability_matches,
 )
 from app.domains.analysis.proposals.scoring import score_preparation
+from app.domains.analysis.proposals.submission_requirements import reconcile_submission_documents
 from app.domains.analysis.schemas.request import AnalysisDocumentRequest
 from app.domains.analysis.schemas.result import (
     PREPARATION_SCHEMA_VERSION,
@@ -113,6 +114,12 @@ DRAFT_PROMPT = """
 - eligibilityChecklist에는 신청 자격, 결격 사유와 필수 보유 상태만 기록합니다.
   접수 마감일 자체와 사업계획서, 확인서, 증명서, 확약서, 등기부등본 같은 제출 파일은 넣지 않습니다.
 - submissionDocuments에는 실제로 작성, 발급, 날인 또는 업로드할 문서만 기록합니다.
+- 온라인 입력란의 작성 불필요 안내와 별도 파일 제출 의무를 구분합니다.
+  입력란이 선택이어도 제출서류 표의 파일을 생략하지 않습니다.
+- 제출 시점이나 제출 대상이 다른 문서는 한 항목으로 묶지 않습니다.
+  신청서에 포함하는 별첨, 협약 시 서류, 운영 완료 후 서류를 구분합니다.
+- 회사가 대학이나 주관기관에 제공할 증빙도 제출서류 표에 있으면 보존합니다.
+  최초 참여, 변경 시, 해당 기관만 제출 같은 조건을 함께 기록합니다.
 - meetingAgenda에는 참여 방식, 투입 인력과 예산 등 회사가 결정해야 할 사항만 기록합니다.
 - 회사가 확인할 자격은 eligibilityChecklist의 detail과 nextAction에, 문서 작성에 필요한
   수치·실적·인력 자료는 해당 submissionDocuments의 detail과 nextAction에 통합합니다.
@@ -309,6 +316,9 @@ class LangChainProposalGenerationRunner:
         )
         _retain_verified_source_references(draft, document)
         _normalize_preparation_structure(draft)
+        draft.preparation.submission_documents = reconcile_submission_documents(
+            draft.preparation.submission_documents, document,
+        )
         _apply_strategy_eligibility_guardrails(draft)
         _build_preparation_highlights(draft.preparation)
         score_preparation(draft.preparation)
@@ -542,6 +552,8 @@ def _retain_verified_source_references(
     _supplement_missing_submission_files(draft, document)
     if not draft.preparation.eligibility_checklist:
         raise ValueError("원문에서 확인되는 지원 조건이 없습니다.")
+    if not draft.preparation.submission_documents:
+        draft.preparation.submission_documents = reconcile_submission_documents([], document)
     if not draft.preparation.submission_documents:
         raise ValueError("원문에서 확인되는 제출 자료가 없습니다.")
 
@@ -1014,18 +1026,23 @@ def _verified_items(
         elif source.origin == EvidenceOrigin.ATTACHMENT and source.attachment_name:
             evidence_text = attachment_texts.get(source.attachment_name, "")
             if not evidence_text:
-                inner_marker = _normalize_evidence(f"[파일: {source.attachment_name}]")
-                evidence_text = next(
-                    (
-                        text
-                        for text in attachment_texts.values()
-                        if inner_marker in _normalize_evidence(text)
-                    ),
-                    "",
-                )
+                for text in attachment_texts.values():
+                    markers = list(re.finditer(r"(?m)^\[파일:\s*([^\]\r\n]+)\]\s*\n", text))
+                    for index, marker in enumerate(markers):
+                        if (
+                            _normalize_evidence(marker[1])
+                            != _normalize_evidence(source.attachment_name)
+                        ):
+                            continue
+                        stop = markers[index + 1].start() if index + 1 < len(markers) else len(text)
+                        evidence_text = text[marker.end():stop]
+                        break
+                    if evidence_text:
+                        break
         else:
             continue
-        if _normalize_evidence(source.excerpt) in _normalize_evidence(evidence_text):
+        normalized_quote = _normalize_evidence(source.excerpt)
+        if normalized_quote and normalized_quote in _normalize_evidence(evidence_text):
             verified.append(item)
     return verified
 

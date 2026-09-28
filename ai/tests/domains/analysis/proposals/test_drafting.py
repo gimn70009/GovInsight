@@ -250,7 +250,7 @@ def test_generates_outline_then_draft_only_for_matching_proposal_request() -> No
     assert generated.proposal.preparation is not None
     assert generated.proposal.preparation.strategy.recommended_project.startswith("제조 현장")
     assert generated.proposal.source_attachment_names == ["신청서식.hwp"]
-    assert generated.proposal.preparation_schema_version == 13
+    assert generated.proposal.preparation_schema_version == 14
     assert "map_proposal_sources" in generated.used_tools
     assert "build_proposal_preparation" in generated.used_tools
 
@@ -314,7 +314,7 @@ def test_proposal_stage_failure_preserves_base_analysis() -> None:
     assert generated.summary.startswith("산업 AI 실증")
     assert generated.proposal.draft_status == ProposalDraftStatus.REVIEW_REQUIRED
     assert generated.proposal.draft_sections == []
-    assert generated.proposal.preparation_schema_version == 13
+    assert generated.proposal.preparation_schema_version == 14
     assert "사업 제안 생성 제한 시간을 초과했습니다." in generated.proposal.draft_reason
 
 
@@ -501,8 +501,8 @@ def test_supplements_submission_forms_omitted_by_model() -> None:
     request.attachments[0].file_name = "붙임2. 제출서류 양식.zip"
     request.attachments[0].extracted_text = (
         "[파일: 사업계획서.hwp]\n사업계획서를 제출해야 합니다.\n"
+        "산업 AI 공급기업이 신청할 수 있습니다.\n"
         "[파일: 참여확인서.hwp]\n참여확인서를 제출해야 합니다.\n"
-        "산업 AI 공급기업이 신청할 수 있습니다."
     )
     proposal.preparation.eligibility_checklist[0].source.attachment_name = "사업계획서.hwp"
     proposal.preparation.submission_documents[0].source.attachment_name = "사업계획서.hwp"
