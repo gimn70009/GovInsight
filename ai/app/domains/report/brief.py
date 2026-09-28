@@ -1,13 +1,14 @@
-"""Proposal-independent, grounded submission extraction; URLs never come from the model."""
+"""Reuse verified proposal documents or extract them from sources; keep URLs server-owned."""
 
 import json
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.domains.analysis.evidence.selection import allocate_budgets, select_evidence
+from app.domains.report.fact_reuse import FACT_FIELDS, verified_submission_facts
 from app.domains.report.facts import (
     SubmissionFacts,
     _placeholder,
@@ -22,9 +23,36 @@ from app.domains.report.submission_documents import (
     SubmissionDocument,
     _form,
     _parts,
+    can_reuse_submission_checklist,
+    fallback_submission_documents,
+    reusable_submission_documents,
     route_documents,
     source_priority,
+    source_submission_documents,
     submission_documents,
+    supplement_submission_documents,
+)
+
+# Only explicit submission sections can lend a heading to a quoted table row.
+# Numbered document rows are deliberately not treated as outline headings.
+_SECTION_TOPIC = (
+    r"(?:제\s*출|구\s*비|신\s*청)\s*서\s*류|문의|연락처|유의\s*사항|"
+    r"참고|예시|견본|별첨|붙임|첨부\s*(?:파일|자료)|기타|"
+    r"(?:신청|접수|제출)\s*(?:방법|기간|절차|자격|대상)|"
+    r"(?:지원|사업)\s*(?:내용|대상|개요|목적)|"
+    r"(?:평가|선정)\s*(?:기준|방법|절차|항목|일정|결과|후|이후)|"
+    r"협약\s*(?:체결|후|이후|시)|작성\s*(?:방법|요령)|준비\s*사항"
+)
+_OUTLINE_PREFIX = rf"(?:\d+[.)]\s*|\d+\s+|[가-하][.)]\s*)(?={_SECTION_TOPIC})"
+_SECTION_PREFIX = re.compile(rf"^(?:[□■○◦●ㅇ]\s*|{_OUTLINE_PREFIX})")
+_SUBMISSION_HEADING = re.compile(
+    r"^[\[(]?(?:제\s*출|구\s*비|신\s*청)\s*서\s*류"
+    r"(?:[ \t]*목록)?[\])]?(?P<tail>.*)$"
+)
+_TABLE_START = re.compile(r"^(?:[:：]|구분|서류명|번호|No\.?|필수|\d+[.)]|[-•])", re.I)
+_NON_APPLICATION = re.compile(
+    r"참고(?:용|자료)|예시|견본|제출(?:불필요|면제|생략)|제출하지않|"
+    r"(?:선정|협약)(?:체결)?(?:이후|후|시)|(?:사업|운영)(?:종료|완료)후"
 )
 
 
@@ -80,7 +108,7 @@ class DisplayEvidence(BaseModel):
     )
 
 
-class BriefModelOutput(BaseModel):
+class BriefFactsModelOutput(BaseModel):
     """Model emits each source excerpt once; legacy extraction values are derived locally."""
 
     model_config = ConfigDict(extra="forbid")
@@ -88,7 +116,6 @@ class BriefModelOutput(BaseModel):
     deadlines: list[DisplayEvidence] = Field(max_length=4)
     destinations: list[DisplayEvidence] = Field(max_length=4)
     contacts: list[DisplayEvidence] = Field(max_length=3)
-    documents: list[RequiredDocument] = Field(max_length=15)
 
     def extracted(self) -> BriefOutput:
         fields = {}
@@ -100,13 +127,21 @@ class BriefModelOutput(BaseModel):
                 if not 2 <= len(raw) <= 150:
                     continue
                 fields[name].append(SourcedText(text=raw, **item.model_dump()))
-        return BriefOutput(**fields, documents=self.documents)
+        return BriefOutput(**fields, documents=[])
+
+
+class BriefModelOutput(BriefFactsModelOutput):
+    documents: list[RequiredDocument] = Field(max_length=15)
+
+    def extracted(self) -> BriefOutput:
+        return super().extracted().model_copy(update={"documents": self.documents})
 
 
 @dataclass(frozen=True)
 class BriefContext:
     payload: str
     sources: dict[str, SourcePart]
+    reused_facts: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -114,6 +149,7 @@ class SubmissionBrief:
     facts: SubmissionFacts
     documents: list[SubmissionDocument]
     note: str | None = None
+    uses_saved_checklist: bool = False
 
 
 def build_context(document: ReportDocumentRequest, budget: int) -> BriefContext:
@@ -163,12 +199,26 @@ def build_context(document: ReportDocumentRequest, budget: int) -> BriefContext:
                 "coverage": selected.metadata(),
             }
         )
-    checklist = [item.title for item in submission_documents(document)]
+    reuse_checklist = can_reuse_submission_checklist(document)
+    # Reused rows stay outside the model and its cache. Their current conditions
+    # and collected URLs are projected again when the report is assembled.
+    checklist = [] if reuse_checklist else [item.title for item in submission_documents(document)]
+    reused_facts = verified_submission_facts(document)
+    requested_fields = [name for name, kind in FACT_FIELDS.items() if kind not in reused_facts]
+    if not reuse_checklist:
+        requested_fields.append("documents")
     payload = json.dumps(
-        {"title": document.title, "sources": entries, "saved_submission_checklist": checklist},
+        {
+            "title": document.title,
+            "sources": entries,
+            "saved_submission_checklist": checklist,
+            "reuse_submission_checklist": reuse_checklist,
+            "requested_fields": requested_fields,
+            "reused_facts": reused_facts,
+        },
         ensure_ascii=False,
     )
-    return BriefContext(payload, sources)
+    return BriefContext(payload, sources, reused_facts)
 
 
 def _compact(value: str) -> str:
@@ -196,6 +246,81 @@ def _ordered_fragments(fragments: list[str], quote: str) -> bool:
             return False
         cursor = offset + len(fragment)
     return bool(fragments)
+
+
+def _submission_section_contains(quote: str, text: str) -> bool:
+    """Find the entire quote under a bounded, same-source submission heading.
+
+    Restore only structural line breaks lost by HTML/PDF extraction. A heading
+    supplies submission intent, never another row's conditions or missing text.
+    """
+    text = unicodedata.normalize("NFKC", text)
+    text = re.sub(r"([□■○◦●])", r"\n\1", text)
+    text = re.sub(rf"(?<!\S)({_OUTLINE_PREFIX})", r"\n\1", text)
+    scopes: dict[int, bool] = {}
+    block: list[str] | None = None
+    quoted = _compact(quote)
+
+    def contains() -> bool:
+        value = "\n".join(block or [])
+        return bool(
+            quoted and len(value) <= 2000 and quoted in _compact(value)
+            and not _NON_APPLICATION.search(_compact(value))
+        )
+
+    for raw in text.splitlines():
+        line = raw.strip()
+        prefix = _SECTION_PREFIX.match(line)
+        label = line[prefix.end():] if prefix else line
+        heading = _SUBMISSION_HEADING.match(label)
+        tail = heading["tail"].strip() if heading else ""
+        if heading and tail and not _TABLE_START.match(tail):
+            heading = None
+        gap = line.startswith(("[일부 원문 생략", "[파일:"))
+        boundary = prefix or heading or re.match(_SECTION_TOPIC, label.lstrip("[<("))
+        if not (boundary or gap):
+            if block is not None:
+                block.append(raw)
+            continue
+        if contains():
+            return True
+        block = None
+        if gap:
+            continue
+        if prefix:
+            marker = prefix[0].strip()[0]
+            level = 1 if marker in "□■" or marker.isdigit() else (
+                3 if marker in "○◦●ㅇ" else 2
+            )
+        else:
+            # A bare column header cannot clear a containing reference/stage heading.
+            level = 5 if heading else 4
+        scopes = {rank: blocked for rank, blocked in scopes.items() if rank < level}
+        scopes[level] = bool(
+            _NON_APPLICATION.search(_compact(label)) or label.startswith("참고")
+        )
+        if heading and not any(scopes.values()):
+            block = [tail]
+    return contains()
+
+
+def _document_condition(item: RequiredDocument) -> tuple[str | None, bool]:
+    """Validate condition wording independently of the already verified document."""
+    condition = " ".join((item.condition or "").split())
+    if condition:
+        if _compact(condition) in _compact(item.evidence.quote):
+            return condition, False
+        # The model may join separate table bullets with a semicolon. Each whole
+        # clause must still occur in the same verified quote, in source order.
+        fragments = [part.strip() for part in re.split(r"[;；]", condition)]
+        if 2 <= len(fragments) <= 4 and _ordered_fragments(fragments, item.evidence.quote):
+            return "; ".join(fragments), False
+    # A bad model condition must not erase an explicit adjacent condition.
+    adjacent = re.search(
+        re.escape(item.title) + r"\s*\(\s*(해당\s*시)\s*\)", item.evidence.quote
+    )
+    recovered = " ".join(adjacent[1].split()) if adjacent else None
+    return recovered, bool(condition)
 
 
 def _values(items: list[SourcedText], context: BriefContext, kind: str) -> str:
@@ -282,8 +407,14 @@ def validate_brief(
             for key in groups
         }
     )
+    # Verified current-source values are authoritative even on cache hits.
+    facts = SubmissionFacts(**{**vars(facts), **context.reused_facts})
+    saved = reusable_submission_documents(document)
+    if saved is not None:
+        return SubmissionBrief(facts, saved, uses_saved_checklist=True)
     documents = []
     seen = set()
+    condition_needs_review = False
     for item in output.documents:
         source = context.sources.get(item.evidence.source_id)
         if not source or source_priority(source) == 2:
@@ -295,28 +426,22 @@ def validate_brief(
         if _placeholder(item.title):
             continue
         if not re.search(r"제\s*출|구\s*비|필수|신청\s*서류|계획서\s*접수", item.evidence.quote):
-            continue
+            if source_priority(source) != 0 or not _submission_section_contains(
+                item.evidence.quote, source.text
+            ):
+                continue
         if re.search(
             r"제출\s*(?:불필요|면제|생략)|제출하지\s*않|참고용|선정\s*후|협약\s*후",
             item.evidence.quote,
         ):
             continue
         title = " ".join(item.title.split())
-        condition = item.condition
-        if not condition:
-            # Only recover a condition immediately attached to this document's name.
-            adjacent = re.search(
-                re.escape(item.title) + r"\s*\(\s*(해당\s*시)\s*\)", item.evidence.quote
-            )
-            if adjacent:
-                condition = adjacent[1]
-        if condition:
-            if _compact(condition) not in _compact(item.evidence.quote):
-                continue
-            title += " (" + " ".join(condition.split()) + ")"
-        if title in seen:
+        condition, needs_review = _document_condition(item)
+        condition_needs_review |= needs_review
+        key = (title, condition)
+        if key in seen:
             continue
-        seen.add(title)
+        seen.add(key)
         form = None
         if item.form_source_id:
             source = context.sources.get(item.form_source_id)
@@ -325,8 +450,13 @@ def validate_brief(
                 form = _form(item.title, [source])
         if not item.form_source_id:
             form = _form(item.title, list(context.sources.values()))
-        documents.append(SubmissionDocument(title, form))
-    note = None
+        documents.append(SubmissionDocument(title, form, condition=condition))
+    note = "제출 대상·조건 확인 필요" if condition_needs_review else None
+    verified = source_submission_documents(document)
+    if verified:
+        if not documents:
+            note = "원문 표에서 확인한 서류만 표시"
+        documents = supplement_submission_documents(verified, documents)
     if not documents:
         documents = route_documents(document)
         if documents:
@@ -338,10 +468,12 @@ def validate_brief(
 
 def fallback_brief(document: ReportDocumentRequest, note: str) -> SubmissionBrief:
     facts = submission_facts(document)
+    facts = SubmissionFacts(**{**vars(facts), **verified_submission_facts(document)})
     facts = SubmissionFacts(
         **{
             key: readable_source(getattr(facts, key), key) or "원문 확인 필요"
             for key in ("applicant", "deadline", "destination", "contact")
         }
     )
-    return SubmissionBrief(facts, submission_documents(document), note)
+    documents, uses_saved = fallback_submission_documents(document)
+    return SubmissionBrief(facts, documents, note, uses_saved_checklist=uses_saved)

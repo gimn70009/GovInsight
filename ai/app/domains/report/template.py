@@ -9,7 +9,9 @@ from app.domains.report.facts import submission_facts
 from app.domains.report.presentation import foreign_prose, informational_notice
 from app.domains.report.schemas.request import ReportDocumentRequest, ReportJobRequest
 from app.domains.report.schemas.result import ReportDraft
-from app.domains.report.submission_documents import submission_documents
+from app.domains.report.submission_documents import (
+    fallback_submission_documents,
+)
 
 _MAX_DISPLAY_UNITS = 3_900  # Reserve room for the title; Java/Telegram use UTF-16 offsets.
 _MAX_STORAGE_UNITS = 20_000
@@ -130,7 +132,10 @@ def _document_block(
         else:
             lines.append(f"• {label}: {valid[0]}")
             lines.extend(f"  ↳ {item}" for item in valid[1:])
-    required = brief.documents if brief else submission_documents(document)
+    if brief is None:
+        required, uses_saved_checklist = fallback_submission_documents(document)
+    else:
+        required, uses_saved_checklist = brief.documents, brief.uses_saved_checklist
     shown = 0
     used = 0
     seen = set()
@@ -157,7 +162,7 @@ def _document_block(
         shown += 1
     if shown < len(entries):
         location = (
-            "사업 제안 체크리스트" if not brief and submission_documents(document) else "원문"
+            "사업 제안 체크리스트" if uses_saved_checklist else "원문"
         )
         lines.append(f"추가 제출서류 {len(entries) - shown}종: {location}에서 확인")
     if brief:
@@ -165,8 +170,11 @@ def _document_block(
             missing.append("제출 서류")
         if brief.note:
             missing.append(brief.note)
-    elif not document.proposal or not document.proposal.preparation:
+    elif not required and (not document.proposal or not document.proposal.preparation):
         missing.append("제출 서류 체크리스트 미작성")
+    if not uses_saved_checklist and any(item.requirement_level is not None for item in required):
+        if "원문 표에서 확인한 서류만 표시" not in missing:
+            missing.append("원문 표에서 확인한 서류만 표시")
     if missing and not informational:
         labels = {
             "제출 주체·대상": "신청 자격",
@@ -175,10 +183,14 @@ def _document_block(
             "문의 담당": "문의처",
             "제출 서류": "준비 서류",
             "제출 서류 체크리스트 미작성": "준비 서류",
+            "제출 대상·조건 확인 필요": "서류별 제출 대상·조건",
+            "원문 표에서 확인한 서류만 표시": "전체 제출서류 목록",
         }
         pending = [labels[item] for item in missing if item in labels]
         if pending:
             subject = "·".join(pending) + " 항목" if len(pending) <= 2 else "일부 접수 정보"
+            if len(pending) > 2 and "전체 제출서류 목록" in pending:
+                subject = "전체 제출서류 목록 등 일부 접수 정보"
             lines.extend(
                 [
                     "",
