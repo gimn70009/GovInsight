@@ -4,6 +4,36 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 
 class ReportBodyFormatterTest {
+    @Test void emailLinksCompletePlainUrlsWithoutChangingOtherChannels() {
+        String body = "접수: www.kiat.or.kr 및 https://example.org/apply?x=1&y=%28form%29#submit";
+        assertThat(ReportBodyFormatter.emailHtml(body)).isEqualTo(
+                "접수: <a href=\"https://www.kiat.or.kr\">www.kiat.or.kr</a> 및 "
+                + "<a href=\"https://example.org/apply?x=1&amp;y=%28form%29#submit\">"
+                + "https://example.org/apply?x=1&amp;y=%28form%29#submit</a>");
+        String query = "https://example.org/apply?token=abc;";
+        assertThat(ReportBodyFormatter.emailHtml(query))
+                .isEqualTo("<a href=\"" + query + "\">" + query + "</a>");
+        assertThat(ReportBodyFormatter.html(body)).isEqualTo(body.replace("&", "&amp;"));
+        assertThat(ReportBodyFormatter.displayLength(body)).isEqualTo(body.length());
+    }
+
+    @Test void emailKeepsProsePunctuationOutsideLinksAndBalancedUrlParenthesesInside() {
+        assertThat(ReportBodyFormatter.emailHtml("홈페이지(www.kiat.or.kr)에서 접수. [https://example.org/a(b)]."))
+                .isEqualTo("홈페이지(<a href=\"https://www.kiat.or.kr\">www.kiat.or.kr</a>)에서 접수. "
+                        + "[<a href=\"https://example.org/a(b)\">https://example.org/a(b)</a>].");
+        assertThat(ReportBodyFormatter.emailHtml("접수: HTTPS://example.org/apply."))
+                .contains("href=\"HTTPS://example.org/apply\">HTTPS://example.org/apply</a>.");
+    }
+
+    @Test void emailDoesNotNestExistingLinksOrLinkUnsafeAddresses() {
+        String body = "[www.example.org](https://example.org/form?a=1&b=2)";
+        assertThat(ReportBodyFormatter.emailHtml(body)).isEqualTo(ReportBodyFormatter.html(body));
+        assertThat(ReportBodyFormatter.emailHtml("<script> https://user:pass@example.org/x "
+                + "https://example.org\\evil www. javascript:alert(1) help@www.example.org"))
+                .doesNotContain("<a ", "<script>")
+                .contains("&lt;script&gt;", "help@www.example.org");
+    }
+
     @Test void rendersDateRangesAndCountsTheExpandedMessageLength() {
         String saved = "권역별 설명회(’26.10.13~10.14)";
         String displayed = "권역별 설명회(2026년 10월 13일~10월 14일)";

@@ -16,6 +16,20 @@ class ReportEmailTemplateTest {
         assertThat(html).doesNotContain("────────────────", "▸ 참여기업 모집", "문서 유형: ");
     }
 
+    @Test void submissionUrlsKeepTheirFullAddressAndWrapInEmail() throws Exception {
+        String url = "https://www.kiat.or.kr/front/board/boardContentsView.do?MenuId="
+                + "a".repeat(100) + "&contents_id=notice#apply";
+        String body = "▸ 접수 안내\n• 제출처·방법: KIAT 접수처: 서울특별시 강남구 테헤란로 305 및 www.kiat.or.kr\n"
+                + "  ↳ 온라인 접수: (" + url + ")\n원문: [게시글 보기](https://example.org/notice)";
+        String html = ReportEmailTemplate.render("보고서 · 접수 URL", body);
+        assertThat(html).contains("href=\"https://www.kiat.or.kr\">www.kiat.or.kr</a>",
+                "href=\"" + url.replace("&", "&amp;") + "\">" + url.replace("&", "&amp;") + "</a>)",
+                "word-break:break-all", "word-wrap:break-word", "white-space:normal");
+        var output = java.nio.file.Path.of("build/report-preview/submission-urls.html");
+        java.nio.file.Files.createDirectories(output.getParent());
+        java.nio.file.Files.writeString(output, html);
+    }
+
     @Test void rendersMultipleCardsAndPreservesTrailingOmissionNotice() {
         String body = "▸ 첫 공고\n기관: 기관1\n\n요약: 첫 요약\n\n────────────────\n\n"
                 + "▸ 둘째 공고\n기관: 기관2\n\n첨부파일 ↓\n• 등록된 첨부파일 없음\n"
