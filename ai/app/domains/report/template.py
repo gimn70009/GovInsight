@@ -10,6 +10,7 @@ from app.domains.report.presentation import foreign_prose, informational_notice
 from app.domains.report.schemas.request import ReportDocumentRequest, ReportJobRequest
 from app.domains.report.schemas.result import ReportDraft
 from app.domains.report.submission_documents import (
+    display_submission_documents,
     fallback_submission_documents,
 )
 
@@ -138,19 +139,14 @@ def _document_block(
         required, uses_saved_checklist = brief.documents, brief.uses_saved_checklist
     shown = 0
     used = 0
-    seen = set()
     entries = []
-    for item in required:
+    for item in display_submission_documents(required):
         form = item.form
         url = _safe_url(form.url) if form and form.url else None
         label = _text(item.title)
         # A member has no public URL of its own: identify the archive download honestly.
         if form and form.archive and url:
             label += " (ZIP)"
-        key = (label, url)
-        if key in seen:
-            continue
-        seen.add(key)
         entries.append(f"• [{label}]({url})" if url else f"• {label}")
     if entries:
         lines.extend(["", "제출 준비 서류 ↓"])

@@ -194,3 +194,62 @@ def test_generation_reconciles_documents_with_one_model_call():
         runner._draft_model.ainvoke.assert_awaited_once()
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("title", [
+    "사업계획서(붙임2 양식)", "사업 계획서 (붙임 제2호 서식)",
+    "사업계획서（붙임 2 양식）", "사업계획서(양식)",
+])
+def test_source_plan_replaces_model_alias_with_form_reference(title):
+    req = request(TABLE)
+    item = PreparationChecklistItem(
+        title=title, detail="붙임2 양식으로 사업계획서를 작성합니다.",
+        next_action="사업계획서를 준비합니다.", stage="APPLICATION",
+        requirement_level="MANDATORY",
+        source=RequirementSource(
+            origin="ATTACHMENT", attachment_name=req.attachments[0].file_name,
+            section_title="제출서류", excerpt="사업계획서\nhwp\n별첨1 포함하여 제출",
+        ),
+    )
+    assert [row.title for row in reconcile_submission_documents([item], req)] == [
+        "사업계획서", "결산재무제표",
+    ]
+
+
+@pytest.mark.parametrize("title", ["사업계획서(개인)", "사업계획서(단체)", "영문 사업계획서"])
+def test_source_plan_does_not_replace_model_item_with_identity_qualifier(title):
+    item = PreparationChecklistItem(
+        title=title, detail="구분된 대상의 서류입니다.", next_action="서류를 준비합니다.",
+        stage="APPLICATION", requirement_level="MANDATORY",
+    )
+    assert title in [row.title for row in reconcile_submission_documents([item], request(TABLE))]
+
+
+@pytest.mark.parametrize("reference", ["붙임", "별첨", "서식"])
+def test_generic_source_name_does_not_choose_between_numbered_model_forms(reference):
+    titles = [f"사업계획서({reference}2 양식)", f"사업계획서({reference}3 양식)"]
+    items = [PreparationChecklistItem(
+        title=title, detail="번호가 다른 별도 양식입니다.", next_action="해당 양식을 확인합니다.",
+        stage="APPLICATION", requirement_level="MANDATORY",
+    ) for title in titles]
+    reconciled = reconcile_submission_documents(items, request(TABLE))
+    assert all(title in [row.title for row in reconciled] for title in titles)
+
+
+@pytest.mark.parametrize("same_source", [True, False])
+def test_college_form_alias_requires_matching_source_row(same_source):
+    req = request(TABLE.replace("별첨1 포함하여 제출", "붙임2 참고. 별첨1 포함하여 제출"))
+    title = "사업계획서(대학 제출용, 붙임2 양식)"
+    item = PreparationChecklistItem(
+        title=title, detail="대학이 붙임2 사업계획서를 업로드합니다.",
+        next_action="서류를 준비합니다.", stage="APPLICATION", requirement_level="MANDATORY",
+        source=RequirementSource(
+            origin="ATTACHMENT", attachment_name=req.attachments[0].file_name,
+            section_title="신청서류",
+            excerpt="사업계획서 hwp 붙임2 참고. 별첨1 포함하여 제출" if same_source
+            else "기업은 별도로 작성한 사업계획서를 해당 대학에 제출합니다.",
+        ),
+    )
+    titles = [row.title for row in reconcile_submission_documents([item], req)]
+    assert (title not in titles) is same_source
+    assert "사업계획서" in titles
