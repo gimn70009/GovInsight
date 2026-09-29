@@ -270,7 +270,7 @@ class PreparationChecklistItem(CamelCaseModel):
         return self
 
 
-PREPARATION_SCHEMA_VERSION = 15
+PREPARATION_SCHEMA_VERSION = 16
 
 
 class StrategyCapabilityMatch(CamelCaseModel):

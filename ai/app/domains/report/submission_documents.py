@@ -5,6 +5,7 @@ import unicodedata
 from dataclasses import dataclass, replace
 
 from app.domains.analysis.proposals.submission_names import (
+    same_period_submission_source,
     same_submission_source,
     submission_name,
 )
@@ -48,7 +49,7 @@ def _form_identity(form: SourcePart | None) -> tuple[str | None, ...] | None:
 def display_submission_documents(documents: list[SubmissionDocument]) -> list[SubmissionDocument]:
     """Deduplicate report display only; retain the saved checklist and its metadata."""
     groups: dict[str, list[int]] = {}
-    names = [submission_name(item.title) for item in documents]
+    names = [submission_name(item.title, split_period=True) for item in documents]
     for index, name in enumerate(names):
         groups.setdefault(name.key, []).append(index)
     displayed = list(documents)
@@ -58,9 +59,18 @@ def display_submission_documents(documents: list[SubmissionDocument]) -> list[Su
         references = {names[i].references for i in indices if names[i].references}
         submitters = {names[i].submitters for i in indices if names[i].submitters}
         mixed_submitters = len({names[i].submitters for i in indices}) > 1
+        periods = {names[i].period for i in indices if names[i].period is not None}
+        mixed_periods = bool(periods) and any(names[i].period is None for i in indices)
         # Keep the linked label when an unlinked, qualified explanation duplicates it.
         preferred = next((i for i in indices if documents[i].form), indices[0])
         anchor = documents[preferred]
+        canonical = next((i for i in indices if names[i].period is None), preferred)
+        same_period_row = not mixed_periods or all(
+            same_period_submission_source(
+                documents[canonical].source, documents[i].source, names[i].key, names[i].period,
+            )
+            for i in indices if names[i].period is not None
+        )
         same_row = all(
             names[i].submitters == names[preferred].submitters
             or same_submission_source(anchor.source, documents[i].source)
@@ -69,6 +79,7 @@ def display_submission_documents(documents: list[SubmissionDocument]) -> list[Su
             for i in indices
         )
         if (len(forms) > 1 or len(references) > 1 or len(submitters) > 1
+                or len(periods) > 1 or not same_period_row
                 or (mixed_submitters and not same_row)):
             # Never choose between distinct forms, submitters, or unrelated source rows.
             seen = set()
@@ -81,6 +92,8 @@ def display_submission_documents(documents: list[SubmissionDocument]) -> list[Su
             continue
         first = indices[0]
         item = anchor if mixed_submitters else documents[first]
+        if mixed_periods:
+            item = documents[canonical]
         displayed[first] = replace(item, form=anchor.form)
         omitted.update(indices[1:])
     return [item for index, item in enumerate(displayed) if index not in omitted]

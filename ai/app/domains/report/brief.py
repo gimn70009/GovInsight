@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.domains.analysis.evidence.selection import allocate_budgets, select_evidence
+from app.domains.analysis.schemas.result import RequirementSource
 from app.domains.report.fact_reuse import FACT_FIELDS, verified_submission_facts
 from app.domains.report.facts import (
     SubmissionFacts,
@@ -442,6 +443,17 @@ def validate_brief(
         if key in seen:
             continue
         seen.add(key)
+        # Keep the validated citation for display deduplication, independently of
+        # the download form. Oversized citations remain distinct; never truncate
+        # evidence and accidentally discard a condition in the omitted portion.
+        source_name = f"{source.archive} / {source.name}" if source.archive else source.name
+        evidence_source = None
+        if 5 <= len(item.evidence.quote) <= 300 and len(source_name or "") <= 500:
+            evidence_source = RequirementSource(
+                origin="ATTACHMENT" if source.name else "NOTICE_BODY",
+                attachment_name=source_name, section_title="제출서류",
+                excerpt=item.evidence.quote,
+            )
         form = None
         if item.form_source_id:
             source = context.sources.get(item.form_source_id)
@@ -450,7 +462,9 @@ def validate_brief(
                 form = _form(item.title, [source])
         if not item.form_source_id:
             form = _form(item.title, list(context.sources.values()))
-        documents.append(SubmissionDocument(title, form, condition=condition))
+        documents.append(SubmissionDocument(
+            title, form, condition=condition, source=evidence_source,
+        ))
     note = "제출 대상·조건 확인 필요" if condition_needs_review else None
     verified = source_submission_documents(document)
     if verified:

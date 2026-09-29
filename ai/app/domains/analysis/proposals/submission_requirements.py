@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from app.domains.analysis.proposals.submission_names import (
+    period_submission_evidence,
+    same_period_submission_source,
     same_submission_source,
     submission_name,
 )
@@ -473,11 +475,16 @@ def collect_submission_requirements(
             _key(requirement.condition),
         )
         roles = _roles(requirement.source.excerpt)
+        period_evidence = period_submission_evidence(
+            requirement.source, submission_name(requirement.title).key,
+        )
         duplicate = next(
             (
                 old
                 for old in unique
                 if (_document_key(old.title), old.stage, old.level, _key(old.condition)) == identity
+                and period_submission_evidence(old.source, submission_name(old.title).key)
+                == period_evidence
                 and (
                     not roles
                     or not _roles(old.source.excerpt)
@@ -523,8 +530,8 @@ def _matches(
         return False
     name = _document_key(requirement.title)
     title = _document_key(item.title)
-    item_name = submission_name(item.title)
-    source_name = submission_name(requirement.title)
+    item_name = submission_name(item.title, split_period=True)
+    source_name = submission_name(requirement.title, split_period=True)
     if item_name.references != source_name.references:
         if not allow_alias or (item_name.references and source_name.references):
             return False
@@ -532,6 +539,16 @@ def _matches(
         if (not allow_alias or (item_name.submitters and source_name.submitters)
                 or not same_submission_source(item.source, requirement.source)):
             return False
+    if item_name.period is not None or source_name.period is not None:
+        periods = {n.period for n in (item_name, source_name) if n.period is not None}
+        return bool(
+            allow_alias and len(periods) == 1 and item_name.key == source_name.key
+            and item.stage == requirement.stage
+            and item.requirement_level == requirement.level
+            and same_period_submission_source(
+                item.source, requirement.source, item_name.key, next(iter(periods)),
+            )
+        )
     if name == title or (allow_alias and item_name.key == source_name.key):
         return True
     # Shared-prefix lists such as '표준 ... 운영계획서 및 협약서' may shorten
@@ -542,6 +559,35 @@ def _matches(
         and re.search(r"및|와|과|~", item.title)
         and any(_key(term) in title for term in re.findall(_DOCUMENT, requirement.title))
     )
+
+
+def _preserve_period_submitter(
+    target: PreparationChecklistItem, item: PreparationChecklistItem,
+) -> PreparationChecklistItem | None:
+    """Carry only a quoted submitter into the source row, with its original evidence."""
+    if not item.source or not _roles(item.applies_to):
+        return target
+    subject = _key(item.applies_to)
+    if subject not in _key(item.source.excerpt):
+        return None
+    if target.applies_to != "원문에 명시된 제출 대상":
+        return target if subject in _key(target.applies_to) else None
+    detail = target.detail
+    if _key(item.source.excerpt) not in _key(detail):
+        label = ("공고 본문" if item.source.origin == EvidenceOrigin.NOTICE_BODY
+                 else item.source.attachment_name)
+        detail += f"\n추가 제출 대상 근거({label}): {item.source.excerpt}"
+    if len(detail) > 500:
+        return None
+    if target.source != item.source:
+        label = target.source.attachment_name or "공고 본문"
+        detail += f"\n제출표 출처: {label}"
+    if len(detail) > 500:
+        return None
+    # The retained citation must support the newly retained submitter too.
+    return target.model_copy(update={
+        "applies_to": item.applies_to, "detail": detail, "source": item.source,
+    })
 
 
 def reconcile_submission_documents(
@@ -557,17 +603,40 @@ def reconcile_submission_documents(
     unmatched = []
     references: dict[str, set[tuple[str, ...]]] = {}
     submitters: dict[str, set[tuple[str, ...]]] = {}
+    periods: dict[str, set[int]] = {}
     for title in [item.title for item in items] + [row.title for row in requirements]:
-        name = submission_name(title)
+        name = submission_name(title, split_period=True)
         if name.references:
             references.setdefault(name.key, set()).add(name.references)
         if name.submitters:
             submitters.setdefault(name.key, set()).add(name.submitters)
+        if name.period is not None:
+            periods.setdefault(name.key, set()).add(name.period)
     for item in items:
-        name = submission_name(item.title)
+        name = submission_name(item.title, split_period=True)
         allow_alias = (len(references.get(name.key, set())) <= 1
-                       and len(submitters.get(name.key, set())) <= 1)
+                       and len(submitters.get(name.key, set())) <= 1
+                       and len(periods.get(name.key, set())) <= 1)
         matched = [r for r in requirements if _matches(item, r, allow_alias=allow_alias)]
+        matched_period = name.period is not None
+        if len(matched) == 1 and item.source:
+            row = matched[0]
+            matched_period |= (
+                item.stage == row.stage and item.requirement_level == row.level
+                and any(same_period_submission_source(item.source, row.source, name.key, years)
+                        for years, _ in period_submission_evidence(item.source, name.key))
+            )
+        if matched_period:
+            # Never choose one of several source obligations for a generic alias.
+            if len(matched) != 1:
+                unmatched.append(item)
+                continue
+            index = requirements.index(matched[0])
+            merged = _preserve_period_submitter(replacements[index], item)
+            if merged is None:
+                unmatched.append(item)
+                continue
+            replacements[index] = merged
         title = re.sub(r"\([^)]*\)|\[[^]]*\]", "", item.title)
         document_count = max(1, len(re.findall(_DOCUMENT, title)))
         exact_match = any(_document_key(r.title) == _document_key(item.title) for r in matched)
