@@ -213,17 +213,13 @@ def _document_block(
 
 
 def _brief_summary(document: ReportDocumentRequest, limit: int) -> str:
-    value = document.comparison_summary.purpose if document.comparison_summary else None
-    if not value or "확인하지 못" in value:
-        value = document.summary
-    value = _text(value)
-    sentences = re.split(r"(?<=[다요][.])\s+|(?<=[!?])\s+", value)
-    selected = []
-    for sentence in sentences[:2]:
-        if len(" ".join([*selected, sentence])) > limit:
-            break
-        selected.append(sentence)
-    return " ".join(selected) if selected else _shorten(value, limit)
+    # Use the same summary as document detail; comparison purpose is a separate model output.
+    value = _text(document.summary)
+    first_sentence = re.split(r"(?<=[다요][.])\s+|(?<=[!?])\s+", value, maxsplit=1)[0]
+    # Keep names and conditions intact instead of cutting the sentence to fit.
+    if not first_sentence or len(first_sentence) > limit:
+        return "요약 전문은 게시글 상세에서 확인해 주세요."
+    return first_sentence
 
 
 def _field(value: str, compact: bool) -> str:

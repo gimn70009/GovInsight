@@ -162,7 +162,7 @@ public final class ReportEmailTemplate {
     }
 
     private static String linked(String text) {
-        return ReportBodyFormatter.html(text).replace("<a href=", "<a style=\"color:#205fa9;text-decoration:underline;overflow-wrap:anywhere;word-break:break-word\" href=");
+        return ReportBodyFormatter.emailHtml(text).replace("<a href=", "<a style=\"color:#205fa9;text-decoration:underline;white-space:normal;word-wrap:break-word;overflow-wrap:anywhere;word-break:break-all\" href=");
     }
 
     private static String lines(String text) {
