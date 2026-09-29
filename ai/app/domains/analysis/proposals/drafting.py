@@ -128,6 +128,10 @@ DRAFT_PROMPT = """
 - 하나의 요건이나 문서를 여러 체크리스트에 반복하지 않습니다. 자격 요건과 그 증빙 문서를
   모두 보여줘야 한다면 eligibilityChecklist에는 자격 상태만,
   submissionDocuments에는 문서만 기록합니다.
+- 제출 서류의 title에는 실제 서류명을 쓰고, 최근 몇 년 자료인지와 원본·사본 조건은 detail에,
+  제출 대상은 appliesTo에 기록합니다. 같은 서류의 이름과 제출 지시를
+  별도 항목으로 반복하지 않습니다.
+  기간·대상·제출 단계가 실제로 다른 의무는 구분하고 각각의 원문 근거를 붙입니다.
 - 각 체크리스트의 detail은 현재 상태, nextAction은 담당자가 바로 수행할 행동으로 씁니다.
 - 공고의 최종 신청 마감일을 확인할 수 있으면 applicationDeadline에 YYYY-MM-DD로 기록합니다.
 - workType은 내부 확인 INTERNAL_CONFIRMATION, 외부 확인 EXTERNAL_CONFIRMATION,
