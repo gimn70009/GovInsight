@@ -1,5 +1,23 @@
 # 현재 작업 계획
 
+## macOS 실행 안내 추가 (2026-09-29)
+
+- [x] 기존 docs/run-on-new-computer 브랜치에서 Windows 안내 보존
+- [x] Apple Silicon·Intel 설치 구분, macOS 명령·가상환경·Gradle Wrapper·VS Code 경로 확인
+- [x] 기존 Oracle 연결 및 공식 Docker 이미지·데이터 볼륨·전용 계정·재시작 절차 작성
+- [x] 초기 create와 평소 none 실행, 세 서버·로그인·업데이트·문제 해결 안내 및 README·Windows 문서 상호 링크 추가
+- [x] Bash로 셸 명령 블록 27개 구문 검사, 설정 키 9개·상대 링크 50개·OpenSSL의 32바이트 키 생성·변경 검사 통과 및 8080 포트 비어 있음 확인
+- 현재 작업 환경은 Windows입니다. macOS에서의 실제 설치·컨테이너 기동·DB 초기화·전체 서비스 연동은 직접 실행하지 않았습니다.
+
+## 다른 컴퓨터 실행 안내 작성 (2026-09-29)
+
+- [x] develop에서 docs/run-on-new-computer 브랜치 생성 및 실제 설정·실행 경로 확인
+- [x] Windows PowerShell 기준 설치·Oracle 계정·JWT·로컬 설정·세 서비스 실행 절차 작성
+- [x] 최초 create 초기화와 평소 none 실행, 로그인·상태 확인·업데이트·문제 해결 안내 작성
+- [x] 공식 설치 링크와 저장소의 버전·포트·관리자 생성 조건 대조, 루트 README 진입 링크 추가
+- [x] PowerShell 명령 블록 19개·설정 키 9개·상대 링크 42개·32바이트 Base64 키 생성 명령·변경 검사 통과 및 8080 포트 비어 있음 확인
+- 새 PC에서의 Oracle 설치·DB 초기화·외부 모델 호출까지 직접 실행한 검증은 포함하지 않습니다.
+
 ## 임시 산출물 및 오래된 문서 정리 (2026-09-29)
 
 - [x] develop에서 chore/cleanup-temporary-files 브랜치 생성 및 파일 참조 조사

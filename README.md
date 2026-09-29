@@ -4,7 +4,7 @@
 
 GovInsight는 공공기관의 공고와 첨부 문서를 수집·분석하고, 회사 정보를 바탕으로 사업 검토와 신청 준비를 지원하는 서비스입니다. 모니터링부터 공고 분석, 사업 제안, 양식별 초안 작성까지 하나의 흐름으로 연결합니다.
 
-[설계 요약](docs/DESIGN.md) · [주요 구현 내용](docs/IMPLEMENTATION.md) · [백엔드 실행 안내](backend/README.md) · [AI 모듈 실행 안내](ai/README.md)
+[Windows 실행 안내](docs/LOCAL_SETUP.md) · [macOS 실행 안내](docs/LOCAL_SETUP_MACOS.md) · [설계 요약](docs/DESIGN.md) · [주요 구현 내용](docs/IMPLEMENTATION.md) · [백엔드 실행 안내](backend/README.md) · [AI 모듈 실행 안내](ai/README.md)
 
 ## 서비스 시연
 
