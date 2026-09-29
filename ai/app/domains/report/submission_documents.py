@@ -4,6 +4,10 @@ import re
 import unicodedata
 from dataclasses import dataclass, replace
 
+from app.domains.analysis.proposals.submission_names import (
+    same_submission_source,
+    submission_name,
+)
 from app.domains.analysis.proposals.submission_requirements import collect_submission_requirements
 from app.domains.analysis.schemas.result import (
     PREPARATION_SCHEMA_VERSION,
@@ -11,6 +15,7 @@ from app.domains.analysis.schemas.result import (
     PreparationChecklistItem,
     ProposalDocumentType,
     ProposalDraftStatus,
+    RequirementSource,
     RequirementStage,
 )
 from app.domains.report.schemas.request import ReportDocumentRequest
@@ -32,6 +37,53 @@ class SubmissionDocument:
     applies_to: str | None = None
     detail: str | None = None
     condition: str | None = None
+    source: RequirementSource | None = None
+
+
+def _form_identity(form: SourcePart | None) -> tuple[str | None, ...] | None:
+    # Several forms can share one bundle URL, especially members of the same ZIP.
+    return (form.url, form.name, form.archive) if form else None
+
+
+def display_submission_documents(documents: list[SubmissionDocument]) -> list[SubmissionDocument]:
+    """Deduplicate report display only; retain the saved checklist and its metadata."""
+    groups: dict[str, list[int]] = {}
+    names = [submission_name(item.title) for item in documents]
+    for index, name in enumerate(names):
+        groups.setdefault(name.key, []).append(index)
+    displayed = list(documents)
+    omitted = set()
+    for indices in groups.values():
+        forms = {_form_identity(documents[i].form) for i in indices if documents[i].form}
+        references = {names[i].references for i in indices if names[i].references}
+        submitters = {names[i].submitters for i in indices if names[i].submitters}
+        mixed_submitters = len({names[i].submitters for i in indices}) > 1
+        # Keep the linked label when an unlinked, qualified explanation duplicates it.
+        preferred = next((i for i in indices if documents[i].form), indices[0])
+        anchor = documents[preferred]
+        same_row = all(
+            names[i].submitters == names[preferred].submitters
+            or same_submission_source(anchor.source, documents[i].source)
+            or (anchor.form is not None and documents[i].form is not None
+                and _form_identity(anchor.form) == _form_identity(documents[i].form))
+            for i in indices
+        )
+        if (len(forms) > 1 or len(references) > 1 or len(submitters) > 1
+                or (mixed_submitters and not same_row)):
+            # Never choose between distinct forms, submitters, or unrelated source rows.
+            seen = set()
+            for index in indices:
+                item = documents[index]
+                key = (item.title, _form_identity(item.form))
+                if key in seen:
+                    omitted.add(index)
+                seen.add(key)
+            continue
+        first = indices[0]
+        item = anchor if mixed_submitters else documents[first]
+        displayed[first] = replace(item, form=anchor.form)
+        omitted.update(indices[1:])
+    return [item for index, item in enumerate(displayed) if index not in omitted]
 
 
 _MARKER = re.compile(r"(?m)^\[파일:\s*([^\]\r\n]+)\]\r?\n")
@@ -187,7 +239,7 @@ def reusable_submission_documents(
     return [
         SubmissionDocument(
             item.title, _form(item.title, parts), str(item.requirement_level),
-            item.applies_to, item.detail,
+            item.applies_to, item.detail, source=item.source,
         )
         for item in items
     ]
@@ -214,7 +266,7 @@ def submission_documents(document: ReportDocumentRequest) -> list[SubmissionDocu
         return []
     parts = _parts(document)
     return [
-        SubmissionDocument(item.title, _form(item.title, parts))
+        SubmissionDocument(item.title, _form(item.title, parts), source=item.source)
         for item in preparation.submission_documents
         if item.stage == "APPLICATION"
     ]
@@ -252,7 +304,7 @@ def source_submission_documents(document: ReportDocumentRequest) -> list[Submiss
     return [
         SubmissionDocument(
             row.title, _form(row.title, parts), str(row.level), row.condition or None,
-            row.as_item().detail, row.condition or None,
+            row.as_item().detail, row.condition or None, source=row.source,
         )
         for row in requirements
         if row.stage == RequirementStage.APPLICATION

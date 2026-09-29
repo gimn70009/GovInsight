@@ -11,6 +11,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
+from app.domains.analysis.proposals.submission_names import (
+    same_submission_source,
+    submission_name,
+)
 from app.domains.analysis.proposals.submission_tables import numbered_submission_rows
 from app.domains.analysis.schemas.request import AnalysisDocumentRequest
 from app.domains.analysis.schemas.result import (
@@ -510,14 +514,25 @@ def _roles(quote: str) -> set[str]:
     )
 
 
-def _matches(item: PreparationChecklistItem, requirement: SubmissionRequirement) -> bool:
+def _matches(
+    item: PreparationChecklistItem, requirement: SubmissionRequirement, *, allow_alias: bool,
+) -> bool:
     source_roles = _roles(item.source.excerpt) if item.source else set()
     requirement_roles = _roles(requirement.source.excerpt)
     if source_roles and requirement_roles and source_roles.isdisjoint(requirement_roles):
         return False
     name = _document_key(requirement.title)
     title = _document_key(item.title)
-    if name == title:
+    item_name = submission_name(item.title)
+    source_name = submission_name(requirement.title)
+    if item_name.references != source_name.references:
+        if not allow_alias or (item_name.references and source_name.references):
+            return False
+    if item_name.submitters != source_name.submitters:
+        if (not allow_alias or (item_name.submitters and source_name.submitters)
+                or not same_submission_source(item.source, requirement.source)):
+            return False
+    if name == title or (allow_alias and item_name.key == source_name.key):
         return True
     # Shared-prefix lists such as '표준 ... 운영계획서 및 협약서' may shorten
     # the second name. Require its complete name in the item's actual citation.
@@ -540,8 +555,19 @@ def reconcile_submission_documents(
     # is exceeded, fail explicitly instead of silently dropping obligations.
     replacements = [requirement.as_item() for requirement in requirements]
     unmatched = []
+    references: dict[str, set[tuple[str, ...]]] = {}
+    submitters: dict[str, set[tuple[str, ...]]] = {}
+    for title in [item.title for item in items] + [row.title for row in requirements]:
+        name = submission_name(title)
+        if name.references:
+            references.setdefault(name.key, set()).add(name.references)
+        if name.submitters:
+            submitters.setdefault(name.key, set()).add(name.submitters)
     for item in items:
-        matched = [r for r in requirements if _matches(item, r)]
+        name = submission_name(item.title)
+        allow_alias = (len(references.get(name.key, set())) <= 1
+                       and len(submitters.get(name.key, set())) <= 1)
+        matched = [r for r in requirements if _matches(item, r, allow_alias=allow_alias)]
         title = re.sub(r"\([^)]*\)|\[[^]]*\]", "", item.title)
         document_count = max(1, len(re.findall(_DOCUMENT, title)))
         exact_match = any(_document_key(r.title) == _document_key(item.title) for r in matched)
