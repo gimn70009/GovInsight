@@ -16,6 +16,15 @@ class ReportEmailTemplateTest {
         assertThat(html).doesNotContain("────────────────", "▸ 참여기업 모집", "문서 유형: ");
     }
 
+    @Test void preservesTheCorrectedPrimarySummaryInEmail() {
+        String summary = "과학기술정보통신부의 공고는 2026년도 한-스웨덴 공동연구사업의 신규과제 "
+                + "선정결과를 알리는 결과 공고입니다.";
+        String body = "▸ 2026년도 한-스웨덴 공동연구사업 신규과제 선정결과 공고\n기관: 과학기술정보통신부\n"
+                + "요약: " + summary + "\n원문: [게시글 보기](https://example.org/notice)";
+        String html = ReportEmailTemplate.render("보고서", body);
+        assertThat(html).contains(summary + "</p>").doesNotContain("원-스웨덴", "요약: ");
+    }
+
     @Test void submissionUrlsKeepTheirFullAddressAndWrapInEmail() throws Exception {
         String url = "https://www.kiat.or.kr/front/board/boardContentsView.do?MenuId="
                 + "a".repeat(100) + "&contents_id=notice#apply";

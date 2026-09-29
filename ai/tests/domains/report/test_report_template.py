@@ -128,6 +128,7 @@ def with_document(**updates):
 def test_action_fields_keep_source_subject_deadline_time_and_real_downloads():
     request = with_document(
         checklist=["신청 공문", "신청서", "계획서"],
+        summary="지역 실증사업 후보과제를 모집합니다.",
         contentText="신청대상: 비수도권 지방자치단체\n"
         "접수기간: 2026-11-02 09:00 ~ 2026-11-06 16:00 (한국시간)\n"
         "제출처: 사업 담당 부서 / submit@example.go.kr\n제출서류: 신청 공문, 신청서, 계획서\n"
@@ -278,7 +279,7 @@ def test_source_markdown_is_not_interpreted_as_generated_link():
     assert "[가짜](" not in body
 
 
-def test_summary_is_one_or_two_sentences_not_full_reason():
+def test_summary_is_first_complete_sentence_not_full_reason():
     body = (
         TemplateReportGenerator()
         .generate(
@@ -289,7 +290,8 @@ def test_summary_is_one_or_two_sentences_not_full_reason():
         )
         .summary
     )
-    assert "요약: 첫 번째 사업 요약입니다. 두 번째 핵심 설명입니다." in body
+    assert "요약: 첫 번째 사업 요약입니다." in body
+    assert "두 번째 핵심 설명" not in body
     assert "세 번째" not in body and "반복된 긴" not in body
 
 
