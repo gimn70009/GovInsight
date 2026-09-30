@@ -1,3 +1,5 @@
+import pytest
+
 from app.domains.monitoring.collectors.url_filter import (
     extract_external_document_id,
     select_document_urls,
@@ -44,6 +46,97 @@ def test_select_document_urls_removes_session_id_from_path() -> None:
     )
 
     assert urls == ["https://mcee.go.kr/m/mob/board/read.do?boardId=10"]
+
+
+@pytest.mark.parametrize("escaped_dots", [False, True], ids=["literal", "legacy-escaped"])
+def test_six_supported_boards_select_all_thirteen_requested_posts(escaped_dots: bool) -> None:
+    sources = [
+        (
+            "https://www.motir.go.kr",
+            "/kor/article/ATCL2826a2625",
+            "/kor/article/ATCL2826a2625/",
+            "/kor/article/ATCL2826a2625/{}/view",
+            2,
+        ),
+        (
+            "https://www.msit.go.kr",
+            "/bbs/list.do?bbsSeqNo=100",
+            "/bbs/view.do",
+            "/bbs/view.do?bbsSeqNo=100&nttSeqNo={}",
+            2,
+        ),
+        (
+            "https://mcee.go.kr",
+            "/home/web/board/list.do?boardMasterId=39",
+            "/home/web/board/read.do",
+            "/home/web/board/read.do?boardId={}",
+            2,
+        ),
+        (
+            "https://www.moel.go.kr",
+            "/info/govsupport/govsupportcon/govSupportSubList.do",
+            "govSupportSubView.do",
+            "/info/govsupport/govsupportcon/govSupportSubView.do?bbs_seq={}",
+            2,
+        ),
+        (
+            "https://www.molit.go.kr",
+            "/USR/BORD0201/m_69/LST.jsp?id=N01_B",
+            "/USR/BORD0201/m_69/DTL.jsp",
+            "/USR/BORD0201/m_69/DTL.jsp?id=N01_B&idx={}",
+            2,
+        ),
+        (
+            "https://www.kiat.or.kr",
+            "/front/board/boardContentsListPage.do?board_id=90",
+            "/front/board/boardContentsView.do",
+            "/front/board/boardContentsView.do?board_id=90&contents_id={}",
+            3,
+        ),
+    ]
+    selected_by_source = []
+    expected_by_source = []
+    for origin, list_path, pattern, detail_template, count in sources:
+        # Only these three presets were previously persisted with regex-style dots.
+        if escaped_dots and origin in {
+            "https://www.msit.go.kr",
+            "https://www.moel.go.kr",
+            "https://www.kiat.or.kr",
+        }:
+            pattern = pattern.replace(".", r"\.")
+        details = [detail_template.format(index) for index in range(5, 0, -1)]
+        selected_by_source.append(
+            select_document_urls(
+                [
+                    list_path,
+                    "/about",
+                    "https://other.go.kr" + details[0],
+                    details[0] + "#content",
+                    *details,
+                ],
+                origin + list_path,
+                pattern,
+                count,
+            )
+        )
+        expected_by_source.append([origin + detail for detail in details[:count]])
+
+    assert sum(map(len, selected_by_source)) == 13
+    assert selected_by_source == expected_by_source
+
+
+def test_escaped_dot_compatibility_keeps_other_pattern_characters_literal() -> None:
+    assert select_document_urls(
+        [
+            "/viewXdo?category=AAAB1",
+            "/view.do?category=A+B[1]&id=3",
+            "/viewXdo?category=A+B[1]&id=2",
+            "/view.do?category=AB1&id=1",
+        ],
+        "https://example.go.kr/list.do",
+        r"/view\.do?category=A+B[1]",
+        4,
+    ) == ["https://example.go.kr/view.do?category=A+B[1]&id=3"]
 
 
 def test_extract_external_document_id_prefers_known_query_parameter() -> None:
