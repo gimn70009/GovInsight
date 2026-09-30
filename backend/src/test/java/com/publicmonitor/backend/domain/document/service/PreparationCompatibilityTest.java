@@ -30,6 +30,31 @@ class PreparationCompatibilityTest {
     }
 
     @Test
+    void separatesPackedChecksFromLegacyMeetingsAndPreservesStoredJson() {
+        var root = mapper.createObjectNode();
+        var prep = root.putObject("preparation");
+        var agenda = prep.putArray("meetingAgenda");
+        agenda.add("참여 역할을 결정합니다.");
+        agenda.add("제출 여부 확인 담당자를 정합니다.");
+        String first = "제출 여부 확인: 계획서 — ZIP 원문에서 확인합니다.";
+        String second = "제출 여부 확인: 1_1. 계획서 — 개별 원문에서 확인합니다.";
+        agenda.add(first + "\n" + second);
+        prep.putArray("submissionReviewNotes").add(first);
+        prep.putArray("submissionDocuments");
+        String original = mapper.writeValueAsString(root);
+        String normalized = PreparationCompatibility.normalize(original, mapper);
+        var result = mapper.readTree(normalized).path("preparation");
+        assertThat(result.path("meetingAgenda").size()).isEqualTo(2);
+        assertThat(result.path("meetingAgenda").get(1).asText()).isEqualTo("제출 여부 확인 담당자를 정합니다.");
+        assertThat(result.path("submissionReviewNotes").size()).isEqualTo(2);
+        assertThat(result.path("submissionReviewNotes").get(0).asText()).isEqualTo(first);
+        assertThat(result.path("submissionReviewNotes").get(1).asText()).isEqualTo(second);
+        assertThat(result.path("submissionDocuments").isEmpty()).isTrue();
+        assertThat(mapper.readTree(original).path("preparation").path("meetingAgenda").size()).isEqualTo(3);
+        assertThat(PreparationCompatibility.normalize(normalized, mapper)).isEqualTo(normalized);
+    }
+
+    @Test
     void preservesNewFormatAndMissingPreparation() {
         String json = "{\"preparation\":{\"meetingAgenda\":[],\"eligibilityChecklist\":[],\"submissionDocuments\":[]}}";
         assertThat(mapper.readTree(PreparationCompatibility.normalize(json, mapper))).isEqualTo(mapper.readTree(json));

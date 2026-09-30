@@ -17,6 +17,10 @@ import com.publicmonitor.backend.domain.monitoring.exception.MonitoringSourceNot
 import com.publicmonitor.backend.domain.monitoring.service.MonitoringSourceService;
 import com.publicmonitor.backend.domain.monitoring.service.MonitoringRunService;
 import com.publicmonitor.backend.domain.monitoring.web.dto.CreateMonitoringSourceRequest;
+import com.publicmonitor.backend.domain.monitoring.web.dto.UpdateMonitoringSourceSettingsRequest;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.security.test.context.support.WithAnonymousUser;
 import com.publicmonitor.backend.domain.monitoring.web.dto.MonitoringSourceResponse;
 import com.publicmonitor.backend.domain.monitoring.web.dto.UpdateMonitoringSourceEnabledRequest;
 import com.publicmonitor.backend.domain.monitoring.web.dto.UpdateMonitoringSourceRequest;
@@ -68,6 +72,64 @@ class MonitoringSourceControllerIntegrationTest {
 
     @MockitoBean
     private UserRepository userRepository;
+
+    @Test
+    void 여러_기관의_건수와_활성_상태를_한번에_저장한다() throws Exception {
+        var request = new UpdateMonitoringSourceSettingsRequest(List.of(
+                new UpdateMonitoringSourceSettingsRequest.SourceSetting(1L, 7, false),
+                new UpdateMonitoringSourceSettingsRequest.SourceSetting(2L, 3, true)));
+        given(monitoringSourceService.updateSettings(request)).willReturn(List.of(response(1L, false), response(2L, true)));
+        mockMvc.perform(patch("/api/monitoring-sources/settings")
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"sources":[{"sourceId":1,"detailFetchCount":7,"enabled":false},
+                                            {"sourceId":2,"detailFetchCount":3,"enabled":true}]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data[0].enabled").value(false));
+        org.mockito.Mockito.verify(monitoringSourceService).updateSettings(request);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{}", "{\"sources\":[]}", "{\"sources\":[null]}",
+            "{\"sources\":[{\"sourceId\":1,\"detailFetchCount\":0,\"enabled\":true}]}",
+            "{\"sources\":[{\"sourceId\":1,\"detailFetchCount\":-1,\"enabled\":true}]}",
+            "{\"sources\":[{\"sourceId\":1,\"detailFetchCount\":2147483648,\"enabled\":true}]}",
+            "{\"sources\":[{\"sourceId\":0,\"detailFetchCount\":2,\"enabled\":true}]}",
+            "{\"sources\":[{\"sourceId\":1,\"detailFetchCount\":2}]}",
+            "{\"sources\":[{\"sourceId\":1,\"enabled\":true}]}",
+            "{\"sources\":[{\"detailFetchCount\":2,\"enabled\":true}]}",
+            "{\"sources\":[{\"sourceId\":1,\"detailFetchCount\":2,\"enabled\":true},{\"sourceId\":1,\"detailFetchCount\":3,\"enabled\":false}]}"
+    })
+    void 잘못된_일괄_설정은_저장하지_않는다(String body) throws Exception {
+        mockMvc.perform(patch("/api/monitoring-sources/settings")
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(monitoringSourceService);
+    }
+
+    @Test
+    void 일괄_설정에_없는_소스가_있으면_404를_반환한다() throws Exception {
+        given(monitoringSourceService.updateSettings(org.mockito.ArgumentMatchers.any(UpdateMonitoringSourceSettingsRequest.class)))
+                .willThrow(new MonitoringSourceNotFoundException());
+        mockMvc.perform(patch("/api/monitoring-sources/settings")
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"sources":[{"sourceId":999,"detailFetchCount":2,"enabled":true}]}
+                                """))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @WithAnonymousUser
+    void 일괄_설정_변경에는_인증이_필요하다() throws Exception {
+        mockMvc.perform(patch("/api/monitoring-sources/settings")
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"sources":[{"sourceId":1,"detailFetchCount":2,"enabled":true}]}
+                                """))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(monitoringSourceService);
+    }
 
     @Test
     void 모니터링_소스를_등록하면_201을_반환한다() throws Exception {

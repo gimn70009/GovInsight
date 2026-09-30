@@ -232,8 +232,10 @@ def test_new_model_output_with_only_unproven_files_keeps_review_notes_and_no_fak
         runner._draft_model = SimpleNamespace(ainvoke=AsyncMock(return_value=draft))
         generated = await runner.generate(doc, result())
         assert generated.preparation.submission_documents == []
+        assert all("제출 여부 확인:" not in item for item in generated.preparation.meeting_agenda)
         assert any(
-            "제출 여부 확인: 사전교육 계획서" in s for s in generated.preparation.meeting_agenda
+            "제출 여부 확인: 사전교육 계획서" in s
+            for s in generated.preparation.submission_review_notes
         )
         runner._draft_model.ainvoke.assert_awaited_once()
 
@@ -276,7 +278,8 @@ def test_new_model_unverifiable_citation_remains_a_review_note():
         generated = await runner.generate(doc, result())
         assert [item.title for item in generated.preparation.submission_documents] == ["사업계획서"]
         assert any(
-            "개인정보 동의서 및 참여 확약서" in s for s in generated.preparation.meeting_agenda
+            "개인정보 동의서 및 참여 확약서" in s
+            for s in generated.preparation.submission_review_notes
         )
 
     asyncio.run(scenario())
@@ -323,13 +326,77 @@ def test_distinct_verified_rows_survive_final_validation(change):
     assert len(docs) == 2 and not notes
 
 
-def test_many_review_notes_respect_existing_api_limits_without_losing_candidates():
-    from app.domains.analysis.proposals.drafting import _merge_review_notes
+def test_many_review_notes_stay_separate_without_packing_or_losing_candidates():
+    from app.domains.analysis.proposals.submission_review import separate_submission_reviews
 
     agenda = [f"기존 회의 안건 {i}" for i in range(8)]
-    notes = [f"제출 여부 확인: 미확인 서류 {i}" for i in range(15)]
-    merged = _merge_review_notes(agenda, notes)
-    assert len(merged) <= 20
-    assert all(len(note) <= 500 for note in merged)
-    for note in agenda + notes:
-        assert note in "\n".join(merged)
+    notes = [f"제출 여부 확인: 미확인 서류 {i}" for i in range(27)]
+    decisions, reviews = separate_submission_reviews(agenda, notes)
+    assert decisions == agenda
+    assert reviews == notes
+
+
+def test_legacy_packed_review_notes_are_unpacked_without_moving_real_decisions():
+    from app.domains.analysis.proposals.submission_review import separate_submission_reviews
+
+    notes = [f"제출 여부 확인: 미확인 서류 {i}" for i in range(4)]
+    decisions = ["참여 역할을 결정합니다.", "접수 전 제출 여부 확인 담당자를 정합니다."]
+    agenda, reviews = separate_submission_reviews(decisions + ["\n".join(notes)], [notes[0]])
+    assert agenda == decisions
+    assert reviews == notes
+    assert separate_submission_reviews(agenda, reviews) == (agenda, reviews)
+
+
+def test_review_notes_have_a_separate_bounded_api_budget():
+    import asyncio
+
+    from pydantic import ValidationError
+
+    from app.domains.analysis.schemas.result import ProposalPreparation
+    from tests.domains.analysis.proposals.test_drafting import ProposalRunner, document, result
+
+    draft = asyncio.run(ProposalRunner().generate(document(), result()))
+    payload = draft.preparation.model_dump()
+    payload["submission_review_notes"] = ["확인할 서류"] * 64
+    assert len(ProposalPreparation.model_validate(payload).submission_review_notes) == 64
+    for invalid in (["확인할 서류"] * 65, ["가" * 501], [""]):
+        payload["submission_review_notes"] = invalid
+        with pytest.raises(ValidationError):
+            ProposalPreparation.model_validate(payload)
+    payload["submission_review_notes"] = []
+    for invalid in (["회의 안건"] * 21, ["가" * 501]):
+        payload["meeting_agenda"] = invalid
+        with pytest.raises(ValidationError):
+            ProposalPreparation.model_validate(payload)
+
+
+def test_model_preparation_checks_do_not_reappear_as_uncertain_submission_obligations():
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from app.domains.analysis.proposals.drafting import (
+        LangChainProposalGenerationRunner,
+        ProposalPreparationModelOutput,
+    )
+    from tests.domains.analysis.proposals.test_drafting import ProposalRunner, document, result
+
+    properties = ProposalPreparationModelOutput.model_json_schema()["properties"]
+    assert "submissionReviewNotes" not in properties
+
+    async def scenario():
+        doc = document()
+        draft = await ProposalRunner().generate(doc, result())
+        duplicate = "사업계획서 — 담당자와 원본 준비 가능 여부를 확인합니다."
+        draft.preparation.submission_review_notes = [duplicate]
+        runner = LangChainProposalGenerationRunner.__new__(LangChainProposalGenerationRunner)
+        runner._settings = SimpleNamespace(max_text_chars=32000, proposal_timeout_seconds=5)
+        runner._draft_model = SimpleNamespace(ainvoke=AsyncMock(return_value=draft))
+        generated = await runner.generate(doc, result())
+        assert duplicate not in generated.preparation.submission_review_notes
+        assert any(
+            item.title == "사업계획서" for item in generated.preparation.submission_documents
+        )
+        runner._draft_model.ainvoke.assert_awaited_once()
+
+    asyncio.run(scenario())

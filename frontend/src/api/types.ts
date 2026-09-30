@@ -36,12 +36,8 @@ export interface MonitoringSource {
   updatedAt: string
 }
 
-export interface MonitoringSourcePayload {
-  organizationName: string
-  boardName: string
-  description: string | null
-  listUrl: string
-  urlIncludePattern: string | null
+export interface MonitoringSourceSettings {
+  sourceId: number
   detailFetchCount: number
   enabled: boolean
 }
@@ -155,6 +151,7 @@ export interface DocumentAnalysis {
     preparationSchemaVersion?: number
     preparation: {
       meetingAgenda: string[]
+      submissionReviewNotes?: string[] | null
       eligibilityChecklist: ProposalPreparationItem[]
       submissionDocuments: ProposalPreparationItem[]
       applicationDeadline?: string | null

@@ -16,7 +16,7 @@ import type {
   MonitoringSchedule,
   MonitoringSchedulePayload,
   MonitoringSource,
-  MonitoringSourcePayload,
+  MonitoringSourceSettings,
   SimilarNoticeResult,
   LegalPairResult,
   PageResponse,
@@ -97,14 +97,9 @@ export const api = {
     }),
   getSources: () => request<MonitoringSource[]>('/api/monitoring-sources'),
   getSource: (sourceId: number) => request<MonitoringSource>(`/api/monitoring-sources/${sourceId}`),
-  createSource: (payload: MonitoringSourcePayload) =>
-    request<MonitoringSource>('/api/monitoring-sources', { method: 'POST', body: JSON.stringify(payload) }),
-  updateSource: (sourceId: number, payload: MonitoringSourcePayload) =>
-    request<MonitoringSource>(`/api/monitoring-sources/${sourceId}`, { method: 'PUT', body: JSON.stringify(payload) }),
-  changeSourceEnabled: (sourceId: number, enabled: boolean) =>
-    request<MonitoringSource>(`/api/monitoring-sources/${sourceId}/enabled`, {
-      method: 'PATCH',
-      body: JSON.stringify({ enabled }),
+  updateSourceSettings: (sources: MonitoringSourceSettings[]) =>
+    request<MonitoringSource[]>('/api/monitoring-sources/settings', {
+      method: 'PATCH', body: JSON.stringify({ sources }),
     }),
   createRun: () => request<CreateMonitoringRunResponse>('/api/monitoring-runs', { method: 'POST' }),
   getRuns: (page = 0, size = 10) =>

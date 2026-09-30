@@ -16,6 +16,8 @@ def select_document_urls(
     selected: list[str] = []
     seen: set[str] = set()
     list_origin = _origin(list_url)
+    # Older presets escaped dots as regex syntax; URL patterns remain literal substrings.
+    literal_pattern = include_pattern.replace(r"\.", ".") if include_pattern else None
 
     for href in hrefs:
         if not href:
@@ -25,9 +27,9 @@ def select_document_urls(
         parsed = urlparse(url)
         if parsed.scheme not in {"http", "https"} or _origin(url) != list_origin:
             continue
-        if include_pattern and include_pattern not in url:
+        if literal_pattern and literal_pattern not in url:
             continue
-        if not include_pattern and url == _normalize_url(list_url):
+        if not literal_pattern and url == _normalize_url(list_url):
             continue
         if url in seen:
             continue

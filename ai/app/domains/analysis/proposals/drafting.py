@@ -24,6 +24,7 @@ from app.domains.analysis.proposals.capabilities import (
 )
 from app.domains.analysis.proposals.scoring import score_preparation
 from app.domains.analysis.proposals.submission_requirements import reconcile_submission_documents
+from app.domains.analysis.proposals.submission_review import separate_submission_reviews
 from app.domains.analysis.proposals.submission_validation import validate_submission_documents
 from app.domains.analysis.schemas.request import AnalysisDocumentRequest
 from app.domains.analysis.schemas.result import (
@@ -122,7 +123,8 @@ DRAFT_PROMPT = """
   실제 붙임인 운영 계획 및 직무기술서는 그 상위 운영계획서에 포함하는 자료로 보존합니다.
 - 기업 프로필·서명·직인 같은 부연으로 동일 서류의 카드를 다시 만들지 않습니다.
   사업자등록증·기관소개 자료를 기본서류로 다시 묶거나 해당 시 조건을 필수로 바꾸지 않습니다.
-- 제출 의무를 확인하지 못하면 meetingAgenda에 '제출 여부 확인'으로 기록합니다.
+- 확인된 서류의 원본·사본·서명·발급·보유 여부 등 준비 행동은 해당 서류의 detail과
+  nextAction에만 기록합니다. 같은 서류를 확인 목록이나 회의 안건에 다시 나열하지 않습니다.
   담당 부서·직무 개수·확인되지 않은 작성 조건을 임의로 배정하지 않습니다.
 - 온라인 입력란의 작성 불필요 안내와 별도 파일 제출 의무를 구분합니다.
   입력란이 선택이어도 제출서류 표의 파일을 생략하지 않습니다.
@@ -130,8 +132,7 @@ DRAFT_PROMPT = """
   신청서에 포함하는 별첨, 협약 시 서류, 운영 완료 후 서류를 구분합니다.
 - 회사가 대학이나 주관기관에 제공할 증빙도 제출서류 표에 있으면 보존합니다.
   최초 참여, 변경 시, 해당 기관만 제출 같은 조건을 함께 기록합니다.
-- meetingAgenda에는 참여 방식, 투입 인력과 예산 등 회사가 결정해야 할 사항과
-  제출 여부 확인 사항을 기록합니다.
+- meetingAgenda에는 참여 방식, 투입 인력과 예산 등 회사가 결정해야 할 사항만 기록합니다.
 - 회사가 확인할 자격은 eligibilityChecklist의 detail과 nextAction에, 문서 작성에 필요한
   수치·실적·인력 자료는 해당 submissionDocuments의 detail과 nextAction에 통합합니다.
 - 같은 확인 행동을 회의 안건에 다시 나열하지 않습니다. 자격과 그 증빙 문서는 별개로 유지합니다.
@@ -334,28 +335,18 @@ class LangChainProposalGenerationRunner:
         draft.preparation.submission_documents, review_notes = validate_submission_documents(
             draft.preparation.submission_documents, document,
         )
-        draft.preparation.meeting_agenda = _merge_review_notes(
-            draft.preparation.meeting_agenda, review_notes,
+        agenda, reviews = separate_submission_reviews(
+            draft.preparation.meeting_agenda,
+            review_notes,
         )
+        draft.preparation.meeting_agenda = agenda
+        draft.preparation.submission_review_notes = reviews
+        # Revalidate the additive API limits after assigning generated checks.
+        draft.preparation = ProposalPreparation.model_validate(draft.preparation.model_dump())
         _apply_strategy_eligibility_guardrails(draft)
         _build_preparation_highlights(draft.preparation)
         score_preparation(draft.preparation)
         return draft
-
-
-def _merge_review_notes(agenda: list[str], notes: list[str]) -> list[str]:
-    combined = list(dict.fromkeys(agenda + notes))
-    # Respect the backend's existing 20 x 500-character contract without losing
-    # any unresolved candidate. Pack review notes only when the count needs it.
-    while len(combined) > 20:
-        pair = next((i for i in range(len(agenda), len(combined) - 1)
-                     if len(combined[i] + "\n" + combined[i + 1]) <= 500), None)
-        if pair is None:
-            raise ValueError("제출 여부 확인 안건이 많아 전체 원문 대조가 필요합니다.")
-        combined[pair:pair + 2] = [combined[pair] + "\n" + combined[pair + 1]]
-    if any(len(note) > 500 for note in combined):
-        raise ValueError("제출 여부 확인 안건의 근거를 표시 가능한 범위로 정리할 수 없습니다.")
-    return combined
 
 
 def _parse_model_response(

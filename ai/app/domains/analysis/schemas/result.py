@@ -1,5 +1,6 @@
 import re
 from enum import StrEnum
+from typing import Annotated
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -270,7 +271,7 @@ class PreparationChecklistItem(CamelCaseModel):
         return self
 
 
-PREPARATION_SCHEMA_VERSION = 17
+PREPARATION_SCHEMA_VERSION = 19
 
 
 class StrategyCapabilityMatch(CamelCaseModel):
@@ -333,7 +334,12 @@ class StrategyOnePage(CamelCaseModel):
 
 
 class ProposalPreparation(CamelCaseModel):
-    meeting_agenda: list[str] = Field(default_factory=list)
+    meeting_agenda: list[Annotated[str, Field(min_length=1, max_length=500)]] = Field(
+        default_factory=list, max_length=20,
+    )
+    submission_review_notes: list[Annotated[str, Field(min_length=1, max_length=500)]] = Field(
+        default_factory=list, max_length=64,
+    )
     eligibility_checklist: list[PreparationChecklistItem] = Field(min_length=1, max_length=12)
     # Preserve up to 12 document items reclassified from the eligibility checklist.
     submission_documents: list[PreparationChecklistItem] = Field(
