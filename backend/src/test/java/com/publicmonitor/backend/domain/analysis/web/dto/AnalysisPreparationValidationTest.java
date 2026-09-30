@@ -9,10 +9,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class AnalysisPreparationValidationTest {
     @Test
-    void acceptsReclassifiedDocumentsAndRejectsOverflow() {
+    void acceptsUnconfirmedEmptyListAndReclassifiedDocumentsButRejectsOverflow() {
         try (var factory = Validation.buildDefaultValidatorFactory()) {
             var validator = factory.getValidator();
-            for (int count : new int[]{16, 27}) {
+            for (int count : new int[]{0, 16, 27}) {
                 assertThat(validator.validateValue(AnalysisResultRequest.Preparation.class,
                         "submissionDocuments", Collections.nCopies(count, null))).isEmpty();
             }

@@ -213,7 +213,9 @@ def _table_requirements(source: _Source) -> list[SubmissionRequirement]:
             title_match = _TITLE.fullmatch(prefix)
             if not title_match or re.search(r"참고|작성|불필요|파일명|입력", title_match["title"]):
                 continue
-            title = title_match["title"].strip()
+            # Language, applicant and form-number qualifiers identify distinct
+            # files. Only the known upload-slot annotation is not part of a name.
+            title = re.sub(r"\(\s*기타\s*업로드\s*\)", "", prefix).strip()
             start = table.rfind(prefix, 0, format_match.start())
             if start >= 0:
                 rows.append((start, title))
@@ -470,6 +472,8 @@ def collect_submission_requirements(
     for requirement in result:
         identity = (
             _document_key(requirement.title),
+            submission_name(requirement.title).references,
+            submission_name(requirement.title).submitters,
             requirement.stage,
             requirement.level,
             _key(requirement.condition),
@@ -482,7 +486,11 @@ def collect_submission_requirements(
             (
                 old
                 for old in unique
-                if (_document_key(old.title), old.stage, old.level, _key(old.condition)) == identity
+                if (
+                    _document_key(old.title), submission_name(old.title).references,
+                    submission_name(old.title).submitters, old.stage, old.level,
+                    _key(old.condition),
+                ) == identity
                 and period_submission_evidence(old.source, submission_name(old.title).key)
                 == period_evidence
                 and (

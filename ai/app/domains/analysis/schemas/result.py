@@ -270,7 +270,7 @@ class PreparationChecklistItem(CamelCaseModel):
         return self
 
 
-PREPARATION_SCHEMA_VERSION = 16
+PREPARATION_SCHEMA_VERSION = 17
 
 
 class StrategyCapabilityMatch(CamelCaseModel):
@@ -336,7 +336,9 @@ class ProposalPreparation(CamelCaseModel):
     meeting_agenda: list[str] = Field(default_factory=list)
     eligibility_checklist: list[PreparationChecklistItem] = Field(min_length=1, max_length=12)
     # Preserve up to 12 document items reclassified from the eligibility checklist.
-    submission_documents: list[PreparationChecklistItem] = Field(min_length=1, max_length=27)
+    submission_documents: list[PreparationChecklistItem] = Field(
+        default_factory=list, max_length=27,
+    )
     company_inputs: list[PreparationChecklistItem] = Field(default_factory=list, exclude=True)
     application_deadline: str | None = Field(default=None, max_length=10)
     strategy: StrategyOnePage

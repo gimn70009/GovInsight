@@ -119,7 +119,7 @@ const requirementStageLabel = {
 
 const formReferencePattern = /\s*[（(]\s*((?:양식|서식)\s*\d+)\s*[)）]\s*/gu
 const readableSentence = (value: string) => value.replace(/\s+·\s+/gu, ', ')
-const genericAppliesTo = new Set(['신청기관', '모든 신청기관', '전체 신청기관', '해당 기관', '참여기관'])
+const genericAppliesTo = new Set(['신청기관', '모든 신청기관', '전체 신청기관', '해당 기관', '참여기관', '원문에 명시된 제출 대상'])
 const formatEvidenceSource = (parts: Array<string | null | undefined>) => {
   const values = parts.filter((value): value is string => Boolean(value))
   if (values.length === 0) return null
@@ -130,9 +130,11 @@ const formatEvidenceSource = (parts: Array<string | null | undefined>) => {
 function PreparationChecklist({
   items,
   sourceAttachmentNames = [],
+  submissionChecklist = false,
 }: {
   items: ProposalPreparationItem[]
   sourceAttachmentNames?: string[]
+  submissionChecklist?: boolean
 }) {
   return (
     <div className="preparation-checklist">
@@ -163,13 +165,13 @@ function PreparationChecklist({
               </div>
             )}
             <div className="preparation-checklist__action">
-              <span>담당자 할 일</span>
+              <span>{submissionChecklist ? '준비 내용·제출 조건' : '담당자 할 일'}</span>
               <p>{readableSentence(item.nextAction)}</p>
             </div>
             <details className="preparation-checklist__details">
-              <summary>판단 및 근거 보기</summary>
+              <summary>{submissionChecklist ? '원문 근거 보기' : '판단 및 근거 보기'}</summary>
               <div className="preparation-checklist__judgement">
-                <span>현재 판단</span>
+                <span>{submissionChecklist ? '제출 안내' : '현재 판단'}</span>
                 <p>{readableSentence(item.detail)}</p>
               </div>
               {(evidenceSource || item.source?.excerpt) && (
@@ -785,13 +787,16 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
                     <PreparationChecklist items={proposalDraft.preparation.eligibilityChecklist} />
                   </details>
                   <details className="preparation-block preparation-block--collapsible" id="proposal-documents">
-                    <summary className="preparation-block__header"><span>04</span><div><h4>제출 서류 체크리스트</h4><p>접수 전에 확보하거나 새로 작성해야 하는 자료입니다.</p></div><em>{proposalDraft.preparation.submissionDocuments.length}건 <ChevronDown size={16} /></em></summary>
-                    <PreparationChecklist items={applicationDocuments} sourceAttachmentNames={proposalDraft.sourceAttachmentNames} />
+                    <summary className="preparation-block__header"><span>04</span><div><h4>제출 서류 체크리스트</h4><p>원문에서 확인된 제출 자료입니다. 포함 자료와 제출 조건을 함께 확인하세요.</p></div><em>{proposalDraft.preparation.submissionDocuments.length}건 <ChevronDown size={16} /></em></summary>
+                    {applicationDocuments.length === 0 && (
+                      <p className="preparation-empty">확인된 신청 단계 제출서류가 없습니다. 회의 안건의 제출 여부 확인 사항과 원문을 확인하세요.</p>
+                    )}
+                    <PreparationChecklist items={applicationDocuments} sourceAttachmentNames={proposalDraft.sourceAttachmentNames} submissionChecklist />
                     {laterDocuments.length > 0 && (
                       <div className="later-requirements">
                         <h5>선정 이후 준비사항</h5>
                         <p>신청서류와 구분해 선정·협약 이후 필요한 자료를 보여드립니다.</p>
-                        <PreparationChecklist items={laterDocuments} sourceAttachmentNames={proposalDraft.sourceAttachmentNames} />
+                        <PreparationChecklist items={laterDocuments} sourceAttachmentNames={proposalDraft.sourceAttachmentNames} submissionChecklist />
                       </div>
                     )}
                   </details>
