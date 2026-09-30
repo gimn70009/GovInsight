@@ -5,6 +5,7 @@ import com.publicmonitor.backend.domain.monitoring.exception.DuplicateMonitoring
 import com.publicmonitor.backend.domain.monitoring.exception.MonitoringSourceNotFoundException;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringSourceRepository;
 import com.publicmonitor.backend.domain.monitoring.web.dto.CreateMonitoringSourceRequest;
+import com.publicmonitor.backend.domain.monitoring.web.dto.UpdateMonitoringSourceSettingsRequest;
 import com.publicmonitor.backend.domain.monitoring.web.dto.UpdateMonitoringSourceEnabledRequest;
 import com.publicmonitor.backend.domain.monitoring.web.dto.UpdateMonitoringSourceRequest;
 import com.publicmonitor.backend.domain.monitoring.web.dto.MonitoringSourceResponse;
@@ -18,6 +19,31 @@ import org.springframework.transaction.annotation.Transactional;
 public class MonitoringSourceService {
 
     private final MonitoringSourceRepository monitoringSourceRepository;
+
+    @Transactional
+    public void initializeDefaults() {
+        for (var preset : MonitoringSourceDefaults.SOURCES) {
+            if (!monitoringSourceRepository.existsByListUrl(preset.listUrl())) {
+                monitoringSourceRepository.save(preset.create());
+            }
+        }
+    }
+
+    @Transactional
+    public List<MonitoringSourceResponse> updateSettings(UpdateMonitoringSourceSettingsRequest request) {
+        // 모든 대상을 확인한 후 변경하여 누락된 기관이 있어도 일부만 적용하지 않는다.
+        List<MonitoringSource> sources = request.sources().stream()
+                .map(setting -> getSource(setting.sourceId()))
+                .toList();
+        for (int index = 0; index < sources.size(); index++) {
+            var setting = request.sources().get(index);
+            var source = sources.get(index);
+            source.changeCollectionCount(setting.detailFetchCount());
+            source.changeEnabled(setting.enabled());
+        }
+        monitoringSourceRepository.flush();
+        return sources.stream().map(MonitoringSourceResponse::from).toList();
+    }
 
     @Transactional
     public MonitoringSourceResponse create(CreateMonitoringSourceRequest request) {
