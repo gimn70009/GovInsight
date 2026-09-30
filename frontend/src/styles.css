@@ -293,3 +293,5 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   .proposal-writer__section-heading button { margin-left:auto; min-width:68px; padding:7px; font-size:12px; }
   .proposal-writer__notice>button { margin:8px 0 0; }
 }
+
+.preparation-checklist__action>p{overflow-wrap:anywhere}.preparation-empty{margin:18px 24px;color:#6b7684;font-size:12px;line-height:1.7}
