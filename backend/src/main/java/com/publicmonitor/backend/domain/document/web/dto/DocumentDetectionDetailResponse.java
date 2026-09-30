@@ -95,6 +95,7 @@ public record DocumentDetectionDetailResponse(
 
     public record Preparation(
             List<String> meetingAgenda,
+            List<String> submissionReviewNotes,
             List<PreparationItem> eligibilityChecklist,
             List<PreparationItem> submissionDocuments,
             String applicationDeadline,
@@ -102,6 +103,7 @@ public record DocumentDetectionDetailResponse(
     ) {
         public Preparation {
             meetingAgenda = displayLines(meetingAgenda);
+            submissionReviewNotes = displayLines(submissionReviewNotes);
             applicationDeadline = YearNotation.display(applicationDeadline);
         }
     }

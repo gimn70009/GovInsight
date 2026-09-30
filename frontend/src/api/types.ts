@@ -151,6 +151,7 @@ export interface DocumentAnalysis {
     preparationSchemaVersion?: number
     preparation: {
       meetingAgenda: string[]
+      submissionReviewNotes?: string[] | null
       eligibilityChecklist: ProposalPreparationItem[]
       submissionDocuments: ProposalPreparationItem[]
       applicationDeadline?: string | null

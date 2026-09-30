@@ -19,7 +19,7 @@ def test_report_reuses_only_confirmed_application_files_and_not_review_candidate
     report = ready_request()
     doc = report.documents[0]
     doc.proposal.preparation.submission_documents = documents
-    doc.proposal.preparation.meeting_agenda.extend(notes)
+    doc.proposal.preparation.submission_review_notes.extend(notes)
     expected = [item.title for item in documents if item.stage == "APPLICATION"]
     reused = reusable_submission_documents(doc)
     assert reused is not None

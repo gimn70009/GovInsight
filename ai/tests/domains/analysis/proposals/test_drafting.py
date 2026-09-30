@@ -250,7 +250,7 @@ def test_generates_outline_then_draft_only_for_matching_proposal_request() -> No
     assert generated.proposal.preparation is not None
     assert generated.proposal.preparation.strategy.recommended_project.startswith("제조 현장")
     assert generated.proposal.source_attachment_names == ["신청서식.hwp"]
-    assert generated.proposal.preparation_schema_version == 17
+    assert generated.proposal.preparation_schema_version == 19
     assert "map_proposal_sources" in generated.used_tools
     assert "build_proposal_preparation" in generated.used_tools
 
@@ -314,7 +314,7 @@ def test_proposal_stage_failure_preserves_base_analysis() -> None:
     assert generated.summary.startswith("산업 AI 실증")
     assert generated.proposal.draft_status == ProposalDraftStatus.REVIEW_REQUIRED
     assert generated.proposal.draft_sections == []
-    assert generated.proposal.preparation_schema_version == 17
+    assert generated.proposal.preparation_schema_version == 19
     assert "사업 제안 생성 제한 시간을 초과했습니다." in generated.proposal.draft_reason
 
 

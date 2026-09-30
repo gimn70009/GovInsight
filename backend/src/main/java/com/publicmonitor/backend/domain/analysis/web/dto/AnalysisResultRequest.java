@@ -150,6 +150,7 @@ public record AnalysisResultRequest(
 
     public record Preparation(
             @NotNull @Size(max = 20) List<@NotBlank @Size(max = 500) String> meetingAgenda,
+            @Size(max = 64) List<@NotBlank @Size(max = 500) String> submissionReviewNotes,
             @NotNull @Size(min = 1, max = 12) List<@Valid PreparationItem> eligibilityChecklist,
             @NotNull @Size(max = 27) List<@Valid PreparationItem> submissionDocuments,
             @Size(max = 10) String applicationDeadline,

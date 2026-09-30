@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { api } from '../api/client'
 import { ProposalWriter } from '../components/ProposalWriter'
+import { visibleMeetingAgenda } from '../utils/meetingAgenda'
 import type { ChangeType, DocumentAnalysis, DocumentDetail, DocumentDetection, MonitoringRun, OpportunityDimensionType, OpportunityPriority, ProposalPreparationItem, SimilarNoticeResult } from '../api/types'
 import { Badge, EmptyState, InlineError, Loading, Pagination } from '../components/ui'
 
@@ -684,7 +685,9 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
     : ''
   const applicationDocuments = proposalDraft?.preparation?.submissionDocuments.filter((item) => !item.stage || item.stage === 'APPLICATION') ?? []
   const laterDocuments = proposalDraft?.preparation?.submissionDocuments.filter((item) => item.stage && item.stage !== 'APPLICATION') ?? []
+  const meetingAgenda = visibleMeetingAgenda(proposalDraft?.preparation?.meetingAgenda)
   const preparation = proposalDraft?.preparation
+    ? { ...proposalDraft.preparation, meetingAgenda: meetingAgenda } : undefined
   const highlights = selectPreparationHighlights(preparation)
   const capabilities = companyCapabilities(preparation?.strategy.capabilityMatches)
   const hasLegacyCapabilities = (preparation?.strategy.capabilityMatches?.length ?? 0) > capabilities.length
@@ -777,9 +780,10 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
                     {proposalSectionsOverview.map((section) => <a href={`#${section.id}`} key={section.id}><span>{section.label}</span><strong>{section.count}<small>{section.suffix}</small></strong></a>)}
                   </nav>
                   <details className="preparation-block preparation-block--collapsible" id="proposal-agenda">
-                    <summary className="preparation-block__header"><span>02</span><div><h4>회의 안건</h4><p>제안서 작성 전에 관계자들과 먼저 결정할 내용입니다.</p></div><em>{proposalDraft.preparation.meetingAgenda.length}건 <ChevronDown size={16} /></em></summary>
+                    <summary className="preparation-block__header"><span>02</span><div><h4>회의 안건</h4><p>제안서 작성 전에 관계자들과 먼저 결정할 내용입니다.</p></div><em>{meetingAgenda.length}건 <ChevronDown size={16} /></em></summary>
+                    {meetingAgenda.length === 0 && <p className="preparation-empty">별도로 정리된 회의 안건이 없습니다.</p>}
                     <ol className="meeting-agenda">
-                      {proposalDraft.preparation.meetingAgenda.map((agenda) => <li key={agenda}>{agenda}</li>)}
+                      {meetingAgenda.map((agenda) => <li key={agenda}>{agenda}</li>)}
                     </ol>
                   </details>
                   <details className="preparation-block preparation-block--collapsible" id="proposal-eligibility">
@@ -789,7 +793,7 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
                   <details className="preparation-block preparation-block--collapsible" id="proposal-documents">
                     <summary className="preparation-block__header"><span>04</span><div><h4>제출 서류 체크리스트</h4><p>원문에서 확인된 제출 자료입니다. 포함 자료와 제출 조건을 함께 확인하세요.</p></div><em>{proposalDraft.preparation.submissionDocuments.length}건 <ChevronDown size={16} /></em></summary>
                     {applicationDocuments.length === 0 && (
-                      <p className="preparation-empty">확인된 신청 단계 제출서류가 없습니다. 회의 안건의 제출 여부 확인 사항과 원문을 확인하세요.</p>
+                      <p className="preparation-empty">확인된 신청 단계 제출서류가 없습니다. 원문 제출 안내를 확인하세요.</p>
                     )}
                     <PreparationChecklist items={applicationDocuments} sourceAttachmentNames={proposalDraft.sourceAttachmentNames} submissionChecklist />
                     {laterDocuments.length > 0 && (
