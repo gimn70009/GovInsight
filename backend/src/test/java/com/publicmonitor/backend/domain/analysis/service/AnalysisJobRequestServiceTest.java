@@ -105,6 +105,43 @@ class AnalysisJobRequestServiceTest {
         assertThat(prepared.legalReviewTypes()).containsExactlyElementsOf(LegalReviewPolicy.TYPES);
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"1,false,true", "19,false,false", "19,true,true"})
+    void completedExclusionIsReusedWhileOldOrFailedPreparationIsRetried(
+            int schemaVersion, boolean generationFailed, boolean requiresAnalysis
+    ) {
+        DocumentVersion version = version(1, 200L, "기존 사업공고", "게시글 본문");
+        DocumentDetection detection = detection(version, 300L, DocumentChangeType.UNCHANGED_DOCUMENT);
+        DocumentAnalysis analysis = mock(DocumentAnalysis.class, org.mockito.Mockito.CALLS_REAL_METHODS);
+        var mapper = new tools.jackson.databind.ObjectMapper();
+        var proposal = mapper.readValue("""
+                {"sections":[],"documentType":"PROPOSAL_REQUEST","draftStatus":"REVIEW_REQUIRED",
+                 "draftReason":"회사 적합도는 40점으로 생성 기준인 61점에 미달했습니다.",
+                 "sourceAttachmentNames":[],"templateSections":[],"draftSections":[],
+                 "preparation":null,"preparationSchemaVersion":19}
+                """, com.publicmonitor.backend.domain.analysis.web.dto.AnalysisResultRequest.Proposal.class);
+        var stored = mapper.readTree(mapper.writeValueAsString(proposal));
+        ((tools.jackson.databind.node.ObjectNode) stored).put("preparationSchemaVersion", schemaVersion);
+        if (generationFailed) {
+            ((tools.jackson.databind.node.ObjectNode) stored).put("draftReason", "확인 내용: 원문 검증 실패");
+        }
+        ReflectionTestUtils.setField(analysis, "proposalDirection", mapper.writeValueAsString(stored));
+        ReflectionTestUtils.setField(analysis, "comparisonSummary", mapper.writeValueAsString(java.util.Map.of(
+                "legalReviewVersion", 2,
+                "legalRisks", LegalReviewPolicy.TYPES.stream().map(type -> java.util.Map.of(
+                        "type", type, "status", "NOT_FOUND", "summary", "관련 제한 없음"
+                )).toList()
+        )));
+        given(detectionRepository.findAllByMonitoringRunSourceMonitoringRunIdOrderByIdAsc(10L))
+                .willReturn(List.of(detection));
+        given(analysisRepository.findByDocumentVersionId(200L)).willReturn(Optional.of(analysis));
+        if (requiresAnalysis) {
+            assertThat(service.prepare(10L).orElseThrow().documents().getFirst().analysisScope()).isEqualTo("FULL");
+        } else {
+            assertThat(service.prepare(10L)).isEmpty();
+        }
+    }
+
     @Test
     void 근거_스키마가_없는_기존_사업제안은_한번_다시_분석한다() {
         DocumentVersion version = version(1, 200L, "기존 사업공고", "게시글 본문");

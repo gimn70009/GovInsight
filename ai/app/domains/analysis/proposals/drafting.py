@@ -552,6 +552,13 @@ def apply_proposal_generation_reason(
         blockers.append("신청 자격은 회사의 공식 증빙으로 추가 확인해야 합니다.")
     blockers.append("따라서 현재 확인된 조건으로는 사업 제안 준비안을 생성할 수 없습니다.")
     result.proposal.draft_reason = " ".join(blockers)
+    # A completed exclusion must not look like an obsolete preparation on the next run.
+    # Missing attachment text alone stays retryable when parsing becomes available.
+    if (
+        company_fit < PROPOSAL_GENERATION_MIN_COMPANY_FIT
+        or result.eligibility == Eligibility.INELIGIBLE
+    ):
+        result.proposal.preparation_schema_version = PREPARATION_SCHEMA_VERSION
 
 
 def _retain_verified_source_references(
