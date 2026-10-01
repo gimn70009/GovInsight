@@ -2,8 +2,69 @@ package com.publicmonitor.backend.domain.report;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class ReportEmailTemplateTest {
+    @ParameterizedTest
+    @CsvSource({
+            "0, #f1f5f9, #94a3b8, #475569",
+            "39, #f1f5f9, #94a3b8, #475569",
+            "40, #e7effb, #357bd8, #215fa8",
+            "49, #e7effb, #357bd8, #215fa8",
+            "50, #e7effb, #357bd8, #215fa8",
+            "69, #e7effb, #357bd8, #215fa8",
+            "74, #e7effb, #357bd8, #215fa8",
+            "75, #fef2f2, #dc2626, #b91c1c",
+            "100, #fef2f2, #dc2626, #b91c1c"
+    })
+    void colorsHeaderAndScoreBadgeAtScoreBoundaries(int score, String background, String accent, String badge) {
+        String html = ReportEmailTemplate.render("보고서", scoredCard(score + "점"));
+        assertThat(html).contains("background:" + background + ";border-top:4px solid " + accent,
+                "background:" + badge + ";color:#ffffff;font-weight:700\">기회점수: " + score + "점</span>");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"미산정", "-1점", "101점", "999999999999점", "75.5점", "75", "75점 추가", "<b>90점</b>"})
+    void unknownOrInvalidScoresUseGrayAndPreserveEscapedText(String score) {
+        String html = ReportEmailTemplate.render("보고서", scoredCard(score));
+        assertThat(html).contains("background:#f1f5f9;border-top:4px solid #94a3b8",
+                "background:#475569;color:#ffffff;font-weight:700\">기회점수: "
+                        + ReportBodyFormatter.html(score) + "</span>");
+    }
+
+    @Test void ignoresScoresOutsideTheHeaderWhenScoreIsMissing() {
+        String html = ReportEmailTemplate.render("보고서", "▸ 기회점수: 99점 공고\n기관: 기관 80점\n"
+                + "문서 유형: 사업 공고 │ 신규\n요약: 기회점수: 90점\n"
+                + "문서 유형: 사업 공고 │ 신규 │ 기회점수: 100점");
+        assertThat(html).contains("background:#f1f5f9;border-top:4px solid #94a3b8")
+                .doesNotContain("border-top:4px solid #dc2626");
+    }
+
+    @Test void eachCardUsesItsOwnScoreAndWritesColorPreview() throws Exception {
+        String html = ReportEmailTemplate.render("[공공기관 모니터링] 10월 1일 보고서",
+                "신규 2건 │ 수정 1건 │ 변경 없음 1건\n\n" + scoredCard("82점")
+                + scoredCard("69점") + scoredCard("35점") + scoredCard("미산정"));
+        String[] cards = html.split("padding-top:20px");
+        assertThat(cards).hasSize(5);
+        assertThat(cards[1]).contains("border-top:4px solid #dc2626", "기회점수: 82점");
+        assertThat(cards[2]).contains("border-top:4px solid #357bd8", "기회점수: 69점");
+        assertThat(cards[3]).contains("border-top:4px solid #94a3b8", "기회점수: 35점");
+        assertThat(cards[4]).contains("border-top:4px solid #94a3b8", "기회점수: 미산정");
+        var output = java.nio.file.Path.of("build/report-preview/opportunity-score-colors.html");
+        java.nio.file.Files.createDirectories(output.getParent());
+        java.nio.file.Files.writeString(output, html);
+    }
+
+    private static String scoredCard(String score) {
+        return "▸ 규제자유특구, 글로벌혁신특구 및 광역연계형특구 후보과제 모집 공고\n"
+                + "기관: 한국산업기술진흥원\n문서 유형: 일반 공지 │ 신규 │ 기회점수: " + score
+                + "\n요약: 지역 혁신을 위한 후보과제를 모집하는 공고입니다.\n"
+                + "• 제출·의견 기한: 2026년 11월 6일 16:00\n"
+                + "원문: [게시글 보기](https://example.org/notice)\n\n";
+    }
+
     @Test void stylesTitlesFactsAndAttachmentsWithoutChangingTheirValues() {
         String body = "신규 1건 │ 수정 0건 │ 변경 없음 0건\n\n────────────────\n\n"
                 + "▸ 참여기업 모집\n기관: 예시 기관\n문서 유형: 사업 공고 │ 신규 │ 기회점수: 72점\n\n"
