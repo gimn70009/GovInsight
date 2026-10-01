@@ -22,11 +22,14 @@ from app.domains.analysis.proposals.drafting import (
     _parse_model_response,
     _retain_verified_source_references,
     _safe_error,
+    apply_proposal_generation_reason,
 )
 from app.domains.analysis.schemas.request import AnalysisDocumentRequest
 from app.domains.analysis.schemas.result import (
+    PREPARATION_SCHEMA_VERSION,
     CompanyEvidenceLevel,
     DocumentAnalysisResult,
+    Eligibility,
     EvidenceOrigin,
     PreparationChecklistItem,
     ProposalDraftStatus,
@@ -283,6 +286,39 @@ def test_skips_second_stage_when_company_fit_is_below_generation_threshold() -> 
         "회사 적합도는 60점으로 사업 제안 준비안 생성 기준인 61점에 미달했습니다."
     )
     assert "REVIEW_REQUIRED" not in generated.proposal.draft_reason
+
+
+@pytest.mark.parametrize("company_fit", [40, 60])
+def test_low_fit_decision_is_current_without_generating_preparation(company_fit: int) -> None:
+    base = result(company_fit=company_fit)
+    before = base.opportunity.model_dump()
+    runner = ProposalRunner()
+    workflow = TwoStageAnalysisWorkflow(BaseWorkflow(base), runner)
+    generated = asyncio.run(workflow.analyze(document()))
+
+    assert runner.call_count == 0
+    assert generated.proposal.preparation is None
+    assert generated.proposal.preparation_schema_version == PREPARATION_SCHEMA_VERSION
+    assert generated.opportunity.model_dump() == before
+    assert generated.proposal.model_dump(by_alias=True)["preparationSchemaVersion"] == 19
+
+
+def test_ineligible_decision_is_current_before_delivery() -> None:
+    base = result()
+    base.eligibility = Eligibility.INELIGIBLE
+    apply_proposal_generation_reason(base, document())
+
+    assert base.proposal.preparation is None
+    assert base.proposal.preparation_schema_version == PREPARATION_SCHEMA_VERSION
+    assert "현재 회사가 신청할 수 없는" in base.proposal.draft_reason
+
+
+def test_missing_attachment_alone_keeps_upgrade_retry_available() -> None:
+    base = result()
+    apply_proposal_generation_reason(base, document(with_attachment=False))
+
+    assert base.proposal.preparation_schema_version == 1
+    assert "내용 분석이 완료된 첨부 양식이 없어" in base.proposal.draft_reason
 
 
 def test_skip_reason_lists_missing_attachment_and_eligibility_confirmation() -> None:

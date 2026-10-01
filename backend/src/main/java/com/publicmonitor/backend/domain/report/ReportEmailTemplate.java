@@ -3,9 +3,28 @@ package com.publicmonitor.backend.domain.report;
 import com.publicmonitor.backend.global.presentation.YearNotation;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /** Email-specific presentation of the saved report; no external calls or content generation. */
 public final class ReportEmailTemplate {
+    private static final Pattern OPPORTUNITY_SCORE = Pattern.compile("기회점수:\\s*([0-9]{1,3})점");
+
+    private enum ScorePalette {
+        HIGH("#fef2f2", "#dc2626", "#b91c1c"),
+        NORMAL("#e7effb", "#357bd8", "#215fa8"),
+        NEUTRAL("#f1f5f9", "#94a3b8", "#475569");
+
+        final String background;
+        final String accent;
+        final String badge;
+
+        ScorePalette(String background, String accent, String badge) {
+            this.background = background;
+            this.accent = accent;
+            this.badge = badge;
+        }
+    }
+
     private ReportEmailTemplate() {}
 
     public static String render(String title, String body) {
@@ -25,18 +44,22 @@ public final class ReportEmailTemplate {
         }
         var html = new StringBuilder("<!doctype html><html lang=\"ko\"><head><meta charset=\"UTF-8\">"
                 + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head>"
-                + "<body style=\"margin:0;padding:0;background:#edf2f8;color:#243247;font-family:Arial,'Malgun Gothic',sans-serif\">"
-                + "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"background:#edf2f8\"><tr><td align=\"center\" style=\"padding:24px 10px\">"
+                + "<body style=\"margin:0;padding:0;background:#f4f6f8;color:#243247;font-family:Arial,'Malgun Gothic',sans-serif\">"
+                + "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"background:#f4f6f8\"><tr><td align=\"center\" style=\"padding:24px 10px\">"
                 + "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"max-width:720px;table-layout:fixed\">"
-                + "<tr><td style=\"padding:28px 24px;background:#193655;border-radius:16px 16px 0 0\">"
-                + "<p style=\"margin:0 0 12px;color:#a9c9f3;font-size:11px;font-weight:700;letter-spacing:2px\">GOVINSIGHT · REPORT</p>"
-                + "<h1 style=\"margin:0;color:#ffffff;font-size:23px;font-weight:700;line-height:1.5;overflow-wrap:anywhere\">");
-        html.append(ReportBodyFormatter.html(title)).append("</h1></td></tr>");
+                + "<tr><td style=\"padding:28px 24px 24px;background:#193655;border:1px solid #2c4b6b;border-radius:14px\">"
+                + "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\"><tr>"
+                + "<td style=\"color:#a9c9f3;font-size:16px;font-weight:700;letter-spacing:-0.4px\">GovInsight</td>"
+                + "<td align=\"right\" style=\"color:#a9c9f3;font-size:10px;font-weight:700;letter-spacing:1.5px\">MONITORING REPORT</td>"
+                + "</tr></table>"
+                + "<h1 style=\"margin:22px 0 0;color:#ffffff;font-size:24px;font-weight:700;letter-spacing:-0.7px;line-height:1.5;word-break:keep-all;overflow-wrap:anywhere\">");
+        html.append(ReportBodyFormatter.html(title)).append("</h1>");
         String overview = String.join("\n", intro).strip();
         if (!overview.isBlank()) {
-            html.append("<tr><td style=\"padding:18px 24px;background:#e0ebfa;color:#315780;font-size:14px;line-height:1.8\">")
-                    .append(lines(overview)).append("</td></tr>");
+            html.append("<div style=\"margin-top:20px;padding-top:16px;border-top:1px solid #3b5673;color:#c5d5e8;font-size:13px;line-height:1.9;overflow-wrap:anywhere\">")
+                    .append(lines(overview)).append("</div>");
         }
+        html.append("</td></tr>");
         for (int i = 0; i < cards.size(); i++) html.append(card(cards.get(i), i + 1));
         html.append("<tr><td style=\"padding:24px 16px;color:#65788f;font-size:12px;line-height:1.8;text-align:center\">"
                 + "GovInsight · 공공기관 모니터링 보고서<br>제출 전 원문의 최신 안내와 필수 서류를 확인해 주세요."
@@ -45,9 +68,10 @@ public final class ReportEmailTemplate {
     }
 
     private static String card(List<String> content, int index) {
+        ScorePalette palette = scorePalette(content);
         var html = new StringBuilder("<tr><td style=\"padding-top:20px\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" "
                 + "style=\"table-layout:fixed;background:#ffffff;border:1px solid #cddbec;border-radius:14px\">"
-                + "<tr><td style=\"padding:24px;background:#e7effb;border-top:4px solid #357bd8;border-radius:14px 14px 0 0\">"
+                + "<tr><td style=\"padding:24px;background:" + palette.background + ";border-top:4px solid " + palette.accent + ";border-radius:14px 14px 0 0\">"
                 + "<p style=\"margin:0 0 10px;font-size:11px;font-weight:700;letter-spacing:1px;color:#4c709d\">공고 " + String.format("%02d", index) + "</p>"
                 + "<h2 style=\"margin:0;color:#153957;font-size:22px;line-height:1.5;font-weight:700;overflow-wrap:anywhere;word-break:keep-all\">");
         html.append(ReportBodyFormatter.html(content.getFirst().substring(2))).append("</h2>");
@@ -69,7 +93,7 @@ public final class ReportEmailTemplate {
                 for (String tag : line.substring(7).split("│")) {
                     boolean score = tag.strip().startsWith("기회점수:");
                     html.append("<span style=\"display:inline-block;margin:0 5px 4px 0;padding:3px 9px;border-radius:6px;font-size:12px;")
-                            .append(score ? "background:#215fa8;color:#ffffff;font-weight:700" : "background:#ffffff;color:#4d6480")
+                            .append(score ? "background:" + palette.badge + ";color:#ffffff;font-weight:700" : "background:#ffffff;color:#4d6480")
                             .append("\">").append(ReportBodyFormatter.html(tag.strip())).append("</span>");
                 }
                 html.append("</div>");
@@ -152,6 +176,23 @@ public final class ReportEmailTemplate {
         return html.append("</td></tr></table></td></tr>").toString();
     }
 
+    private static ScorePalette scorePalette(List<String> content) {
+        for (String raw : content.subList(1, content.size())) {
+            String line = raw.strip();
+            if (line.isBlank() || line.startsWith("기관: ")) continue;
+            if (!line.startsWith("문서 유형: ")) break;
+            for (String tag : line.substring(7).split("│")) {
+                var match = OPPORTUNITY_SCORE.matcher(tag.strip());
+                if (!match.matches()) continue;
+                int score = Integer.parseInt(match.group(1));
+                if (score > 100) return ScorePalette.NEUTRAL;
+                if (score >= 75) return ScorePalette.HIGH;
+                return score >= 40 ? ScorePalette.NORMAL : ScorePalette.NEUTRAL;
+            }
+        }
+        return ScorePalette.NEUTRAL;
+    }
+
     private static String factValues(String value) {
         var result = new StringBuilder();
         for (String item : value.split("\n")) {
@@ -166,6 +207,6 @@ public final class ReportEmailTemplate {
     }
 
     private static String lines(String text) {
-        return linked(text).replace("\n", "<br>");
+        return linked(text).replace("color:#205fa9", "color:#a9c9f3").replace("\n", "<br>");
     }
 }
