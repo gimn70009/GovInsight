@@ -27,7 +27,7 @@ from app.domains.report.schemas.request import ReportJobRequest
 from app.domains.report.submission_documents import source_priority
 
 logger = logging.getLogger(__name__)
-_PROMPT_VERSION = "submission-brief-ko-v10-verified-facts"
+_PROMPT_VERSION = "submission-brief-ko-v12-submission-items"
 _CACHE: OrderedDict[str, tuple[float, BriefOutput]] = OrderedDict()
 _CACHE_SIZE = 256
 
@@ -58,18 +58,28 @@ display_text는 구절의 날짜·시간·시간대·금액·비율·전화·이
 
 applicants: 역할별 신청 자격만. 국내 주관/국내 공동/해외 기관을 별도 항목으로.
 deadlines: 날짜·시간·시간대·국가/차수·도착 기준만. 제출방법이나 예산은 제외.
+기한의 display_text는 '표제: YYYY년 M월 D일(요일) HH:MM까지' 형식으로 통일하세요.
+원문에 없는 연도·요일·시각·시간대를 추가하지 말고 24:00은 그대로 보존하세요.
+공고일과 접수 마감은 별도 항목으로 표시하고 공고일을 접수 시작일로 바꾸지 마세요.
+국가·차수·단계별 기한도 별도 항목으로 표시하고 서로 다른 일정을 /로 이어 붙이지 마세요.
+같은 일정이 여러 출처에 반복되면 한 번만 표시하고 도착·소인·예외 조건은 보존하세요.
 destinations: 국가별 접수처·방법, 동시접수/원본 우편 등 의무 절차를 각각 별도 항목으로.
 contacts: 국내 담당자를 우선하고 필요한 해외 담당자는 한 명까지. 전화/이메일 보존.
 문의처를 접수처로 분류하지 마세요. 이번 공고 원문의 현재 일정과 절차를 우선하세요.
 
 """.strip()
 
-DOCUMENT_PROMPT = """documents에 신청 단계 제출서류를 추출하세요.
+DOCUMENT_PROMPT = """documents에 신청 단계 제출서류와 제출물을 추출하세요.
+제출표의 실행파일·서비스 URL·앱 링크·시연 영상도 빠뜨리지 마세요.
+웹/앱/PC 등 유형별 제출 방식은 하나의 항목에 조건을 보존하고 모두 제출하는 것으로 바꾸지 마세요.
+선택 제출 항목은 condition에 선택이라고 명시하세요.
 근거는 공고의 제출서류 표·문단입니다. 저장 체크리스트와 빈 양식·예시는 제출 의무의 근거가 아닙니다.
 title은 원문 서류명, condition은 명시된 해당 시/기관별/택일 조건 그대로 또는 null.
 evidence.quote에 제출 의무·서류명·조건이 모두 실제로 있어야 합니다. 없으면 documents=[].
 참고자료의 다른 사업이나 선정/협약 후 서류를 섞지 마세요. 첨부파일이 있다는 이유로 추측하지 마세요.
-form_source_id는 실제 작성 양식의 source_id 또는 null. 공고문/참고자료를 양식으로 선택하지 마세요.
+form_source_id는 실제 작성 양식의 source_id 또는 null.
+공고문 내부에 해당 양식 제목과 실제 작성란이 확인되면 그 공고문을 선택할 수 있습니다.
+서류명 언급이나 제출 목록만 있는 공고문·참고자료는 양식으로 선택하지 마세요.
 ZIP 내부 양식은 ID만 선택합니다. URL을 만들지 마세요. 자체 준비 서류는 null일 수 있습니다.
 """.strip()
 
@@ -81,6 +91,8 @@ def _missing_fields_prompt(requested: tuple[str, ...]) -> str:
             r"표 원문:.*?한 항목에 표의 모든 역할을 이어 붙이지 마세요.\n",
             "", prompt, flags=re.S,
         )
+    if "deadlines" not in requested:
+        prompt = re.sub(r"기한의 display_text는.*?조건은 보존하세요.\n", "", prompt, flags=re.S)
     if "contacts" not in requested:
         prompt = re.sub(r"문의 원문:.*?help@example.org\".\n", "", prompt, flags=re.S)
     prompt = "\n".join(

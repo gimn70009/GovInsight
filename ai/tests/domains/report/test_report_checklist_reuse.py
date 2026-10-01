@@ -119,7 +119,7 @@ def test_report_shows_names_only_while_checklist_metadata_remains_available():
     assert [line for line in body.splitlines() if line.startswith("• ")][-4:] == [
         "• 운영계획서",
         "• 사업자등록증",
-        "• 추가 실적 자료",
+        "• 추가 실적 자료 (선택 제출)",
         "• 회사 소개서",
     ]
     assert "대상·조건:" not in body and " — " not in body

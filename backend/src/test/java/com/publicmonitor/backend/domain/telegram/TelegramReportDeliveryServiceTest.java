@@ -87,4 +87,20 @@ class TelegramReportDeliveryServiceTest {
         verify(worker).sendPending(1L); verify(worker).sendPending(3L);
         verify(worker).recordUncertainFailure(2L);
     }
+    @Test void 긴_보고서는_저장_요약을_유지하고_텔레그램만_축약한다() {
+        String summary = "지원 조건을 확인합니다. ".repeat(400);
+        String body = "신규 1건\n\n▸ 공고\n요약: " + summary
+                + "\n원문: [게시글 보기](https://example.org/notice)";
+        var report = MonitoringReport.pending(MonitoringRun.create(
+                MonitoringTriggerType.MANUAL, 1, LocalDateTime.now()));
+        report.complete("보고서", body, LocalDateTime.now());
+        target = TelegramDelivery.pending(report, new TelegramRecipient("123", "원래 이름", true));
+        when(repository.findForUpdate(1L)).thenReturn(Optional.of(target));
+        when(client.send(anyString(), anyString())).thenReturn(99L);
+        worker.sendPending(1L);
+        verify(client).send(eq("123"), argThat(message -> message.contains("요약 전문은 이메일 보고서")
+                && com.publicmonitor.backend.domain.report.ReportBodyFormatter.displayLength(message) <= 4096));
+        assertThat(target.getReport().getSummary()).isEqualTo(body);
+        assertThat(target.getStatus()).isEqualTo(TelegramDeliveryState.SENT);
+    }
 }

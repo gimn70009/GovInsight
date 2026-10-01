@@ -308,6 +308,13 @@ def _find_deadline(lines: list[str], pattern: str) -> str | None:
     values = []
     for line in lines:
         value = _usable_deadline(_find([line], pattern))
-        if value and value not in values:
+        if value and _deadline_key(value) not in {_deadline_key(item) for item in values}:
             values.append(value)
-    return " / ".join(values[:2]) if values else None
+    return "\n".join(values[:2]) if values else None
+
+
+def _deadline_key(value: str) -> str:
+    normalized = _DATE.sub(
+        lambda match: f"{match['year'] or ''}-{int(match['month'])}-{int(match['day'])}", value
+    )
+    return re.sub(r"\s+", "", normalized)
