@@ -147,7 +147,7 @@ def test_action_fields_keep_source_subject_deadline_time_and_real_downloads():
     )
     body = TemplateReportGenerator().generate(request).summary
     assert "비수도권 지방자치단체" in body
-    assert "2026-11-06 16:00 (한국시간)" in body
+    assert "2026년 11월 6일 16:00 (한국시간)" in body
     assert "submit@example.go.kr" in body
     assert all(title in body for title in ["신청 공문", "신청서", "계획서"])
     assert "사업지원팀 (02-0000-0000)" in body
@@ -193,7 +193,7 @@ def test_attachment_text_is_used_for_submission_guidance():
         )
         .summary
     )
-    assert "2026-10-06 18:00" in body
+    assert "2026년 10월 6일 18:00" in body
     assert "주민의견서를 온라인으로 제출" in body
 
 
@@ -210,7 +210,7 @@ def test_existing_comparison_deadline_used_without_proposal_preparation():
         )
         .summary
     )
-    assert "한국 측 2027-01-28 16:00, 스페인 측 별도 확인" in body
+    assert "한국 측 2027년 1월 28일 16:00, 스페인 측 별도 확인" in body
     assert "한·스페인 공동기관" in body
 
 
@@ -259,7 +259,7 @@ def test_many_documents_report_omissions_without_broken_links():
     )
     request = request.model_copy(update={"documents": request.documents * 50})
     body = TemplateReportGenerator().generate(request).summary
-    assert display_units(body) <= 3900
+    assert display_units(body) <= 20000
     assert len(body.encode("utf-16-le")) // 2 <= 20000
     assert "그 외" in body
     assert "원문: [게시글 보기](https://example.go.kr/2)" in body
@@ -279,7 +279,7 @@ def test_source_markdown_is_not_interpreted_as_generated_link():
     assert "[가짜](" not in body
 
 
-def test_summary_is_first_complete_sentence_not_full_reason():
+def test_summary_keeps_all_saved_sentences_without_analysis_reason():
     body = (
         TemplateReportGenerator()
         .generate(
@@ -291,8 +291,8 @@ def test_summary_is_first_complete_sentence_not_full_reason():
         .summary
     )
     assert "요약: 첫 번째 사업 요약입니다." in body
-    assert "두 번째 핵심 설명" not in body
-    assert "세 번째" not in body and "반복된 긴" not in body
+    assert "두 번째 핵심 설명" in body
+    assert "세 번째" in body and "반복된 긴" not in body
 
 
 def test_separate_country_deadlines_and_submission_channels_are_preserved():
@@ -310,8 +310,8 @@ def test_separate_country_deadlines_and_submission_channels_are_preserved():
         )
         .summary
     )
-    assert "한국 신청기한: 2027-01-28 16:00 (한국시간)" in body
-    assert "스페인 신청기한: 2027-01-29 14:00 (현지시간)" in body
+    assert "한국 신청기한: 2027년 1월 28일 16:00 (한국시간)" in body
+    assert "스페인 신청기한: 2027년 1월 29일 14:00 (현지시간)" in body
     assert "한국 제출처: 국내 사업관리 시스템" in body
     assert "스페인 제출처: 해외 사업관리 시스템" in body
 
@@ -488,7 +488,7 @@ def test_unknown_fields_are_collapsed_once_and_known_fields_stay_visible():
         comparisonSummary={"applicationDeadline": "2027-01-28 16:00"},
     )
     body = TemplateReportGenerator().generate(request).summary
-    assert "• 제출·의견 기한: 2027-01-28 16:00" in body
+    assert "• 제출·의견 기한: 2027년 1월 28일 16:00" in body
     assert "• 제출처·방법:" not in body and "• 문의 담당:" not in body
     assert body.count("안내:") == 1
     assert "안내: 일부 접수 정보는 원문에서 확인해 주세요." in body

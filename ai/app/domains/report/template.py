@@ -6,7 +6,11 @@ from urllib.parse import quote, urlsplit
 from app.domains.analysis.schemas.result import DocumentImportance
 from app.domains.report.brief import SubmissionBrief
 from app.domains.report.facts import submission_facts
-from app.domains.report.presentation import foreign_prose, informational_notice
+from app.domains.report.presentation import (
+    deadline_display_lines,
+    foreign_prose,
+    informational_notice,
+)
 from app.domains.report.schemas.request import ReportDocumentRequest, ReportJobRequest
 from app.domains.report.schemas.result import ReportDraft
 from app.domains.report.submission_documents import (
@@ -14,7 +18,6 @@ from app.domains.report.submission_documents import (
     fallback_submission_documents,
 )
 
-_MAX_DISPLAY_UNITS = 3_900  # Reserve room for the title; Java/Telegram use UTF-16 offsets.
 _MAX_STORAGE_UNITS = 20_000
 _LINK = re.compile(r"\[([^\[\]\r\n]+)\]\((https?://[^\s()<>\"]+)\)")
 _IMPORTANCE_ORDER = {
@@ -59,7 +62,7 @@ def _utf16_units(value: str) -> int:
 
 
 def _fits(value: str) -> bool:
-    return display_units(value) <= _MAX_DISPLAY_UNITS and _utf16_units(value) <= _MAX_STORAGE_UNITS
+    return _utf16_units(value) <= _MAX_STORAGE_UNITS
 
 
 def _report_summary(
@@ -114,7 +117,7 @@ def _document_block(
         f"기관: {_text(document.organization_name)}",
         f"문서 유형: {kind} │ {change} │ 기회점수: {score}",
         "",
-        f"요약: {_brief_summary(document, 110 if compact else 180)}",
+        f"요약: {_summary(document)}",
         "",
     ]
     missing = []
@@ -125,7 +128,10 @@ def _document_block(
         ("제출처·방법", facts.destination),
         ("문의 담당", facts.contact),
     ]:
-        items = [_field(item, compact) for item in value.splitlines() if item.strip()]
+        display_lines = (
+            deadline_display_lines(value) if label == "제출·의견 기한" else value.splitlines()
+        )
+        items = [_field(item, compact) for item in display_lines if item.strip()]
         items = [item for item in items if not foreign_prose(item)]
         valid = [item for item in items if item not in {"원문 확인 필요", "상세 조건은 원문 확인"}]
         if not valid:
@@ -147,7 +153,10 @@ def _document_block(
         # A member has no public URL of its own: identify the archive download honestly.
         if form and form.archive and url:
             label += " (ZIP)"
-        entries.append(f"• [{label}]({url})" if url else f"• {label}")
+        entry = f"• [{label}]({url})" if url else f"• {label}"
+        if item.requirement_level == "OPTIONAL" or item.condition in {"선택", "선택 제출"}:
+            entry += " (선택 제출)"
+        entries.append(entry)
     if entries:
         lines.extend(["", "제출 준비 서류 ↓"])
     for entry in entries[: 3 if compact else 6]:
@@ -208,14 +217,9 @@ def _document_block(
     return "\n".join(lines)
 
 
-def _brief_summary(document: ReportDocumentRequest, limit: int) -> str:
-    # Use the same summary as document detail; comparison purpose is a separate model output.
-    value = _text(document.summary)
-    first_sentence = re.split(r"(?<=[다요][.])\s+|(?<=[!?])\s+", value, maxsplit=1)[0]
-    # Keep names and conditions intact instead of cutting the sentence to fit.
-    if not first_sentence or len(first_sentence) > limit:
-        return "요약 전문은 게시글 상세에서 확인해 주세요."
-    return first_sentence
+def _summary(document: ReportDocumentRequest) -> str:
+    # Preserve the saved analysis; channel-specific limits belong to delivery.
+    return _text(document.summary) or "분석 요약을 확인하지 못했습니다."
 
 
 def _field(value: str, compact: bool) -> str:

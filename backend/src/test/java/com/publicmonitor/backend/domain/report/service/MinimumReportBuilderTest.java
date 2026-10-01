@@ -15,12 +15,26 @@ class MinimumReportBuilderTest {
         when(notice.getDocumentVersion().getTitle()).thenReturn("[제목]\n" + "긴 제목".repeat(100));
         when(notice.getDocument().getOriginalUrl()).thenReturn("javascript:alert(1)");
         when(notice.getMonitoringRunSource().getMonitoringSource().getOrganizationName()).thenReturn("기관명");
-        var draft = MinimumReportBuilder.build(run, Collections.nCopies(50, notice), Map.of());
+        var draft = MinimumReportBuilder.build(run, Collections.nCopies(100, notice), Map.of());
         assertThat(draft.summary()).contains("분석 결과를 확인하지 못했습니다", "기관명", "그 외").doesNotContain("javascript:");
-        assertThat(draft.title().length() + draft.summary().length()).isLessThan(3900);
+        assertThat(draft.summary().length()).isLessThanOrEqualTo(20000);
     }
     @Test void emptyRunProducesANoticeInsteadOfFailing() {
         var run = MonitoringRun.create(MonitoringTriggerType.MANUAL, 1, LocalDateTime.now());
         assertThat(MinimumReportBuilder.build(run, List.of(), Map.of()).summary()).contains("게시글이 없습니다");
+    }
+    @Test void fullStoredAnalysisSurvivesFallbackAndTelegramLength() {
+        var run = MonitoringRun.create(MonitoringTriggerType.MANUAL, 1, LocalDateTime.now());
+        var notice = mock(DocumentDetection.class, RETURNS_DEEP_STUBS);
+        when(notice.getDocumentVersion().getTitle()).thenReturn("공고");
+        when(notice.getDocumentVersion().getId()).thenReturn(1L);
+        when(notice.getDocument().getOriginalUrl()).thenReturn("https://example.org/notice");
+        when(notice.getMonitoringRunSource().getMonitoringSource().getOrganizationName()).thenReturn("기관");
+        var analysis = mock(com.publicmonitor.backend.domain.analysis.entity.DocumentAnalysis.class);
+        String summary = "사업 지원 조건과 제출 절차를 안내합니다. ".repeat(200) + "마지막 설명입니다.";
+        when(analysis.getSummary()).thenReturn(summary);
+        var draft = MinimumReportBuilder.build(run, List.of(notice), Map.of(1L, analysis));
+        assertThat(draft.summary()).contains("요약: " + summary).doesNotContain("…");
+        assertThat(draft.summary().length()).isGreaterThan(4096);
     }
 }

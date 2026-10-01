@@ -20,6 +20,7 @@ from app.domains.analysis.schemas.result import (
     RequirementStage,
 )
 from app.domains.report.schemas.request import ReportDocumentRequest
+from app.domains.report.submission_rows import submission_item_rows
 
 
 @dataclass(frozen=True)
@@ -78,14 +79,15 @@ def display_submission_documents(documents: list[SubmissionDocument]) -> list[Su
                 and _form_identity(anchor.form) == _form_identity(documents[i].form))
             for i in indices
         )
-        if (len(forms) > 1 or len(references) > 1 or len(submitters) > 1
+        levels = {documents[i].requirement_level for i in indices if documents[i].requirement_level}
+        if (len(levels) > 1 or len(forms) > 1 or len(references) > 1 or len(submitters) > 1
                 or len(periods) > 1 or not same_period_row
                 or (mixed_submitters and not same_row)):
             # Never choose between distinct forms, submitters, or unrelated source rows.
             seen = set()
             for index in indices:
                 item = documents[index]
-                key = (item.title, _form_identity(item.form))
+                key = (item.title, _form_identity(item.form), item.requirement_level)
                 if key in seen:
                     omitted.add(index)
                 seen.add(key)
@@ -101,7 +103,7 @@ def display_submission_documents(documents: list[SubmissionDocument]) -> list[Su
 
 _MARKER = re.compile(r"(?m)^\[파일:\s*([^\]\r\n]+)\]\r?\n")
 _FORM = re.compile(
-    r"양식|서식|신청서|계획서|동의서|확약서|서약서|위임장|조사서|추천서|제안서|설명자료|이력서|확인서|신청자격|협정서|공적조서"
+    r"양식|서식|신청서|계획서|동의서|확약서|서약서|위임장|조사서|추천서|제안서|설명자료|이력서|확인서|신청자격|협정서|공적조서|보고서"
 )
 _DOCUMENT_LABEL = re.compile(r"(?:제\s*출|구\s*비|신\s*청)\s*서\s*류\s*[:：]")
 
@@ -145,6 +147,7 @@ def _parts(document: ReportDocumentRequest) -> list[SourcePart]:
 def _form_tokens(value: str, *, requirement: bool = False) -> list[str]:
     value = unicodedata.normalize("NFKC", value)
     if requirement:
+        value = re.sub(r"\s+(?:각\s*)?\d+\s*부\.?\s*$", "", value)
         # Remove explanatory notes, but keep identity qualifiers such as 개인/단체.
         value = re.sub(r"\([^()]*?(?:첨부|별도\s*제출|해당\s*시)[^()]*\)", "", value)
     value = re.sub(r"신청\s*서식", "신청서", value)
@@ -168,8 +171,6 @@ def _contains_form_heading(tokens: list[str], text: str) -> bool:
             in_checklist = False
         elif _DOCUMENT_LABEL.search(raw) or re.fullmatch(r"\s*(?:제출|구비|신청)\s*서류\s*", raw):
             in_checklist = True
-        if in_checklist:
-            continue
         heading = re.sub(r"^\s*\[(?:별지|서식)[^]]*\]\s*", "", raw).strip()
         heading = re.sub(r"^\d+[.)]\s*", "", heading)
         # A checklist mention is not proof that the template is in this file.
@@ -182,8 +183,17 @@ def _contains_form_heading(tokens: list[str], text: str) -> bool:
         if not re.search(r"(?:" + _FORM.pattern + r")(?:\s*\([^()]+\))?$", heading):
             continue
         following = "\n".join(lines[index + 1 : index + 8])
+        if in_checklist:
+            # HWPX tables often have no blank line before the next full form.
+            # A bare document name and a checklist explanation are insufficient.
+            fields = re.findall(
+                r"성명|소속|생년월일|AI\s*기술명|아이디어명|기술요약|최종목표", following
+            )
+            if not re.match(r"(?:20\d{2}년|\[별지|\[서식)", raw.strip()) or len(set(fields)) < 2:
+                continue
         if re.search(
-            r"기관명|신청기관|사업명|대표자|소재지|사업\s*개요|추진\s*계획|성명", following
+            r"기관명|신청기관|사업명|대표자|소재지|사업\s*개요|추진\s*계획|성명|"
+            r"AI\s*기술명|아이디어명", following
         ):
             return True
     return False
@@ -194,23 +204,38 @@ def _form(title: str, parts: list[SourcePart]) -> SourcePart | None:
     if not any(_FORM.fullmatch(token) for token in tokens):
         return None
     candidates = []
+    dedicated_forms = []
     for part in parts:
-        if (
-            not part.name
-            or not _FORM.search(part.name)
-            or re.search(r"예시|견본|샘플|참고용", part.name)
-            or (
-                re.search(r"공고|운영지침|안내문", part.name)
-                and not re.search(r"양식|서식", part.name)
-            )
+        if not part.name or re.search(
+            r"예시|견본|샘플|참고|운영지침", (part.archive or "") + part.name
         ):
             continue
-        # Require every distinguishing name token; never match on 신청서 alone
-        # when the requirement names a particular application procedure.
-        if _name_matches(tokens, part.name) or _contains_form_heading(tokens, part.text):
+        embedded = _contains_form_heading(tokens, part.text)
+        dedicated = (
+            _FORM.search(part.name)
+            and not re.search(r"공고|안내문", part.name)
+            and _name_matches(tokens, part.name)
+        )
+        if dedicated:
+            dedicated_forms.append(part)
+        elif embedded:
             candidates.append(part)
-    unique = {(p.url, p.name, p.archive): p for p in candidates}
-    return next(iter(unique.values())) if len(unique) == 1 else None
+    unique = {(p.url, p.name, p.archive): p for p in dedicated_forms or candidates}
+    if len(unique) == 1:
+        return next(iter(unique.values()))
+    # Same-named editable/PDF editions of one bundle are not different forms.
+    # Keep ambiguous names, archives and duplicate editions unresolved.
+    editions = list(unique.values())
+    stems = {
+        (re.sub(r"\s+", "", unicodedata.normalize("NFKC", p.name.rsplit(".", 1)[0])), p.archive)
+        for p in editions
+    }
+    extensions = [re.search(r"\.(hwpx?|docx?|pdf)$", p.name or "", re.I) for p in editions]
+    formats = [m[1].lower() for m in extensions if m]
+    if len(stems) == 1 and len(set(formats)) == len(editions):
+        order = {"hwpx": 0, "hwp": 1, "docx": 2, "doc": 3, "pdf": 4}
+        return min(editions, key=lambda p: order[p.name.rsplit(".", 1)[-1].lower()])
+    return None
 
 
 def _reusable_items(
@@ -314,7 +339,21 @@ def source_submission_documents(document: ReportDocumentRequest) -> list[Submiss
     requirements = collect_submission_requirements(
         source_document, include_referenced_enclosures=True
     )
-    return [
+    recovered = []
+    for part in parts:
+        if source_priority(part) != 0:
+            continue
+        for row in submission_item_rows(part.text):
+            source_name = f"{part.archive} / {part.name}" if part.archive else part.name
+            source = RequirementSource(
+                origin="ATTACHMENT" if part.name else "NOTICE_BODY",
+                attachment_name=source_name, section_title="제출 서류", excerpt=row.quote,
+            )
+            recovered.append(SubmissionDocument(
+                row.title, _form(row.title, parts), row.level,
+                detail=row.detail, source=source,
+            ))
+    return display_submission_documents(recovered) + [
         SubmissionDocument(
             row.title, _form(row.title, parts), str(row.level), row.condition or None,
             row.as_item().detail, row.condition or None, source=row.source,
