@@ -184,7 +184,7 @@ class MonitoringRunControllerIntegrationTest {
     @Test
     void 감지_문서_목록을_조회한다() throws Exception {
         LocalDateTime checkedAt = LocalDateTime.of(2026, 8, 21, 13, 31, 55);
-        given(documentDetectionQueryService.findAll(0, 20, null, null, null, DocumentDetectionSort.LATEST)).willReturn(new PageResponse<>(
+        given(documentDetectionQueryService.findAll(0, 20, null, null, null, DocumentDetectionSort.LATEST, null, null)).willReturn(new PageResponse<>(
                 List.of(new DocumentDetectionSummaryResponse(
                         15L, 8L, 10L, "기후에너지환경부", "공지/공고", "기업 지원사업 모집 공고",
                         DocumentChangeType.NEW_DOCUMENT, 2, DocumentImportance.HIGH, checkedAt
@@ -212,4 +212,42 @@ class MonitoringRunControllerIntegrationTest {
         mockMvc.perform(get("/api/document-detections?size=101"))
                 .andExpect(status().isBadRequest());
     }
+    @MockitoBean
+    private com.publicmonitor.backend.domain.document.service.DocumentBookmarkService bookmarkService;
+
+    @Test
+    void 검색어와_우선순위를_조회서비스에_전달한다() throws Exception {
+        given(documentDetectionQueryService.findAll(0, 20, null, null, 7L, DocumentDetectionSort.OPPORTUNITY_SCORE,
+                "스마트워치", com.publicmonitor.backend.domain.analysis.entity.OpportunityPriority.HIGH))
+                .willReturn(new PageResponse<>(List.of(), 0, 20, 0, 0, true, true));
+        mockMvc.perform(get("/api/document-detections").param("query", "스마트워치").param("priority", "HIGH")
+                        .param("runId", "7").param("sort", "OPPORTUNITY_SCORE"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(0));
+        org.mockito.Mockito.verify(documentDetectionQueryService).findAll(0, 20, null, null, 7L,
+                DocumentDetectionSort.OPPORTUNITY_SCORE, "스마트워치", com.publicmonitor.backend.domain.analysis.entity.OpportunityPriority.HIGH);
+    }
+
+    @Test
+    void 북마크_검색은_로그인_계정과_검색조건을_함께_전달한다() throws Exception {
+        var account = com.publicmonitor.backend.domain.user.entity.User.create("search-test", "test", com.publicmonitor.backend.domain.user.entity.Role.ADMIN);
+        org.springframework.test.util.ReflectionTestUtils.setField(account, "id", 4L);
+        given(bookmarkService.findAll(4L, 0, 20, null, null, DocumentDetectionSort.LATEST,
+                "AI", com.publicmonitor.backend.domain.analysis.entity.OpportunityPriority.NORMAL))
+                .willReturn(new PageResponse<>(List.of(), 0, 20, 0, 0, true, true));
+        mockMvc.perform(get("/api/bookmarks/documents").param("query", "AI").param("priority", "NORMAL")
+                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user(
+                                new com.publicmonitor.backend.global.security.CustomUserDetails(account))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(0));
+        org.mockito.Mockito.verify(bookmarkService).findAll(4L, 0, 20, null, null, DocumentDetectionSort.LATEST,
+                "AI", com.publicmonitor.backend.domain.analysis.entity.OpportunityPriority.NORMAL);
+    }
+
+    @Test
+    void 잘못된_우선순위와_과도한_검색어를_거부한다() throws Exception {
+        for (String path : List.of("/api/document-detections", "/api/bookmarks/documents")) {
+            mockMvc.perform(get(path).param("priority", "INVALID")).andExpect(status().isBadRequest());
+            mockMvc.perform(get(path).param("query", "a".repeat(501))).andExpect(status().isBadRequest());
+        }
+    }
+
 }

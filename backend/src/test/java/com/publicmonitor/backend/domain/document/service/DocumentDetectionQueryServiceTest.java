@@ -36,7 +36,7 @@ class DocumentDetectionQueryServiceTest {
                 DocumentChangeType.NEW_DOCUMENT, 2, DocumentImportance.HIGH, 59,
                 opportunityJson(), checkedAt
         );
-        given(detectionRepository.findSummaries(3L, null, null, PageRequest.of(0, 20)))
+        given(detectionRepository.findFilteredSummaries(3L, null, null, null, false, PageRequest.of(0, 20)))
                 .willReturn(new PageImpl<>(List.of(item), PageRequest.of(0, 20), 1));
 
         DocumentDetectionQueryService service = service();
@@ -65,7 +65,7 @@ class DocumentDetectionQueryServiceTest {
     @Test
     void 기회_점수순을_선택하면_점수순_조회_쿼리를_사용한다() {
         PageRequest pageRequest = PageRequest.of(0, 20);
-        given(detectionRepository.findSummariesOrderByOpportunityScore(null, null, null, pageRequest))
+        given(detectionRepository.findFilteredSummaries(null, null, null, null, true, pageRequest))
                 .willReturn(new PageImpl<>(List.of(), pageRequest, 0));
 
         PageResponse<DocumentDetectionSummaryResponse> response = service().findAll(
