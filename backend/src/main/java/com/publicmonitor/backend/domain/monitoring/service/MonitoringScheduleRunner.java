@@ -34,6 +34,7 @@ public class MonitoringScheduleRunner {
     private final MonitoringRunRepository runRepository;
     private final MonitoringRunService runService;
     private final Clock clock;
+    private final MonitoringCollectionRecovery collectionRecovery;
 
     @Scheduled(cron = "0 * * * * *", zone = "Asia/Seoul")
     public void runIfDue() {
@@ -44,6 +45,7 @@ public class MonitoringScheduleRunner {
         }
 
         LocalDate today = now.toLocalDate();
+        collectionRecovery.recover();
         schedule.markAttempted(today);
         scheduleRepository.save(schedule);
         if (runRepository.existsByStatusIn(ACTIVE_STATUSES)) {

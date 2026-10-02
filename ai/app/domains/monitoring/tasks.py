@@ -26,15 +26,26 @@ async def run_monitoring_job(job_id: UUID, request: MonitoringJobRequest) -> Non
 
     try:
         results = await asyncio.to_thread(_collect_sources, request.sources)
+        results = await AttachmentDownloader().enrich_results(results)
+        collection_request = CollectionResultRequest.from_collected(
+            request.run_id, job_id, results,
+        )
     except Exception:
         logger.exception(
             "모니터링 백그라운드 수집 실행 실패. run_id=%s job_id=%s",
             request.run_id,
             job_id,
         )
-        return
-
-    results = await AttachmentDownloader().enrich_results(results)
+        results = [
+            SourceCollectionResult(
+                source_id=source.source_id,
+                error_message="수집 작업을 완료하지 못했습니다. 다시 실행해 주세요.",
+            )
+            for source in request.sources
+        ]
+        collection_request = CollectionResultRequest.from_collected(
+            request.run_id, job_id, results,
+        )
 
     for result in results:
         if result.succeeded:
@@ -55,11 +66,6 @@ async def run_monitoring_job(job_id: UUID, request: MonitoringJobRequest) -> Non
                 result.error_message,
             )
 
-    collection_request = CollectionResultRequest.from_collected(
-        request.run_id,
-        job_id,
-        results,
-    )
     try:
         response = await CollectionResultClient().send(collection_request)
     except Exception:

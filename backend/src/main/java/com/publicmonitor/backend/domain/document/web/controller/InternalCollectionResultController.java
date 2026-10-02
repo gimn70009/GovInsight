@@ -28,10 +28,10 @@ public class InternalCollectionResultController {
             description = "Python이 수집한 소스별 게시글과 첨부파일 결과를 받아 변경을 감지하고 Oracle에 저장합니다. 외부 사용자용 API가 아닙니다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "수집 결과 저장 성공"),
+            @ApiResponse(responseCode = "200", description = "수집 결과 저장 성공 또는 중복·만료 결과 무시"),
             @ApiResponse(responseCode = "400", description = "요청값 검증 실패"),
             @ApiResponse(responseCode = "404", description = "실행 또는 소스를 찾을 수 없음"),
-            @ApiResponse(responseCode = "409", description = "이미 처리했거나 현재 상태에서 처리할 수 없는 결과")
+            @ApiResponse(responseCode = "409", description = "작업 ID 불일치 또는 실행에 포함되지 않은 소스")
     })
     @PostMapping
     public SuccessResponse<CollectionResultResponse> receive(

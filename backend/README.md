@@ -44,6 +44,21 @@ if (!(Test-Path src/main/resources/application.properties)) {
 
 `none`은 테이블을 생성하거나 변경하지 않으므로 현재 엔티티에 맞는 스키마가 준비되어 있어야 합니다.
 
+## 수집 결과 대기 시간과 복구
+
+수집 결과가 유실되거나 AI 프로세스가 중단되어도 다음 자동 실행을 막지 않도록, 수집 단계가 기본 1시간을 넘기면 실행·소스를 실패로 정리합니다. 시작 10초 후부터 1분마다 최대 100건을 확인하며 예약 실행 직전에도 정리합니다. 기존 데이터베이스 스키마를 그대로 사용합니다.
+
+| Spring 설정 | 기본값 | 설명 |
+| --- | --- | --- |
+| `app.monitoring.collection-recovery.enabled` | `true` | 수집 대기 시간 초과 정리 사용 |
+| `app.monitoring.collection-recovery.timeout` | `PT1H` | 접수 시각(없으면 요청 시각) 기준 상한, 예: `PT2H` |
+| `app.monitoring.collection-recovery.interval-ms` | `60000` | 복구 확인 간격 |
+| `app.monitoring.collection-recovery.initial-delay-ms` | `10000` | 시작 후 최초 확인 대기 |
+
+환경변수는 `APP_MONITORING_COLLECTIONRECOVERY_TIMEOUT`처럼 Spring의 환경변수 표기(점은 밑줄, 하이픈은 제거)를 사용할 수 있습니다. 정상 수집이 오래 걸리면 상한을 늘리세요. COLLECTED 이후 분석·제안 작업은 이 시간 제한 대상이 아닙니다. 만료 후 도착한 결과는 무시하며 Python 작업의 강제 종료·자동 재수집은 하지 않습니다.
+
+`POST /internal/monitoring/collection-results`는 같은 실행의 중복 또는 만료 후 콜백에 HTTP 200과 빈 `data.documents`를 반환합니다. 잘못된 작업 ID는 기존 409 응답을 유지합니다. Python 재시도를 켜기 전에 이 백엔드 변경을 먼저 적용하세요.
+
 ## 수정 공고의 비교 입력
 
 내부 분석 요청의 `documents[].previousVersion.attachments`에 직전 버전의 첨부 목록을 전달합니다. 각 항목은 현재 첨부와 같은 `attachmentId`, `fileName`, `extractedText` 형식이며, 파싱 완료 상태의 본문만 포함하고 읽기 실패는 `extractedText: null`로 전달합니다.
