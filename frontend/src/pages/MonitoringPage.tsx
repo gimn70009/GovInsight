@@ -5,12 +5,12 @@ import { RunWarningTooltip } from '../components/RunWarningTooltip'
 import { useToast } from '../hooks/useToast'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Activity, Building2, CalendarDays, Clock3, Play, RefreshCw, Save } from 'lucide-react'
-import { api } from '../api/client'
-import type { MonitoringRun, MonitoringSchedule, MonitoringScheduleFrequency, MonitoringSource, RunStatus, Weekday } from '../api/types'
+import { api, ApiError } from '../api/client'
+import type { MonitoringRunActivity, MonitoringRun, MonitoringSchedule, MonitoringScheduleFrequency, MonitoringSource, RunStatus, Weekday } from '../api/types'
 import { Badge, EmptyState, InlineError, Loading, Pagination, Toast } from '../components/ui'
 
-const runLabel: Record<RunStatus, string> = { REQUESTED: '요청됨', ACCEPTED: '접수됨', COLLECTED: '수집 완료', COMPLETED: '완료', FAILED: '실패' }
-const runTone: Record<RunStatus, string> = { REQUESTED: 'info', ACCEPTED: 'info', COLLECTED: 'warning', COMPLETED: 'success', FAILED: 'danger' }
+const runLabel: Record<RunStatus, string> = { REQUESTED: '요청됨', ACCEPTED: '접수됨', RUNNING: '수집 중', COLLECTED: '수집 완료', COMPLETED: '완료', FAILED: '실패' }
+const runTone: Record<RunStatus, string> = { REQUESTED: 'info', ACCEPTED: 'info', RUNNING: 'info', COLLECTED: 'warning', COMPLETED: 'success', FAILED: 'danger' }
 const formatDate = (value: string) => new Intl.DateTimeFormat('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
 const weekdays: Array<{ value: Weekday; label: string }> = [
   { value: 'MONDAY', label: '월' }, { value: 'TUESDAY', label: '화' }, { value: 'WEDNESDAY', label: '수' },
@@ -26,6 +26,10 @@ export default function MonitoringPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [running, setRunning] = useState(false)
+  const [activity, setActivity] = useState<MonitoringRunActivity | null>(null)
+  const [activityError, setActivityError] = useState('')
+  const runRequestRef = useRef(false)
+  const activitySequence = useRef(0)
   const [toast, setToast] = useToast()
   const [schedule, setSchedule] = useState<MonitoringSchedule>(defaultSchedule)
   const [savedSchedule, setSavedSchedule] = useState<MonitoringSchedule | null>(null)
@@ -37,6 +41,38 @@ export default function MonitoringPage() {
   const sourceRevision = useRef(0)
   const scheduleSaveRef = useRef(false)
   const scheduleRevision = useRef(0)
+
+  const refreshActivity = useCallback(async () => {
+    if (runRequestRef.current) return
+    const sequence = ++activitySequence.current
+    try {
+      const state = await api.getRunActivity()
+      if (sequence !== activitySequence.current) return
+      setActivity(state)
+      setActivityError('')
+    } catch {
+      if (sequence !== activitySequence.current) return
+      setActivity(null)
+      setActivityError('진행 중인 모니터링을 확인하지 못했습니다. 잠시 후 다시 확인합니다.')
+    }
+  }, [])
+
+  const cancelActivity = useCallback(() => { activitySequence.current++ }, [])
+  useEffect(() => {
+    void refreshActivity()
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refreshActivity()
+    }, 5_000)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refreshActivity()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      cancelActivity()
+      window.clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [refreshActivity, cancelActivity])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -116,14 +152,27 @@ export default function MonitoringPage() {
   }
 
   const runNow = async () => {
+    if (runRequestRef.current || !activity || activity.running) return
+    runRequestRef.current = true
+    activitySequence.current++
     setRunning(true)
+    setError('')
     try {
-      await api.createRun()
-      setToast('모니터링을 시작했어요. 결과가 준비되면 이력에 표시됩니다.')
-      setRunPage(0)
-      await load()
-    } catch (cause) { setError(cause instanceof Error ? cause.message : '모니터링을 시작하지 못했습니다.') }
-    finally { setRunning(false) }
+      const accepted = await api.createRun()
+      setActivity({ running: true, runId: accepted.runId, status: accepted.status })
+      setToast('모니터링을 시작했어요. 완료될 때까지 추가 실행은 잠깐 기다려 주세요.')
+      if (runPage === 0) await load()
+      else setRunPage(0)
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 409) {
+        setActivity({ running: true, runId: null, status: null })
+      }
+      setError(cause instanceof Error ? cause.message : '모니터링을 시작하지 못했습니다.')
+    } finally {
+      runRequestRef.current = false
+      setRunning(false)
+      void refreshActivity()
+    }
   }
 
   const changeFrequency = (frequency: MonitoringScheduleFrequency) => {
@@ -169,8 +218,10 @@ export default function MonitoringPage() {
 
   return (
     <div className="page">
-      <header className="page-header"><div><span className="eyebrow">MONITORING</span><h1>모니터링</h1><p>살펴볼 기관을 관리하고, 필요할 때 바로 모니터링을 시작하세요.</p></div><button className="button button--primary button--run" onClick={runNow} disabled={loading || running || savingSources || sourceChanges.dirtyCount > 0 || activeCount === 0}>{running ? <RefreshCw size={18} className="spin" /> : <Play size={18} fill="currentColor" />}{running ? '확인 중이에요' : '지금 모니터링 실행'}</button></header>
+      <header className="page-header"><div><span className="eyebrow">MONITORING</span><h1>모니터링</h1><p>살펴볼 기관을 관리하고, 필요할 때 바로 모니터링을 시작하세요.</p></div><button className="button button--primary button--run" onClick={runNow} disabled={loading || running || !activity || activity.running || savingSources || sourceChanges.dirtyCount > 0 || activeCount === 0}>{running ? <RefreshCw size={18} className="spin" /> : <Play size={18} fill="currentColor" />}{running ? '시작 중이에요' : !activity ? '실행 상태 확인 중' : activity.running ? '모니터링 진행 중' : '지금 모니터링 실행'}</button></header>
       {error && <InlineError message={error} />}
+      {activityError && <InlineError message={activityError} />}
+      {activity?.running && <p className="muted" role="status">모니터링이 진행 중입니다. 분석과 보고서 생성이 완료되면 다시 실행할 수 있어요.</p>}
       <section className="metric-grid">
         <article className="metric-card"><span className="metric-card__icon metric-card__icon--blue"><Building2 size={20} /></span><div><small>등록된 소스</small><strong>{sources.length}<em>개</em></strong><span>{activeCount}개가 확인 중이에요</span></div></article>
         <article className="metric-card"><span className="metric-card__icon metric-card__icon--green"><Activity size={20} /></span><div><small>최근 실행 상태</small><strong className="metric-card__status">{runs[0] ? runLabel[runs[0].status] : '기록 없음'}</strong><span>{runs[0] ? formatDate(runs[0].requestedAt) : '첫 실행을 기다리고 있어요'}</span></div></article>

@@ -1,6 +1,7 @@
 package com.publicmonitor.backend.domain.document.service;
 
 import com.publicmonitor.backend.domain.document.entity.DocumentBookmark;
+import com.publicmonitor.backend.domain.analysis.entity.OpportunityPriority;
 import com.publicmonitor.backend.domain.document.exception.DocumentDetectionException;
 import com.publicmonitor.backend.domain.document.exception.DocumentDetectionResponseCode;
 import com.publicmonitor.backend.domain.document.repository.*;
@@ -48,11 +49,20 @@ public class DocumentBookmarkService {
             Long userId, int page, int size, LocalDateTime from, LocalDateTime to,
             DocumentDetectionSort sort
     ) {
+        return findAll(userId, page, size, from, to, sort, null, null);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<DocumentDetectionSummaryResponse> findAll(
+            Long userId, int page, int size, LocalDateTime from, LocalDateTime to,
+            DocumentDetectionSort sort, String query, OpportunityPriority priority
+    ) {
         if (from != null && to != null && from.isAfter(to)) {
             throw new DocumentDetectionException(DocumentDetectionResponseCode.INVALID_DATE_RANGE);
         }
-        var rows = detections.findBookmarkedSummaries(userId, null, from, to,
-                sort == DocumentDetectionSort.OPPORTUNITY_SCORE, PageRequest.of(page, size));
-        return PageResponse.from(rows.map(queryService::toResponse));
+        String pattern = DocumentDetectionQueryService.searchPattern(query);
+        return queryService.filteredPage(PageRequest.of(page, size), priority,
+                batch -> detections.findFilteredBookmarkedSummaries(userId, null, from, to,
+                        pattern, sort == DocumentDetectionSort.OPPORTUNITY_SCORE, batch));
     }
 }

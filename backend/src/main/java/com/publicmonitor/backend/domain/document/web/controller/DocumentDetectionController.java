@@ -15,6 +15,8 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
+import com.publicmonitor.backend.domain.analysis.entity.OpportunityPriority;
 import java.time.LocalDateTime;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -42,7 +44,7 @@ public class DocumentDetectionController {
         this.similarNoticeService = similarNoticeService;
     }
 
-    @Operation(summary = "감지 문서 목록 조회", description = "최근 확인 순서 또는 기회 점수 순서로 감지 문서를 조회합니다.")
+    @Operation(summary = "감지 문서 목록 조회", description = "실행·기간 범위 전체에서 기관·게시판·제목(query, 최대 500자)과 우선순위(priority: HIGH/NORMAL/LOW)로 필터링한 뒤 페이지를 반환합니다. 검색은 대소문자를 구분하지 않는 일반 문자열 검색입니다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "감지 문서 조회 성공"),
             @ApiResponse(responseCode = "400", description = "잘못된 조회 일시 범위"),
@@ -57,9 +59,11 @@ public class DocumentDetectionController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
-            @RequestParam(defaultValue = "LATEST") DocumentDetectionSort sort
+            @RequestParam(defaultValue = "LATEST") DocumentDetectionSort sort,
+            @RequestParam(required = false) @Size(max = 500) String query,
+            @RequestParam(required = false) OpportunityPriority priority
     ) {
-        return SuccessResponse.ok(queryService.findAll(page, size, from, to, runId, sort));
+        return SuccessResponse.ok(queryService.findAll(page, size, from, to, runId, sort, query, priority));
     }
 
     @Operation(summary = "유사 공고 비교", description = "엄격한 제목·사업 내용 기준을 통과한 유사 공고를 최대 3건 비교합니다.")

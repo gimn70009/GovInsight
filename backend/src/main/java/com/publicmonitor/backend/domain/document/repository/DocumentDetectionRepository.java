@@ -33,7 +33,9 @@ public interface DocumentDetectionRepository extends JpaRepository<DocumentDetec
     String SUMMARY_COUNT_QUERY = """
             select count(detection)
             from DocumentDetection detection
+            join detection.documentVersion version
             join detection.monitoringRunSource runSource
+            join runSource.monitoringSource source
             where (:runId is null or runSource.monitoringRun.id = :runId)
               and (:fromDateTime is null or detection.detectedAt >= :fromDateTime)
               and (:toDateTime is null or detection.detectedAt <= :toDateTime)
@@ -85,5 +87,33 @@ public interface DocumentDetectionRepository extends JpaRepository<DocumentDetec
             @Param("userId") Long userId, @Param("runId") Long runId,
             @Param("fromDateTime") LocalDateTime fromDateTime,
             @Param("toDateTime") LocalDateTime toDateTime,
+            @Param("byScore") boolean byScore, Pageable pageable);
+
+    String SEARCH_FILTER = """
+              and (:searchPattern is null or
+                   lower(concat(source.organizationName, ' ', source.boardName, ' ', version.title))
+                       like :searchPattern escape '!')
+            """;
+    String SEARCH_ORDER = """
+            order by case when :byScore = true then coalesce(analysis.opportunityScore, -1) else 0 end desc,
+                     detection.detectedAt desc, detection.id desc
+            """;
+
+    @Query(value = SUMMARY_QUERY + SEARCH_FILTER + SEARCH_ORDER,
+            countQuery = SUMMARY_COUNT_QUERY + SEARCH_FILTER)
+    Page<DocumentDetectionSummaryRow> findFilteredSummaries(
+            @Param("runId") Long runId,
+            @Param("fromDateTime") LocalDateTime fromDateTime,
+            @Param("toDateTime") LocalDateTime toDateTime,
+            @Param("searchPattern") String searchPattern,
+            @Param("byScore") boolean byScore, Pageable pageable);
+
+    @Query(value = SUMMARY_QUERY + BOOKMARK_FILTER + SEARCH_FILTER + SEARCH_ORDER,
+            countQuery = SUMMARY_COUNT_QUERY + BOOKMARK_FILTER + SEARCH_FILTER)
+    Page<DocumentDetectionSummaryRow> findFilteredBookmarkedSummaries(
+            @Param("userId") Long userId, @Param("runId") Long runId,
+            @Param("fromDateTime") LocalDateTime fromDateTime,
+            @Param("toDateTime") LocalDateTime toDateTime,
+            @Param("searchPattern") String searchPattern,
             @Param("byScore") boolean byScore, Pageable pageable);
 }

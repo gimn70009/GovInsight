@@ -12,6 +12,7 @@ import type {
   DocumentDetection,
   LoginResponse,
   MonitoringRun,
+  MonitoringRunActivity,
   MonitoringRunWarnings,
   MonitoringSchedule,
   MonitoringSchedulePayload,
@@ -20,6 +21,7 @@ import type {
   SimilarNoticeResult,
   LegalPairResult,
   PageResponse,
+  OpportunityPriority,
 } from './types'
 
 const TOKEN_KEY = 'govinsight.accessToken'
@@ -101,6 +103,7 @@ export const api = {
     request<MonitoringSource[]>('/api/monitoring-sources/settings', {
       method: 'PATCH', body: JSON.stringify({ sources }),
     }),
+  getRunActivity: () => request<MonitoringRunActivity>('/api/monitoring-runs/active'),
   createRun: () => request<CreateMonitoringRunResponse>('/api/monitoring-runs', { method: 'POST' }),
   getRuns: (page = 0, size = 10) =>
     request<PageResponse<MonitoringRun>>(`/api/monitoring-runs?page=${page}&size=${size}`),
@@ -120,13 +123,18 @@ export const api = {
     runId?: number,
     sort: 'LATEST' | 'OPPORTUNITY_SCORE' = 'LATEST',
     savedOnly = false,
+    query = '',
+    priority?: OpportunityPriority,
+    signal?: AbortSignal,
   ) => {
     const params = new URLSearchParams({ page: String(page), size: String(size) })
     if (from) params.set('from', from)
     if (to) params.set('to', to)
     if (runId) params.set('runId', String(runId))
     params.set('sort', sort)
-    return request<PageResponse<DocumentDetection>>(`${savedOnly ? "/api/bookmarks/documents" : "/api/document-detections"}?${params}`)
+    if (query.trim()) params.set('query', query.trim())
+    if (priority) params.set('priority', priority)
+    return request<PageResponse<DocumentDetection>>(`${savedOnly ? "/api/bookmarks/documents" : "/api/document-detections"}?${params}`, { signal })
   },
   getBookmarkIds: () => request<number[]>('/api/bookmarks/versions'),
   setBookmark: (versionId: number, saved: boolean) =>

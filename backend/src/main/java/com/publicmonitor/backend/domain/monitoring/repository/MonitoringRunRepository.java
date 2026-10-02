@@ -17,6 +17,9 @@ public interface MonitoringRunRepository extends JpaRepository<MonitoringRun, Lo
 
     boolean existsByStatusIn(Collection<MonitoringRunStatus> statuses);
 
+    java.util.Optional<MonitoringRun> findFirstByStatusInOrderByRequestedAtAscIdAsc(
+            Collection<MonitoringRunStatus> statuses);
+
     @Query("""
             select r.id from MonitoringRun r
             where r.status in :statuses and coalesce(r.acceptedAt, r.requestedAt) <= :cutoff

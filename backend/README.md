@@ -73,6 +73,20 @@ if (!(Test-Path src/main/resources/application.properties)) {
 
 감지 상세 응답에 `analysis.applicationDeadline` 문자열 또는 `null`을 포함합니다. 저장된 `comparisonSummary.applicationDeadline`을 전달하며 기존 데이터에 날짜가 없거나 비교 요약을 읽을 수 없으면 `null`입니다. 프론트는 이 날짜로 접수 종료 여부를 판단하며 일반 요약의 종료 관련 문구를 사용하지 않습니다. DB 스키마 변경은 없습니다.
 
+## 감지 문서·북마크 목록 검색
+
+`GET /api/document-detections`와 `GET /api/bookmarks/documents`는 선택 쿼리 매개변수 `query`(기관·게시판·제목 부분 일치, 최대 500자)와 `priority`(`HIGH`, `NORMAL`, `LOW`)를 받습니다. 생략하면 해당 필터를 적용하지 않습니다. 검색어 앞뒤 공백과 대소문자는 무시하고 SQL 와일드카드 문자는 일반 문자로 처리합니다.
+
+선택한 실행·기간 또는 내 북마크 범위 전체에 조건을 적용한 뒤 `page`·`size`로 나누며 건수도 필터 결과 기준입니다. 북마크는 전체 실행 중 내가 저장한 버전의 최신 감지 결과를 한 번씩 표시하는 기존 범위를 유지합니다. 우선순위는 기존 세부 점수 계산을 사용하며, 선택 시 후보 전체를 200건씩 검사하므로 대량 데이터에서는 조회 시간이 증가할 수 있습니다. DB 스키마 변경과 기존 분석의 재생성은 필요하지 않습니다.
+
+## 모니터링 중복 실행 차단
+
+`POST /api/monitoring-runs`는 REQUESTED/ACCEPTED/RUNNING/COLLECTED 실행이 있으면 HTTP 409와 `MONITORING_RUN_409_1`을 반환합니다. 수동·예약 요청이 동시에 들어와도 DB 잠금으로 새 실행을 하나만 접수합니다. 분석·보고서 생성이 끝나 COMPLETED가 되거나 FAILED로 정리되면 다시 실행할 수 있습니다.
+
+인증된 `GET /api/monitoring-runs/active`의 `data`는 `{ "running": true, "runId": 123, "status": "COLLECTED" }` 형태입니다. 진행 중 실행이 없으면 `running`은 false, 나머지는 null입니다. 실행 목록의 현재 페이지와 관계없이 전체에서 조회합니다. 화면에서는 표시 중 5초마다 확인하고 진행 중 또는 조회 실패 시 실행 버튼을 잠급니다.
+
+스키마 변경은 없습니다. 기존 수집 시간 초과 복구를 유지하며 서버 재시작 후 작업 이어하기나 COLLECTED 상태의 분석 정체 복구는 추가하지 않습니다.
+
 ## API 확인과 테스트
 
 - [Swagger UI](http://localhost:8080/swagger-ui.html): `Public API`는 화면용 API, `Internal API`는 모듈 간 통신입니다.

@@ -1,5 +1,5 @@
 import { useSearchParams } from 'react-router-dom'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ArrowLeft,
   Bookmark,
@@ -209,6 +209,7 @@ export default function DocumentsPage() {
   const [savingIds, setSavingIds] = useState<number[]>([])
   const savingRef = useRef(new Set<number>())
   const loadSequence = useRef(0)
+  const loadAbort = useRef<AbortController | null>(null)
   const [documents, setDocuments] = useState<DocumentDetection[]>([])
   const [runs, setRuns] = useState<MonitoringRun[]>([])
   const [selectedRunId, setSelectedRunId] = useState<number | 'ALL' | null>(() => Number.isSafeInteger(linkedRunId) && linkedRunId > 0 ? linkedRunId : null)
@@ -218,6 +219,7 @@ export default function DocumentsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
+  const [appliedQuery, setAppliedQuery] = useState('')
   const [priorityFilter, setPriorityFilter] = useState<'ALL' | OpportunityPriority>('ALL')
   const [orderByOpportunityScore, setOrderByOpportunityScore] = useState(false)
   const [from, setFrom] = useState('')
@@ -243,6 +245,9 @@ export default function DocumentsPage() {
   const load = useCallback(async () => {
     if (selectedRunId === null) return
     const sequence = ++loadSequence.current
+    loadAbort.current?.abort()
+    const controller = new AbortController()
+    loadAbort.current = controller
     setLoading(true)
     setError('')
     try {
@@ -254,6 +259,9 @@ export default function DocumentsPage() {
         savedOnly || selectedRunId === 'ALL' ? undefined : selectedRunId,
         orderByOpportunityScore ? 'OPPORTUNITY_SCORE' : 'LATEST',
         savedOnly,
+        appliedQuery,
+        priorityFilter === 'ALL' ? undefined : priorityFilter,
+        controller.signal,
       )
       if (sequence !== loadSequence.current) return
       setDocuments(data.content)
@@ -264,7 +272,7 @@ export default function DocumentsPage() {
     } finally {
       if (sequence === loadSequence.current) setLoading(false)
     }
-  }, [page, appliedFrom, appliedTo, selectedRunId, orderByOpportunityScore, savedOnly])
+  }, [page, appliedFrom, appliedTo, selectedRunId, orderByOpportunityScore, savedOnly, appliedQuery, priorityFilter])
 
   const currentLoad = useRef(load)
   useEffect(() => { currentLoad.current = load }, [load])
@@ -273,9 +281,23 @@ export default function DocumentsPage() {
     void loadRuns()
   }, [loadRuns])
 
+  const cancelLoad = useCallback(() => {
+    loadSequence.current++
+    loadAbort.current?.abort()
+  }, [])
+
   useEffect(() => {
     void load()
-  }, [load])
+    return cancelLoad
+  }, [load, cancelLoad])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setPage(0)
+      setAppliedQuery(query.trim())
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [query])
 
   useEffect(() => {
     let active = true
@@ -309,17 +331,6 @@ export default function DocumentsPage() {
       setSavingIds([...savingRef.current])
     }
   }
-
-  const filtered = useMemo(
-    () =>
-      documents.filter((item) => {
-        const matchesQuery = `${item.organizationName} ${item.boardName} ${item.title}`
-          .toLowerCase()
-          .includes(query.toLowerCase())
-        return matchesQuery && (priorityFilter === 'ALL' || item.opportunityPriority === priorityFilter)
-      }),
-    [documents, query, priorityFilter],
-  )
 
   const applyDateRange = () => {
     if (from && to && from > to) {
@@ -399,7 +410,7 @@ export default function DocumentsPage() {
         <div className="panel-header document-filter-header">
           <div className="document-filter-header__filters">
             <button className={`saved-filter${savedOnly ? ' active' : ''}`} aria-pressed={savedOnly}
-              onClick={() => { setSavedOnly(!savedOnly); setPage(0); setQuery(''); setPriorityFilter('ALL'); resetDateRange() }}>
+              onClick={() => { setSavedOnly(!savedOnly); setPage(0); setQuery(''); setAppliedQuery(''); setPriorityFilter('ALL'); resetDateRange() }}>
               <Bookmark size={15} fill={savedOnly ? 'currentColor' : 'none'} />저장한 게시글
               {bookmarkReady && <span>{bookmarkIds.length}</span>}
             </button>
@@ -408,7 +419,7 @@ export default function DocumentsPage() {
                 <button
                   key={value}
                   className={priorityFilter === value ? 'active' : ''}
-                  onClick={() => setPriorityFilter(value)}
+                  onClick={() => { setPage(0); setPriorityFilter(value) }}
                 >
                   {value === 'ALL' ? '전체' : opportunityPriority[value][0]}
                 </button>
@@ -462,7 +473,7 @@ export default function DocumentsPage() {
             </div>
             <label className="search-box">
               <Search size={17} />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="기관, 게시판, 제목 검색" />
+              <input maxLength={500} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="기관, 게시판, 제목 검색" />
             </label>
             <button className="icon-button" onClick={() => void load()} title="새로고침">
               <RefreshCw size={17} />
@@ -472,7 +483,7 @@ export default function DocumentsPage() {
 
         {loading ? (
           <Loading />
-        ) : filtered.length === 0 ? (
+        ) : documents.length === 0 ? (
           <EmptyState
             icon={<FileSearch2 />}
             title={savedOnly && bookmarkIds.length === 0 ? "아직 저장한 게시글이 없어요" : "조건에 맞는 게시글이 없어요"}
@@ -480,7 +491,7 @@ export default function DocumentsPage() {
           />
         ) : (
           <div className="document-list">
-            {filtered.map((item) => (
+            {documents.map((item) => (
               <div className="document-row-shell" key={item.detectionId}>
               <button className="document-row" onClick={() => { setSelectedId(item.detectionId); setSelectedVersionId(item.versionId); setBookmarkError('') }}>
                 <div className="document-row__org">

@@ -11,6 +11,11 @@ public enum MonitoringRunResponseCode implements BaseResponseCode {
 
     NOT_FOUND("MONITORING_RUN_404_1", 404, "모니터링 실행 이력을 찾을 수 없습니다."),
 
+    ALREADY_RUNNING(
+            "MONITORING_RUN_409_1",
+            HttpStatus.CONFLICT.value(),
+            "이미 모니터링이 진행 중입니다. 완료 후 다시 실행해 주세요."
+    ),
     NO_ACTIVE_SOURCE(
             "MONITORING_RUN_422_1",
             HttpStatus.UNPROCESSABLE_CONTENT.value(),
