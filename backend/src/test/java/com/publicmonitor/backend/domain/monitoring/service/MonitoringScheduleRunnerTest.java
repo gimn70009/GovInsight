@@ -30,6 +30,7 @@ class MonitoringScheduleRunnerTest {
     @Mock MonitoringScheduleRepository scheduleRepository;
     @Mock MonitoringRunRepository runRepository;
     @Mock MonitoringRunService runService;
+    @Mock MonitoringCollectionRecovery collectionRecovery;
 
     private MonitoringScheduleRunner runner;
     private MonitoringSchedule schedule;
@@ -42,7 +43,8 @@ class MonitoringScheduleRunnerTest {
                 scheduleRepository,
                 runRepository,
                 runService,
-                Clock.fixed(Instant.parse("2026-09-02T00:00:00Z"), ZoneOffset.UTC)
+                Clock.fixed(Instant.parse("2026-09-02T00:00:00Z"), ZoneOffset.UTC),
+                collectionRecovery
         );
         given(scheduleRepository.findAll()).willReturn(List.of(schedule));
     }
@@ -55,6 +57,9 @@ class MonitoringScheduleRunnerTest {
 
         runner.runIfDue();
 
+        var order = org.mockito.Mockito.inOrder(collectionRecovery, runRepository);
+        order.verify(collectionRecovery).recover();
+        order.verify(runRepository).existsByStatusIn(org.mockito.ArgumentMatchers.any());
         verify(scheduleRepository).save(schedule);
         verify(runService).create(MonitoringTriggerType.SCHEDULED);
     }
@@ -66,6 +71,9 @@ class MonitoringScheduleRunnerTest {
 
         runner.runIfDue();
 
+        var order = org.mockito.Mockito.inOrder(collectionRecovery, runRepository);
+        order.verify(collectionRecovery).recover();
+        order.verify(runRepository).existsByStatusIn(org.mockito.ArgumentMatchers.any());
         verify(scheduleRepository).save(schedule);
         verify(runService, never()).create(MonitoringTriggerType.SCHEDULED);
     }

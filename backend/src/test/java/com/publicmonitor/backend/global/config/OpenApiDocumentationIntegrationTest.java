@@ -18,6 +18,10 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+@MockitoBean(types = {
+        com.publicmonitor.backend.domain.monitoring.service.MonitoringCollectionRecovery.class,
+        com.publicmonitor.backend.domain.monitoring.service.MonitoringCollectionRecoveryService.class
+})
 @SpringBootTest(properties = {
     "app.report.recovery.enabled=false",
     "app.telegram.commands.enabled=false",

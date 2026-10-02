@@ -141,3 +141,43 @@ def prevent_real_attachment_download(monkeypatch: pytest.MonkeyPatch) -> None:
         "app.domains.monitoring.tasks.AttachmentDownloader.enrich_results",
         enrich_results,
     )
+
+@pytest.mark.parametrize("stage", ["collection", "attachments", "serialization"])
+def test_unexpected_failure_delivers_failed_sources_without_raw_error(monkeypatch, stage):
+    delivered = []
+
+    def collect(sources):
+        if stage == "collection":
+            raise RuntimeError("private error details")
+        if stage == "serialization":
+            return []  # Empty source results cannot be serialized as a valid callback.
+        return [SourceCollectionResult(source_id=source.source_id) for source in sources]
+
+    async def enrich(_downloader, results):
+        if stage == "attachments":
+            raise RuntimeError("private error details")
+        return results
+
+    async def send(_client, request):
+        delivered.append(request)
+        return type("Response", (), {"data": type("Data", (), {"documents": []})()})()
+
+    monkeypatch.setattr("app.domains.monitoring.tasks._collect_sources", collect)
+    monkeypatch.setattr("app.domains.monitoring.tasks.AttachmentDownloader.enrich_results", enrich)
+    monkeypatch.setattr("app.domains.monitoring.tasks.CollectionResultClient.send", send)
+    request = MonitoringJobRequest.model_validate({
+        "runId": 5,
+        "sources": [{
+            "sourceId": source_id, "organizationName": "기관", "boardName": "공고",
+            "listUrl": "https://example.org", "detailFetchCount": 1,
+        } for source_id in [1, 2]],
+    })
+    job_id = UUID("3ed1132b-8d61-45d9-bfab-06c1ed96f202")
+    asyncio.run(run_monitoring_job(job_id, request))
+    assert len(delivered) == 1
+    assert delivered[0].run_id == 5
+    assert delivered[0].job_id == job_id
+    assert [source.source_id for source in delivered[0].sources] == [1, 2]
+    assert all(source.status == "FAILED" for source in delivered[0].sources)
+    assert all(source.documents == [] for source in delivered[0].sources)
+    assert "private error details" not in delivered[0].model_dump_json()

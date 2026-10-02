@@ -144,6 +144,25 @@ public class MonitoringRun extends BaseEntity {
         }
     }
 
+    public boolean isCollectionPending() {
+        return status == MonitoringRunStatus.REQUESTED
+                || status == MonitoringRunStatus.ACCEPTED
+                || status == MonitoringRunStatus.RUNNING;
+    }
+
+    public boolean expireCollection(LocalDateTime cutoff, LocalDateTime now) {
+        LocalDateTime collectionStartedAt = acceptedAt == null ? requestedAt : acceptedAt;
+        if (!isCollectionPending() || collectionStartedAt.isAfter(cutoff)) {
+            return false;
+        }
+        status = MonitoringRunStatus.FAILED;
+        completedAt = now;
+        errorMessage = "수집 결과 대기 시간이 초과됐습니다. 다시 실행해 주세요.";
+        failedSourceCount = totalSourceCount;
+        warningCount = totalSourceCount;
+        return true;
+    }
+
     public void completeCollection(
             int successSourceCount,
             int failedSourceCount,

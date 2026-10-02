@@ -17,6 +17,16 @@ public interface MonitoringRunRepository extends JpaRepository<MonitoringRun, Lo
 
     boolean existsByStatusIn(Collection<MonitoringRunStatus> statuses);
 
+    @Query("""
+            select r.id from MonitoringRun r
+            where r.status in :statuses and coalesce(r.acceptedAt, r.requestedAt) <= :cutoff
+            order by r.requestedAt, r.id
+            """)
+    java.util.List<Long> findExpiredCollections(
+            @org.springframework.data.repository.query.Param("statuses") Collection<MonitoringRunStatus> statuses,
+            @org.springframework.data.repository.query.Param("cutoff") java.time.LocalDateTime cutoff,
+            Pageable pageable);
+
     @Query(
             value = """
                     select new com.publicmonitor.backend.domain.monitoring.web.dto.MonitoringRunSummaryResponse(
