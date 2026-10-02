@@ -74,7 +74,7 @@ class MonitoringRunServiceTest {
     @Test
     void 활성_소스를_대상으로_수동_실행을_생성한다() {
         List<MonitoringSource> sources = List.of(createSource("서울시"), createSource("환경부"));
-        given(monitoringSourceRepository.findAllByEnabledTrueOrderByIdAsc()).willReturn(sources);
+        given(monitoringSourceRepository.findAllForRunCreation()).willReturn(sources);
         given(monitoringRunRepository.save(any(MonitoringRun.class))).willAnswer(invocation -> {
             MonitoringRun run = invocation.getArgument(0);
             ReflectionTestUtils.setField(run, "id", 1L);
@@ -109,7 +109,7 @@ class MonitoringRunServiceTest {
 
     @Test
     void 활성_소스가_없으면_실행을_생성할_수_없다() {
-        given(monitoringSourceRepository.findAllByEnabledTrueOrderByIdAsc()).willReturn(List.of());
+        given(monitoringSourceRepository.findAllForRunCreation()).willReturn(List.of());
 
         assertThatThrownBy(() -> monitoringRunService.create(MonitoringTriggerType.MANUAL))
                 .isInstanceOf(NoActiveMonitoringSourceException.class);
@@ -120,7 +120,7 @@ class MonitoringRunServiceTest {
     @Test
     void Python_작업_접수에_실패하면_실행을_실패_상태로_남긴다() {
         List<MonitoringSource> sources = List.of(createSource("서울시"));
-        given(monitoringSourceRepository.findAllByEnabledTrueOrderByIdAsc()).willReturn(sources);
+        given(monitoringSourceRepository.findAllForRunCreation()).willReturn(sources);
         given(monitoringRunRepository.save(any(MonitoringRun.class))).willAnswer(invocation -> {
             MonitoringRun run = invocation.getArgument(0);
             ReflectionTestUtils.setField(run, "id", 1L);

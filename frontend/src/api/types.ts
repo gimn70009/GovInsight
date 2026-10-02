@@ -42,7 +42,7 @@ export interface MonitoringSourceSettings {
   enabled: boolean
 }
 
-export type RunStatus = 'REQUESTED' | 'ACCEPTED' | 'COLLECTED' | 'COMPLETED' | 'FAILED'
+export type RunStatus = 'REQUESTED' | 'ACCEPTED' | 'RUNNING' | 'COLLECTED' | 'COMPLETED' | 'FAILED'
 
 export interface MonitoringRun {
   runId: number
@@ -392,4 +392,10 @@ export interface ReportDelivery {
 export interface ReportDeliveryDetail {
   report: ReportDelivery; body: string | null
   telegramDeliveries: TelegramRecipientDelivery[]; emailDeliveries: EmailRecipientDelivery[]
+}
+
+export interface MonitoringRunActivity {
+  running: boolean
+  runId: number | null
+  status: RunStatus | null
 }

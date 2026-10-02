@@ -12,6 +12,7 @@ import type {
   DocumentDetection,
   LoginResponse,
   MonitoringRun,
+  MonitoringRunActivity,
   MonitoringRunWarnings,
   MonitoringSchedule,
   MonitoringSchedulePayload,
@@ -102,6 +103,7 @@ export const api = {
     request<MonitoringSource[]>('/api/monitoring-sources/settings', {
       method: 'PATCH', body: JSON.stringify({ sources }),
     }),
+  getRunActivity: () => request<MonitoringRunActivity>('/api/monitoring-runs/active'),
   createRun: () => request<CreateMonitoringRunResponse>('/api/monitoring-runs', { method: 'POST' }),
   getRuns: (page = 0, size = 10) =>
     request<PageResponse<MonitoringRun>>(`/api/monitoring-runs?page=${page}&size=${size}`),

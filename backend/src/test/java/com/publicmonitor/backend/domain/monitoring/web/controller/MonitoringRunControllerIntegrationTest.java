@@ -250,4 +250,30 @@ class MonitoringRunControllerIntegrationTest {
         }
     }
 
+    @Test
+    void 진행중인_실행이_있으면_수동요청에_409를_반환한다() throws Exception {
+        given(monitoringRunService.create(MonitoringTriggerType.MANUAL))
+                .willThrow(new com.publicmonitor.backend.domain.monitoring.exception.MonitoringAlreadyRunningException());
+        mockMvc.perform(post("/api/monitoring-runs"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("MONITORING_RUN_409_1"))
+                .andExpect(jsonPath("$.message").value("이미 모니터링이 진행 중입니다. 완료 후 다시 실행해 주세요."));
+    }
+
+    @Test
+    void 페이지와_무관한_진행상태를_조회한다() throws Exception {
+        given(monitoringRunService.activity()).willReturn(
+                new com.publicmonitor.backend.domain.monitoring.web.dto.MonitoringRunActivityResponse(true, 5L, MonitoringRunStatus.COLLECTED));
+        mockMvc.perform(get("/api/monitoring-runs/active")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.running").value(true))
+                .andExpect(jsonPath("$.data.runId").value(5))
+                .andExpect(jsonPath("$.data.status").value("COLLECTED"));
+    }
+
+    @Test
+    @org.springframework.security.test.context.support.WithAnonymousUser
+    void 진행상태_조회도_인증이_필요하다() throws Exception {
+        mockMvc.perform(get("/api/monitoring-runs/active")).andExpect(status().isUnauthorized());
+    }
+
 }

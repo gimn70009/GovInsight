@@ -61,6 +61,8 @@ async def main():
                 if hold_read:
                     read_started.set()
                     await read_release.wait()
+            elif method == "GET" and path == "/api/monitoring-runs/active":
+                data = dict(running=False, runId=None, status=None)
             elif method == "GET" and path == "/api/monitoring-runs":
                 data = dict(content=[], totalPages=0, totalElements=0, page=0, size=8, first=True, last=True)
             elif method == "GET" and path == "/api/monitoring-schedule":

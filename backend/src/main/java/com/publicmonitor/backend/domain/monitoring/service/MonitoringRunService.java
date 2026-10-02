@@ -4,15 +4,18 @@ import com.publicmonitor.backend.domain.monitoring.client.PythonMonitoringClient
 import com.publicmonitor.backend.domain.monitoring.client.PythonMonitoringClientException;
 import com.publicmonitor.backend.domain.monitoring.client.dto.PythonMonitoringJobResponse;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRun;
+import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRunStatus;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRunSource;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringSource;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringTriggerType;
+import com.publicmonitor.backend.domain.monitoring.exception.MonitoringAlreadyRunningException;
 import com.publicmonitor.backend.domain.monitoring.exception.NoActiveMonitoringSourceException;
 import com.publicmonitor.backend.domain.monitoring.exception.MonitoringJobAcceptanceException;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunRepository;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunSourceRepository;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringSourceRepository;
 import com.publicmonitor.backend.domain.monitoring.web.dto.CreateMonitoringRunResponse;
+import com.publicmonitor.backend.domain.monitoring.web.dto.MonitoringRunActivityResponse;
 import com.publicmonitor.backend.domain.monitoring.web.dto.MonitoringRunSummaryResponse;
 import com.publicmonitor.backend.global.response.PageResponse;
 import java.time.Clock;
@@ -40,9 +43,16 @@ public class MonitoringRunService {
 
     @Transactional(noRollbackFor = MonitoringJobAcceptanceException.class)
     public CreateMonitoringRunResponse create(MonitoringTriggerType triggerType) {
-        List<MonitoringSource> activeSources = monitoringSourceRepository.findAllByEnabledTrueOrderByIdAsc();
+        // 존재 여부 검사만으로는 동시에 도착한 두 요청을 막지 못하므로 공유 행부터 잠근다.
+        List<MonitoringSource> activeSources = monitoringSourceRepository.findAllForRunCreation().stream()
+                .filter(MonitoringSource::isEnabled)
+                .toList();
         if (activeSources.isEmpty()) {
             throw new NoActiveMonitoringSourceException();
+        }
+
+        if (monitoringRunRepository.existsByStatusIn(MonitoringRunStatus.inProgress())) {
+            throw new MonitoringAlreadyRunningException();
         }
 
         MonitoringRun run = MonitoringRun.create(
@@ -68,6 +78,13 @@ public class MonitoringRunService {
         }
 
         return CreateMonitoringRunResponse.from(savedRun);
+    }
+
+    @Transactional(readOnly = true)
+    public MonitoringRunActivityResponse activity() {
+        return monitoringRunRepository.findFirstByStatusInOrderByRequestedAtAscIdAsc(MonitoringRunStatus.inProgress())
+                .map(run -> new MonitoringRunActivityResponse(true, run.getId(), run.getStatus()))
+                .orElseGet(() -> new MonitoringRunActivityResponse(false, null, null));
     }
 
     @Transactional(readOnly = true)
