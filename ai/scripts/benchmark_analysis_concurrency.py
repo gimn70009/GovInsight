@@ -22,8 +22,8 @@ from uuid import uuid4
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import httpx
-from langchain_openai import ChatOpenAI
 
+from app.core.openai_models import ChatOpenAI
 from app.domains.analysis import tasks
 from app.domains.analysis.config import AnalysisSettings
 from app.domains.analysis.schemas.request import AnalysisJobRequest

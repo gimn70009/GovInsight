@@ -5,9 +5,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 
-from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
+from app.core.openai_models import ChatOpenAI
 from app.core.schemas import CamelCaseModel
 from app.domains.analysis.config import AnalysisSettings
 from app.domains.analysis.context.tools import (

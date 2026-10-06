@@ -9,9 +9,9 @@ import time
 from collections import OrderedDict
 from typing import Protocol
 
-from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, ConfigDict, create_model
 
+from app.core.openai_models import ChatOpenAI
 from app.domains.report.brief import (
     BriefContext,
     BriefFactsModelOutput,

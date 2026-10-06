@@ -10,9 +10,9 @@ from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
+from app.core.openai_models import ChatOpenAI
 from app.core.schemas import CamelCaseModel
 from app.domains.analysis.config import AnalysisSettings
 from app.domains.analysis.context.company_profile import BISTELLIGENCE_PROFILE

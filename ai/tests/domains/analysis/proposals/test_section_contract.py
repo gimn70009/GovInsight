@@ -9,9 +9,9 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 from langchain_core.utils.function_calling import convert_to_openai_function
-from langchain_openai import ChatOpenAI
 from pydantic import ValidationError
 
+from app.core.openai_models import ChatOpenAI
 from app.domains.analysis.proposals.writer import (
     ProposalWriter,
     verify_outline,

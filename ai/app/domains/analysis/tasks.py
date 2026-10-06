@@ -3,8 +3,7 @@ import logging
 from typing import Protocol
 from uuid import UUID
 
-from langchain_openai import OpenAIEmbeddings
-
+from app.core.openai_models import OpenAIEmbeddings
 from app.domains.analysis.clients import AnalysisResultClient, AnalysisResultClientError
 from app.domains.analysis.config import AnalysisConfigurationError, AnalysisSettings
 from app.domains.analysis.proposals.drafting import (
