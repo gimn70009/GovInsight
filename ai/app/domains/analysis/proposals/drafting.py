@@ -46,6 +46,7 @@ from app.domains.analysis.schemas.result import (
     StrategyGap,
     StrategyStopCriterion,
 )
+from app.observability.model_calls import ModelCallTrace
 
 logger = logging.getLogger(__name__)
 
@@ -282,6 +283,7 @@ class LangChainProposalGenerationRunner:
             max_retries=0,
             reasoning_effort="minimal",
             max_tokens=12_000,
+            include_response_headers=True,
         )
         self._draft_model = model.with_structured_output(ProposalModelOutput, include_raw=True)
         self._settings = settings
@@ -291,62 +293,79 @@ class LangChainProposalGenerationRunner:
         document: AnalysisDocumentRequest,
         analysis: DocumentAnalysisResult,
     ) -> ProposalDraftOutput:
-        context = AnalysisToolContext(
-            document=document,
-            max_text_chars=self._settings.max_text_chars,
+        trace = ModelCallTrace(
+            logger,
+            "proposal_generation",
+            detection_id=document.detection_id,
+            version_id=document.version_id,
+            model=getattr(self._settings, "proposal_model_name", "unknown"),
+            timeout_seconds=self._settings.proposal_timeout_seconds,
         )
-        source_context = _build_proposal_source_context(
-            document,
-            min(self._settings.max_text_chars, PROPOSAL_CONTEXT_MAX_CHARS),
-        )
-        capability_catalog = company_capability_catalog(context.company_profile)
-        draft_input = (
-            f"{DRAFT_PROMPT}\n{COMPANY_CONTEXT_INSTRUCTIONS}\n{NOTICE_APPLICABILITY_INSTRUCTIONS}\n\n"
-            f"분석 기준일: {datetime.now(timezone(timedelta(hours=9))).date().isoformat()}\n\n"
-            f"공고 제목:\n{document.title}\n\n"
-            f"공고 분석:\n{_compact_analysis_context(analysis)}\n\n"
-            f"회사 프로필:\n{read_company_profile(context)}\n\n"
-            f"회사 역량·사례 선택 목록:\n{json.dumps(capability_catalog, ensure_ascii=False)}\n\n"
-            f"공고와 첨부파일의 관련 원문:\n{source_context}"
-        )
-        started_at = time.perf_counter()
-        logger.info(
-            "사업 제안 생성 시작. detection_id=%s input_chars=%s source_chars=%s",
-            document.detection_id,
-            len(draft_input),
-            len(source_context),
-        )
-        async with asyncio.timeout(self._settings.proposal_timeout_seconds):
-            response = await self._draft_model.ainvoke(draft_input)
-        draft, raw_response = _parse_model_response(response, capability_catalog)
-        draft.uses_demo_profile = False
-        usage = _token_usage(raw_response)
-        logger.info(
-            "사업 제안 모델 응답 완료. detection_id=%s elapsed_seconds=%.2f "
-            "prompt_tokens=%s completion_tokens=%s total_tokens=%s",
-            document.detection_id,
-            time.perf_counter() - started_at,
-            usage.get("input_tokens"),
-            usage.get("output_tokens"),
-            usage.get("total_tokens"),
-        )
-        _retain_verified_source_references(draft, document)
-        _normalize_preparation_structure(draft)
-        draft.preparation.submission_documents, review_notes = validate_submission_documents(
-            draft.preparation.submission_documents, document,
-        )
-        agenda, reviews = separate_submission_reviews(
-            draft.preparation.meeting_agenda,
-            review_notes,
-        )
-        draft.preparation.meeting_agenda = agenda
-        draft.preparation.submission_review_notes = reviews
-        # Revalidate the additive API limits after assigning generated checks.
-        draft.preparation = ProposalPreparation.model_validate(draft.preparation.model_dump())
-        _apply_strategy_eligibility_guardrails(draft)
-        _build_preparation_highlights(draft.preparation)
-        score_preparation(draft.preparation)
-        return draft
+        async with trace.observe():
+            trace.stage("input_build")
+            context = AnalysisToolContext(
+                document=document,
+                max_text_chars=self._settings.max_text_chars,
+            )
+            source_context = _build_proposal_source_context(
+                document,
+                min(self._settings.max_text_chars, PROPOSAL_CONTEXT_MAX_CHARS),
+            )
+            capability_catalog = company_capability_catalog(context.company_profile)
+            draft_input = (
+                f"{DRAFT_PROMPT}\n{COMPANY_CONTEXT_INSTRUCTIONS}\n{NOTICE_APPLICABILITY_INSTRUCTIONS}\n\n"
+                f"분석 기준일: {datetime.now(timezone(timedelta(hours=9))).date().isoformat()}\n\n"
+                f"공고 제목:\n{document.title}\n\n"
+                f"공고 분석:\n{_compact_analysis_context(analysis)}\n\n"
+                f"회사 프로필:\n{read_company_profile(context)}\n\n"
+                "회사 역량·사례 선택 목록:\n"
+                f"{json.dumps(capability_catalog, ensure_ascii=False)}\n\n"
+                f"공고와 첨부파일의 관련 원문:\n{source_context}"
+            )
+            trace.update(input_chars=len(draft_input), source_chars=len(source_context))
+            trace.stage("model_invocation")
+            started_at = time.perf_counter()
+            logger.info(
+                "사업 제안 생성 시작. detection_id=%s input_chars=%s source_chars=%s",
+                document.detection_id,
+                len(draft_input),
+                len(source_context),
+            )
+            async with asyncio.timeout(self._settings.proposal_timeout_seconds):
+                response = await self._draft_model.ainvoke(
+                    draft_input, config={"callbacks": [trace]},
+                )
+            trace.stage("response_parsing")
+            draft, raw_response = _parse_model_response(response, capability_catalog)
+            draft.uses_demo_profile = False
+            usage = _token_usage(raw_response)
+            logger.info(
+                "사업 제안 모델 응답 완료. detection_id=%s elapsed_seconds=%.2f "
+                "prompt_tokens=%s completion_tokens=%s total_tokens=%s",
+                document.detection_id,
+                time.perf_counter() - started_at,
+                usage.get("input_tokens"),
+                usage.get("output_tokens"),
+                usage.get("total_tokens"),
+            )
+            trace.stage("final_validation")
+            _retain_verified_source_references(draft, document)
+            _normalize_preparation_structure(draft)
+            draft.preparation.submission_documents, review_notes = validate_submission_documents(
+                draft.preparation.submission_documents, document,
+            )
+            agenda, reviews = separate_submission_reviews(
+                draft.preparation.meeting_agenda,
+                review_notes,
+            )
+            draft.preparation.meeting_agenda = agenda
+            draft.preparation.submission_review_notes = reviews
+            # Revalidate the additive API limits after assigning generated checks.
+            draft.preparation = ProposalPreparation.model_validate(draft.preparation.model_dump())
+            _apply_strategy_eligibility_guardrails(draft)
+            _build_preparation_highlights(draft.preparation)
+            score_preparation(draft.preparation)
+            return draft
 
 
 def _parse_model_response(
@@ -472,10 +491,10 @@ class TwoStageAnalysisWorkflow:
             )
         except Exception as exception:
             logger.warning(
-                "조건부 사업 제안 생성 실패. detection_id=%s version_id=%s error=%s",
+                "조건부 사업 제안 생성 실패. detection_id=%s version_id=%s error_type=%s",
                 document.detection_id,
                 document.version_id,
-                _safe_error(exception),
+                type(exception).__name__,
             )
             result.proposal = result.proposal.model_copy(
                 update={
