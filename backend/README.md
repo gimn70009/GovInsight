@@ -85,7 +85,7 @@ if (!(Test-Path src/main/resources/application.properties)) {
 
 인증된 `GET /api/monitoring-runs/active`의 `data`는 `{ "running": true, "runId": 123, "status": "COLLECTED" }` 형태입니다. 진행 중 실행이 없으면 `running`은 false, 나머지는 null입니다. 실행 목록의 현재 페이지와 관계없이 전체에서 조회합니다. 화면에서는 표시 중 5초마다 확인하고 진행 중 또는 조회 실패 시 실행 버튼을 잠급니다.
 
-스키마 변경은 없습니다. 기존 수집 시간 초과 복구를 유지하며 서버 재시작 후 작업 이어하기나 COLLECTED 상태의 분석 정체 복구는 추가하지 않습니다.
+중복 실행 차단은 그대로 유지합니다. COLLECTED 상태의 분석·제안 중단은 아래의 DB 작업 기반 복구가 처리합니다.
 
 ## API 확인과 테스트
 
@@ -140,3 +140,11 @@ if (!(Test-Path src/main/resources/application.properties)) {
 | `GET /api/report-deliveries/{id}` | report, body, telegramDeliveries, emailDeliveries. 수신자별 발송 시각·오류·시도 횟수 |
 
 설정 충돌·이미 처리된 재전송·변경된 수신자는 409, 중복 주소·잘못된 입력·기간은 400, 미설정 계정·발송 꺼짐은 422를 반환합니다. 발신 인증 비밀번호와 SMTP 원본 예외는 응답하지 않습니다.
+
+## 분석·제안 중단 복구
+
+수집 커밋 전에 실행별 분석 작업을 DB에 남깁니다. Python 중단·접수 실패·콜백 유실은 최대 3회 재시도하고, 소진되면 실행을 FAILED로 정리해 다음 실행을 허용합니다. 분석 저장 후 제안 결과가 유실된 경우도 포함합니다. 이전 시도 또는 만료된 콜백은 409이며, 완료된 동일 시도는 결과·발송을 반복하지 않습니다.
+
+기본 복구 주기는 10초, 접수 실패 대기는 10초, 처리 임대는 문서 수 × 15분(최소 30분)입니다. `app.analysis.recovery.minimum-lease`와 `per-document-lease`로 조정합니다. 서버 중단 복구에는 모델 재실행 비용이 생길 수 있습니다.
+
+개발 DB를 `ddl-auto=create`로 초기화하면 `AnalysisTask` 엔티티에 따라 테이블·시퀀스·인덱스가 생성되므로 별도 SQL은 필요하지 않습니다. Python·백엔드는 함께 업데이트하세요. 기존 데이터를 유지하려면 스키마 생성 후 `ddl-auto=none`으로 실행합니다. `none/validate`는 새 테이블을 생성하지 않습니다.

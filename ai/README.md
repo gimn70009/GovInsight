@@ -112,3 +112,23 @@ AI 호출은 횟수와 시간을 제한합니다. 결과를 스키마로 검증�
 첨부 입력은 총 120,000자/파일당 40,000자 안에서 분량을 배분하여 뒤쪽 공고문 누락을 줄입니다. 모델 입력 16,000자는 공고·접수 안내를 우선 배정합니다. 누락된 필드는 저장 분석 문장이 아닌 표제가 있는 원문 구절로만 보완합니다. 기존 보고서는 재전송이 아니라 새 보고서 생성이 필요합니다.
 
 기존 환경변수에 `REPORT_BRIEF_MODEL=gpt-5-nano`가 지정되어 있으면 기본값 변경보다 우선합니다. mini를 적용하려면 `REPORT_BRIEF_MODEL=gpt-5-mini`로 바꾼 뒤 AI 서버를 재시작하세요. PDF 줄 복원은 새 파싱부터 적용되며 기존 파싱 결과의 재사용은 별도입니다.
+
+## 분석 시도 ID와 보고서 조건 검증
+
+`POST /internal/monitoring/analysis-jobs`의 선택 UUID `jobId`는 백엔드 복구 작업이 지정한 시도 ID입니다. 지정된 경우 접수 응답과 분석·제안 콜백에 같은 값을 사용하며 생략하면 기존처럼 생성합니다. 백엔드는 만료·이전 시도의 결과를 409로 거부합니다. Python의 프로세스 내 작업 자체가 영속화되는 것은 아니며 백엔드 DB 작업이 중단을 복구합니다.
+
+보고서 표시 검증은 수치·단위·비교 방향을 함께 검사합니다. 한국어 자격 제한·부정·예외 조건은 검증된 원문 인용 전체를 보존하고, 길거나 역할 연결이 불명확한 자격 표는 원문 확인 안내로 남깁니다. 모든 자연어 의미 오류를 보장해서 제거하는 기능은 아니며 기존 저장 보고서는 자동 변경하지 않습니다.
+
+## 제안·보고서 모델 지연 진단
+
+Python 서버를 재시작한 뒤 새 모니터링을 실행하면 기존 콘솔에 `model_call_*`, `report_brief_*` 진단이 추가됩니다. 별도 설정이나 추가 API 호출은 없으며 모델·시간 제한·재시도·결과 상태 정책은 바꾸지 않습니다.
+
+- `model_call_start/stage/progress/finish`: `call_id`로 한 호출을 추적합니다. 제안은 `detection_id/version_id`, 보고서는 `run_id/version_id`로 공고를 구분합니다. 실제 모델 설정, 시간 제한, 입력/원문 문자 수, 구간별 경과 시간이 기록됩니다. 대기 중에는 15초마다 현재 단계가 표시됩니다.
+- 단계는 `queued`(동시 실행 차례 대기), `input_build`(입력 구성), `model_prepare/model_invocation`(호출 준비), `model_wait`(모델 호출·통신·SDK 처리), `response_parsing`(후속 구조화 응답 해석), `final_validation`(제안 검증)입니다. 보고서 검증 시간은 `report_brief_validation`으로 별도 기록합니다.
+- `model_call_response`: 콜백에서 확인된 입력·출력·추론 토큰 수, 종료 사유(`finish_reason`), 요청 ID, 제공자 처리시간을 기록합니다. 해당 API 응답에 값이 없으면 생략합니다. 추론 내용이나 모델 응답 본문은 기록하지 않습니다.
+- 실패는 `outcome`, `error_type`, `cause_types`, `timeout_kind`, 가능한 HTTP 상태/요청 ID로 구분합니다. `timeout_kind`는 `local_deadline`, `sdk`, `connect`, `read`, `write`, `connection_pool`, `transport` 중 확인 가능한 값입니다. `cancelled`는 전체 제한 또는 상위 작업 종료에 의한 취소이며 `report_brief_batch_finish.total_timeout`을 함께 확인합니다.
+- `report_brief_result`: 문서별 모델 성공, 캐시, 동일 입력 공유, 원문 재사용, 실패 대체 및 사유입니다. `report_brief_batch_finish`에는 각 건수와 `degraded`, `total_timeout`이 표시됩니다. `degraded=true`이면 대체 처리된 문서가 있으므로 기존 보고서의 `COMPLETED`만으로 AI 보강이 모두 성공했다고 판단하지 않습니다. `model_success`는 호출/검증 경로를 통과했다는 뜻이며 모든 원문 정보의 완전성을 보장하지 않습니다.
+
+`response_received`는 HTTP 첫 바이트 수신 여부가 아니라 LangChain 모델 종료 콜백 관찰 여부입니다. SDK 내부 해석이나 출력 한도 오류는 HTTP 응답이 왔어도 false일 수 있습니다. 예외가 응답 객체를 제공하면 `http_response_observed=true`와 HTTP 상태를 별도로 기록합니다. 스트리밍을 켜거나 패킷을 추적하지 않으므로 서버 내부 대기와 생성 시간을 항상 분리하거나 첫 토큰 시간을 측정하지는 않습니다. 모델 대기 중 응답 없이 취소되면 해당 구간·시간 초과 종류까지 확인할 수 있으며 제공자 내부 원인은 단정하지 않습니다.
+
+API 키·회사 자료·공고 원문·모델 응답·예외 메시지·전체 HTTP 헤더는 새 진단에 기록하지 않습니다. 오류 메시지 대신 유형과 허용한 메타데이터만 남깁니다.
