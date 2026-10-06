@@ -24,6 +24,7 @@ from app.domains.analysis.context.tools import (
 from app.domains.analysis.proposals.guidance import (
     ProposalGuidanceError,
     guidance_issues,
+    strip_section_preamble,
     verify_proposal_guidance,
 )
 from app.domains.analysis.proposals.korean import (
@@ -252,7 +253,7 @@ def normalize_draft_body(text):
         "",
         text,
     )
-    return text.strip()
+    return strip_section_preamble(text.strip())
 
 
 def verify_writing(
@@ -377,6 +378,10 @@ previous_sections는 수정 대상인 이전 초안이며 사실 근거나 새�
 회사 작성자 관점에서 '당사'로 호칭을 통일하고 같은 첫 문장과 회사 소개를 반복하지 않습니다.
 항목당 반드시 400자 이상, 보통 2~3개 문단과 500~900자로 충분히 설명합니다.
 본문에 회사 프로필을 참고했다는 내부 설명과 작성 과정 설명을 쓰지 않습니다.
+'본 항목에서는 … 기술합니다', '이 절에서는 … 설명합니다' 같은 항목 소개 문장을 쓰지 않습니다.
+첫 문장부터 '당사는 …'처럼 회사의 실제 업무·역량 또는 제안하는 수행 계획을 바로 서술합니다.
+예: '본 항목에서는 역량을 기술합니다' 대신 '당사는 제조 데이터를 통합합니다'.
+항목 제목을 문장으로 다시 풀어 쓰지 말고, 근거가 없는 실적을 회사 사실처럼 만들지 않습니다.
 가장 적합한 회사 업무 하나를 이번 제안의 중심 과제로 정하고 모든 항목에서 같은 범위를 유지합니다.
 회사에 여러 고객 업무가 있어도 반도체·디스플레이·철강 과제를 모두 한 사업으로 묶지 않습니다.
 다른 산업의 사례는 구분된 수행 역량 근거로만 활용하며 새 과업으로 추가하지 않습니다.
@@ -431,6 +436,15 @@ def writing_instructions(language: WritingLanguage) -> str:
     ).replace(
         "계획은 '추진하겠습니다'처럼 씁니다.",
         "계획은 'we will'을 사용해 앞으로의 수행 내용으로 씁니다.",
+    ).replace(
+        "첫 문장부터 '당사는 …'처럼 회사의 실제 업무·역량 또는 "
+        "제안하는 수행 계획을 바로 서술합니다.",
+        "Begin directly with 'We …' and state the company's work, capabilities or proposed plan.",
+    ).replace(
+        "예: '본 항목에서는 역량을 기술합니다' 대신 "
+        "'당사는 제조 데이터를 통합합니다'.",
+        "For example, write 'We integrate manufacturing data.' rather than "
+        "'This section describes our data capabilities.'",
     )
     return instructions
 
@@ -606,7 +620,8 @@ class ProposalWriter:
         day = datetime.now(timezone(timedelta(hours=9))).date().isoformat()
         key = hashlib.sha256(
             json.dumps(
-                [request.model_dump(), profile, day, settings.proposal_model_name],
+                [request.model_dump(), profile, day, settings.proposal_model_name,
+                 "direct-company-prose-v2"],
                 ensure_ascii=False,
                 sort_keys=True,
             ).encode()
