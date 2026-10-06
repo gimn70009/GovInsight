@@ -43,6 +43,23 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }
 
 Windows용 UUID·해시 호환 모듈을 사용하도록 `ai` 폴더의 가상환경 Python으로 실행합니다. 별도의 네이티브 모듈 차단 여부는 해당 PC 정책에 따라 달라질 수 있습니다.
 
+## Windows 애플리케이션 제어 정책과 tiktoken 오류
+
+`ImportError: DLL load failed while importing _tiktoken: 애플리케이션 제어 정책에서 이 파일을 차단했습니다.`는 `langchain_openai`가 가져오던 네이티브 토크나이저의 로드 차단입니다. 이 상태에서는 Uvicorn의 재로더 시작 메시지가 보여도 실제 AI 앱은 시작되지 않습니다. 정책 변경이나 DLL 예외 등록 없이 실행하도록 `langchain-openai` 의존성을 제거하고 `app/core/openai_models.py`에서 OpenAI SDK를 직접 연결합니다. LangChain·LangGraph의 에이전트 실행 구조는 유지합니다.
+
+`ai` 폴더에서 의존성을 동기화하고 기존 AI 실행을 종료한 뒤 다시 시작합니다.
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+기존 가상환경에 남아 있는 `langchain-openai`·`tiktoken`은 더 이상 불러오지 않습니다. 의존성 설치 명령은 기존 패키지를 자동 삭제하지 않습니다. 새 가상환경에서는 두 패키지가 필요하지 않습니다. 모든 네이티브 라이브러리를 제거한 것은 아니며 이 수정은 로그에 확인된 `_tiktoken` 경로를 제거합니다.
+
+모델 응답은 기존과 같이 엄격한 JSON Schema와 Pydantic으로 검증하고, 거절·미완료·파싱 실패를 정상 결과로 처리하지 않습니다. 기존 시간 제한·재시도 수·모델 설정과 도구 호출·진단 콜백을 유지합니다. 임베딩은 검색용 프로필을 문자열로 직접 전송하며 입력당 UTF-8 8,000바이트, 배치당 32개로 제한합니다. 초과 입력을 잘라서 저장하지 않고 기존 임베딩 실패 처리로 넘깁니다.
+
+Vite의 `/api/... ECONNREFUSED`는 프록시 대상인 Spring Boot 8080 연결 실패입니다. AI 8000의 상태와 별도로 백엔드 실행 상태를 확인합니다. AI 재시작만으로 8080 연결 실패가 해결되지는 않습니다.
+
 ## 수집 결과 전달 실패 처리
 
 수집 결과는 동일한 실행 ID·작업 ID·본문으로 총 3회까지 전송합니다. 네트워크 오류와 HTTP 5xx·429만 0.2초·0.4초 간격으로 재시도하고, 다른 4xx는 즉시 중단합니다. 기존 `SPRING_BOOT_TIMEOUT_SECONDS`는 각 요청에 적용합니다.
