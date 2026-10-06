@@ -277,7 +277,10 @@ def _values(items: list[SourcedText], context: BriefContext, kind: str) -> str:
             quote = " ".join(item.evidence.quote.split())
             if cited and len(quote) <= 150 and re.search(r"@|\d{2,}", quote):
                 value = quote
-        display = korean_display(value, item.evidence.quote, item.display_text) if cited else None
+        display = (
+            korean_display(value, item.evidence.quote, item.display_text, kind=kind)
+            if cited else None
+        )
         if kind == "deadline":
             if not _usable_deadline(display or value) or re.search(
                 r"제출\s*방법|제출\s*서류|문의처|붙임|동의서|이내/년|억원|선정평가|지원기간",

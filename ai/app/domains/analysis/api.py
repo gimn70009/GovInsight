@@ -25,7 +25,7 @@ def create_analysis_job(
     request: AnalysisJobRequest,
     background_tasks: BackgroundTasks,
 ) -> AnalysisJobAcceptedResponse:
-    response = accept_analysis_job(len(request.documents))
+    response = accept_analysis_job(len(request.documents), request.job_id)
     background_tasks.add_task(run_analysis_job, response.job_id, request)
     return response
 

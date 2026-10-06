@@ -10,10 +10,14 @@ from app.domains.report.presentation import (
     deadline_display_lines,
     foreign_prose,
     informational_notice,
+    source_check_message,
+    submission_display_lines,
+    unreadable_table,
 )
 from app.domains.report.schemas.request import ReportDocumentRequest, ReportJobRequest
 from app.domains.report.schemas.result import ReportDraft
 from app.domains.report.submission_documents import (
+    SubmissionDocument,
     display_submission_documents,
     fallback_submission_documents,
 )
@@ -129,7 +133,8 @@ def _document_block(
         ("문의 담당", facts.contact),
     ]:
         display_lines = (
-            deadline_display_lines(value) if label == "제출·의견 기한" else value.splitlines()
+            deadline_display_lines("\n".join(submission_display_lines(value, label)))
+            if label == "제출·의견 기한" else submission_display_lines(value, label)
         )
         items = [_field(item, compact) for item in display_lines if item.strip()]
         items = [item for item in items if not foreign_prose(item)]
@@ -145,18 +150,7 @@ def _document_block(
         required, uses_saved_checklist = brief.documents, brief.uses_saved_checklist
     shown = 0
     used = 0
-    entries = []
-    for item in display_submission_documents(required):
-        form = item.form
-        url = _safe_url(form.url) if form and form.url else None
-        label = _text(item.title)
-        # A member has no public URL of its own: identify the archive download honestly.
-        if form and form.archive and url:
-            label += " (ZIP)"
-        entry = f"• [{label}]({url})" if url else f"• {label}"
-        if item.requirement_level == "OPTIONAL" or item.condition in {"선택", "선택 제출"}:
-            entry += " (선택 제출)"
-        entries.append(entry)
+    entries = _submission_entries(required)
     if entries:
         lines.extend(["", "제출 준비 서류 ↓"])
     for entry in entries[: 3 if compact else 6]:
@@ -217,8 +211,50 @@ def _document_block(
     return "\n".join(lines)
 
 
+def _submission_entries(required: list[SubmissionDocument]) -> list[str]:
+    """One download per URL, without discarding distinct submission requirements."""
+    groups: list[tuple[str | None, list[SubmissionDocument]]] = []
+    positions: dict[str, int] = {}
+    for item in display_submission_documents(required):
+        url = _safe_url(item.form.url) if item.form and item.form.url else None
+        # Fragments select a page inside the same file; query parameters identify files.
+        key = url.split("#", 1)[0] if url else None
+        if key and key in positions:
+            groups[positions[key]][1].append(item)
+        else:
+            if key:
+                positions[key] = len(groups)
+            groups.append((url, [item]))
+    entries = []
+    for url, items in groups:
+        labels = []
+        for item in items:
+            label = _text(item.title)
+            if item.requirement_level == "OPTIONAL" or item.condition in {"선택", "선택 제출"}:
+                label += " (선택 제출)"
+            if label not in labels:
+                labels.append(label)
+        if len(items) > 1:
+            filenames = {item.form.archive or item.form.name for item in items}
+            filename = next(iter(filenames)) if len(filenames) == 1 else None
+            label = _text(filename or "통합 서류 파일")
+            entries.append(f"• [{label}]({url})\n  ↳ 관련 서류: " + " · ".join(labels))
+        else:
+            item = items[0]
+            label = _text(item.title)
+            if item.form and item.form.archive and url:
+                label += " (ZIP)"
+            entry = f"• [{label}]({url})" if url else f"• {label}"
+            if labels[0] != _text(item.title):
+                entry += " (선택 제출)"
+            entries.append(entry)
+    return entries
+
+
 def _summary(document: ReportDocumentRequest) -> str:
     # Preserve the saved analysis; channel-specific limits belong to delivery.
+    if unreadable_table(document.summary or ""):
+        return source_check_message("사업 요약")
     return _text(document.summary) or "분석 요약을 확인하지 못했습니다."
 
 

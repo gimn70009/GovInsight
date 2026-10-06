@@ -44,6 +44,12 @@ public class AnalysisJobRequestService {
                 : Optional.of(new PythonAnalysisJobRequest(runId, documents));
     }
 
+    // Isolate preparation failures so the caller can commit its retry counter.
+    @Transactional(readOnly = true, propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public Optional<PythonAnalysisJobRequest> prepareForRecovery(Long runId) {
+        return prepare(runId);
+    }
+
     private boolean requiresAnalysis(DocumentDetection detection) {
         if (detection.getChangeType() != DocumentChangeType.UNCHANGED_DOCUMENT) {
             return true;

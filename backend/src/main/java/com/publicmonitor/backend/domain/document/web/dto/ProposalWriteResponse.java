@@ -5,7 +5,9 @@ import java.util.List;
 public record ProposalWriteResponse(String status, String fileName, boolean usesDemoProfile,
         List<Section> sections, String message) {
     public record Section(String title, String body, String sourceQuote, String selectionReason,
-            List<String> companyEvidence, List<String> confirmationItems) {}
+            List<String> companyEvidence, List<String> confirmationItems) {
+        public Section { body = ProposalBodyPresentation.clean(body); }
+    }
 
     public static ProposalWriteResponse unavailable() {
         return new ProposalWriteResponse("UNAVAILABLE", "", false, List.of(),

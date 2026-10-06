@@ -146,8 +146,9 @@ def test_report_recovers_omitted_items_and_links_without_duplicate_editions(mode
     body = TemplateReportGenerator().generate(
         req, briefs={doc.version_id: brief} if brief else None
     ).summary
-    assert body.count("[참가신청서 1부.](https://example.org/notice?format=hwpx)") == 1
-    assert body.count("[성과보고서 1부.](https://example.org/notice?format=hwpx)") == 1
+    assert body.count("](https://example.org/notice?format=hwpx)") == 1
+    assert "참가신청서 1부." in body and "성과보고서 1부." in body
+    assert "관련 서류: " in body
     assert body.count("• 데모 시연 영상") == 1
     assert "PC 프로그램 : 실행파일" in body
     assert body.count("(선택 제출)") == 2

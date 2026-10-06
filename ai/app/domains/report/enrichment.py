@@ -25,9 +25,10 @@ from app.domains.report.brief import (
 from app.domains.report.config import ReportBriefSettings
 from app.domains.report.schemas.request import ReportJobRequest
 from app.domains.report.submission_documents import source_priority
+from app.observability.model_calls import ModelCallTrace, current_trace, error_details
 
 logger = logging.getLogger(__name__)
-_PROMPT_VERSION = "submission-brief-ko-v12-submission-items"
+_PROMPT_VERSION = "submission-brief-ko-v15-table-quality"
 _CACHE: OrderedDict[str, tuple[float, BriefOutput]] = OrderedDict()
 _CACHE_SIZE = 256
 
@@ -129,6 +130,7 @@ class SmallModelBriefRunner:
             max_retries=0,
             reasoning_effort="minimal",
             max_tokens=5000,
+            include_response_headers=True,
         )
         self.base_model = model
         self.partial_models = {}
@@ -140,6 +142,9 @@ class SmallModelBriefRunner:
         )
 
     async def extract(self, context: BriefContext) -> BriefOutput:
+        trace = current_trace()
+        if trace:
+            trace.stage("input_build")
         data = json.loads(context.payload)
         # Render actual newlines: JSON-escaped tables led the model to quote literal \n.
         sections = ["공고 제목: " + data["title"]]
@@ -192,7 +197,14 @@ class SmallModelBriefRunner:
                 )
             model = self.partial_models[requested]
             prompt = _missing_fields_prompt(requested)
-        result = await model.ainvoke([("system", prompt), ("human", "\n".join(sections))])
+        messages = [("system", prompt), ("human", "\n".join(sections))]
+        if trace:
+            trace.update(input_chars=sum(len(text) for _, text in messages))
+            trace.stage("model_wait")
+            result = await model.ainvoke(messages, config={"callbacks": [trace]})
+            trace.stage("response_parsing")
+        else:
+            result = await model.ainvoke(messages)
         if result.get("parsing_error") or not result.get("parsed"):
             raise ValueError("Report brief was refused or invalid")
         parsed = result["parsed"]
@@ -212,9 +224,17 @@ async def prepare_report_briefs(
     settings: ReportBriefSettings | None = None,
     runner: BriefRunner | None = None,
 ) -> dict[int, SubmissionBrief]:
+    started = time.perf_counter()
+
+    def event(name, **values):
+        logger.info("%s %s", name, json.dumps(
+            {"run_id": request.run_id, **values}, ensure_ascii=False, sort_keys=True,
+        ))
+
     try:
         settings = settings or ReportBriefSettings.from_env()
         if not settings.enabled:
+            event("report_brief_batch_disabled", document_count=len(request.documents))
             return {}
     except Exception as error:
         logger.warning("보고서 제출 안내 모델 설정 실패. type=%s", type(error).__name__)
@@ -222,64 +242,131 @@ async def prepare_report_briefs(
             d.version_id: fallback_brief(d, "제출 안내 자동 정리 미실행") for d in request.documents
         }
 
+    event("report_brief_batch_start", document_count=len(request.documents), model=settings.model,
+          timeout_seconds=settings.timeout_seconds,
+          total_timeout_seconds=settings.total_timeout_seconds,
+          max_total_timeout_seconds=settings.max_total_timeout_seconds,
+          concurrency=settings.concurrency)
     semaphore = asyncio.Semaphore(settings.concurrency)
     results: dict[int, SubmissionBrief] = {}
     jobs = {}
+    traces = {}
+    required_model_call_count = 0
+    total_timeout_seconds = settings.total_timeout_seconds
+    counts = {name: 0 for name in (
+        "model_success", "reused", "cache_hit", "shared_call", "fallback",
+    )}
 
-    async def extract(context: BriefContext, key: str) -> BriefOutput:
-        nonlocal runner
+    def result_event(document, outcome, *, reason=None, key=None, error=None):
+        counts["reused" if outcome == "reused_facts" else outcome] += 1
+        trace = traces.get(key)
+        event("report_brief_result", version_id=document.version_id, outcome=outcome,
+              reason=reason, call_id=trace.call_id if trace else None,
+              **(error_details(error) if error else {}))
+
+    async def extract(context: BriefContext, key: str, document) -> tuple[BriefOutput, str]:
+        nonlocal runner, required_model_call_count, total_timeout_seconds
         cached = _CACHE.get(key)
         if cached and time.monotonic() - cached[0] < settings.cache_ttl_seconds:
             _CACHE.move_to_end(key)
-            return cached[1]
-        async with semaphore:
-            async with asyncio.timeout(settings.timeout_seconds):
-                if runner is None:
-                    if not settings.api_key:
-                        raise ValueError("Report model API key unavailable")
-                    runner = SmallModelBriefRunner(settings)
-                output = await runner.extract(context)
-        _CACHE[key] = (time.monotonic(), output)
-        _CACHE.move_to_end(key)
-        while len(_CACHE) > _CACHE_SIZE:
-            _CACHE.popitem(last=False)
-        return output
+            return cached[1], "cache_hit"
+        # Only distinct cache misses reach here. Anchor every extension to the
+        # original batch start so later jobs cannot keep moving the deadline.
+        required_model_call_count += 1
+        budget = settings.batch_timeout_seconds(required_model_call_count)
+        if budget != total_timeout_seconds:
+            total_timeout_seconds = budget
+            batch_deadline.reschedule(batch_started + budget)
+            event("report_brief_budget", required_model_call_count=required_model_call_count,
+                  total_timeout_seconds=budget,
+                  max_total_timeout_seconds=settings.max_total_timeout_seconds)
+        trace = ModelCallTrace(
+            logger, "report_brief", run_id=request.run_id, version_id=document.version_id,
+            model=settings.model, timeout_seconds=settings.timeout_seconds, output_limit=5000,
+            source_chars=sum(len(part.text) for part in context.sources.values()),
+            requested_fields=",".join(json.loads(context.payload)["requested_fields"]),
+        )
+        traces[key] = trace
+        async with trace.observe():
+            trace.stage("queued")
+            queued = time.perf_counter()
+            async with semaphore:
+                trace.update(queue_wait_seconds=round(time.perf_counter() - queued, 3))
+                trace.stage("model_prepare")
+                async with asyncio.timeout(settings.timeout_seconds):
+                    if runner is None:
+                        if not settings.api_key:
+                            raise ValueError("Report model API key unavailable")
+                        runner = SmallModelBriefRunner(settings)
+                    trace.stage("model_wait")
+                    output = await runner.extract(context)
+                    trace.stage("response_parsed")
+            _CACHE[key] = (time.monotonic(), output)
+            _CACHE.move_to_end(key)
+            while len(_CACHE) > _CACHE_SIZE:
+                _CACHE.popitem(last=False)
+            return output, "model_success"
 
     async def prepare(document):
+        context_started = time.perf_counter()
         context = build_context(document, settings.max_text_chars)
+        event("report_brief_context", version_id=document.version_id,
+              input_build_seconds=round(time.perf_counter() - context_started, 3),
+              source_chars=sum(len(part.text) for part in context.sources.values()))
         if not json.loads(context.payload)["requested_fields"]:
             empty = BriefOutput(
                 applicants=[], deadlines=[], destinations=[], contacts=[], documents=[]
             )
             results[document.version_id] = validate_brief(empty, context, document)
+            result_event(document, "reused_facts")
             return
         if runner is None and not settings.api_key:
             results[document.version_id] = fallback_brief(document, "제출 안내 자동 정리 미실행")
+            result_event(document, "fallback", reason="missing_api_key")
             return
         if not any(part.text.strip() for part in context.sources.values()):
             results[document.version_id] = fallback_brief(document, "제출 안내 원문 부족")
+            result_event(document, "fallback", reason="empty_source")
             return
         key = hashlib.sha256(
             (_PROMPT_VERSION + settings.model + context.payload).encode()
         ).hexdigest()
-        # Repeated detections of identical input share one call within this job.
-        if key not in jobs:
-            jobs[key] = asyncio.create_task(extract(context, key))
+        shared = key in jobs
+        if not shared:
+            jobs[key] = asyncio.create_task(extract(context, key, document))
+        validation_started = None
         try:
-            output = await asyncio.shield(jobs[key])
+            output, outcome = await asyncio.shield(jobs[key])
+            validation_started = time.perf_counter()
             results[document.version_id] = validate_brief(output, context, document)
+            event("report_brief_validation", version_id=document.version_id, outcome="success",
+                  call_id=traces[key].call_id if key in traces else None,
+                  elapsed_seconds=round(time.perf_counter() - validation_started, 3))
+            result_event(document, "shared_call" if shared else outcome, key=key)
         except Exception as error:
             logger.warning(
                 "보고서 제출 안내 정리 실패. version_id=%s type=%s",
-                document.version_id,
-                type(error).__name__,
+                document.version_id, type(error).__name__,
             )
             results[document.version_id] = fallback_brief(document, "제출 안내 자동 정리 실패")
+            reason = (
+                "document_timeout" if error_details(error).get("timeout_kind") else "model_error"
+            )
+            if validation_started is not None:
+                reason = "validation_error"
+                event("report_brief_validation", version_id=document.version_id, outcome="error",
+                      call_id=traces[key].call_id if key in traces else None,
+                      elapsed_seconds=round(time.perf_counter() - validation_started, 3),
+                      **error_details(error))
+            result_event(document, "fallback", reason=reason, key=key, error=error)
 
+    total_timeout = False
+    batch_started = asyncio.get_running_loop().time()
     try:
-        async with asyncio.timeout(settings.total_timeout_seconds):
+        async with asyncio.timeout_at(batch_started + total_timeout_seconds) as batch_deadline:
             await asyncio.gather(*(prepare(d) for d in request.documents))
     except TimeoutError:
+        total_timeout = True
         logger.warning("보고서 제출 안내 전체 시간 제한. run_id=%s", request.run_id)
     finally:
         for job in jobs.values():
@@ -289,4 +376,12 @@ async def prepare_report_briefs(
     for document in request.documents:
         if document.version_id not in results:
             results[document.version_id] = fallback_brief(document, "제출 안내 자동 정리 시간 초과")
+            result_event(document, "fallback", reason="total_timeout")
+    event("report_brief_batch_finish", document_count=len(request.documents),
+          elapsed_seconds=round(time.perf_counter() - started, 3), total_timeout=total_timeout,
+          total_timeout_seconds=total_timeout_seconds,
+          max_total_timeout_seconds=settings.max_total_timeout_seconds,
+          required_model_call_count=required_model_call_count,
+          degraded=counts["fallback"] > 0,
+          **{name + "_count": count for name, count in counts.items()})
     return results

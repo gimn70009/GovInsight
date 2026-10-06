@@ -152,7 +152,8 @@ def test_real_timeout_cancellation_keeps_source_list(total, per_document):
     req = request()
     runner = SimpleNamespace(extract=AsyncMock(side_effect=slow))
     settings = replace(
-        ReportBriefSettings(), total_timeout_seconds=total, timeout_seconds=per_document
+        ReportBriefSettings(), total_timeout_seconds=total, timeout_seconds=per_document,
+        max_total_timeout_seconds=total,
     )
     result = run(req, runner, settings)[2]
     assert names(result) == APPLICATION_NAMES

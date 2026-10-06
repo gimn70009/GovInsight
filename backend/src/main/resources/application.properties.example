@@ -50,3 +50,10 @@ app.email.sender-name=${EMAIL_SENDER_NAME:GovInsight}
 app.report.recovery.enabled=${REPORT_RECOVERY_ENABLED:true}
 app.report.recovery.interval-ms=${REPORT_RECOVERY_INTERVAL_MS:5000}
 app.report.recovery.initial-delay-ms=${REPORT_RECOVERY_INITIAL_DELAY_MS:10000}
+
+# Durable analysis/proposal recovery (requires analysis_tasks table)
+app.analysis.recovery.enabled=true
+app.analysis.recovery.interval-ms=10000
+app.analysis.recovery.initial-delay-ms=10000
+app.analysis.recovery.minimum-lease=PT30M
+app.analysis.recovery.per-document-lease=PT15M

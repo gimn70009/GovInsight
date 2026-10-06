@@ -22,7 +22,11 @@ class ReportTelegramTemplateTest {
         assertThat(telegram).contains("요약 전문은 이메일 보고서", "2026년 10월 31일 24:00까지",
                 "[게시글 보기](https://example.org/notice?q=1&x=2)");
         assertThat(ReportBodyFormatter.displayLength(telegram)).isLessThanOrEqualTo(4096);
-        assertThat(ReportEmailTemplate.render("보고서", body)).contains(summary.strip());
+        String email = ReportEmailTemplate.render("보고서", body);
+        String visibleSummary = java.util.regex.Pattern.compile(
+                "<p data-report-summary-item[^>]*>(.*?)</p>").matcher(email).results()
+                .map(match -> match.group(1)).collect(java.util.stream.Collectors.joining(" "));
+        assertThat(visibleSummary).isEqualTo(summary.strip());
     }
 
     @Test void wholeCardsAreOmittedWithoutSplittingLongUrlsOrSurrogates() {

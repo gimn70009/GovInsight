@@ -43,6 +43,7 @@ public class PythonAnalysisClient {
     private boolean isValid(PythonAnalysisJobResponse response, PythonAnalysisJobRequest request) {
         return response != null
                 && response.jobId() != null
+                && (request.jobId() == null || request.jobId().equals(response.jobId()))
                 && response.status() == PythonAnalysisJobStatus.ACCEPTED
                 && response.documentCount() == request.documents().size();
     }

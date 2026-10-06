@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
+from uuid import UUID
 
 from pydantic import Field, model_validator
 
@@ -70,5 +71,6 @@ class AnalysisDocumentRequest(CamelCaseModel):
 
 
 class AnalysisJobRequest(CamelCaseModel):
+    job_id: UUID | None = None
     run_id: int = Field(gt=0)
     documents: list[AnalysisDocumentRequest] = Field(min_length=1)

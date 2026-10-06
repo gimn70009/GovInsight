@@ -53,6 +53,8 @@ class AnalysisResultServiceTest {
     @Mock AnalysisDocumentDetectionRepository detectionRepository;
     @Mock DocumentAnalysisRepository analysisRepository;
     @Mock ApplicationEventPublisher eventPublisher;
+    @Mock com.publicmonitor.backend.domain.analysis.repository.AnalysisTaskRepository tasks;
+    @Mock AnalysisTaskService taskService;
 
     private AnalysisResultService service;
     private MonitoringRun run;
@@ -66,7 +68,7 @@ class AnalysisResultServiceTest {
                 analysisRepository,
                 new ObjectMapper(),
                 Clock.fixed(Instant.parse("2026-08-21T01:00:00Z"), ZoneOffset.UTC),
-                eventPublisher
+                eventPublisher, tasks, taskService
         );
         MonitoringSource source = MonitoringSource.create(
                 "산업통상부", "사업공고", null, "https://example.com", null, 3, true
@@ -87,7 +89,7 @@ class AnalysisResultServiceTest {
                 runSource, document, version, DocumentChangeType.NEW_DOCUMENT, LocalDateTime.now()
         );
         ReflectionTestUtils.setField(detection, "id", 50L);
-        given(runRepository.findById(10L)).willReturn(Optional.of(run));
+        given(runRepository.findForUpdate(10L)).willReturn(Optional.of(run));
         given(detectionRepository.findById(50L)).willReturn(Optional.of(detection));
     }
 

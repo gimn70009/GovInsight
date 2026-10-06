@@ -80,8 +80,9 @@ public final class ReportEmailTemplate {
         boolean factsOpen = false;
         boolean attachmentsOpen = false;
         boolean submissionCardOpen = false;
-        for (String raw : content.subList(1, content.size())) {
-            String line = raw.strip();
+        List<String> grouped = ReportSubmissionDownloads.group(content);
+        for (int row = 1; row < grouped.size(); row++) {
+            String line = grouped.get(row).strip();
             if (line.isBlank()) continue;
             if (headerOpen && line.startsWith("기관: ")) {
                 html.append("<p style=\"margin:12px 0 0;color:#476581;font-size:14px;line-height:1.6\">")
@@ -128,8 +129,7 @@ public final class ReportEmailTemplate {
             }
             if (line.startsWith("요약: ")) {
                 html.append("<p style=\"margin:0 0 8px;font-size:12px;font-weight:700;color:#59708c\">사업 요약</p>")
-                        .append("<p style=\"margin:0 0 24px;font-size:15px;line-height:1.85;color:#344c65\">")
-                        .append(linked(line.substring(4))).append("</p>");
+                        .append(summaryValues(line.substring(4)));
             } else if (line.startsWith("• ") && !attachmentsOpen && line.contains(": ")) {
                 if (!factsOpen) {
                     html.append("<h3 style=\"margin:0 0 12px;font-size:15px;color:#243f5e\">"
@@ -140,18 +140,33 @@ public final class ReportEmailTemplate {
                 int colon = line.indexOf(": ");
                 String label = line.substring(2, colon);
                 String value = line.substring(colon + 2);
-                boolean unknown = value.contains("원문 확인") || value.contains("명시되지 않았");
+                boolean unknown = value.contains("원문 확인") || value.contains("원문 표에서")
+                        || value.contains("명시되지 않았") || ReportFactPresentation.unreadableTable(value);
                 html.append("<tr><td style=\"padding:13px 14px;background:#f3f6fa;border-bottom:1px solid #e1e8f1\">")
                         .append("<div style=\"margin-bottom:5px;font-size:12px;color:#526b87;font-weight:700\">")
                         .append(ReportBodyFormatter.html(label)).append("</div>")
                         .append("<div style=\"font-size:14px;line-height:1.85;overflow-wrap:anywhere;")
                         .append(unknown ? "color:#78879a" : label.contains("기한") ? "color:#215fa8;font-weight:700" : "color:#253d59")
-                        .append("\">").append(factValues(value)).append("</div></td></tr>");
+                        .append("\">").append(factValues(label, value)).append("</div></td></tr>");
             } else {
                 if (factsOpen) { html.append("</table>"); factsOpen = false; }
                 if (line.equals("제출 준비 서류 ↓")) {
                     html.append("<h3 style=\"margin:24px 0 12px;font-size:15px;color:#243f5e\">제출 준비 서류</h3>");
-                    attachmentsOpen = true;
+                    var items = new ArrayList<String>();
+                    int end = row + 1;
+                    while (end < grouped.size()) {
+                        String entry = grouped.get(end).strip();
+                        if (!entry.isBlank() && !entry.startsWith("• ")) break;
+                        if (!entry.isBlank()) items.add(entry.substring(2));
+                        end++;
+                    }
+                    if (!items.isEmpty()) {
+                        html.append(submissionSections(items));
+                        row = end - 1;
+                        attachmentsOpen = false;
+                    } else {
+                        attachmentsOpen = true;
+                    }
                 } else if (line.equals("첨부파일 ↓")) {
                     html.append("<h3 style=\"margin:24px 0 12px;font-size:15px;color:#243f5e\">첨부파일 <span style=\"font-weight:400;font-size:12px;color:#718399\">파일명을 눌러 다운로드</span></h3>");
                     attachmentsOpen = true;
@@ -165,7 +180,7 @@ public final class ReportEmailTemplate {
                             .append(linked(line)).append("</div>");
                 } else if (attachmentsOpen && line.startsWith("• ")) {
                     html.append("<div style=\"margin:0 0 8px;padding:12px 14px;background:#f0f5fc;border:1px solid #d7e4f5;border-radius:8px;font-size:13px;line-height:1.7;overflow-wrap:anywhere;word-break:break-word\">")
-                            .append(linked(line.substring(2))).append("</div>");
+                            .append(submissionEntry(line.substring(2))).append("</div>");
                 } else {
                     html.append("<p style=\"font-size:14px;line-height:1.8;overflow-wrap:anywhere\">").append(linked(line)).append("</p>");
                 }
@@ -193,10 +208,68 @@ public final class ReportEmailTemplate {
         return ScorePalette.NEUTRAL;
     }
 
-    private static String factValues(String value) {
+    private static String summaryValues(String value) {
+        var html = new StringBuilder("<div style=\"margin:0 0 24px\">");
+        for (String paragraph : ReportFactPresentation.lines("사업 요약", value)) {
+            html.append("<p data-report-summary-item style=\"margin:0 0 10px;font-size:15px;line-height:1.85;color:#344c65;word-break:keep-all;overflow-wrap:anywhere\">")
+                    .append(linked(paragraph)).append("</p>");
+        }
+        return html.append("</div>").toString();
+    }
+
+    private static final Pattern SUBMISSION_LINK = Pattern.compile(
+            "^\\[[^\\[\\]\\r\\n]+\\]\\((https?://[^\\s()<>\"]+)\\)");
+
+    private static String submissionSections(List<String> items) {
+        var forms = new ArrayList<String>();
+        var company = new ArrayList<String>();
+        for (String item : items) {
+            var match = SUBMISSION_LINK.matcher(item);
+            boolean downloadable = match.find() && ReportBodyFormatter.safeUrl(match.group(1));
+            (downloadable ? forms : company).add(item);
+        }
+        return submissionSection("공고에서 제공한 양식", "파일을 내려받아 작성해 주세요.", forms, true)
+                + submissionSection("회사에서 준비할 서류",
+                    "회사 자료를 준비하거나 발급받아 주세요. 링크가 없는 양식은 공고 원문에서 확인해 주세요.",
+                    company, false);
+    }
+
+    private static String submissionSection(String title, String description, List<String> items, boolean forms) {
+        if (items.isEmpty()) return "";
+        var html = new StringBuilder("<div data-submission-section=\"")
+                .append(forms ? "provided" : "company")
+                .append("\" style=\"margin:16px 0 22px\">")
+                .append("<h4 style=\"margin:0 0 6px;font-size:14px;color:#243f5e\">")
+                .append(title).append("</h4>")
+                .append("<p style=\"margin:0 0 10px;color:#60748e;font-size:12px;line-height:1.7\">")
+                .append(description).append("</p>");
+        for (String item : items) {
+            html.append("<div style=\"margin:0 0 8px;padding:12px 14px;border:1px solid ")
+                    .append(forms ? "#d7e4f5;background:#f0f5fc;" : "#e0e5eb;background:#f7f8fa;")
+                    .append("border-radius:8px;font-size:13px;line-height:1.7;overflow-wrap:anywhere;word-break:break-word\">")
+                    .append(submissionEntry(item)).append("</div>");
+        }
+        return html.append("</div>").toString();
+    }
+
+    private static String submissionEntry(String text) {
+        String[] parts = text.split("\n", 2);
+        String result = linked(parts[0]);
+        if (parts.length == 2 && !parts[1].stripLeading().startsWith("관련 서류:")) {
+            result += "<div style=\"margin-top:6px;color:#526b87;font-size:12px;line-height:1.7\">"
+                    + ReportBodyFormatter.html(parts[1]).replace("\n", "<br>") + "</div>";
+        }
+        return result;
+    }
+
+    private static String factValues(String label, String value) {
         var result = new StringBuilder();
-        for (String item : value.split("\n")) {
-            result.append("<div data-report-fact-item style=\"padding:4px 0;line-height:1.65;word-break:keep-all;overflow-wrap:anywhere\">")
+        var items = ReportFactPresentation.lines(label, value);
+        for (String item : items) {
+            result.append("<div data-report-fact-item style=\"")
+                    .append(items.size() > 1 ? "padding:6px 0 6px 14px;text-indent:-14px;" : "padding:4px 0;")
+                    .append("line-height:1.65;word-break:keep-all;overflow-wrap:anywhere\">")
+                    .append(items.size() > 1 ? "<span aria-hidden=\"true\" style=\"color:#59708c;margin-right:8px\">•</span>" : "")
                     .append(linked(item)).append("</div>");
         }
         return result.toString();

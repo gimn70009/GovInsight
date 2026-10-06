@@ -131,7 +131,7 @@ class ReportEmailTemplateTest {
     @Test void rendersSubmissionChecklistAndWritesPreview() throws Exception {
         String body = java.nio.file.Files.readString(java.nio.file.Path.of("src/test/resources/reports/submission-checklist.txt"));
         String html = ReportEmailTemplate.render("보고서 · 제출 준비 안내", body);
-        assertThat(html).contains("제출 준비 서류</h3>", "사업계획서 (ZIP)</a>", "개인정보동의서 (ZIP)</a>",
+        assertThat(html).contains("제출 준비 서류</h3>", "통합 서류 파일</a>",
                 "납세증명서(해당 시)", "신청서</a>", "사업자등록증 사본");
         assertThat(html).contains("data-report-note", "미확인 항목: 제출처·방법, 문의 담당");
         assertThat(html).doesNotContain("원문 확인 필요", "확인된 제출 서류가 없습니다");

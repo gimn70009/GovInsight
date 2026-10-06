@@ -9,6 +9,10 @@ _COMPANY_SUBJECT = re.compile(
     r"^\s*(?:당사|저희(?:\s*회사)?|우리\s*회사)(?:는|가|에서)(?!\w)"
 )
 _RULES = (
+    ("section_preamble", re.compile(
+        r"^\s*(?:본|이|해당)\s*(?:항목|절|장|부분|작성란)(?:에서는|에는|은|는|에서)\s+"
+        r"[^.!?。]{0,500}?(?:기술|설명|서술|소개|정리|제시|작성)(?:합니다|하겠습니다)[.。]"
+    )),
     ("reader_address", re.compile(r"(?<!\w)(?:귀사|귀하)" + _PARTICLES + r"(?!\w)")),
     ("writing_instruction", re.compile(
         r"(?<!\w)(?:작성|기재)(?:하세요|하십시오|해\s*주세요|해\s*주십시오)(?!\w)"
@@ -67,3 +71,15 @@ def verify_proposal_guidance(body: str) -> None:
     issues = guidance_issues(body)
     if issues:
         raise ProposalGuidanceError(issues)
+
+
+_SECTION_PREAMBLE = re.compile(
+    r"^\s*(?:본|이|해당)\s*(?:항목|절|장|부분|작성란)(?:에서는|에는|은|는|에서)\s+"
+    r"[^.!?。]{0,500}?(?:기술|설명|서술|소개|정리|제시|작성)(?:합니다|하겠습니다)[.。]\s*"
+    r"(?=(?:당사(?:는|가|의|에서)|저희|우리\s*회사))"
+)
+
+
+def strip_section_preamble(body: str) -> str:
+    """Drop a pure section introduction only when actual company prose follows."""
+    return _SECTION_PREAMBLE.sub("", body, count=1)

@@ -77,17 +77,20 @@ def test_identity_qualifiers_and_conflicting_form_numbers_are_preserved(titles):
     form = SourcePart("제출양식.hwp", "", URL)
     body = render([SubmissionDocument(title, form) for title in titles])
     for title in titles:
-        assert f"[{title}]({URL})" in body
+        assert title in body
+    assert body.count(f"]({URL})") == 1
 
 
 @pytest.mark.parametrize("archive", [None, "제출양식.zip"])
-def test_shared_download_does_not_merge_distinct_files_or_zip_members(archive):
+def test_shared_download_keeps_member_names_with_one_download(archive):
     titles = ["사업계획서", "사업계획서(붙임2 양식)"]
     items = [SubmissionDocument(title, SourcePart(name, "", URL, archive))
              for title, name in zip(titles, ["A/사업계획서.hwp", "B/사업계획서.hwp"], strict=True)]
     body = render(items)
     assert body.count("사업계획서") == 2
-    assert body.count("(ZIP)") == (2 if archive else 0)
+    assert body.count(f"]({URL})") == 1
+    assert "관련 서류: " in body
+    assert ("[제출양식.zip]" if archive else "[통합 서류 파일]") in body
 
 
 def test_identical_archive_member_keeps_one_zip_download():
