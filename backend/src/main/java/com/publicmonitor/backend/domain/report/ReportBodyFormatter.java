@@ -106,7 +106,7 @@ public final class ReportBodyFormatter {
                 .replace(">", "&gt;").replace("\"", "&quot;");
     }
 
-    private static boolean safeUrl(String value) {
+    static boolean safeUrl(String value) {
         try {
             var uri = URI.create(value);
             return ("https".equalsIgnoreCase(uri.getScheme()) || "http".equalsIgnoreCase(uri.getScheme()))

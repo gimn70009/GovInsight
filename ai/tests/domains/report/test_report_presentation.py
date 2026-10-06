@@ -113,7 +113,7 @@ def test_model_emits_evidence_once_and_local_code_derives_verbatim_value():
         validate_brief(
             result, build_context(req.documents[0], 16000), req.documents[0]
         ).facts.applicant
-        == item.display_text
+        == "원문 확인 필요"
     )
     # Forged fragments are still rejected, even though the display is readable.
     item.fragments = ["국내주관기관자격", "대기업"]
@@ -121,7 +121,7 @@ def test_model_emits_evidence_once_and_local_code_derives_verbatim_value():
         validate_brief(
             model.extracted(), build_context(req.documents[0], 16000), req.documents[0]
         ).facts.applicant
-        == "원문 확인 필요"
+        == "원문 확인 필요"  # Role columns and their conditions cannot safely be flattened.
     )
 
 

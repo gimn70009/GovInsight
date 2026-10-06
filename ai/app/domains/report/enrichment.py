@@ -27,7 +27,7 @@ from app.domains.report.schemas.request import ReportJobRequest
 from app.domains.report.submission_documents import source_priority
 
 logger = logging.getLogger(__name__)
-_PROMPT_VERSION = "submission-brief-ko-v12-submission-items"
+_PROMPT_VERSION = "submission-brief-ko-v15-table-quality"
 _CACHE: OrderedDict[str, tuple[float, BriefOutput]] = OrderedDict()
 _CACHE_SIZE = 256
 

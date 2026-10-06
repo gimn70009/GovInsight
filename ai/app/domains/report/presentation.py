@@ -44,8 +44,38 @@ def _anchors(value: str) -> set[str]:
     return anchors
 
 
-def korean_display(raw: str, quote: str, display: str | None) -> str | None:
-    if display is None:
+
+_TABLE_COLUMNS = re.compile(
+    r"(?:^|\s)(부문|훈격|규모|수공기간|공적기간|포상대상|포상규모|인원|구분|합계|"
+    r"지원대상|지원규모|지원기간)(?=\s|$)"
+)
+
+
+def unreadable_table(value: str) -> bool:
+    """Reject flattened column/value streams; never guess which number is a condition."""
+    text = " ".join(value.split())
+    return (
+        len(set(_TABLE_COLUMNS.findall(text))) >= 3
+        or bool(re.search(r"(?<!\S)\d+\s+(?:계|합계|총계)\s+\d+(?!\S)", text))
+        or len(re.findall(r"(?:주관|공동)기관자격", text)) > 1
+    )
+
+
+def source_check_message(label: str) -> str:
+    subject = {
+        "제출 주체·대상": "신청 자격과 제외 조건",
+        "제출·의견 기한": "마감일과 접수 기준",
+        "제출처·방법": "접수처와 제출 방법",
+        "문의 담당": "담당 부서와 연락 방법",
+        "사업 요약": "사업 내용과 세부 조건",
+    }.get(label, label)
+    return f"원문 표에서 {subject}을 확인해 주세요."
+
+
+def korean_display(
+    raw: str, quote: str, display: str | None, *, kind: str | None = None
+) -> str | None:
+    if display is None or unreadable_table(quote) or unreadable_table(raw):
         return None
     value = " ".join(display.split())
     if not value or len(value) > 150 or not re.search(r"[가-힣]", value) or foreign_prose(value):
@@ -54,16 +84,44 @@ def korean_display(raw: str, quote: str, display: str | None) -> str | None:
     if not _anchors(value) <= _anchors(quote) or not _anchors(raw) <= _anchors(value):
         return None
 
+    # Bind each comparator to its quantity and unit, not just a set of directions.
     def bounds(text):
-        return set(re.findall(r"(?<=\d)\s*(?:%|억원|원|명|년|일)?\s*(이상|이하|미만|초과)", text))
+        return {
+            re.sub(r"\s+", "", match)
+            for match in re.findall(
+                r"\d+(?:[.,]\d+)*\s*(?:%|[가-힣]+)?\s*(?:이상|이하|미만|초과)",
+                unicodedata.normalize("NFKC", text),
+            )
+        }
 
-    if not bounds(raw) <= bounds(value):
+    if bounds(raw) != bounds(value):
+        return None
+    # Do not ask a paraphrase to carry eligibility/exception semantics. Preserve
+    # the complete cited Korean condition, including clauses omitted in fragments.
+    preserve_applicant = (
+        kind == "applicant" and re.search(r"[가-힣]", quote) and not foreign_prose(quote)
+    )
+    if preserve_applicant or _protected_condition(quote):
+        # Flattening several role columns would attach a condition to the wrong party.
+        if len(re.findall(r"(?:주관|공동)기관자격", quote)) > 1:
+            return None
+        source = " ".join(quote.split())
+        return source if len(source) <= 150 else None
+    if _protected_condition(value) and not _protected_condition(quote):
         return None
     return value
 
 
+def _protected_condition(text: str) -> bool:
+    return bool(re.search(r"[가-힣]", text) and not foreign_prose(text) and re.search(
+        r"불가|제외|제한|한정|필수|반드시|의무|경우|예외|다만|단[,，:]|"
+        r"없|않|못|금지|이상|이하|미만|초과|가능|유효|동시|에만|만\s*(?:신청|지원|참여|접수)",
+        text,
+    ))
+
+
 def readable_source(value: str, kind: str) -> str | None:
-    if len(value) > 150 or foreign_prose(value):
+    if len(value) > 150 or foreign_prose(value) or unreadable_table(value):
         return None
     if kind == "applicant":
         # Isolated table cells lack the role needed to interpret eligibility.
@@ -165,3 +223,21 @@ def deadline_display_lines(value: str) -> list[str]:
             result.append(formatted)
             seen.add(key)
     return result
+
+
+def submission_display_lines(value: str, label: str) -> list[str]:
+    """Remove document outline noise without summarizing or changing any conditions."""
+    if unreadable_table(value):
+        return [source_check_message(label)]
+    text = re.sub(r"(?:^|\s+)[ㅇ○●▪•□■◦▫◇▶▸]\s+", "\n", value).strip()
+    if label == "제출 주체·대상":
+        text = re.sub(
+            r"^(?:[가-하][.)]\s*)?(?:신청\s*자격|신청\s*대상|지원\s*대상)"
+            r"(?=\s|[:：]|$)\s*[:：]?\s*", "", text,
+        )
+    if "기한" in label:
+        text = re.sub(r"^표제\s*[:：]\s*", "", text)
+    # Korean sentence endings only: do not split dates, decimals, names or URLs.
+    text = re.sub(r"(?<=[다요]\.)\s+(?=[가-힣])", "\n", text)
+    text = text.replace("공.사", "공·사")
+    return [line.strip() for line in text.splitlines() if line.strip()]
