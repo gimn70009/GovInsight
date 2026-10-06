@@ -244,11 +244,15 @@ async def prepare_report_briefs(
 
     event("report_brief_batch_start", document_count=len(request.documents), model=settings.model,
           timeout_seconds=settings.timeout_seconds,
-          total_timeout_seconds=settings.total_timeout_seconds, concurrency=settings.concurrency)
+          total_timeout_seconds=settings.total_timeout_seconds,
+          max_total_timeout_seconds=settings.max_total_timeout_seconds,
+          concurrency=settings.concurrency)
     semaphore = asyncio.Semaphore(settings.concurrency)
     results: dict[int, SubmissionBrief] = {}
     jobs = {}
     traces = {}
+    required_model_call_count = 0
+    total_timeout_seconds = settings.total_timeout_seconds
     counts = {name: 0 for name in (
         "model_success", "reused", "cache_hit", "shared_call", "fallback",
     )}
@@ -261,11 +265,21 @@ async def prepare_report_briefs(
               **(error_details(error) if error else {}))
 
     async def extract(context: BriefContext, key: str, document) -> tuple[BriefOutput, str]:
-        nonlocal runner
+        nonlocal runner, required_model_call_count, total_timeout_seconds
         cached = _CACHE.get(key)
         if cached and time.monotonic() - cached[0] < settings.cache_ttl_seconds:
             _CACHE.move_to_end(key)
             return cached[1], "cache_hit"
+        # Only distinct cache misses reach here. Anchor every extension to the
+        # original batch start so later jobs cannot keep moving the deadline.
+        required_model_call_count += 1
+        budget = settings.batch_timeout_seconds(required_model_call_count)
+        if budget != total_timeout_seconds:
+            total_timeout_seconds = budget
+            batch_deadline.reschedule(batch_started + budget)
+            event("report_brief_budget", required_model_call_count=required_model_call_count,
+                  total_timeout_seconds=budget,
+                  max_total_timeout_seconds=settings.max_total_timeout_seconds)
         trace = ModelCallTrace(
             logger, "report_brief", run_id=request.run_id, version_id=document.version_id,
             model=settings.model, timeout_seconds=settings.timeout_seconds, output_limit=5000,
@@ -347,8 +361,9 @@ async def prepare_report_briefs(
             result_event(document, "fallback", reason=reason, key=key, error=error)
 
     total_timeout = False
+    batch_started = asyncio.get_running_loop().time()
     try:
-        async with asyncio.timeout(settings.total_timeout_seconds):
+        async with asyncio.timeout_at(batch_started + total_timeout_seconds) as batch_deadline:
             await asyncio.gather(*(prepare(d) for d in request.documents))
     except TimeoutError:
         total_timeout = True
@@ -364,6 +379,9 @@ async def prepare_report_briefs(
             result_event(document, "fallback", reason="total_timeout")
     event("report_brief_batch_finish", document_count=len(request.documents),
           elapsed_seconds=round(time.perf_counter() - started, 3), total_timeout=total_timeout,
+          total_timeout_seconds=total_timeout_seconds,
+          max_total_timeout_seconds=settings.max_total_timeout_seconds,
+          required_model_call_count=required_model_call_count,
           degraded=counts["fallback"] > 0,
           **{name + "_count": count for name, count in counts.items()})
     return results

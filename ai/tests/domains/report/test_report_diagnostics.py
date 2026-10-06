@@ -61,6 +61,7 @@ def test_success_logs_run_document_call_and_batch_counts_without_source(caplog):
     assert start["concurrency"] == 2
     assert start["timeout_seconds"] == settings.timeout_seconds
     assert start["total_timeout_seconds"] == settings.total_timeout_seconds
+    assert start["max_total_timeout_seconds"] == settings.max_total_timeout_seconds
     calls = events(caplog, "model_call_start")
     assert len(calls) == 2
     assert len({call["call_id"] for call in calls}) == 2
@@ -126,7 +127,7 @@ def test_total_timeout_distinguishes_queued_call_from_active_model_wait(caplog):
             runner=SimpleNamespace(extract=extract),
             settings=replace(
                 ReportBriefSettings(), concurrency=1, timeout_seconds=2,
-                total_timeout_seconds=0.05,
+                total_timeout_seconds=0.05, max_total_timeout_seconds=0.05,
             ),
         )
         assert calls == 1

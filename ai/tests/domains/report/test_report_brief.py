@@ -318,7 +318,8 @@ def test_timeouts_cancel_pending_calls_and_keep_successful_documents(total, per_
         result = await enrichment.prepare_report_briefs(
             req,
             settings=replace(
-                ReportBriefSettings(), total_timeout_seconds=total, timeout_seconds=per_document
+                ReportBriefSettings(), total_timeout_seconds=total, timeout_seconds=per_document,
+                max_total_timeout_seconds=total,
             ),
             runner=SimpleNamespace(extract=extract),
         )
