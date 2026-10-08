@@ -3,6 +3,9 @@ package com.publicmonitor.backend.domain.document.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import com.publicmonitor.backend.domain.analysis.entity.DocumentImportance;
 import com.publicmonitor.backend.domain.analysis.entity.OpportunityPriority;
@@ -20,7 +23,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
-import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
 class DocumentDetectionQueryServiceTest {
@@ -33,10 +35,10 @@ class DocumentDetectionQueryServiceTest {
         LocalDateTime checkedAt = LocalDateTime.of(2026, 8, 21, 13, 31, 55);
         DocumentDetectionSummaryRow item = new DocumentDetectionSummaryRow(
                 3L, 15L, 8L, 10L, "기후에너지환경부", "공지/공고", "기업 지원사업 모집 공고",
-                DocumentChangeType.NEW_DOCUMENT, 2, DocumentImportance.HIGH, 59,
-                opportunityJson(), checkedAt
+                DocumentChangeType.NEW_DOCUMENT, 2, DocumentImportance.HIGH, 60,
+                OpportunityPriority.NORMAL, checkedAt
         );
-        given(detectionRepository.findFilteredSummaries(3L, null, null, null, false, PageRequest.of(0, 20)))
+        given(detectionRepository.findFilteredSummaries(3L, null, null, null, null, false, PageRequest.of(0, 20)))
                 .willReturn(new PageImpl<>(List.of(item), PageRequest.of(0, 20), 1));
 
         DocumentDetectionQueryService service = service();
@@ -60,12 +62,13 @@ class DocumentDetectionQueryServiceTest {
 
         assertThatThrownBy(() -> service().findAll(0, 20, from, to))
                 .isInstanceOf(DocumentDetectionException.class);
+        verifyNoInteractions(detectionRepository);
     }
 
     @Test
     void 기회_점수순을_선택하면_점수순_조회_쿼리를_사용한다() {
         PageRequest pageRequest = PageRequest.of(0, 20);
-        given(detectionRepository.findFilteredSummaries(null, null, null, null, true, pageRequest))
+        given(detectionRepository.findFilteredSummaries(null, null, null, null, null, true, pageRequest))
                 .willReturn(new PageImpl<>(List.of(), pageRequest, 0));
 
         PageResponse<DocumentDetectionSummaryResponse> response = service().findAll(
@@ -75,19 +78,46 @@ class DocumentDetectionQueryServiceTest {
         assertThat(response.content()).isEmpty();
     }
 
-    private DocumentDetectionQueryService service() {
-        return new DocumentDetectionQueryService(detectionRepository, new ObjectMapper());
+    @Test
+    void 우선순위와_검색_조건으로_요청한_페이지만_한번_조회한다() {
+        LocalDateTime from = LocalDateTime.of(2026, 10, 1, 0, 0);
+        LocalDateTime to = from.plusDays(1);
+        PageRequest pageRequest = PageRequest.of(3, 2);
+        var item = new DocumentDetectionSummaryRow(3L, 15L, 8L, 10L,
+                "기관", "게시판", "할인 50%_AI!", DocumentChangeType.NEW_DOCUMENT,
+                0, DocumentImportance.NORMAL, 80, OpportunityPriority.HIGH, from);
+        given(detectionRepository.findFilteredSummaries(3L, from, to, "%50!%!_ai!!%",
+                OpportunityPriority.HIGH, true, pageRequest))
+                .willReturn(new PageImpl<>(List.of(item, item), pageRequest, 17));
+
+        var response = service().findAll(3, 2, from, to, 3L,
+                DocumentDetectionSort.OPPORTUNITY_SCORE, "  50%_AI!  ", OpportunityPriority.HIGH);
+
+        assertThat(response.content()).hasSize(2)
+                .allMatch(row -> row.opportunityPriority() == OpportunityPriority.HIGH);
+        assertThat(response.totalElements()).isEqualTo(17);
+        assertThat(response.totalPages()).isEqualTo(9);
+        verify(detectionRepository).findFilteredSummaries(3L, from, to, "%50!%!_ai!!%",
+                OpportunityPriority.HIGH, true, pageRequest);
+        verifyNoMoreInteractions(detectionRepository);
     }
 
-    private String opportunityJson() {
-        return """
-                {"dimensions":[
-                  {"type":"COMPANY_FIT","score":60,"reason":"관련 기술이 있습니다."},
-                  {"type":"BUSINESS_VALUE","score":60,"reason":"사업 가치가 있습니다."},
-                  {"type":"FEASIBILITY","score":45,"reason":"자격 확인이 필요합니다."},
-                  {"type":"URGENCY","score":85,"reason":"기한이 임박했습니다."},
-                  {"type":"EVIDENCE_CONFIDENCE","score":45,"reason":"근거가 제한적입니다."}
-                ]}
-                """;
+    @Test
+    void 우선순위_필터가_없으면_미분석_문서도_그대로_반환한다() {
+        PageRequest pageRequest = PageRequest.of(0, 20);
+        var item = new DocumentDetectionSummaryRow(3L, 15L, 8L, 10L,
+                "기관", "게시판", "미분석", DocumentChangeType.NEW_DOCUMENT,
+                0, null, null, null, LocalDateTime.of(2026, 10, 1, 0, 0));
+        given(detectionRepository.findFilteredSummaries(null, null, null, null, null, false, pageRequest))
+                .willReturn(new PageImpl<>(List.of(item), pageRequest, 1));
+
+        assertThat(service().findAll(0, 20, null, null).content()).singleElement().satisfies(row -> {
+            assertThat(row.opportunityScore()).isNull();
+            assertThat(row.opportunityPriority()).isNull();
+        });
+    }
+
+    private DocumentDetectionQueryService service() {
+        return new DocumentDetectionQueryService(detectionRepository);
     }
 }

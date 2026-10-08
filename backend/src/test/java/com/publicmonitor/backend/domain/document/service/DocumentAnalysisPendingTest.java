@@ -177,7 +177,7 @@ class DocumentAnalysisPendingTest {
         return DocumentAnalysis.create(detection.getDocumentVersion(), "저장된 분석", "[]", DocumentImportance.NORMAL,
                 "근거", AnalysisEligibility.REVIEW_REQUIRED, AnalysisFavorability.NOT_APPLICABLE,
                 "{\"sections\":[],\"draftStatus\":\"" + draftStatus + "\"}",
-                null, null, "[]", "test-model", NOW);
+                null, null, null, "[]", "test-model", NOW);
     }
 
     private DocumentDetectionDetailService service() {

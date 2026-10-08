@@ -1,5 +1,6 @@
 package com.publicmonitor.backend.domain.document.repository;
 
+import com.publicmonitor.backend.domain.analysis.entity.OpportunityPriority;
 import com.publicmonitor.backend.domain.document.entity.DocumentDetection;
 import com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionSummaryRow;
 import java.time.LocalDateTime;
@@ -17,7 +18,7 @@ public interface DocumentDetectionRepository extends JpaRepository<DocumentDetec
                 runSource.monitoringRun.id, detection.id, document.id, version.id,
                 source.organizationName, source.boardName, version.title,
                 detection.changeType, version.attachmentCount, analysis.importance,
-                analysis.opportunityScore, analysis.opportunityAssessment, detection.detectedAt
+                analysis.opportunityScore, analysis.opportunityPriority, detection.detectedAt
             )
             from DocumentDetection detection
             join detection.document document
@@ -36,6 +37,7 @@ public interface DocumentDetectionRepository extends JpaRepository<DocumentDetec
             join detection.documentVersion version
             join detection.monitoringRunSource runSource
             join runSource.monitoringSource source
+            left join DocumentAnalysis analysis on analysis.documentVersion = version
             where (:runId is null or runSource.monitoringRun.id = :runId)
               and (:fromDateTime is null or detection.detectedAt >= :fromDateTime)
               and (:toDateTime is null or detection.detectedAt <= :toDateTime)
@@ -94,26 +96,31 @@ public interface DocumentDetectionRepository extends JpaRepository<DocumentDetec
                    lower(concat(source.organizationName, ' ', source.boardName, ' ', version.title))
                        like :searchPattern escape '!')
             """;
+    String PRIORITY_FILTER = """
+              and (:priority is null or analysis.opportunityPriority = :priority)
+            """;
     String SEARCH_ORDER = """
             order by case when :byScore = true then coalesce(analysis.opportunityScore, -1) else 0 end desc,
                      detection.detectedAt desc, detection.id desc
             """;
 
-    @Query(value = SUMMARY_QUERY + SEARCH_FILTER + SEARCH_ORDER,
-            countQuery = SUMMARY_COUNT_QUERY + SEARCH_FILTER)
+    @Query(value = SUMMARY_QUERY + SEARCH_FILTER + PRIORITY_FILTER + SEARCH_ORDER,
+            countQuery = SUMMARY_COUNT_QUERY + SEARCH_FILTER + PRIORITY_FILTER)
     Page<DocumentDetectionSummaryRow> findFilteredSummaries(
             @Param("runId") Long runId,
             @Param("fromDateTime") LocalDateTime fromDateTime,
             @Param("toDateTime") LocalDateTime toDateTime,
             @Param("searchPattern") String searchPattern,
+            @Param("priority") OpportunityPriority priority,
             @Param("byScore") boolean byScore, Pageable pageable);
 
-    @Query(value = SUMMARY_QUERY + BOOKMARK_FILTER + SEARCH_FILTER + SEARCH_ORDER,
-            countQuery = SUMMARY_COUNT_QUERY + BOOKMARK_FILTER + SEARCH_FILTER)
+    @Query(value = SUMMARY_QUERY + BOOKMARK_FILTER + SEARCH_FILTER + PRIORITY_FILTER + SEARCH_ORDER,
+            countQuery = SUMMARY_COUNT_QUERY + BOOKMARK_FILTER + SEARCH_FILTER + PRIORITY_FILTER)
     Page<DocumentDetectionSummaryRow> findFilteredBookmarkedSummaries(
             @Param("userId") Long userId, @Param("runId") Long runId,
             @Param("fromDateTime") LocalDateTime fromDateTime,
             @Param("toDateTime") LocalDateTime toDateTime,
             @Param("searchPattern") String searchPattern,
+            @Param("priority") OpportunityPriority priority,
             @Param("byScore") boolean byScore, Pageable pageable);
 }

@@ -12,6 +12,7 @@ import com.publicmonitor.backend.domain.analysis.entity.AnalysisFavorability;
 import com.publicmonitor.backend.domain.analysis.entity.DocumentAnalysis;
 import com.publicmonitor.backend.domain.analysis.entity.DocumentImportance;
 import com.publicmonitor.backend.domain.analysis.entity.OpportunityDimensionType;
+import com.publicmonitor.backend.domain.analysis.entity.OpportunityPriority;
 import com.publicmonitor.backend.domain.analysis.repository.AnalysisDocumentDetectionRepository;
 import com.publicmonitor.backend.domain.analysis.repository.DocumentAnalysisRepository;
 import com.publicmonitor.backend.domain.analysis.web.dto.AnalysisResultRequest;
@@ -95,7 +96,7 @@ class AnalysisResultServiceTest {
 
     @Test
     void 분석_결과를_문서_버전에_저장한다() {
-        given(analysisRepository.findByDocumentVersionId(40L)).willReturn(Optional.empty());
+        given(analysisRepository.findByDocumentVersionIdForUpdate(40L)).willReturn(Optional.empty());
 
         AnalysisResultResponse response = service.receive(request());
 
@@ -109,6 +110,8 @@ class AnalysisResultServiceTest {
         assertThat(captor.getValue().getProposalDirection())
                 .contains("sections", "핵심 판단", "제조 AI");
         assertThat(captor.getValue().getOpportunityScore()).isEqualTo(75);
+        assertThat(captor.getValue().getOpportunityPriority()).isEqualTo(OpportunityPriority.HIGH);
+        assertThat(captor.getValue().getOpportunityRankingVersion()).isEqualTo(DocumentAnalysis.OPPORTUNITY_RANKING_VERSION);
         assertThat(captor.getValue().getOpportunityAssessment())
                 .contains("COMPANY_FIT", "URGENCY");
         assertThat(response.storedAnalysisCount()).isEqualTo(1);
@@ -117,27 +120,32 @@ class AnalysisResultServiceTest {
 
     @Test
     void 같은_문서_버전의_분석_결과는_중복_저장하지_않는다() {
-        DocumentAnalysis existing = mock(DocumentAnalysis.class);
-        given(existing.requiresProposalSchemaUpgrade()).willReturn(false);
-        given(analysisRepository.findByDocumentVersionId(40L)).willReturn(Optional.of(existing));
+        DocumentAnalysis existing = DocumentAnalysis.create(detection.getDocumentVersion(), "기존 분석", "[]",
+                DocumentImportance.LOW, "기존 근거", AnalysisEligibility.REVIEW_REQUIRED,
+                AnalysisFavorability.NOT_APPLICABLE, "{}", 30, OpportunityPriority.LOW,
+                "{\"dimensions\":[{\"type\":\"COMPANY_FIT\",\"score\":30}]}", "[]", "old-model", LocalDateTime.now());
+        given(analysisRepository.findByDocumentVersionIdForUpdate(40L)).willReturn(Optional.of(existing));
 
         AnalysisResultResponse response = service.receive(request());
 
         assertThat(response.storedAnalysisCount()).isZero();
         assertThat(response.duplicateAnalysisCount()).isEqualTo(1);
+        assertThat(existing.getOpportunityScore()).isEqualTo(30);
+        assertThat(existing.getOpportunityPriority()).isEqualTo(OpportunityPriority.LOW);
+        assertThat(existing.getOpportunityRankingVersion()).isEqualTo(DocumentAnalysis.OPPORTUNITY_RANKING_VERSION);
     }
 
     @Test
     void 기존_사업제안_스키마는_새_분석_결과로_교체한다() {
         DocumentAnalysis existing = mock(DocumentAnalysis.class);
         given(existing.requiresProposalSchemaUpgrade()).willReturn(true);
-        given(analysisRepository.findByDocumentVersionId(40L)).willReturn(Optional.of(existing));
+        given(analysisRepository.findByDocumentVersionIdForUpdate(40L)).willReturn(Optional.of(existing));
 
         AnalysisResultResponse response = service.receive(request());
 
         verify(existing).replaceAnalysis(
                 any(), any(), any(), any(), any(), any(), any(),
-                any(), any(), any(), any(), any()
+                any(), any(), any(), any(), any(), any()
         );
         verify(analysisRepository, never()).save(any());
         assertThat(response.storedAnalysisCount()).isEqualTo(1);
@@ -210,7 +218,7 @@ class AnalysisResultServiceTest {
         String first = saved.get();
         service.receive(delivered);
         assertThat(saved.get()).isEqualTo(first).contains("원래 사업 목적", "비밀정보 조건 확인", "legalReviewVersion", "legalReviewedAt");
-        verify(existing, never()).replaceAnalysis(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+        verify(existing, never()).replaceAnalysis(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
         verify(existing, never()).updateSimilarity(any(), any(), any());
         verify(existing, org.mockito.Mockito.times(1)).updateComparisonSummary(any());
     }

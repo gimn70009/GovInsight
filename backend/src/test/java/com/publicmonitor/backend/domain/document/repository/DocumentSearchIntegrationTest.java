@@ -18,7 +18,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
-import tools.jackson.databind.ObjectMapper;
 
 @DataJpaTest(properties = {
     "spring.datasource.url=jdbc:h2:mem:document-search;MODE=Oracle;DB_CLOSE_DELAY=-1",
@@ -43,7 +42,7 @@ class DocumentSearchIntegrationTest {
     private int sequence;
 
     @BeforeEach void setup() {
-        query = new DocumentDetectionQueryService(detections, new ObjectMapper());
+        query = new DocumentDetectionQueryService(detections);
         saved = new DocumentBookmarkService(bookmarks, versions, detections, users, query);
         source = MonitoringSource.create("과학기술정보통신부", "RND 게시판", null, "https://example.org", null, 1, true);
         em.persist(source);
@@ -65,7 +64,8 @@ class DocumentSearchIntegrationTest {
                     OpportunityDimensionType.BUSINESS_VALUE, value, OpportunityDimensionType.FEASIBILITY, feasible,
                     OpportunityDimensionType.URGENCY, urgency));
             em.persist(DocumentAnalysis.create(version, "요약", "[]", DocumentImportance.NORMAL, null,
-                    null, null, null, score, assessment, "[]", "test", now));
+                    null, null, null, score, OpportunityScoreCalculator.priority(score, fit, feasible, urgency),
+                    assessment, "[]", "test", now));
         }
         return version;
     }
@@ -96,7 +96,7 @@ class DocumentSearchIntegrationTest {
         assertThat(query.findAll(0, 20, null, null, null, DocumentDetectionSort.LATEST, "없는 검색어", null).content()).isEmpty();
     }
 
-    @Test void 우선순위는_200건_묶음_밖에서도_기존_세부점수_기준으로_계산하고_페이징한다() {
+    @Test void 우선순위가_맞지_않는_다수_후보_뒤의_결과도_정확히_페이징한다() {
         for (int i = 0; i < 205; i++) add("사업 참고 " + i, now.plusMinutes(i), 30, 30, 30, 30);
         for (int i = 0; i < 22; i++) add("사업 우선 " + i, now.minusDays(1).plusMinutes(i), 80, 80, 80, 80);
         add("사업 긴급", now.minusDays(2), 55, 55, 55, 90);
@@ -115,6 +115,15 @@ class DocumentSearchIntegrationTest {
         assertThat(query.findAll(0, 20, null, null, run.getId(), DocumentDetectionSort.LATEST, "사업", OpportunityPriority.LOW).totalElements()).isEqualTo(205);
         var sorted = query.findAll(0, 20, null, null, run.getId(), DocumentDetectionSort.OPPORTUNITY_SCORE, "사업", OpportunityPriority.HIGH);
         assertThat(sorted.content().getFirst().opportunityScore()).isEqualTo(80);
+        assertThat(query.findAll(0, 20, null, null, run.getId(), DocumentDetectionSort.LATEST,
+                "사업", null).totalElements()).isEqualTo(231);
+        var unanalyzed = query.findAll(230, 1, null, null, run.getId(),
+                DocumentDetectionSort.OPPORTUNITY_SCORE, "사업", null);
+        assertThat(unanalyzed.content()).singleElement().satisfies(row -> {
+            assertThat(row.title()).isEqualTo("사업 미분석");
+            assertThat(row.opportunityScore()).isNull();
+            assertThat(row.opportunityPriority()).isNull();
+        });
     }
 
     @Test void 북마크도_전체에서_검색하고_계정과_최신감지_및_기간_범위를_유지한다() {
@@ -140,5 +149,86 @@ class DocumentSearchIntegrationTest {
         assertThat(saved.findAll(first.getId(), 0, 20, null, null, DocumentDetectionSort.LATEST, "중복", null).totalElements()).isEqualTo(1);
         assertThat(saved.findAll(first.getId(), 0, 20, null, now.minusHours(1), DocumentDetectionSort.LATEST, "중복", null).totalElements()).isZero();
         assertThat(saved.findAll(first.getId(), 0, 20, null, null, DocumentDetectionSort.LATEST, "스마트워치", OpportunityPriority.LOW).totalElements()).isZero();
+    }
+
+    @Test void 검색_우선순위_기간을_결합한_목록과_전체건수_조건이_일치한다() {
+        add("할인 50%_AI! 첫째", now, 80, 80, 80, 80);
+        add("할인 50%_AI! 둘째", now.plusHours(1), 80, 80, 80, 80);
+        add("할인 50%_AI! 기간 밖", now.minusSeconds(1), 80, 80, 80, 80);
+        add("할인 50%_AI! 낮은 우선순위", now, 30, 30, 30, 30);
+        add("할인 500XAI! 다른 제목", now, 80, 80, 80, 80);
+        add("할인 50%_AI! 미분석", now, -1, 0, 0, 0);
+        em.flush();
+
+        var first = query.findAll(0, 1, now, now.plusHours(1), run.getId(),
+                DocumentDetectionSort.LATEST, "50%_ai!", OpportunityPriority.HIGH);
+        var next = query.findAll(1, 1, now, now.plusHours(1), run.getId(),
+                DocumentDetectionSort.LATEST, "50%_ai!", OpportunityPriority.HIGH);
+
+        assertThat(first.totalElements()).isEqualTo(2);
+        assertThat(first.totalPages()).isEqualTo(2);
+        assertThat(next.totalElements()).isEqualTo(2);
+        assertThat(first.content()).extracting(row -> row.title()).containsExactly("할인 50%_AI! 둘째");
+        assertThat(next.content()).extracting(row -> row.title()).containsExactly("할인 50%_AI! 첫째");
+        assertThat(query.findAll(0, 1, now, now.plusHours(1), run.getId() + 9999,
+                DocumentDetectionSort.LATEST, "50%_ai!", OpportunityPriority.HIGH).totalElements()).isZero();
+    }
+
+    @Test void 점수와_감지시각이_같으면_ID역순으로_중복없이_페이징한다() {
+        var first = add("동점 첫째", now, 80, 80, 80, 80);
+        var second = add("동점 둘째", now, 80, 80, 80, 80);
+        var third = add("동점 셋째", now, 80, 80, 80, 80);
+        var recentLowerScore = add("최신 점수 79", now.plusMinutes(1), 79, 79, 79, 79);
+        em.flush();
+
+        var scoreFirst = query.findAll(0, 2, null, null, null,
+                DocumentDetectionSort.OPPORTUNITY_SCORE, null, OpportunityPriority.HIGH);
+        var scoreNext = query.findAll(1, 2, null, null, null,
+                DocumentDetectionSort.OPPORTUNITY_SCORE, null, OpportunityPriority.HIGH);
+        assertThat(scoreFirst.totalElements()).isEqualTo(4);
+        assertThat(scoreFirst.content()).extracting(row -> row.versionId())
+                .containsExactly(third.getId(), second.getId());
+        assertThat(scoreNext.content()).extracting(row -> row.versionId())
+                .containsExactly(first.getId(), recentLowerScore.getId());
+        var latestFirst = query.findAll(0, 2, null, null, null,
+                DocumentDetectionSort.LATEST, null, OpportunityPriority.HIGH);
+        var latestNext = query.findAll(1, 2, null, null, null,
+                DocumentDetectionSort.LATEST, null, OpportunityPriority.HIGH);
+        assertThat(latestFirst.content()).extracting(row -> row.versionId())
+                .containsExactly(recentLowerScore.getId(), third.getId());
+        assertThat(latestNext.content()).extracting(row -> row.versionId())
+                .containsExactly(second.getId(), first.getId());
+    }
+
+    @Test void 북마크_우선순위_조회도_저장한_버전의_동일시각_최신감지를_선택한다() {
+        var user = User.create("tie-user", "test", Role.ADMIN); em.persist(user);
+        var savedVersion = add("저장한 버전", now, 80, 80, 80, 80);
+        bookmarks.save(DocumentBookmark.create(user, savedVersion));
+        var anotherVersion = add("저장한 다른 문서", now.minusHours(1), 80, 80, 80, 80);
+        bookmarks.save(DocumentBookmark.create(user, anotherVersion));
+        var laterRun = MonitoringRun.create(MonitoringTriggerType.MANUAL, 1, now); em.persist(laterRun);
+        var laterSource = MonitoringRunSource.create(laterRun, source); em.persist(laterSource);
+        var latest = DocumentDetection.create(laterSource, savedVersion.getDocument(), savedVersion,
+                DocumentChangeType.UNCHANGED_DOCUMENT, now); em.persist(latest);
+        var unsavedVersion = DocumentVersion.create(savedVersion.getDocument(), 2, "저장하지 않은 새 버전",
+                "새 본문", "b".repeat(64), now.plusDays(1), 0, now.plusDays(1)); em.persist(unsavedVersion);
+        var nextRun = MonitoringRun.create(MonitoringTriggerType.MANUAL, 1, now.plusDays(1)); em.persist(nextRun);
+        var nextSource = MonitoringRunSource.create(nextRun, source); em.persist(nextSource);
+        em.persist(DocumentDetection.create(nextSource, savedVersion.getDocument(), unsavedVersion,
+                DocumentChangeType.UPDATED_DOCUMENT, now.plusDays(1)));
+        em.flush();
+
+        var result = saved.findAll(user.getId(), 0, 1, null, null,
+                DocumentDetectionSort.OPPORTUNITY_SCORE, "저장한", OpportunityPriority.HIGH);
+        assertThat(result.totalElements()).isEqualTo(2);
+        assertThat(result.content()).singleElement().satisfies(row -> {
+            assertThat(row.versionId()).isEqualTo(savedVersion.getId());
+            assertThat(row.detectionId()).isEqualTo(latest.getId());
+        });
+        assertThat(saved.findAll(user.getId(), 1, 1, null, null, DocumentDetectionSort.LATEST,
+                "저장한", OpportunityPriority.HIGH).content()).extracting(row -> row.versionId())
+                .containsExactly(anotherVersion.getId());
+        assertThat(saved.findAll(user.getId(), 0, 1, now, now, DocumentDetectionSort.LATEST,
+                "저장한 버전", OpportunityPriority.HIGH).totalElements()).isEqualTo(1);
     }
 }

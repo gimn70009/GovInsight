@@ -13,6 +13,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @MockitoBean(types = {
+        com.publicmonitor.backend.domain.analysis.repository.DocumentAnalysisRepository.class,
+        com.publicmonitor.backend.domain.analysis.service.OpportunityRankingInitializer.class,
         com.publicmonitor.backend.domain.analysis.service.AnalysisTaskService.class,
         com.publicmonitor.backend.domain.analysis.service.AnalysisRecoveryScheduler.class,
         com.publicmonitor.backend.domain.monitoring.service.MonitoringCollectionRecovery.class,

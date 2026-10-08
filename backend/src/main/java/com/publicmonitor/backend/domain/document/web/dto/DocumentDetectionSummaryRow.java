@@ -1,6 +1,7 @@
 package com.publicmonitor.backend.domain.document.web.dto;
 
 import com.publicmonitor.backend.domain.analysis.entity.DocumentImportance;
+import com.publicmonitor.backend.domain.analysis.entity.OpportunityPriority;
 import com.publicmonitor.backend.domain.document.entity.DocumentChangeType;
 import java.time.LocalDateTime;
 
@@ -16,7 +17,7 @@ public record DocumentDetectionSummaryRow(
         int attachmentCount,
         DocumentImportance importance,
         Integer opportunityScore,
-        String opportunityAssessment,
+        OpportunityPriority opportunityPriority,
         LocalDateTime lastCheckedAt
 ) {
 }
