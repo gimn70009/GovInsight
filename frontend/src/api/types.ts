@@ -234,6 +234,7 @@ export interface DocumentAttachment {
 
 export interface DocumentDetail {
   detectionId: number
+  analysisPending: boolean
   organizationName: string
   boardName: string
   title: string

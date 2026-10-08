@@ -18,7 +18,7 @@ import {
   ShieldCheck,
   X,
 } from 'lucide-react'
-import { api } from '../api/client'
+import { api, ApiError } from '../api/client'
 import { ProposalWriter } from '../components/ProposalWriter'
 import { visibleMeetingAgenda } from '../utils/meetingAgenda'
 import type { ChangeType, DocumentAnalysis, DocumentDetail, DocumentDetection, MonitoringRun, OpportunityDimensionType, OpportunityPriority, ProposalPreparationItem, SimilarNoticeResult } from '../api/types'
@@ -534,7 +534,7 @@ export default function DocumentsPage() {
         <Pagination page={page} totalPages={pages} onChange={setPage} />
       </section>
 
-      {selectedId && selectedVersionId && <DocumentDrawer detectionId={selectedId} onClose={() => setSelectedId(null)}
+      {selectedId && selectedVersionId && <DocumentDrawer key={selectedId} detectionId={selectedId} onClose={() => setSelectedId(null)}
         bookmarked={bookmarkIds.includes(selectedVersionId)} bookmarkPending={!bookmarkReady || savingIds.includes(selectedVersionId)}
         bookmarkError={bookmarkError} onToggleBookmark={() => void toggleBookmark(selectedVersionId)} />}
     </div>
@@ -552,44 +552,85 @@ function DocumentDrawer({ detectionId, onClose, bookmarked, bookmarkPending, boo
   const [detail, setDetail] = useState<DocumentDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [reload, setReload] = useState(0)
   const [similarNotices, setSimilarNotices] = useState<SimilarNoticeResult | null>(null)
   const [similarLoading, setSimilarLoading] = useState(true)
+  const hasAnalysis = Boolean(detail?.analysis)
 
   useEffect(() => {
     let active = true
-    setLoading(true)
+    let refreshAllowed = true
+    let timer: number | undefined
+    let controller: AbortController | null = null
+
+    async function loadDetail() {
+      if (!active || document.hidden || controller || !refreshAllowed) return
+      const requestController = new AbortController()
+      controller = requestController
+      let timedOut = false
+      const deadline = window.setTimeout(() => {
+        timedOut = true
+        requestController.abort()
+      }, 10000)
+      try {
+        const value = await api.getDocument(detectionId, requestController.signal)
+        if (!active) return
+        setDetail(value)
+        setError('')
+        refreshAllowed = value.analysisPending
+          && (!value.analysis || value.analysis.proposal.draftStatus === 'GENERATING')
+      } catch (cause) {
+        if (!active) return
+        setError(timedOut
+          ? '상태 확인이 지연되고 있습니다. 잠시 후 다시 확인합니다.'
+          : cause instanceof Error ? cause.message : '상세 내용을 불러오지 못했습니다.')
+        if (cause instanceof ApiError && cause.status >= 400 && cause.status < 500) {
+          refreshAllowed = false
+        }
+      } finally {
+        window.clearTimeout(deadline)
+        controller = null
+        if (active) {
+          setLoading(false)
+          if (refreshAllowed && !document.hidden) timer = window.setTimeout(loadDetail, 3000)
+        }
+      }
+    }
+
+    function handleVisibility() {
+      window.clearTimeout(timer)
+      if (!document.hidden) void loadDetail()
+    }
+
     setError('')
-    setDetail(null)
-    setSimilarNotices(null)
-    api.getDocument(detectionId)
-      .then((value) => { if (active) setDetail(value) })
-      .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : '상세 내용을 불러오지 못했습니다.') })
-      .finally(() => { if (active) setLoading(false) })
-    return () => { active = false }
-  }, [detectionId])
+    void loadDetail()
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+      controller?.abort()
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [detectionId, reload])
 
   useEffect(() => {
     let active = true
+    const controller = new AbortController()
     setSimilarNotices(null)
-    if (!detail?.analysis) {
+    if (!hasAnalysis) {
       setSimilarLoading(false)
       return
     }
     setSimilarLoading(true)
-    api.getSimilarNotices(detectionId)
+    api.getSimilarNotices(detectionId, controller.signal)
       .then((value) => { if (active) setSimilarNotices(value) })
       .catch(() => { if (active) setSimilarNotices(null) })
       .finally(() => { if (active) setSimilarLoading(false) })
-    return () => { active = false }
-  }, [detectionId, Boolean(detail?.analysis)])
-
-  useEffect(() => {
-    if (detail?.analysis?.proposal.draftStatus !== 'GENERATING') return
-    const timer = window.setInterval(() => {
-      api.getDocument(detectionId).then(setDetail).catch(() => undefined)
-    }, 3000)
-    return () => window.clearInterval(timer)
-  }, [detectionId, detail?.analysis?.proposal.draftStatus])
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [detectionId, hasAnalysis])
 
   return (
     <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
@@ -607,7 +648,14 @@ function DocumentDrawer({ detectionId, onClose, bookmarked, bookmarkPending, boo
           </div>
         </div>
         {bookmarkError && <InlineError message={bookmarkError} />}
-        {loading ? <Loading label="문서 내용을 정리하고 있어요" /> : error ? <InlineError message={error} /> : detail && <DocumentContent detail={detail} similarNotices={similarNotices} similarLoading={similarLoading} />}
+        {error && <>
+          <InlineError message={error} />
+          <button className="button button--subtle" onClick={() => {
+            if (!detail) setLoading(true)
+            setReload((current) => current + 1)
+          }}><RefreshCw size={16} />다시 불러오기</button>
+        </>}
+        {loading ? <Loading label="문서 내용을 정리하고 있어요" /> : detail && <DocumentContent detail={detail} similarNotices={similarNotices} similarLoading={similarLoading} />}
       </aside>
     </div>
   )
@@ -896,7 +944,9 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
                   {applicationExpired
                     ? '접수기한이 지나 제안 준비안을 생성하지 않았습니다. 향후 재공고 여부를 확인해 주세요.'
                     : proposalDraft.draftStatus === 'GENERATING'
-                      ? '공고 분석은 완료되었습니다. 사업 제안을 별도로 준비하고 있으며 완료되면 이 화면이 자동으로 갱신됩니다.'
+                      ? detail.analysisPending
+                        ? '공고 분석은 완료되었습니다. 사업 제안을 별도로 준비하고 있으며 완료되면 이 화면이 자동으로 갱신됩니다.'
+                        : '사업 제안 준비가 종료되었지만 결과를 저장하지 못했습니다. 원문을 확인하거나 다시 모니터링해 주세요.'
                       : proposalUnavailableReason}
                 </p>
               )}
@@ -906,7 +956,11 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
           ) : null}
         </>
       ) : (
-        <EmptyState icon={<Sparkles />} title="AI 분석을 준비하고 있어요" description="분석이 완료되면 핵심 내용과 대응 방향을 여기에서 확인할 수 있어요." />
+        <EmptyState icon={<Sparkles />}
+          title={detail.analysisPending ? 'AI 분석을 준비하고 있어요' : 'AI 분석 결과가 없습니다'}
+          description={detail.analysisPending
+            ? '분석이 완료되면 이 화면이 자동으로 갱신됩니다.'
+            : '분석 처리가 끝났지만 저장된 결과가 없습니다. 원문을 확인하거나 다시 모니터링해 주세요.'} />
       )}
 
       {showProposalWriter && <ProposalWriter key={detail.detectionId} detectionId={detail.detectionId} active={activeDetailTab === 'PROPOSAL'} expired={applicationExpired} />}

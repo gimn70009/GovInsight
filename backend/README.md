@@ -99,9 +99,13 @@ if (!(Test-Path src/main/resources/application.properties)) {
 
 상세 비교 범위와 제한은 [설계 문서](../docs/DESIGN.md)의 ‘수정 공고의 설명’을 참고합니다.
 
-## 상세 응답의 신청 마감일
+## 상세 응답의 신청 마감일과 분석 진행 상태
 
 감지 상세 응답에 `analysis.applicationDeadline` 문자열 또는 `null`을 포함합니다. 저장된 `comparisonSummary.applicationDeadline`을 전달하며 기존 데이터에 날짜가 없거나 비교 요약을 읽을 수 없으면 `null`입니다. 프론트는 이 날짜로 접수 종료 여부를 판단하며 일반 요약의 종료 관련 문구를 사용하지 않습니다. DB 스키마 변경은 없습니다.
+
+감지 상세 응답의 `analysisPending`은 같은 문서 버전의 **가장 최근 감지 실행**에서 분석·제안 처리가 진행될 수 있는지를 나타냅니다. 최신 실행이 완료·실패했거나 분석 작업이 `DONE`/`FAILED`이면 `false`이며, 진행 중인 실행의 분석 작업이 `PENDING`/`RUNNING`/`ANALYZED`이면 `true`입니다. 분석 작업 행이 없는 구형 실행은 실행의 진행 상태를 사용합니다. 과거 감지 상세를 열어도 같은 버전의 새 실행을 따라가며 다른 버전의 실행은 영향을 주지 않습니다.
+
+`analysisPending`이 `true`인 동안 `analysis`가 `null`이거나 제안의 `draftStatus`가 `GENERATING`이면 상세를 다시 조회합니다. `false`이면 자동 조회를 종료하고 결과 없음 또는 제안 중단을 안내합니다. 개별 분석 실패나 분석할 본문이 없는 경우는 결과 행을 저장하지 않으므로 `null`을 실패로 단정하지 않습니다. 저장된 분석은 그대로 반환하며 새 필드는 DB 스키마·AI 요청 계약을 변경하지 않습니다.
 
 ## 감지 문서·북마크 목록 검색
 

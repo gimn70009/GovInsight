@@ -141,7 +141,7 @@ export const api = {
   getBookmarkIds: () => request<number[]>('/api/bookmarks/versions'),
   setBookmark: (versionId: number, saved: boolean) =>
     request<void>(`/api/bookmarks/versions/${versionId}`, { method: saved ? 'PUT' : 'DELETE' }),
-  getDocument: (detectionId: number) => request<DocumentDetail>(`/api/document-detections/${detectionId}`),
+  getDocument: (detectionId: number, signal?: AbortSignal) => request<DocumentDetail>(`/api/document-detections/${detectionId}`, { signal }),
   compareLegalPair: (currentId: number, similarId: number, signal?: AbortSignal) =>
     request<LegalPairResult>(`/api/document-detections/${currentId}/similar-notices/${similarId}/legal-review`, { method: 'POST', signal }),
   getProposalSources: (detectionId: number, signal?: AbortSignal) =>
@@ -170,6 +170,6 @@ export const api = {
     request<ProposalWrittenDraft>(`/api/document-detections/${detectionId}/proposal-draft/restore`, {
       method: 'POST', body: JSON.stringify(payload), signal,
     }),
-  getSimilarNotices: (detectionId: number) =>
-    request<SimilarNoticeResult>(`/api/document-detections/${detectionId}/similar-notices`),
+  getSimilarNotices: (detectionId: number, signal?: AbortSignal) =>
+    request<SimilarNoticeResult>(`/api/document-detections/${detectionId}/similar-notices`, { signal }),
 }

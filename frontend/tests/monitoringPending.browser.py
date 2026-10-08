@@ -17,6 +17,7 @@ async def main():
     deletes, puts, errors, unexpected = [], [], [], []
     hold_read = hold_delete = fail_read = unsupported_schedule = False
     delete_failure = 0
+    fail_save = False
     active_source = True
     read_started, read_release = asyncio.Event(), asyncio.Event()
     delete_started, delete_release = asyncio.Event(), asyncio.Event()
@@ -27,7 +28,7 @@ async def main():
         await page.add_init_script("sessionStorage.setItem('govinsight.accessToken','browser-test-placeholder')")
 
         async def mock_api(route):
-            nonlocal hold_read, delete_failure
+            nonlocal hold_read, delete_failure, fail_save
             parsed, method = urlparse(route.request.url), route.request.method
             path, status, message = parsed.path, 200, "OK"
             if path == "/api/monitoring-schedule" and method == "GET":
@@ -44,10 +45,14 @@ async def main():
                 data = route.request.post_data_json
                 assert set(data) == {"enabled", "frequency", "executionTime", "customDays"}, data
                 puts.append(data)
-                if any(schedule[k] != data[k] for k in data):
-                    schedule["pendingScheduledAt"] = None
-                schedule.update(data)
-                data = dict(schedule)
+                if fail_save:
+                    fail_save = False
+                    status, data, message = 500, None, "일정 저장 실패 테스트"
+                else:
+                    if any(schedule[k] != data[k] for k in data):
+                        schedule["pendingScheduledAt"] = None
+                    schedule.update(data)
+                    data = dict(schedule)
             elif path == "/api/monitoring-schedule/pending" and method == "DELETE":
                 target = parse_qs(parsed.query)["scheduledAt"][0]
                 deletes.append(target)
@@ -86,18 +91,36 @@ async def main():
         await expect(run).to_be_enabled()
         await expect(pending).to_have_count(0)
 
-        # The existing five-second refresh reveals pending work and preserves edits.
+        async def expect_draft(expected_time="11:17"):
+            await expect(page.locator(".schedule-frequency button.active")).to_have_text("요일 선택")
+            await expect(page.locator(".weekday-picker button.active")).to_have_text(["월", "금"])
+            await expect(time).to_have_value(expected_time)
+
+        # A schedule read begun before editing must preserve every unsaved field.
+        hold_read = True
+        await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+        await asyncio.wait_for(read_started.wait(), 5)
+        await page.get_by_role("button", name="요일 선택", exact=True).click()
+        for day in ("화", "수", "목"):
+            await page.locator(".weekday-picker").get_by_role("button", name=day, exact=True).click()
         await time.fill("11:17")
+        read_release.set()
+        await page.wait_for_timeout(150)
+        await expect_draft()
+        assert schedule["frequency"] == "DAILY" and schedule["customDays"] == []
+        assert schedule["executionTime"] == "09:00" and not puts
+
+        # The existing five-second refresh and history paging preserve the same draft.
         schedule["pendingScheduledAt"] = "2026-10-08T14:00:00"
         await expect(pending).to_contain_text("예약 대기 · 14:00", timeout=8000)
         await expect(run).to_be_disabled()
         await expect(run).to_have_text("예약 실행 대기 중")
-        await expect(time).to_have_value("11:17")
+        await expect_draft()
         await page.get_by_role("button", name="다음", exact=True).click()
         await expect(page.locator(".pagination b")).to_have_text("2")
-        await expect(time).to_have_value("11:17")
+        await expect_draft()
         await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
-        await expect(time).to_have_value("11:17")
+        await expect_draft()
 
         # One cancellation targets exactly the rendered occurrence, even on double click.
         hold_delete = True
@@ -108,7 +131,7 @@ async def main():
         delete_release.set()
         await expect(pending).to_have_count(0)
         await expect(run).to_be_enabled()
-        await expect(time).to_have_value("11:17")
+        await expect_draft()
         assert deletes == ["2026-10-08T14:00:00"], deletes
         hold_delete = False
 
@@ -116,6 +139,8 @@ async def main():
         schedule["pendingScheduledAt"] = "2026-10-08T14:01:00"
         await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
         await expect(pending).to_contain_text("14:01")
+        read_started.clear()
+        read_release.clear()
         hold_read = True
         await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
         await asyncio.wait_for(read_started.wait(), 5)
@@ -124,7 +149,20 @@ async def main():
         read_release.set()
         await page.wait_for_timeout(150)
         await expect(pending).to_have_count(0)
-        await expect(time).to_have_value("11:17")
+        await expect_draft()
+
+        # A failed PUT and its forced refresh retain frequency, weekdays, and time for retry.
+        fail_save = True
+        await save.click()
+        await expect(page.get_by_text("일정 저장 실패 테스트", exact=True)).to_be_visible()
+        await expect(page.get_by_text("자동 모니터링 일정을 저장했어요.", exact=True)).to_have_count(0)
+        await expect(save).to_be_enabled()
+        await expect_draft()
+        assert schedule["frequency"] == "DAILY" and schedule["customDays"] == []
+        assert schedule["executionTime"] == "09:00"
+        await page.get_by_role("button", name="이전", exact=True).click()
+        await expect(page.locator(".pagination b")).to_have_text("1")
+        await expect_draft()
 
         # A save invalidates old polls and carries only editable schedule fields.
         schedule["pendingScheduledAt"] = "2026-10-08T14:02:00"
@@ -140,8 +178,9 @@ async def main():
         read_release.set()
         await page.wait_for_timeout(150)
         await expect(pending).to_have_count(0)
-        await expect(time).to_have_value("11:17")
+        await expect_draft()
         assert puts[-1]["executionTime"] == "11:17"
+        assert puts[-1]["frequency"] == "CUSTOM" and puts[-1]["customDays"] == ["MONDAY", "FRIDAY"]
 
         # The enabled toggle uses saved settings and preserves the unsaved draft.
         await time.fill("12:34")
@@ -151,8 +190,9 @@ async def main():
         await toggle.click()
         await expect(toggle).to_have_attribute("aria-checked", "false")
         await expect(pending).to_have_count(0)
-        await expect(time).to_have_value("12:34")
+        await expect_draft("12:34")
         assert puts[-1]["executionTime"] == "11:17"
+        assert puts[-1]["frequency"] == "CUSTOM" and puts[-1]["customDays"] == ["MONDAY", "FRIDAY"]
 
         # If the occurrence has already started, 409 must not look like success.
         schedule.update(enabled=True, pendingScheduledAt="2026-10-08T14:04:00")
@@ -226,7 +266,7 @@ async def main():
         assert not errors, errors
         assert not unexpected, unexpected
         await browser.close()
-        print("PASS: pending polling, draft preservation, manual guard, exact cancellation, double click, stale polls, save/toggle, 409 races, failure recovery, disabled scheduling 404 vs 5xx, no active sources, desktop/mobile")
+        print("PASS: pending polling, all schedule draft fields across paging/late reads/save failure, manual guard, exact cancellation, double click, stale polls, save/toggle, 409 races, failure recovery, disabled scheduling 404 vs 5xx, no active sources, desktop/mobile")
 
 
 asyncio.run(main())
