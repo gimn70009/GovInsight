@@ -165,19 +165,23 @@ async def main():
         hold_patch = hold_read = True
         before = len(mutations)
         await count.fill("9")
+        # Start an old read before saving; polls intentionally skip sources during PATCH.
+        await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+        await asyncio.wait_for(read_started.wait(), 5)
+        hold_read = False  # The post-save refresh may return the new committed value.
         await save.evaluate("el => { el.click(); el.click(); }")
         await asyncio.wait_for(patch_started.wait(), 5)
         await expect(count).to_be_disabled()
         await expect(second.get_by_role("switch")).to_be_disabled()
         assert len(mutations) == before + 1
-        await page.get_by_role("button", name="새로고침", exact=True).click()
-        await asyncio.wait_for(read_started.wait(), 5)
         patch_release.set()
         await expect(panel.get_by_role("status")).to_have_count(0)
-        read_release.set()
         await expect(count).to_be_enabled()
         await expect(count).to_have_value("9")
-        hold_patch = hold_read = False
+        read_release.set()
+        await page.wait_for_timeout(150)
+        await expect(count).to_have_value("9")
+        hold_patch = False
         await page.reload()
         await expect(count).to_have_value("9")
         await expect(row.get_by_role("switch")).to_have_attribute("aria-checked", "false")

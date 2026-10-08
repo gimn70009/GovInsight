@@ -16,6 +16,11 @@ public enum MonitoringRunResponseCode implements BaseResponseCode {
             HttpStatus.CONFLICT.value(),
             "이미 모니터링이 진행 중입니다. 완료 후 다시 실행해 주세요."
     ),
+    SCHEDULE_PENDING(
+            "MONITORING_RUN_409_2",
+            HttpStatus.CONFLICT.value(),
+            "대기 중인 자동 모니터링이 먼저 실행됩니다. 대기를 취소하거나 완료 후 다시 실행해 주세요."
+    ),
     NO_ACTIVE_SOURCE(
             "MONITORING_RUN_422_1",
             HttpStatus.UNPROCESSABLE_CONTENT.value(),

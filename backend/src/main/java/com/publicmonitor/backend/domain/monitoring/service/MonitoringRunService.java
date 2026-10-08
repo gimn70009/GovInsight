@@ -22,15 +22,16 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
+import com.publicmonitor.backend.domain.monitoring.repository.MonitoringScheduleRepository;
+import com.publicmonitor.backend.domain.monitoring.exception.MonitoringSchedulePendingException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @Slf4j
-@RequiredArgsConstructor
 public class MonitoringRunService {
 
     private static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
@@ -40,6 +41,27 @@ public class MonitoringRunService {
     private final MonitoringRunSourceRepository monitoringRunSourceRepository;
     private final PythonMonitoringClient pythonMonitoringClient;
     private final Clock clock;
+    private final MonitoringScheduleRepository schedules;
+    private final boolean scheduleEnabled;
+
+    public MonitoringRunService(
+            MonitoringSourceRepository monitoringSourceRepository,
+            MonitoringRunRepository monitoringRunRepository,
+            MonitoringRunSourceRepository monitoringRunSourceRepository,
+            PythonMonitoringClient pythonMonitoringClient,
+            Clock clock,
+            MonitoringScheduleRepository schedules,
+            @Value("${app.monitoring.schedule.enabled:true}") boolean scheduleEnabled
+    ) {
+        this.monitoringSourceRepository = monitoringSourceRepository;
+        this.monitoringRunRepository = monitoringRunRepository;
+        this.monitoringRunSourceRepository = monitoringRunSourceRepository;
+        this.pythonMonitoringClient = pythonMonitoringClient;
+        this.clock = clock;
+        this.schedules = schedules;
+        this.scheduleEnabled = scheduleEnabled;
+    }
+
 
     @Transactional(noRollbackFor = MonitoringJobAcceptanceException.class)
     public CreateMonitoringRunResponse create(MonitoringTriggerType triggerType) {
@@ -47,6 +69,14 @@ public class MonitoringRunService {
         List<MonitoringSource> activeSources = monitoringSourceRepository.findAllForRunCreation().stream()
                 .filter(MonitoringSource::isEnabled)
                 .toList();
+        if (triggerType == MonitoringTriggerType.MANUAL && scheduleEnabled) {
+            // Match the queue consumer's sources -> schedule lock order.
+            var schedule = schedules.findAllForUpdate().stream().findFirst().orElse(null);
+            if (schedule != null && schedule.isEnabled() && schedule.getPendingScheduledAt() != null) {
+                throw new MonitoringSchedulePendingException();
+            }
+        }
+
         if (activeSources.isEmpty()) {
             throw new NoActiveMonitoringSourceException();
         }
