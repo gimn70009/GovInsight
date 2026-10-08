@@ -1,6 +1,8 @@
 package com.publicmonitor.backend.domain.document.service;
 
+import com.publicmonitor.backend.domain.analysis.entity.AnalysisTask;
 import com.publicmonitor.backend.domain.analysis.entity.DocumentAnalysis;
+import com.publicmonitor.backend.domain.analysis.repository.AnalysisTaskRepository;
 import com.publicmonitor.backend.domain.analysis.repository.DocumentAnalysisRepository;
 import com.publicmonitor.backend.domain.analysis.entity.OpportunityDimensionType;
 import com.publicmonitor.backend.domain.analysis.service.OpportunityScoreCalculator;
@@ -12,6 +14,8 @@ import com.publicmonitor.backend.domain.document.exception.DocumentDetectionResp
 import com.publicmonitor.backend.domain.document.repository.DocumentAttachmentRepository;
 import com.publicmonitor.backend.domain.document.repository.DocumentDetectionRepository;
 import com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionDetailResponse;
+import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRun;
+import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRunStatus;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -30,6 +34,7 @@ public class DocumentDetectionDetailService {
 
     private final DocumentDetectionRepository detectionRepository;
     private final DocumentAnalysisRepository analysisRepository;
+    private final AnalysisTaskRepository analysisTaskRepository;
     private final DocumentAttachmentRepository attachmentRepository;
     private final ObjectMapper objectMapper;
 
@@ -38,6 +43,8 @@ public class DocumentDetectionDetailService {
         DocumentDetection detection = detectionRepository.findById(detectionId)
                 .orElseThrow(() -> new DocumentDetectionException(DocumentDetectionResponseCode.NOT_FOUND));
         DocumentVersion version = detection.getDocumentVersion();
+        // Read processing state first so a concurrent completion cannot pair old results with a terminal state.
+        boolean analysisPending = isAnalysisPending(detection, version);
         DocumentAnalysis analysis = analysisRepository.findByDocumentVersionId(version.getId()).orElse(null);
         List<DocumentDetectionDetailResponse.Attachment> attachments = attachmentRepository
                 .findAllByDocumentVersionId(version.getId()).stream()
@@ -54,8 +61,23 @@ public class DocumentDetectionDetailService {
                 detection.getDocument().getOriginalUrl(),
                 detection.getDocument().getLastDetectedAt(),
                 toAnalysis(analysis),
+                analysisPending,
                 attachments
         );
+    }
+
+    private boolean isAnalysisPending(DocumentDetection detection, DocumentVersion version) {
+        DocumentDetection latestDetection = detectionRepository
+                .findTopByDocumentVersionIdOrderByDetectedAtDescIdDesc(version.getId())
+                .orElse(detection);
+        MonitoringRun run = latestDetection.getMonitoringRunSource().getMonitoringRun();
+        if (!MonitoringRunStatus.inProgress().contains(run.getStatus())) {
+            return false;
+        }
+        return analysisTaskRepository.findByRunId(run.getId())
+                .map(task -> task.getState() != AnalysisTask.State.DONE
+                        && task.getState() != AnalysisTask.State.FAILED)
+                .orElse(true);
     }
 
     private DocumentDetectionDetailResponse.Analysis toAnalysis(DocumentAnalysis analysis) {

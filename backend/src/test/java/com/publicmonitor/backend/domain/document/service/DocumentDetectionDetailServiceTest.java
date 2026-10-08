@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 
 import com.publicmonitor.backend.domain.analysis.entity.AnalysisEligibility;
+import com.publicmonitor.backend.domain.analysis.repository.AnalysisTaskRepository;
 import com.publicmonitor.backend.domain.analysis.entity.AnalysisFavorability;
 import com.publicmonitor.backend.domain.analysis.entity.DocumentAnalysis;
 import com.publicmonitor.backend.domain.analysis.entity.DocumentImportance;
@@ -37,6 +38,7 @@ class DocumentDetectionDetailServiceTest {
 
     @Mock DocumentDetectionRepository detectionRepository;
     @Mock DocumentAnalysisRepository analysisRepository;
+    @Mock AnalysisTaskRepository analysisTaskRepository;
     @Mock DocumentAttachmentRepository attachmentRepository;
 
     @Test
@@ -164,6 +166,7 @@ class DocumentDetectionDetailServiceTest {
         return new DocumentDetectionDetailService(
                 detectionRepository,
                 analysisRepository,
+                analysisTaskRepository,
                 attachmentRepository,
                 new ObjectMapper()
         );

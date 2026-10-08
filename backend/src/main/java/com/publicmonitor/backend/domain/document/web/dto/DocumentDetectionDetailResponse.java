@@ -23,6 +23,8 @@ public record DocumentDetectionDetailResponse(
         String originalUrl,
         LocalDateTime lastCheckedAt,
         Analysis analysis,
+        @Schema(description = "같은 문서 버전의 최신 감지 실행에서 분석·제안 처리가 진행될 수 있으면 true")
+        boolean analysisPending,
         List<Attachment> attachments
 ) {
 
