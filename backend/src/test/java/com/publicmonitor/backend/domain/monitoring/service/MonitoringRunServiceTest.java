@@ -41,6 +41,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
+import com.publicmonitor.backend.domain.monitoring.entity.MonitoringSchedule;
+import com.publicmonitor.backend.domain.monitoring.entity.MonitoringScheduleFrequency;
+import com.publicmonitor.backend.domain.monitoring.exception.MonitoringSchedulePendingException;
+import com.publicmonitor.backend.domain.monitoring.repository.MonitoringScheduleRepository;
+import java.time.Duration;
+import java.time.LocalTime;
+import java.util.Set;
 
 @ExtendWith(MockitoExtension.class)
 class MonitoringRunServiceTest {
@@ -57,6 +64,9 @@ class MonitoringRunServiceTest {
     @Mock
     private PythonMonitoringClient pythonMonitoringClient;
 
+    @Mock
+    private MonitoringScheduleRepository schedules;
+
     private MonitoringRunService monitoringRunService;
 
     @BeforeEach
@@ -67,7 +77,7 @@ class MonitoringRunServiceTest {
                 monitoringRunRepository,
                 monitoringRunSourceRepository,
                 pythonMonitoringClient,
-                clock
+                clock, schedules, true
         );
     }
 
@@ -159,6 +169,35 @@ class MonitoringRunServiceTest {
         assertThat(response.content().getFirst().status()).isEqualTo(MonitoringRunStatus.COMPLETED);
         assertThat(response.content().getFirst().reportTitle()).isEqualTo("최근 보고서");
         assertThat(response.totalElements()).isEqualTo(2);
+    }
+
+    @Test
+    void 대기_예약이_있으면_수동_실행이_앞지르지_않는다() {
+        var schedule = MonitoringSchedule.defaultSchedule();
+        schedule.update(true, MonitoringScheduleFrequency.DAILY, LocalTime.of(10, 0), Set.of());
+        schedule.queueDue(LocalDateTime.of(2026, 8, 12, 10, 0), Duration.ofMinutes(5));
+        given(monitoringSourceRepository.findAllForRunCreation()).willReturn(List.of(createSource("기관")));
+        given(schedules.findAllForUpdate()).willReturn(List.of(schedule));
+
+        assertThatThrownBy(() -> monitoringRunService.create(MonitoringTriggerType.MANUAL))
+                .isInstanceOf(MonitoringSchedulePendingException.class);
+
+        var order = org.mockito.Mockito.inOrder(monitoringSourceRepository, schedules);
+        order.verify(monitoringSourceRepository).findAllForRunCreation();
+        order.verify(schedules).findAllForUpdate();
+        verifyNoInteractions(monitoringRunRepository, monitoringRunSourceRepository, pythonMonitoringClient);
+    }
+
+    @Test
+    void 예약_기능이_서버에서_꺼져_있으면_수동_대기_검사를_하지_않는다() {
+        monitoringRunService = new MonitoringRunService(monitoringSourceRepository, monitoringRunRepository,
+                monitoringRunSourceRepository, pythonMonitoringClient, Clock.systemUTC(), schedules, false);
+        given(monitoringSourceRepository.findAllForRunCreation()).willReturn(List.of());
+
+        assertThatThrownBy(() -> monitoringRunService.create(MonitoringTriggerType.MANUAL))
+                .isInstanceOf(NoActiveMonitoringSourceException.class);
+
+        verifyNoInteractions(schedules);
     }
 
     private MonitoringSource createSource(String organizationName) {

@@ -4,6 +4,7 @@ import com.publicmonitor.backend.domain.analysis.service.AnalysisJobRequestServi
 import com.publicmonitor.backend.domain.analysis.service.AnalysisResultService;
 import com.publicmonitor.backend.domain.document.service.CollectionResultService;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringSourceRepository;
+import com.publicmonitor.backend.domain.monitoring.repository.MonitoringScheduleRepository;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunRepository;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunSourceRepository;
 import com.publicmonitor.backend.domain.user.repository.UserRepository;
@@ -51,6 +52,9 @@ class BackendApplicationTests {
 
 	@MockitoBean
 	MonitoringRunSourceRepository monitoringRunSourceRepository;
+
+	@MockitoBean
+	MonitoringScheduleRepository monitoringScheduleRepository;
 
 	@Test
 	void contextLoads() {

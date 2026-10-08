@@ -97,24 +97,26 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ loginId, password }),
     }),
-  getSources: () => request<MonitoringSource[]>('/api/monitoring-sources'),
+  getSources: (signal?: AbortSignal) => request<MonitoringSource[]>('/api/monitoring-sources', { signal }),
   getSource: (sourceId: number) => request<MonitoringSource>(`/api/monitoring-sources/${sourceId}`),
   updateSourceSettings: (sources: MonitoringSourceSettings[]) =>
     request<MonitoringSource[]>('/api/monitoring-sources/settings', {
       method: 'PATCH', body: JSON.stringify({ sources }),
     }),
-  getRunActivity: () => request<MonitoringRunActivity>('/api/monitoring-runs/active'),
+  getRunActivity: (signal?: AbortSignal) => request<MonitoringRunActivity>('/api/monitoring-runs/active', { signal }),
   createRun: () => request<CreateMonitoringRunResponse>('/api/monitoring-runs', { method: 'POST' }),
   getRuns: (page = 0, size = 10) =>
     request<PageResponse<MonitoringRun>>(`/api/monitoring-runs?page=${page}&size=${size}`),
   getRunWarnings: (runId: number, signal?: AbortSignal) =>
     request<MonitoringRunWarnings>(`/api/monitoring-runs/${runId}/warnings`, { signal }),
-  getMonitoringSchedule: () => request<MonitoringSchedule>('/api/monitoring-schedule'),
+  getMonitoringSchedule: (signal?: AbortSignal) => request<MonitoringSchedule>('/api/monitoring-schedule', { signal }),
   updateMonitoringSchedule: (payload: MonitoringSchedulePayload) =>
     request<MonitoringSchedule>('/api/monitoring-schedule', {
       method: 'PUT',
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ enabled: payload.enabled, frequency: payload.frequency, executionTime: payload.executionTime, customDays: payload.customDays }),
     }),
+  cancelPendingSchedule: (scheduledAt: string) =>
+    request<MonitoringSchedule>(`/api/monitoring-schedule/pending?${new URLSearchParams({ scheduledAt })}`, { method: 'DELETE' }),
   getDocuments: (
     page = 0,
     size = 20,

@@ -9,6 +9,9 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import com.publicmonitor.backend.domain.monitoring.web.dto.CancelPendingMonitoringScheduleRequest;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -40,4 +43,12 @@ public class MonitoringScheduleController {
     ) {
         return SuccessResponse.ok(scheduleService.update(request));
     }
+    @Operation(summary = "대기 중인 자동 모니터링 한 건 취소")
+    @DeleteMapping("/pending")
+    public SuccessResponse<MonitoringScheduleResponse> cancelPending(
+            @Valid @ModelAttribute CancelPendingMonitoringScheduleRequest request
+    ) {
+        return SuccessResponse.ok(scheduleService.cancelPending(request.scheduledAt()));
+    }
+
 }

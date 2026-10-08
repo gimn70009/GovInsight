@@ -85,9 +85,10 @@ export interface MonitoringSchedule {
   frequency: MonitoringScheduleFrequency
   executionTime: string
   customDays: Weekday[]
+  pendingScheduledAt: string | null
 }
 
-export type MonitoringSchedulePayload = MonitoringSchedule
+export type MonitoringSchedulePayload = Omit<MonitoringSchedule, 'pendingScheduledAt'>
 
 export type Importance = 'HIGH' | 'NORMAL' | 'LOW'
 export type OpportunityPriority = 'HIGH' | 'NORMAL' | 'LOW'

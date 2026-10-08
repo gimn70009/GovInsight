@@ -85,3 +85,12 @@
   .monitoring-source__status .toggle { width:34px; }
   .monitoring-source__status .toggle--on span { transform:translateX(12px); }
 }
+
+.schedule-pending { margin:0 22px; padding:13px 15px; display:flex; align-items:center; justify-content:space-between; gap:16px; border:1px solid #dce8f7; border-radius:11px; background:#f5f9ff; }
+.schedule-pending strong { display:flex; align-items:center; gap:6px; color:#1b64da; font-size:12px; }
+.schedule-pending p { margin:6px 0 3px; color:#536274; font-size:12px; line-height:1.5; word-break:keep-all; }
+.schedule-pending small { color:#6b7684; font-size:11px; line-height:1.5; }
+.schedule-pending .button { flex-shrink:0; min-height:36px; padding:7px 10px; font-size:12px; }
+.schedule-pending .button:focus-visible { outline:2px solid #3182f6; outline-offset:3px; }
+.schedule-error { padding:12px 22px 0; }
+@media(max-width:480px) { .schedule-pending { margin-inline:16px; padding:12px; align-items:flex-start; flex-wrap:wrap; gap:9px; } .schedule-error { padding-inline:16px; } }

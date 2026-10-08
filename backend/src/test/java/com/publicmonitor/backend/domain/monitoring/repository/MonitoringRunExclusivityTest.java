@@ -57,6 +57,7 @@ class MonitoringRunExclusivityTest {
 
     @BeforeEach void setup() {
         new TransactionTemplate(transactions).executeWithoutResult(tx -> {
+            em.createQuery("delete from MonitoringSchedule").executeUpdate();
             em.createQuery("delete from MonitoringRunSource").executeUpdate();
             em.createQuery("delete from MonitoringRun").executeUpdate();
             em.createQuery("delete from MonitoringSource").executeUpdate();
@@ -159,5 +160,20 @@ class MonitoringRunExclusivityTest {
         assertThat(service.activity().runId()).isEqualTo(active.getId());
         assertThatThrownBy(() -> service.create(MonitoringTriggerType.MANUAL)).isInstanceOf(MonitoringAlreadyRunningException.class);
         verifyNoInteractions(python);
+    }
+    @Test void 서버에서_예약을_끄면_저장된_대기예약이_수동실행을_막지_않는다() {
+        new TransactionTemplate(transactions).executeWithoutResult(tx -> {
+            var schedule = MonitoringSchedule.defaultSchedule();
+            schedule.update(true, MonitoringScheduleFrequency.DAILY, now.toLocalTime(), java.util.Set.of());
+            assertThat(schedule.queueDue(now, Duration.ofMinutes(5))).isTrue();
+            em.persist(schedule);
+        });
+        when(python.accept(any(), any())).thenReturn(
+                new PythonMonitoringJobResponse(UUID.randomUUID(), PythonMonitoringJobStatus.ACCEPTED));
+
+        assertThat(service.create(MonitoringTriggerType.MANUAL).status()).isEqualTo(MonitoringRunStatus.ACCEPTED);
+
+        assertThat(runs.count()).isEqualTo(1);
+        verify(python, times(1)).accept(any(), any());
     }
 }

@@ -19,6 +19,9 @@ app.local-admin.enabled=${LOCAL_ADMIN_ENABLED:false}
 app.local-admin.login-id=${LOCAL_ADMIN_LOGIN_ID:admin}
 app.local-admin.password=${LOCAL_ADMIN_PASSWORD:}
 
+# Dedicated monitoring scheduler; allow a bounded delay after the scheduled time.
+app.monitoring.schedule.catch-up-window=${MONITORING_SCHEDULE_CATCH_UP_WINDOW:PT5M}
+
 # Python monitoring API
 app.python-monitoring.base-url=${PYTHON_MONITORING_BASE_URL:http://localhost:8000}
 app.python-monitoring.connect-timeout=${PYTHON_MONITORING_CONNECT_TIMEOUT:3s}
