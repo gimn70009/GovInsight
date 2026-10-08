@@ -61,8 +61,9 @@ public class DocumentBookmarkService {
             throw new DocumentDetectionException(DocumentDetectionResponseCode.INVALID_DATE_RANGE);
         }
         String pattern = DocumentDetectionQueryService.searchPattern(query);
-        return queryService.filteredPage(PageRequest.of(page, size), priority,
-                batch -> detections.findFilteredBookmarkedSummaries(userId, null, from, to,
-                        pattern, sort == DocumentDetectionSort.OPPORTUNITY_SCORE, batch));
+        return PageResponse.from(detections.findFilteredBookmarkedSummaries(
+                userId, null, from, to, pattern, priority,
+                sort == DocumentDetectionSort.OPPORTUNITY_SCORE, PageRequest.of(page, size))
+                .map(queryService::toResponse));
     }
 }

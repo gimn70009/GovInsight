@@ -9,6 +9,7 @@ import com.publicmonitor.backend.domain.analysis.repository.AnalysisTaskReposito
 import com.publicmonitor.backend.domain.analysis.entity.AnalysisFavorability;
 import com.publicmonitor.backend.domain.analysis.entity.DocumentAnalysis;
 import com.publicmonitor.backend.domain.analysis.entity.DocumentImportance;
+import com.publicmonitor.backend.domain.analysis.entity.OpportunityPriority;
 import com.publicmonitor.backend.domain.analysis.repository.DocumentAnalysisRepository;
 import com.publicmonitor.backend.domain.document.entity.AttachmentParseStatus;
 import com.publicmonitor.backend.domain.document.entity.Document;
@@ -96,6 +97,7 @@ class DocumentDetectionDetailServiceTest {
                 AnalysisFavorability.NOT_APPLICABLE,
                 "{\"sections\":[{\"title\":\"핵심 판단\",\"body\":\"제조 데이터 분석 역량을 활용한 참여 방향을 검토합니다.\"}]}",
                 74,
+                OpportunityPriority.HIGH,
                 opportunityJson(),
                 "[\"get_document_content\",\"get_company_profile\"]",
                 "mock-model",

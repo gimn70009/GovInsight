@@ -76,8 +76,8 @@ public class AnalysisResultService {
                             AnalysisResultRequest.OpportunityDimension::type,
                             AnalysisResultRequest.OpportunityDimension::score
                     ));
-            int opportunityScore = OpportunityScoreCalculator.calculate(opportunityScores);
-            var existingAnalysis = analysisRepository.findByDocumentVersionId(result.versionId());
+            var ranking = OpportunityRankingCalculator.calculate(opportunityScores);
+            var existingAnalysis = analysisRepository.findByDocumentVersionIdForUpdate(result.versionId());
             if (existingAnalysis.isPresent()) {
                 DocumentAnalysis existing = existingAnalysis.orElseThrow();
                 updateComparisonSummary(existing, result);
@@ -94,7 +94,8 @@ public class AnalysisResultService {
                         result.eligibility(),
                         result.favorableOrNot(),
                         objectMapper.writeValueAsString(result.proposal()),
-                        opportunityScore,
+                        ranking.score(),
+                        ranking.priority(),
                         objectMapper.writeValueAsString(result.opportunity()),
                         objectMapper.writeValueAsString(result.usedTools()),
                         result.modelName().strip(),
@@ -112,7 +113,8 @@ public class AnalysisResultService {
                     result.eligibility(),
                     result.favorableOrNot(),
                     objectMapper.writeValueAsString(result.proposal()),
-                    opportunityScore,
+                    ranking.score(),
+                    ranking.priority(),
                     objectMapper.writeValueAsString(result.opportunity()),
                     objectMapper.writeValueAsString(result.usedTools()),
                     result.modelName().strip(),

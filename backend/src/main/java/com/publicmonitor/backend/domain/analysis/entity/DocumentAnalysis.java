@@ -11,6 +11,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.SequenceGenerator;
@@ -20,11 +21,14 @@ import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.DynamicUpdate;
 
 @Getter
 @Entity
+@DynamicUpdate
 @Table(
         name = "document_analyses",
+        indexes = @Index(name = "ix_analysis_priority_score", columnList = "opportunity_priority,opportunity_score,version_id"),
         uniqueConstraints = @UniqueConstraint(
                 name = "uk_document_analyses_version",
                 columnNames = "version_id"
@@ -41,6 +45,8 @@ import lombok.NoArgsConstructor;
         allocationSize = 1
 )
 public class DocumentAnalysis extends BaseEntity {
+
+    public static final int OPPORTUNITY_RANKING_VERSION = 1;
 
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "document_analyses_sequence_generator")
@@ -78,6 +84,13 @@ public class DocumentAnalysis extends BaseEntity {
     @Column(name = "opportunity_score")
     private Integer opportunityScore;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "opportunity_priority", length = 20)
+    private OpportunityPriority opportunityPriority;
+
+    @Column(name = "opportunity_ranking_version")
+    private Integer opportunityRankingVersion;
+
     @Column(name = "opportunity_assessment", columnDefinition = "CLOB")
     private String opportunityAssessment;
 
@@ -112,6 +125,7 @@ public class DocumentAnalysis extends BaseEntity {
             AnalysisFavorability favorableOrNot,
             String proposalDirection,
             Integer opportunityScore,
+            OpportunityPriority opportunityPriority,
             String opportunityAssessment,
             String usedTools,
             String modelName,
@@ -126,6 +140,8 @@ public class DocumentAnalysis extends BaseEntity {
         this.favorableOrNot = favorableOrNot;
         this.proposalDirection = proposalDirection;
         this.opportunityScore = opportunityScore;
+        this.opportunityPriority = opportunityPriority;
+        this.opportunityRankingVersion = OPPORTUNITY_RANKING_VERSION;
         this.opportunityAssessment = opportunityAssessment;
         this.usedTools = usedTools;
         this.modelName = modelName;
@@ -142,6 +158,7 @@ public class DocumentAnalysis extends BaseEntity {
             AnalysisFavorability favorableOrNot,
             String proposalDirection,
             Integer opportunityScore,
+            OpportunityPriority opportunityPriority,
             String opportunityAssessment,
             String usedTools,
             String modelName,
@@ -157,6 +174,7 @@ public class DocumentAnalysis extends BaseEntity {
                 favorableOrNot,
                 proposalDirection,
                 opportunityScore,
+                opportunityPriority,
                 opportunityAssessment,
                 usedTools,
                 modelName,
@@ -181,6 +199,7 @@ public class DocumentAnalysis extends BaseEntity {
             AnalysisFavorability favorableOrNot,
             String proposalDirection,
             Integer opportunityScore,
+            OpportunityPriority opportunityPriority,
             String opportunityAssessment,
             String usedTools,
             String modelName,
@@ -194,6 +213,8 @@ public class DocumentAnalysis extends BaseEntity {
         this.favorableOrNot = favorableOrNot;
         this.proposalDirection = proposalDirection;
         this.opportunityScore = opportunityScore;
+        this.opportunityPriority = opportunityPriority;
+        this.opportunityRankingVersion = OPPORTUNITY_RANKING_VERSION;
         this.opportunityAssessment = opportunityAssessment;
         this.usedTools = usedTools;
         this.modelName = modelName;
