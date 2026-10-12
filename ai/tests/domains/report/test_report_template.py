@@ -67,7 +67,7 @@ def test_generate_report_without_model_call() -> None:
     assert "신규 1건 │ 수정 1건 │ 변경 없음 1건" in draft.summary
     assert "▸ 변경 없는 안내" in draft.summary
     assert "변경 없음 │ 기회점수: 82점" in draft.summary
-    assert "• 제출·의견 기한:" not in draft.summary
+    assert "• 제출·의견 기한: 원문 확인 필요" in draft.summary
     assert "• 제출처·방법:" not in draft.summary
     assert "원문: [게시글 보기](https://example.go.kr/1)" in draft.summary
     assert "참여를 권장" not in draft.summary
@@ -170,7 +170,7 @@ def test_inquiry_address_is_not_submission_address_and_filenames_are_not_require
         .summary
     )
     assert "• 제출처·방법:" not in body
-    assert "• 제출·의견 기한:" not in body
+    assert "• 제출·의견 기한: 원문 확인 필요" in body
     assert "제출 준비 서류 ↓" not in body
     assert "안내:" in body and "체크리스트 미작성" not in body
     assert "• 문의 담당: 상담팀 help@example.go.kr" in body
@@ -181,6 +181,7 @@ def test_attachment_text_is_used_for_submission_guidance():
         TemplateReportGenerator()
         .generate(
             with_document(
+                    title="도시계획 변경안 주민의견 수렴 행정예고",
                 attachments=[
                     {
                         "fileName": "공고문.pdf",
@@ -197,7 +198,7 @@ def test_attachment_text_is_used_for_submission_guidance():
     assert "주민의견서를 온라인으로 제출" in body
 
 
-def test_existing_comparison_deadline_used_without_proposal_preparation():
+def test_existing_comparison_without_source_is_not_confirmed_guidance():
     body = (
         TemplateReportGenerator()
         .generate(
@@ -210,8 +211,9 @@ def test_existing_comparison_deadline_used_without_proposal_preparation():
         )
         .summary
     )
-    assert "한국 측 2027년 1월 28일 16:00, 스페인 측 별도 확인" in body
-    assert "한·스페인 공동기관" in body
+    assert "2027년 1월 28일" not in body
+    assert "한·스페인 공동기관" not in body
+    assert "제출·의견 기한: 원문 확인 필요" in body
 
 
 def test_unsafe_and_duplicate_urls_are_not_rendered_as_downloads():
@@ -470,7 +472,7 @@ def test_deadline_stops_before_next_section_and_preserves_both_endpoints():
         document = with_document(
             contentText="접수기간: " + value + separator + "접수 및 문의처"
         ).documents[0]
-        assert submission_facts(document).deadline == value
+        assert submission_facts(document).deadline == "접수기간: " + value
 
 
 def test_invalid_deadline_does_not_hide_later_valid_source():
@@ -479,16 +481,17 @@ def test_invalid_deadline_does_not_hide_later_valid_source():
     document = with_document(
         contentText="접수기간: 월 수 시까지 18※\n제출기한: 2026-10-12 16:00"
     ).documents[0]
-    assert submission_facts(document).deadline == "2026-10-12 16:00"
+    assert submission_facts(document).deadline == "제출기한: 2026-10-12 16:00"
 
 
 def test_unknown_fields_are_collapsed_once_and_known_fields_stay_visible():
     request = with_document(
         checklist=["사업자등록증 사본"],
+        contentText="접수 마감: 2027-01-28 16:00",
         comparisonSummary={"applicationDeadline": "2027-01-28 16:00"},
     )
     body = TemplateReportGenerator().generate(request).summary
-    assert "• 제출·의견 기한: 2027년 1월 28일 16:00" in body
+    assert "• 제출·의견 기한: 접수 마감: 2027년 1월 28일 16:00" in body
     assert "• 제출처·방법:" not in body and "• 문의 담당:" not in body
     assert body.count("안내:") == 1
     assert "안내: 일부 접수 정보는 원문에서 확인해 주세요." in body

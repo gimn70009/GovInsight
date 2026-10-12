@@ -109,7 +109,9 @@ def test_identical_wrapped_sources_are_deduplicated():
         "fileName": "공고문.hwp", "downloadUrl": "https://example.go.kr/notice",
         "extractedText": SOURCE.replace("18:00까지 ", "18:00까지\n"),
     }]).documents[0].attachments
-    assert verified_submission_facts(doc)["deadline"] == "2026-10-14 18:00까지 (도착분 기준)"
+    assert verified_submission_facts(doc)["deadline"] == (
+        "접수기간: 2026-10-14 18:00까지 (도착분 기준)"
+    )
 
 
 def test_source_proof_survives_smaller_model_budget_and_failure():
@@ -124,7 +126,9 @@ def test_source_proof_survives_smaller_model_budget_and_failure():
 
 def test_cache_rechecks_current_proof_and_invalidates_changed_request():
     req = request()
-    runner = SimpleNamespace(extract=AsyncMock(return_value=output()))
+    runner = SimpleNamespace(extract=AsyncMock(return_value=output(
+        applicants=[], deadlines=[], destinations=[], contacts=[], documents=[],
+    )))
     first = run(req, runner)[2]
     second = run(req, runner)[2]
     assert first == second
@@ -176,13 +180,11 @@ def test_unrequested_model_values_cannot_override_verified_facts():
     doc = req.documents[0]
     ctx = build_context(doc, 16000)
     brief = validate_brief(output(), ctx, doc)
-    assert brief.facts.deadline == "2026-10-14 18:00까지 (도착분 기준)"
+    assert brief.facts.deadline == "접수기간: 2026-10-14 18:00까지 (도착분 기준)"
     assert brief.facts.contact == "사업지원팀 02-1234-5678"
 
 
 @pytest.mark.parametrize("condition", [
-    "신청기한까지 우편 도착한 서류에 한해 인정",
-    "우편은 마감일 소인분까지 유효",
     "예산 소진 시 조기마감",
     "양국에 동시에 접수해야 함",
 ])
@@ -201,3 +203,15 @@ def test_unknown_requested_fields_are_rejected(monkeypatch):
     runner = enrichment.SmallModelBriefRunner(ReportBriefSettings(api_key="test"))
     with pytest.raises(ValueError, match="omitted a requested field"):
         asyncio.run(runner.extract(build_context(request().documents[0], 16000)))
+
+
+@pytest.mark.parametrize("condition", [
+    "신청기한까지 우편 도착한 서류에 한해 인정",
+    "우편은 마감일 소인분까지 유효",
+])
+def test_reuse_includes_verified_receipt_condition_from_same_source(condition):
+    req = request(SOURCE.replace("(도착분 기준)", "") + "\n" + condition)
+    req.documents[0].comparison_summary.application_deadline = "2026-10-14"
+    value = verified_submission_facts(req.documents[0])["deadline"]
+    assert "접수기간: 2026-10-14" in value
+    assert condition in value

@@ -19,13 +19,12 @@ async def main():
         await page.goto(HTML.as_uri())
         await expect(page.locator('[data-submission-card]')).to_have_count(0)
         await expect(page.locator('h2')).to_have_count(2)
-        await expect(page.get_by_role('link',name='사업계획서 (ZIP)')).to_have_attribute('href','https://example.go.kr/download?id=1&seq=2')
-        await expect(page.get_by_role('link',name='개인정보동의서 (ZIP)')).to_be_visible()
+        await expect(page.get_by_role('link',name='통합 서류 파일')).to_have_attribute('href','https://example.go.kr/download?id=1&seq=2')
+        await expect(page.locator('a[href="https://example.go.kr/download?id=1&seq=2"]')).to_have_count(1)
         await expect(page.get_by_text('납세증명서(해당 시)',exact=True)).to_be_visible()
         await expect(page.get_by_text('준비 담당',exact=False)).to_have_count(0)
-        await expect(page.locator('[data-report-note]')).to_have_count(1)
-        await expect(page.locator('[data-report-note]')).to_have_text('미확인 항목: 제출처·방법, 문의 담당')
-        assert await page.locator('a').count()==5
+        await expect(page.locator('[data-report-note]')).to_have_count(0)
+        assert await page.locator('a').count()==4
         assert await page.locator('script').count()==0
         await page.screenshot(path=str(OUT/'submission-email-desktop.png'),full_page=True)
         await page.locator('h2').first.locator('xpath=ancestor::table[1]').screenshot(path=str(OUT/'submission-email-card.png'))
@@ -36,6 +35,6 @@ async def main():
                 await page.screenshot(path=str(OUT/'submission-email-mobile.png'),full_page=True)
         assert not errors, errors
         await browser.close()
-        print('PASS: short document names, ZIP URLs, no owner metadata, no 390/320px overflow')
+        print('PASS: grouped download names, one ZIP URL, no owner metadata, no 390/320px overflow')
 
 asyncio.run(main())

@@ -4,16 +4,16 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlsplit
 
 from app.domains.analysis.schemas.result import DocumentImportance
-from app.domains.report.brief import SubmissionBrief
-from app.domains.report.facts import submission_facts
+from app.domains.report.brief import SubmissionBrief, source_brief_facts
 from app.domains.report.presentation import (
-    deadline_display_lines,
     foreign_prose,
     informational_notice,
     source_check_message,
     submission_display_lines,
     unreadable_table,
 )
+from app.domains.report.quality import schedule_consistency_issues
+from app.domains.report.schedules import schedule_fields
 from app.domains.report.schemas.request import ReportDocumentRequest, ReportJobRequest
 from app.domains.report.schemas.result import ReportDraft
 from app.domains.report.submission_documents import (
@@ -106,7 +106,7 @@ def _report_summary(
 def _document_block(
     document: ReportDocumentRequest, compact: bool = False, brief: SubmissionBrief | None = None
 ) -> str:
-    facts = brief.facts if brief else submission_facts(document)
+    facts = brief.facts if brief else source_brief_facts(document)
     kind = (
         _DOCUMENT_TYPE_LABEL.get(document.proposal.document_type, "유형 확인 필요")
         if document.proposal
@@ -124,23 +124,39 @@ def _document_block(
         f"요약: {_summary(document)}",
         "",
     ]
+    schedule_issues = schedule_consistency_issues(document, facts.deadline)
+    if "deadline:summary_conflict" in schedule_issues:
+        lines.extend([
+            "안내: 요약과 제출 안내의 일정이 다릅니다. "
+            "원문에서 확인한 아래 제출 기한을 우선 확인해 주세요.",
+            "",
+        ])
+    elif "deadline:summary_without_verified_schedule" in schedule_issues:
+        lines.extend([
+            "안내: 요약에 적힌 제출 기한은 원문 근거를 확인하지 못했습니다. "
+            "신청 전에 원문을 확인해 주세요.",
+            "",
+        ])
     missing = []
     informational = informational_notice(document.title, document.content_text or "")
+    schedules = schedule_fields(facts.deadline)
     for label, value in [
         ("제출 주체·대상", facts.applicant),
-        ("제출·의견 기한", facts.deadline),
+        ("공고일", "\n".join(schedules["공고일"])),
+        ("제출·의견 기한", "\n".join(schedules["제출·의견 기한"])),
+        ("관련 일정", "\n".join(schedules["관련 일정"])),
         ("제출처·방법", facts.destination),
         ("문의 담당", facts.contact),
     ]:
-        display_lines = (
-            deadline_display_lines("\n".join(submission_display_lines(value, label)))
-            if label == "제출·의견 기한" else submission_display_lines(value, label)
-        )
+        display_lines = submission_display_lines(value, label)
         items = [_field(item, compact) for item in display_lines if item.strip()]
         items = [item for item in items if not foreign_prose(item)]
         valid = [item for item in items if item not in {"원문 확인 필요", "상세 조건은 원문 확인"}]
         if not valid:
-            missing.append(label)
+            if label not in {"공고일", "관련 일정"}:
+                missing.append(label)
+            if label == "제출·의견 기한" and not informational:
+                lines.append(f"• {label}: 원문 확인 필요")
         else:
             lines.append(f"• {label}: {valid[0]}")
             lines.extend(f"  ↳ {item}" for item in valid[1:])

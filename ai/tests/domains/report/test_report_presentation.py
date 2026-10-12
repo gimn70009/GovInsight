@@ -142,9 +142,13 @@ def test_combined_labelled_routes_split_without_breaking_urls():
 
 
 def test_english_month_is_normalized_without_losing_the_date():
-    brief, _ = check("January 28, 2027", "마감: 2027년 1월 28일까지", "deadlines")
+    brief, _ = check(
+        "Application deadline: January 28, 2027", "마감: 2027년 1월 28일까지", "deadlines"
+    )
     assert "2027년 1월 28일" in brief.facts.deadline
-    brief, _ = check("January 28, 2027", "마감: 2027년 2월 28일까지", "deadlines")
+    brief, _ = check(
+        "Application deadline: January 28, 2027", "마감: 2027년 2월 28일까지", "deadlines"
+    )
     assert brief.facts.deadline == "원문 확인 필요"
 
 

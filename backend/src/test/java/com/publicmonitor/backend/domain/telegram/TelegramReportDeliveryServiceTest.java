@@ -98,7 +98,7 @@ class TelegramReportDeliveryServiceTest {
         when(repository.findForUpdate(1L)).thenReturn(Optional.of(target));
         when(client.send(anyString(), anyString())).thenReturn(99L);
         worker.sendPending(1L);
-        verify(client).send(eq("123"), argThat(message -> message.contains("요약 전문은 이메일 보고서")
+        verify(client).send(eq("123"), argThat(message -> message.contains("요약 전문은 게시글 상세")
                 && com.publicmonitor.backend.domain.report.ReportBodyFormatter.displayLength(message) <= 4096));
         assertThat(target.getReport().getSummary()).isEqualTo(body);
         assertThat(target.getStatus()).isEqualTo(TelegramDeliveryState.SENT);

@@ -131,7 +131,9 @@ def test_section_recovery_revalidates_cached_output_without_another_model_call()
     enrichment._CACHE.clear()
     try:
         req = with_document(contentText="◦ 제출서류\n1. 신청서 1부")
-        runner = SimpleNamespace(extract=AsyncMock(return_value=output(documents=[row()])))
+        runner = SimpleNamespace(extract=AsyncMock(return_value=output(
+            applicants=[], deadlines=[], destinations=[], contacts=[], documents=[row()],
+        )))
         run(req, runner)
         assert [item.title for item in run(req, runner)[2].documents] == ["신청서"]
         runner.extract.assert_awaited_once()

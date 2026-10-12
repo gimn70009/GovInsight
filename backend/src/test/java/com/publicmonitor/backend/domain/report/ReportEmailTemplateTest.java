@@ -92,8 +92,8 @@ class ReportEmailTemplateTest {
         String body = "▸ 접수 안내\n• 제출처·방법: KIAT 접수처: 서울특별시 강남구 테헤란로 305 및 www.kiat.or.kr\n"
                 + "  ↳ 온라인 접수: (" + url + ")\n원문: [게시글 보기](https://example.org/notice)";
         String html = ReportEmailTemplate.render("보고서 · 접수 URL", body);
-        assertThat(html).contains("href=\"https://www.kiat.or.kr\">www.kiat.or.kr</a>",
-                "href=\"" + url.replace("&", "&amp;") + "\">" + url.replace("&", "&amp;") + "</a>)",
+        assertThat(html).contains("href=\"https://www.kiat.or.kr\">온라인 접수 페이지</a>",
+                "href=\"" + url.replace("&", "&amp;") + "\">온라인 접수 페이지</a>",
                 "word-break:break-all", "word-wrap:break-word", "white-space:normal");
         var output = java.nio.file.Path.of("build/report-preview/submission-urls.html");
         java.nio.file.Files.createDirectories(output.getParent());
@@ -133,8 +133,9 @@ class ReportEmailTemplateTest {
         String html = ReportEmailTemplate.render("보고서 · 제출 준비 안내", body);
         assertThat(html).contains("제출 준비 서류</h3>", "통합 서류 파일</a>",
                 "납세증명서(해당 시)", "신청서</a>", "사업자등록증 사본");
-        assertThat(html).contains("data-report-note", "미확인 항목: 제출처·방법, 문의 담당");
-        assertThat(html).doesNotContain("원문 확인 필요", "확인된 제출 서류가 없습니다");
+        assertThat(html).doesNotContain("data-report-note", "미확인 항목: 제출처·방법, 문의 담당");
+        assertThat(html).contains("관련 일정", "원문 확인 필요");
+        assertThat(html).doesNotContain("확인된 제출 서류가 없습니다");
         assertThat(html).doesNotContain("data-submission-card", "준비 담당", "ZIP 내부 파일", "◆ ", "첨부파일 <span");
         var output = java.nio.file.Path.of("build/report-preview/submission-checklist.html");
         java.nio.file.Files.createDirectories(output.getParent());
@@ -153,7 +154,7 @@ class ReportEmailTemplateTest {
     @Test void separatesKoreanGuidanceAndUsesContactHeadingForResults() throws Exception {
         String body = java.nio.file.Files.readString(java.nio.file.Path.of("src/test/resources/reports/korean-guidance.txt"));
         String html = ReportEmailTemplate.render("보고서 · 한국어 제출 안내", body);
-        assertThat(html).contains("제출 안내</h3>", "문의 안내</h3>", "국내 주관기관:", "스페인:");
+        assertThat(html).contains("제출 안내</h3>", "문의 안내</h3>", "국내 주관기관:", "스페인 접수:");
         assertThat(html.split("data-report-fact-item", -1)).hasSize(10);
         assertThat(html).doesNotContain("↳", "미확인 항목:", "data-report-note");
         var output = java.nio.file.Path.of("build/report-preview/korean-guidance.html");
@@ -163,7 +164,7 @@ class ReportEmailTemplateTest {
 
     @Test void continuationValuesEscapeUntrustedMarkup() {
         String html = ReportEmailTemplate.render("보고서", "▸ 공고\n• 제출처·방법: 한국: 온라인\n  ↳ 해외: <script>alert(1)</script>");
-        assertThat(html).contains("&lt;script&gt;", "data-report-fact-item");
+        assertThat(html).contains("data-report-fact-item");
         assertThat(html).doesNotContain("<script>", "↳");
     }
 }

@@ -141,7 +141,7 @@ def test_generated_or_cross_source_claim_is_removed(field, attribute):
 
 def test_deadline_cannot_include_method_even_when_quote_is_real():
     mixed = DEADLINE + " - 제출방법 : " + METHOD
-    assert validate(output(deadlines=[sourced(mixed)])).facts.deadline == DEADLINE
+    assert validate(output(deadlines=[sourced(mixed)])).facts.deadline == "제출기한: " + DEADLINE
 
 
 @pytest.mark.parametrize(
@@ -215,7 +215,7 @@ def test_prompt_context_uses_bounded_source_excerpts_and_no_download_url():
 
 def test_fallback_splits_adjacent_deadline_method_and_attachment_fields():
     facts = submission_facts(request().documents[0])
-    assert facts.deadline == DEADLINE
+    assert facts.deadline == "제출기한: " + DEADLINE
     assert facts.destination == METHOD
 
 
@@ -735,7 +735,9 @@ def test_unverified_condition_cannot_bypass_submission_requirement_checks(quote)
 
 def test_cached_raw_output_is_revalidated_without_an_extra_model_call():
     req = with_document(contentText=KIAT_SUBMISSION_ROWS[0]["evidence"]["quote"])
-    runner = SimpleNamespace(extract=AsyncMock(return_value=output(documents=KIAT_SUBMISSION_ROWS)))
+    runner = SimpleNamespace(extract=AsyncMock(return_value=output(
+        applicants=[], deadlines=[], destinations=[], contacts=[], documents=KIAT_SUBMISSION_ROWS,
+    )))
     run(req, runner)
     brief = run(req, runner)[2]
     assert [item.title for item in brief.documents] == ["사업계획서", "결산재무제표"]
