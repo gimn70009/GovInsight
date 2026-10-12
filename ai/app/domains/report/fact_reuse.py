@@ -7,11 +7,13 @@ incomplete passages remain the report model's responsibility.
 import re
 import unicodedata
 
+from app.domains.report.applicants import checkbox_applicants
 from app.domains.report.facts import (
     _find,
     _source_lines,
     _usable_applicant,
     _usable_deadline,
+    source_schedule_rows,
 )
 from app.domains.report.presentation import _anchors, readable_source
 from app.domains.report.schemas.request import ReportDocumentRequest
@@ -108,9 +110,27 @@ def verified_submission_facts(document: ReportDocumentRequest) -> dict[str, str]
     candidates: dict[str, list[str]] = {kind: [] for kind in _LABELS}
     blocked = set()
     for part in parts:
+        rejected_schedules: list[str] = []
+        schedules = source_schedule_rows(part.text, rejected=rejected_schedules)
+        if rejected_schedules:
+            # An unreadable second country/date cannot disappear merely because
+            # a neighbouring explicit date was recoverable.
+            blocked.add("deadline")
+        for value in schedules:
+            if _complete(value, "deadline"):
+                if _source_key(value) not in {_source_key(v) for v in candidates["deadline"]}:
+                    candidates["deadline"].append(value)
         for line in _lines(part.text):
             for kind, pattern in _LABELS.items():
+                # A readable explicit date row replaces a flattened oversized
+                # candidate from the same source, without masking distinct rows.
+                if kind == "deadline" and schedules:
+                    continue
                 if not re.search(pattern, line):
+                    continue
+                if kind == "applicant" and checkbox_applicants(part.text) is not None:
+                    # The ordinary outline flattener cannot erase checkbox state.
+                    blocked.add(kind)
                     continue
                 if len(re.findall(pattern, line)) > 1:
                     blocked.add(kind)
@@ -153,5 +173,9 @@ def verified_submission_facts(document: ReportDocumentRequest) -> dict[str, str]
             )
             if any(_compact(rule) not in _compact(value) for rule in [*rules, *deadline_rules]):
                 continue
+        if kind == "deadline" and not re.search(
+            r"공고|접수|신청|제출|마감|기한|까지|상시|수시", value
+        ):
+            value = "접수 기한: " + value
         reused[kind] = value
     return reused

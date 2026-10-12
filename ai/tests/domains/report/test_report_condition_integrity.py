@@ -27,13 +27,13 @@ def test_changed_conditions_never_reach_report(raw, display):
     assert result in (raw, '원문 확인 필요')
 
 
-def test_omitted_exception_is_restored_from_full_verified_quote():
+def test_omitted_exception_does_not_become_confirmed_eligibility():
     raw = "신청 자격: 중소기업"
     quote = raw + ". 단, 참여제한 중인 기관은 제외합니다."
     context = BriefContext('{}', {'body': SourcePart(None, quote)})
     item = SourcedText(text=raw, evidence=Evidence(source_id='body', quote=quote),
                       fragments=[raw], display_text="신청 자격: 중소기업")
-    assert _values([item], context, 'applicant') == quote
+    assert _values([item], context, 'applicant') == '원문 확인 필요'
 
 
 def test_deadline_rewrite_cannot_remove_receipt_exception():
@@ -55,9 +55,9 @@ def test_long_condition_quote_is_not_truncated_to_remove_exception():
     assert _values([item], context, 'applicant') == '원문 확인 필요'
 
 
-def test_safe_korean_condition_formatting_keeps_source():
+def test_safe_korean_condition_formatting_keeps_display_and_source_facts():
     quote = "신청 자격: 인원 5명 이상, 업력 3년 이하"
     context = BriefContext('{}', {'body': SourcePart(None, quote)})
     item = SourcedText(text=quote, evidence=Evidence(source_id='body', quote=quote),
                       display_text="신청 자격: 인원 5 명 이상, 업력 3 년 이하")
-    assert _values([item], context, 'applicant') == quote
+    assert _values([item], context, 'applicant') == item.display_text

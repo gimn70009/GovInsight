@@ -15,18 +15,27 @@ class ReportTelegramTemplateTest {
         assertThat(ReportTelegramTemplate.render("보고서", body)).isEqualTo("보고서\n\n" + body);
     }
 
-    @Test void longSummariesAreProjectedOnlyForTelegramAndKeepActionFields() {
+    @Test void newScheduleLabelsRemainSeparateThroughTelegramFormatting() {
+        String body = "▸ 공고\n• 공고일: 2026년 10월 6일\n• 관련 일정: 설명회 2026년 10월 20일\n"
+                + "• 제출·의견 기한: 원문 확인 필요";
+        String html = ReportBodyFormatter.telegramHtml(ReportTelegramTemplate.render("보고서", body));
+        assertThat(html).contains("<b>• 공고일:</b> 2026년 10월 6일", "<b>• 관련 일정:</b> 설명회 2026년 10월 20일",
+                "<b>• 제출·의견 기한:</b> 원문 확인 필요");
+    }
+
+    @Test void longSummariesUseChannelSpecificDisplayAndKeepActionFields() {
         String summary = "지원 조건을 안내합니다. ".repeat(400);
         String body = "신규 1건\n\n" + card("공고", summary, "https://example.org/notice?q=1&x=2");
         String telegram = ReportTelegramTemplate.render("보고서", body);
-        assertThat(telegram).contains("요약 전문은 이메일 보고서", "2026년 10월 31일 24:00까지",
+        assertThat(telegram).contains("요약 전문은 게시글 상세", "2026년 10월 31일 24:00까지",
                 "[게시글 보기](https://example.org/notice?q=1&x=2)");
         assertThat(ReportBodyFormatter.displayLength(telegram)).isLessThanOrEqualTo(4096);
         String email = ReportEmailTemplate.render("보고서", body);
         String visibleSummary = java.util.regex.Pattern.compile(
                 "<p data-report-summary-item[^>]*>(.*?)</p>").matcher(email).results()
                 .map(match -> match.group(1)).collect(java.util.stream.Collectors.joining(" "));
-        assertThat(visibleSummary).isEqualTo(summary.strip());
+        assertThat(visibleSummary).isEqualTo("지원 조건을 안내합니다. 지원 조건을 안내합니다.");
+        assertThat(body).contains(summary);
     }
 
     @Test void wholeCardsAreOmittedWithoutSplittingLongUrlsOrSurrogates() {

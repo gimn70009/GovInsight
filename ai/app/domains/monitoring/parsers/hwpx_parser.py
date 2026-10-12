@@ -1,5 +1,6 @@
 import re
 import zipfile
+from io import BytesIO
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -45,20 +46,25 @@ class HwpxParser:
         return [entry for _number, entry in sorted(entries, key=lambda item: item[0])]
 
     def _parse_section(self, xml_bytes: bytes) -> list[str]:
-        root = ElementTree.fromstring(xml_bytes)
         paragraphs: list[str] = []
-        for paragraph in root.iter():
-            if _local_name(paragraph.tag) != "p":
-                continue
-            text = _normalize_text(
-                "".join(
-                    node.text or ""
-                    for node in paragraph.iter()
-                    if _local_name(node.tag) == "t"
-                )
-            )
+        fragments: list[str] = []
+
+        def flush() -> None:
+            text = _normalize_text("".join(fragments))
             if text:
                 paragraphs.append(text)
+            fragments.clear()
+
+        # A table lives inside a paragraph and contains paragraphs of its own.
+        # Read each text node once in document order, retaining cell paragraphs
+        # instead of also emitting their concatenation from the outer paragraph.
+        for event, node in ElementTree.iterparse(BytesIO(xml_bytes), events=("start", "end")):
+            tag = _local_name(node.tag)
+            if tag == "p":
+                flush()
+            elif event == "end" and tag == "t":
+                fragments.append("".join(node.itertext()))
+        flush()
         return paragraphs
 
 

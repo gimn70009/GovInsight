@@ -30,6 +30,10 @@ final class ReportFactPresentation {
     }
 
     static List<String> lines(String label, String value) {
+        if (label.equals("제출 주체·대상")) {
+            var selection = ReportApplicantPresentation.lines(value);
+            if (selection != null) return selection;
+        }
         if (unreadableTable(value)) return List.of(sourceCheckMessage(label));
         String text = value.replaceAll("(?:^|\\s+)[ㅇ○●▪•□■◦▫◇▶▸]\\s+", "\n").strip();
         if (label.equals("제출 주체·대상")) {

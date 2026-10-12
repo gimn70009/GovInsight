@@ -21,10 +21,10 @@ class ReportSubmissionSectionsTest {
         int forms = html.indexOf("data-submission-section=\"provided\"");
         int company = html.indexOf("data-submission-section=\"company\"");
         assertThat(forms).isGreaterThanOrEqualTo(0).isLessThan(company);
-        assertThat(html.substring(forms, company)).contains("공고에서 제공한 양식", "파일을 내려받아 작성",
+        assertThat(html.substring(forms, company)).contains("공고에서 제공한 양식",
                 "사업계획서 양식.hwp</a>").doesNotContain("결산재무제표", "관련 서류:", "표준 현장실습 학기제 운영계획서");
         assertThat(html.substring(company)).contains("회사에서 준비할 서류", "결산재무제표", "사업자 등록증",
-                "기관소개 자료 (선택 제출)", "링크가 없는 양식은 공고 원문에서 확인");
+                "기관소개 자료 (선택 제출)");
         assertThat(html.split("href=\"https://example.org/form\"", -1)).hasSize(2);
         Path output = Path.of("build/report-preview/submission-sections.html");
         Files.createDirectories(output.getParent());
@@ -46,7 +46,7 @@ class ReportSubmissionSectionsTest {
         String html = ReportEmailTemplate.render("보고서", "▸ 공고\n제출 준비 서류 ↓\n"
                 + "• 신청서\n• [동의서](https://user:pass@example.org/form)");
         assertThat(html).doesNotContain("data-submission-section=\"provided\"", "href=\"https://user:");
-        assertThat(html).contains("링크가 없는 양식은 공고 원문에서 확인", "신청서");
+        assertThat(html).contains("회사에서 준비할 서류", "신청서");
     }
 
     @Test void sectionsKeepDuplicateGroupingAndAreScopedToEachNotice() {

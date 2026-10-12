@@ -3,7 +3,7 @@ package com.publicmonitor.backend.domain.report;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Telegram-only projection; the saved report and email retain complete summaries. */
+/** Telegram-only projection; the saved report retains complete summaries. */
 public final class ReportTelegramTemplate {
     private static final int LIMIT = 4096;
     private static final String SEPARATOR = "\n\n────────────────\n\n";
@@ -21,7 +21,7 @@ public final class ReportTelegramTemplate {
         List<String> cards = new ArrayList<>();
         for (int i = 1; i < sections.length; i++) {
             cards.add(clean(sections[i]).replaceAll("(?m)^요약: [^\n]*",
-                    "요약: 요약 전문은 이메일 보고서 또는 게시글 상세에서 확인해 주세요."));
+                    "요약: 요약 전문은 게시글 상세에서 확인해 주세요."));
         }
         for (int i = 0; i < cards.size(); i++) {
             int remaining = cards.size() - i - 1;

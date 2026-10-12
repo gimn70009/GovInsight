@@ -39,7 +39,7 @@ function reportLines(block: string): ReactNode[] {
           return <div key={index}><dt>{detail.slice(0, colon)}</dt><dd>{linkedText(detail.slice(colon + 2))}</dd></div>
         })}</dl>
       </article>)
-    } else if (!submissionSection && /^• (제출|문의)/.test(line) && line.includes(': ')) {
+    } else if (!submissionSection && /^• (제출|문의|공고일|관련 일정)/.test(line) && line.includes(': ')) {
       const key = i
       const colon = line.indexOf(': ')
       const values = [line.slice(colon + 2)]

@@ -54,7 +54,7 @@ public final class ReportEmailTemplate {
                 + "</tr></table>"
                 + "<h1 style=\"margin:22px 0 0;color:#ffffff;font-size:24px;font-weight:700;letter-spacing:-0.7px;line-height:1.5;word-break:keep-all;overflow-wrap:anywhere\">");
         html.append(ReportBodyFormatter.html(title)).append("</h1>");
-        String overview = String.join("\n", intro).strip();
+        String overview = String.join("\n", intro.stream().filter(line -> !auxiliaryNote(line.strip())).toList()).strip();
         if (!overview.isBlank()) {
             html.append("<div style=\"margin-top:20px;padding-top:16px;border-top:1px solid #3b5673;color:#c5d5e8;font-size:13px;line-height:1.9;overflow-wrap:anywhere\">")
                     .append(lines(overview)).append("</div>");
@@ -62,7 +62,7 @@ public final class ReportEmailTemplate {
         html.append("</td></tr>");
         for (int i = 0; i < cards.size(); i++) html.append(card(cards.get(i), i + 1));
         html.append("<tr><td style=\"padding:24px 16px;color:#65788f;font-size:12px;line-height:1.8;text-align:center\">"
-                + "GovInsight · 공공기관 모니터링 보고서<br>제출 전 원문의 최신 안내와 필수 서류를 확인해 주세요."
+                + "GovInsight · 공공기관 모니터링 보고서"
                 + "</td></tr></table></td></tr></table></body></html>");
         return html.toString();
     }
@@ -75,7 +75,11 @@ public final class ReportEmailTemplate {
                 + "<p style=\"margin:0 0 10px;font-size:11px;font-weight:700;letter-spacing:1px;color:#4c709d\">공고 " + String.format("%02d", index) + "</p>"
                 + "<h2 style=\"margin:0;color:#153957;font-size:22px;line-height:1.5;font-weight:700;overflow-wrap:anywhere;word-break:keep-all\">");
         html.append(ReportBodyFormatter.html(content.getFirst().substring(2))).append("</h2>");
-        boolean hasSubmissionFacts = content.stream().anyMatch(line -> line.startsWith("• 제출"));
+        boolean hasSubmissionFacts = content.stream().anyMatch(line -> line.startsWith("• 제출")
+                || line.startsWith("• 공고일:") || line.startsWith("• 관련 일정:"));
+        boolean omitSummarySchedule = content.stream().map(String::strip).anyMatch(line ->
+                line.startsWith("안내: 요약과 제출 안내의 일정이 다릅니다.")
+                || line.startsWith("안내: 요약에 적힌 제출 기한은 원문 근거를 확인하지 못했습니다."));
         boolean headerOpen = true;
         boolean factsOpen = false;
         boolean attachmentsOpen = false;
@@ -84,6 +88,12 @@ public final class ReportEmailTemplate {
         for (int row = 1; row < grouped.size(); row++) {
             String line = grouped.get(row).strip();
             if (line.isBlank()) continue;
+            if (auxiliaryNote(line)) {
+                if (submissionCardOpen) { html.append("</div>"); submissionCardOpen = false; }
+                if (factsOpen) { html.append("</table>"); factsOpen = false; }
+                attachmentsOpen = false;
+                continue;
+            }
             if (headerOpen && line.startsWith("기관: ")) {
                 html.append("<p style=\"margin:12px 0 0;color:#476581;font-size:14px;line-height:1.6\">")
                         .append(ReportBodyFormatter.html(line.substring(4))).append("</p>");
@@ -118,7 +128,7 @@ public final class ReportEmailTemplate {
             }
             if (submissionCardOpen) {
                 int colon = line.indexOf(": ");
-                html.append("<div style=\"margin:5px 0;font-size:13px;line-height:1.8;overflow-wrap:anywhere\">");
+                html.append("<div style=\"margin:5px 0;font-size:15px;line-height:1.8;overflow-wrap:anywhere\">");
                 if (colon >= 0) {
                     html.append("<span style=\"color:#60748e\">")
                             .append(ReportBodyFormatter.html(line.substring(0, colon)))
@@ -128,11 +138,10 @@ public final class ReportEmailTemplate {
                 continue;
             }
             if (line.startsWith("요약: ")) {
-                html.append("<p style=\"margin:0 0 8px;font-size:12px;font-weight:700;color:#59708c\">사업 요약</p>")
-                        .append(summaryValues(line.substring(4)));
+                html.append(summaryValues(line.substring(4), omitSummarySchedule));
             } else if (line.startsWith("• ") && !attachmentsOpen && line.contains(": ")) {
                 if (!factsOpen) {
-                    html.append("<h3 style=\"margin:0 0 12px;font-size:15px;color:#243f5e\">"
+                    html.append("<h3 style=\"margin:0 0 12px;font-size:17px;color:#243247\">"
                             + (hasSubmissionFacts ? "제출 안내" : "문의 안내") + "</h3>")
                             .append("<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"table-layout:fixed;border:1px solid #dde5ef;border-radius:10px\">");
                     factsOpen = true;
@@ -140,18 +149,13 @@ public final class ReportEmailTemplate {
                 int colon = line.indexOf(": ");
                 String label = line.substring(2, colon);
                 String value = line.substring(colon + 2);
-                boolean unknown = value.contains("원문 확인") || value.contains("원문 표에서")
-                        || value.contains("명시되지 않았") || ReportFactPresentation.unreadableTable(value);
-                html.append("<tr><td style=\"padding:13px 14px;background:#f3f6fa;border-bottom:1px solid #e1e8f1\">")
-                        .append("<div style=\"margin-bottom:5px;font-size:12px;color:#526b87;font-weight:700\">")
-                        .append(ReportBodyFormatter.html(label)).append("</div>")
-                        .append("<div style=\"font-size:14px;line-height:1.85;overflow-wrap:anywhere;")
-                        .append(unknown ? "color:#78879a" : label.contains("기한") ? "color:#215fa8;font-weight:700" : "color:#253d59")
-                        .append("\">").append(factValues(label, value)).append("</div></td></tr>");
+                for (var fact : ReportSchedulePresentation.groupedFacts(label, value)) {
+                    html.append(factRow(fact));
+                }
             } else {
                 if (factsOpen) { html.append("</table>"); factsOpen = false; }
                 if (line.equals("제출 준비 서류 ↓")) {
-                    html.append("<h3 style=\"margin:24px 0 12px;font-size:15px;color:#243f5e\">제출 준비 서류</h3>");
+                    html.append("<h3 style=\"margin:24px 0 12px;font-size:17px;color:#243247\">제출 준비 서류</h3>");
                     var items = new ArrayList<String>();
                     int end = row + 1;
                     while (end < grouped.size()) {
@@ -168,21 +172,17 @@ public final class ReportEmailTemplate {
                         attachmentsOpen = true;
                     }
                 } else if (line.equals("첨부파일 ↓")) {
-                    html.append("<h3 style=\"margin:24px 0 12px;font-size:15px;color:#243f5e\">첨부파일 <span style=\"font-weight:400;font-size:12px;color:#718399\">파일명을 눌러 다운로드</span></h3>");
+                    html.append("<h3 style=\"margin:24px 0 12px;font-size:17px;color:#243247\">첨부파일 <span style=\"font-weight:400;font-size:12px;color:#718399\">파일명을 눌러 다운로드</span></h3>");
                     attachmentsOpen = true;
-                } else if ((line.startsWith("미확인 항목: ") || line.startsWith("안내: "))) {
-                    attachmentsOpen = false;
-                    html.append("<p data-report-note style=\"margin:16px 0 0;font-size:12px;line-height:1.7;color:#687c95;overflow-wrap:anywhere\">")
-                            .append(ReportBodyFormatter.html(line)).append("</p>");
                 } else if (line.startsWith("원문: ")) {
                     attachmentsOpen = false;
                     html.append("<div style=\"margin-top:22px;padding-top:16px;border-top:1px solid #dce5ef;font-size:14px;font-weight:700\">")
                             .append(linked(line)).append("</div>");
                 } else if (attachmentsOpen && line.startsWith("• ")) {
-                    html.append("<div style=\"margin:0 0 8px;padding:12px 14px;background:#f0f5fc;border:1px solid #d7e4f5;border-radius:8px;font-size:13px;line-height:1.7;overflow-wrap:anywhere;word-break:break-word\">")
+                    html.append("<div style=\"margin:0;padding:7px 0;border-bottom:1px solid #e8edf3;font-size:15px;line-height:1.7;overflow-wrap:anywhere;word-break:break-word\">")
                             .append(submissionEntry(line.substring(2))).append("</div>");
                 } else {
-                    html.append("<p style=\"font-size:14px;line-height:1.8;overflow-wrap:anywhere\">").append(linked(line)).append("</p>");
+                    html.append("<p style=\"font-size:16px;line-height:1.8;overflow-wrap:anywhere\">").append(linked(line)).append("</p>");
                 }
             }
         }
@@ -208,10 +208,17 @@ public final class ReportEmailTemplate {
         return ScorePalette.NEUTRAL;
     }
 
-    private static String summaryValues(String value) {
-        var html = new StringBuilder("<div style=\"margin:0 0 24px\">");
-        for (String paragraph : ReportFactPresentation.lines("사업 요약", value)) {
-            html.append("<p data-report-summary-item style=\"margin:0 0 10px;font-size:15px;line-height:1.85;color:#344c65;word-break:keep-all;overflow-wrap:anywhere\">")
+    private static boolean auxiliaryNote(String line) {
+        return line.startsWith("안내:") || line.startsWith("미확인 항목:");
+    }
+
+    private static String summaryValues(String value, boolean omitSchedule) {
+        var paragraphs = ReportEmailSummary.lines(value, omitSchedule);
+        if (paragraphs.isEmpty()) return "";
+        var html = new StringBuilder("<p style=\"margin:0 0 8px;font-size:14px;font-weight:700;color:#475569\">핵심 요약</p>"
+                + "<div style=\"margin:0 0 24px\">");
+        for (String paragraph : paragraphs) {
+            html.append("<p data-report-summary-item style=\"margin:0 0 10px;font-size:16px;line-height:1.8;color:#243247;word-break:keep-all;overflow-wrap:anywhere\">")
                     .append(linked(paragraph)).append("</p>");
         }
         return html.append("</div>").toString();
@@ -228,25 +235,20 @@ public final class ReportEmailTemplate {
             boolean downloadable = match.find() && ReportBodyFormatter.safeUrl(match.group(1));
             (downloadable ? forms : company).add(item);
         }
-        return submissionSection("공고에서 제공한 양식", "파일을 내려받아 작성해 주세요.", forms, true)
-                + submissionSection("회사에서 준비할 서류",
-                    "회사 자료를 준비하거나 발급받아 주세요. 링크가 없는 양식은 공고 원문에서 확인해 주세요.",
-                    company, false);
+        return submissionSection("공고에서 제공한 양식", forms, true)
+                + submissionSection("회사에서 준비할 서류", company, false);
     }
 
-    private static String submissionSection(String title, String description, List<String> items, boolean forms) {
+    private static String submissionSection(String title, List<String> items, boolean forms) {
         if (items.isEmpty()) return "";
         var html = new StringBuilder("<div data-submission-section=\"")
                 .append(forms ? "provided" : "company")
                 .append("\" style=\"margin:16px 0 22px\">")
                 .append("<h4 style=\"margin:0 0 6px;font-size:14px;color:#243f5e\">")
-                .append(title).append("</h4>")
-                .append("<p style=\"margin:0 0 10px;color:#60748e;font-size:12px;line-height:1.7\">")
-                .append(description).append("</p>");
+                .append(title).append("</h4>");
         for (String item : items) {
-            html.append("<div style=\"margin:0 0 8px;padding:12px 14px;border:1px solid ")
-                    .append(forms ? "#d7e4f5;background:#f0f5fc;" : "#e0e5eb;background:#f7f8fa;")
-                    .append("border-radius:8px;font-size:13px;line-height:1.7;overflow-wrap:anywhere;word-break:break-word\">")
+            html.append("<div data-submission-list-item style=\"padding:6px 0;border-bottom:1px solid #e8edf3;")
+                    .append("font-size:15px;line-height:1.6;overflow-wrap:anywhere;word-break:break-word\">")
                     .append(submissionEntry(item)).append("</div>");
         }
         return html.append("</div>").toString();
@@ -262,15 +264,42 @@ public final class ReportEmailTemplate {
         return result;
     }
 
+    private static String factRow(ReportSchedulePresentation.Fact fact) {
+        String value = fact.value();
+        boolean unknown = value.contains("원문 확인") || value.contains("원문 표에서")
+                || value.contains("명시되지 않았") || ReportFactPresentation.unreadableTable(value);
+        return "<tr data-report-fact=\"" + ReportBodyFormatter.html(fact.label())
+                + "\"><td style=\"padding:16px;background:#ffffff;border-bottom:1px solid #e1e8f1\">"
+                + "<div style=\"margin-bottom:8px;font-size:14px;color:#475569;font-weight:700\">"
+                + ReportBodyFormatter.html(fact.label()) + "</div>"
+                + "<div style=\"font-size:16px;line-height:1.7;overflow-wrap:anywhere;color:#243247;"
+                + (fact.deadline() && !unknown ? "font-weight:700;" : "")
+                + "\">" + factValues(fact.label(), value) + "</div></td></tr>";
+    }
+
+    private static final Pattern ROLE_LABEL = Pattern.compile(
+            "^((?:국내\\s*|해외\\s*|국외\\s*)?(?:주관기관\\s*외\\s*필수\\s*참여기관|(?:주관|공동|참여)(?:연구개발)?기관|필수\\s*참여기관))\\s*[:：]\\s*([\\s\\S]*)$");
+
     private static String factValues(String label, String value) {
         var result = new StringBuilder();
-        var items = ReportFactPresentation.lines(label, value);
+        boolean compact = ReportEmailCompactPresentation.supports(label);
+        var items = compact ? ReportEmailCompactPresentation.lines(label, value)
+                : ReportFactPresentation.lines(label, value);
         for (String item : items) {
-            result.append("<div data-report-fact-item style=\"")
-                    .append(items.size() > 1 ? "padding:6px 0 6px 14px;text-indent:-14px;" : "padding:4px 0;")
-                    .append("line-height:1.65;word-break:keep-all;overflow-wrap:anywhere\">")
-                    .append(items.size() > 1 ? "<span aria-hidden=\"true\" style=\"color:#59708c;margin-right:8px\">•</span>" : "")
-                    .append(linked(item)).append("</div>");
+            var role = ROLE_LABEL.matcher(item);
+            if (label.equals("제출 주체·대상") && role.matches()) {
+                result.append("<div data-report-fact-item data-report-role style=\"margin:0 0 10px;line-height:1.7;word-break:keep-all;overflow-wrap:anywhere\">")
+                        .append("<div style=\"font-size:14px;font-weight:700;color:#475569\">")
+                        .append(ReportBodyFormatter.html(role.group(1))).append(":</div>")
+                        .append("<div style=\"margin-top:2px\">").append(linked(role.group(2)).replace("\n", "<br>"))
+                        .append("</div></div>");
+            } else {
+                result.append("<div data-report-fact-item style=\"")
+                        .append(!compact && items.size() > 1 ? "padding:3px 0 3px 14px;text-indent:-14px;" : "padding:2px 0;")
+                        .append("line-height:1.7;word-break:keep-all;overflow-wrap:anywhere\">")
+                        .append(!compact && items.size() > 1 ? "<span aria-hidden=\"true\" style=\"color:#64748b;margin-right:8px\">•</span>" : "")
+                        .append(linked(item).replace("\n", "<br>")).append("</div>");
+            }
         }
         return result.toString();
     }

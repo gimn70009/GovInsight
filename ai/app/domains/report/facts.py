@@ -52,6 +52,71 @@ def submission_routes(document: ReportDocumentRequest) -> str | None:
     return joined if routes and len(joined) <= 300 else None
 
 
+
+_SCHEDULE_HEADING = re.compile(
+    r"(?<![가-힣])(?P<label>(?:(?:국문|영문|국내|국외|해외|한국|[가-힣]{2,10}측|\d+차)\s*"
+    r"|(?m:^[ \t]*[□■○•]?[ \t]*[가-힣]{2,12}[ \t]+))?"
+    r"(?:(?:연구개발계획서|연구계획서|계획서)\s*)?"
+    r"(?:(?:접수|신청|제출|의견\s*제출)\s*(?:기간|기한|마감(?:일자|일)?|일시)"
+    r"|(?:대회\s*)?공고(?:일자|일)))"
+    r"\s*[:：]?\s*(?:\(접수마감\)\s*)?[<〈]?\s*['‘’]?"
+    r"(?=(?:20\d{2}|\d{1,2})\s*[./년월-])"
+)
+_RECEIPT_RULE = re.compile(
+    r"우편.{0,40}(?:소인|도착)|(?:방문\s*접수|방문).{0,25}마감일.{0,20}\d+\s*시"
+)
+
+
+def source_schedule_rows(
+    text: str, *, include_conditions: bool = True, rejected: list[str] | None = None,
+) -> list[str]:
+    """Recover explicit dates, recording damaged candidates for strict reuse checks."""
+    found = []
+    matches = list(_SCHEDULE_HEADING.finditer(text))
+    for index, match in enumerate(matches):
+        # Paired column headings require their own date-to-heading mapping.
+        if re.search(r"공고(?:일자|일)?\s*/\s*$", text[max(0, match.start() - 20):match.start()]):
+            continue
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        tail = text[match.end():end]
+        tail = re.split(r"[>〉]|[□■○●]|(?=\n\s*\n)", tail, maxsplit=1)[0]
+        lines = tail.splitlines()
+        if not lines:
+            continue
+        value = lines[0].strip()
+        # A wrapped range is safe only if the preceding line explicitly starts it.
+        if re.search(r"(?:[~∼～]|부터)\s*$", value) and len(lines) > 1:
+            value += " " + lines[1].strip()
+        elif len(lines) > 1 and re.fullmatch(r"\([^()]{1,80}\)", lines[1].strip()):
+            # A wrapped receipt rule or timezone belongs to the preceding date.
+            value += " " + lines[1].strip()
+        following = _ANY_LABEL.search(value)
+        if following:
+            value = value[:following.start()].rstrip(" /-·")
+        value = re.split(r"(?<=[다요][.!?])\s+", value, maxsplit=1)[0].strip()
+        label = " ".join(match["label"].split()).lstrip("□■○• ")
+        cleaned = _usable_deadline(value)
+        if not value or len(value) > 150 or not _DATE.match(value) or not cleaned:
+            if rejected is not None:
+                rejected.append(f"{label}: {value}")
+            continue
+        value = cleaned
+        entry = f"{label}: {value}"
+        if _deadline_key(entry) not in {_deadline_key(item) for item in found}:
+            found.append(entry)
+    if include_conditions and len(found) == 1:
+        # Attach only explicit receipt rules from this same source when there is
+        # one schedule. Multiple countries/rounds cannot inherit an unbound rule.
+        for part in re.split(r"\r?\n|[□■○●ㅇ*]", text):
+            part = part.strip()
+            if _RECEIPT_RULE.search(part) and len(part) <= 150:
+                receipt = re.search(r"우편\([^()]{0,60}(?:소인|도착)[^()]{0,40}\)", part)
+                condition = receipt[0] if receipt else part
+                if condition not in found[0]:
+                    found[0] += "\n" + condition
+    return found
+
+
 def submission_facts(
     document: ReportDocumentRequest, *, source_only: bool = False
 ) -> SubmissionFacts:
@@ -62,9 +127,12 @@ def submission_facts(
     applicant = _find(
         lines, r"(?:신청|지원|제출|참여)\s*(?:대상|주체|자격|기관)\s*[:：]", applicant=True
     )
-    deadline = _find_deadline(
+    rows = [row for source in sources for row in source_schedule_rows(source)]
+    unique_rows = {_deadline_key(row): row for row in rows}
+    deadline = "\n".join(unique_rows.values()) if unique_rows else _find_deadline(
         lines,
-        r"(?:접수|신청|제출|의견\s*제출)\s*(?:기간|기한|마감|일시)\s*[:：]",
+        r"(?:접수|신청|제출|의견\s*제출)\s*(?:기간|기한|마감|일시)\s*[:：]"
+        r"|(?:대회\s*)?공고(?:일자|일)\s*[:：]",
     )
     destination = submission_routes(document) or _find(
         lines, r"(?:접수|신청|제출)\s*(?:방법|방식|처|장소|경로)\s*[:：]"
@@ -97,7 +165,8 @@ def submission_facts(
 _LABEL_TEXT = (
     r"(?:(?:신청|지원|제출|참여)\s*(?:대상|주체|자격|기관|서류|처|방법|기간|기한|마감|일시)"
     r"|접수\s*(?:방법|방식|처|장소|경로|기간|기한|마감|일시)"
-    r"|의견\s*제출\s*(?:기간|기한)|문의(?:처|사항)?|담당(?:자|부서))"
+    r"|의견\s*제출\s*(?:기간|기한)|(?:대회\s*)?공고(?:일자|일)"
+    r"|문의(?:처|사항)?|담당(?:자|부서))"
 )
 _SOURCE_LABEL = re.compile(r"^" + _LABEL_TEXT + r"\s*[:：]?$")
 _ANY_LABEL = re.compile(_LABEL_TEXT + r"\s*[:：]")
@@ -105,7 +174,7 @@ _SECTION_BOUNDARY = re.compile(
     r"^(?:[가-하0-9]+[.)]\s*)?(?:접수\s*및\s*문의(?:처)?|(?:신청|접수|제출|작성).*유의사항"
     r"|유의사항|평가\s*(?:방법|절차|기준)|선정\s*(?:절차|방법)|기타\s*사항)(?:\s*[:：]?$|\s+/)|^\[파일:"
 )
-_BULLET = re.compile(r"^[\s○□ㅇ•※*\-▷▶▸‣◆◇■●◎]+")
+_BULLET = re.compile(r"^[\s○ㅇ•※*\-▷▶▸‣◆◇●◎]+")
 _TABLE_HEADERS = {
     "역할",
     "국내주관기관",
@@ -146,7 +215,7 @@ def _source_lines(sources: list[str]) -> list[str]:
     result = []
     for source in sources:
         lines = [
-            _BULLET.sub("", line).strip()
+            re.sub(r"^[□■]\s*(?=" + _LABEL_TEXT + r")", "", _BULLET.sub("", line)).strip()
             for line in re.split(r"\r\n|[\r\n]|(?<=[다요]\.)[ \t]+", source)
         ]
         index = 0
@@ -308,9 +377,15 @@ def _find_deadline(lines: list[str], pattern: str) -> str | None:
     values = []
     for line in lines:
         value = _usable_deadline(_find([line], pattern))
+        label = re.search(pattern, line)
+        if value and label and not re.search(
+            r"공고|접수|신청|제출|마감|기한|까지|상시|수시", value
+        ):
+            value = label[0].strip() + " " + value
         if value and _deadline_key(value) not in {_deadline_key(item) for item in values}:
             values.append(value)
-    return "\n".join(values[:2]) if values else None
+    joined = "\n".join(values)
+    return joined if joined and len(joined) <= 600 else None
 
 
 def _deadline_key(value: str) -> str:

@@ -1,11 +1,13 @@
 """Offline email and mocked web report readability checks; never sends messages."""
 import asyncio
+import os
 from pathlib import Path
 from playwright.async_api import async_playwright, expect
 
 BODY = Path('backend/src/test/resources/reports/korean-guidance.txt').read_text(encoding='utf-8')
+BODY = BODY.replace('• 제출·의견 기한:', '• 공고일: 2026년 10월 6일\n• 관련 일정: 접수 시작: 2026년 10월 13일\n• 제출·의견 기한:', 1)
 OUT = Path('frontend/dist/delivery-checks')
-BASE = 'http://127.0.0.1:4173'
+BASE = os.getenv('REPORT_PREVIEW_URL', 'http://127.0.0.1:4173')
 
 async def main():
     OUT.mkdir(parents=True, exist_ok=True)
@@ -49,8 +51,10 @@ async def main():
         await page.locator('.delivery-report-row').click()
         dialog = page.get_by_role('dialog', name='보고서 발송 상세', exact=True)
         await dialog.get_by_text('보고서 내용', exact=True).click()
-        await expect(dialog.locator('.report-fact')).to_have_count(5)
-        await expect(dialog.locator('.report-fact li')).to_have_count(9)
+        await expect(dialog.locator('.report-fact')).to_have_count(7)
+        await expect(dialog.locator('.report-fact li')).to_have_count(11)
+        await expect(dialog.locator('.report-fact').filter(has=page.locator('dt', has_text='공고일'))).to_contain_text('2026년 10월 6일')
+        await expect(dialog.locator('.report-fact').filter(has=page.locator('dt', has_text='관련 일정'))).to_contain_text('접수 시작: 2026년 10월 13일')
         await expect(dialog.locator('.report-body-note')).to_have_count(0)
         await expect(dialog.get_by_role('link', name='국문 연구개발계획서 (ZIP)', exact=True)).to_have_attribute('href', 'https://example.org/forms.zip')
         await dialog.screenshot(path=str(OUT/'korean-web-desktop.png'))

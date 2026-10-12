@@ -50,7 +50,7 @@ def test_all_report_paths_split_roles_and_preserve_midnight(mode: str, compact: 
         brief = SubmissionBrief(SubmissionFacts("원문 확인 필요", PAIRED + " / " + DUPLICATE,
                                                "원문 확인 필요", "원문 확인 필요"), [])
     body = _document_block(doc, compact=compact, brief=brief)
-    assert f"• 제출·의견 기한: {EXPECTED[0]}\n  ↳ {EXPECTED[1]}" in body
+    assert f"• 공고일: {EXPECTED[0]}\n• 제출·의견 기한: {EXPECTED[1]}" in body
     assert body.count("2026년 9월 30일") == body.count("2026년 10월 31일") == 1
     assert "대회 공고/" not in body
     assert "접수 시작" not in body
