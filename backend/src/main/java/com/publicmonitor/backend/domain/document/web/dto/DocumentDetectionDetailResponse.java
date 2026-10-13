@@ -25,8 +25,34 @@ public record DocumentDetectionDetailResponse(
         Analysis analysis,
         @Schema(description = "같은 문서 버전의 최신 감지 실행에서 분석·제안 처리가 진행될 수 있으면 true")
         boolean analysisPending,
-        List<Attachment> attachments
+        List<Attachment> attachments,
+        @Schema(description = "현재 본문·첨부에 역할과 이름이 명시된 사업 담당기관. 근거가 없으면 빈 목록")
+        List<ResponsibleOrganization> responsibleOrganizations,
+        @Schema(description = "원문의 명시된 제출서류와 기존 준비서류를 통합한 안내. 분석 완료 여부와 독립적")
+        SubmissionGuide submissionGuide
 ) {
+
+    @Schema(description = "현재 공고 원문에서 확인한 기관과 역할. 문의처를 주관기관으로 바꾸지 않음")
+    public record ResponsibleOrganization(
+            String name, String role, String sourceType, String attachmentName, String excerpt
+    ) {}
+
+    public record SubmissionGuide(List<SubmissionDocument> documents, List<SubmissionNote> notes) {}
+
+    public record SubmissionDocument(
+            String title, String detail, String requirementLevel, String stage, String appliesTo,
+            RequirementSource source
+    ) {
+        public SubmissionDocument {
+            title = YearNotation.display(title);
+            detail = YearNotation.display(detail);
+            appliesTo = YearNotation.display(appliesTo);
+        }
+    }
+
+    public record SubmissionNote(String text, RequirementSource source) {
+        public SubmissionNote { text = YearNotation.display(text); }
+    }
 
     @Schema(description = "문서별 AI 분석", nullable = true)
     public record Analysis(
@@ -38,13 +64,22 @@ public record DocumentDetectionDetailResponse(
             AnalysisFavorability favorableOrNot,
             Proposal proposal,
             Opportunity opportunity,
-            String applicationDeadline
+            String applicationDeadline,
+            BusinessSummary businessSummary
     ) {
         public Analysis {
             summary = YearNotation.display(summary);
             keyPoints = displayLines(keyPoints);
             reason = YearNotation.display(reason);
             applicationDeadline = YearNotation.display(applicationDeadline);
+        }
+    }
+
+    @Schema(description = "저장된 공고 분석의 사업 요약. 별도 재분석 없이 제공하며 미확인 값은 null")
+    public record BusinessSummary(String purpose, String supportScale) {
+        public BusinessSummary {
+            purpose = YearNotation.display(purpose);
+            supportScale = YearNotation.display(supportScale);
         }
     }
 

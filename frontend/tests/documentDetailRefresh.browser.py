@@ -150,9 +150,11 @@ class Harness:
             return
         await route.fulfill(json=dict(isSuccess=True, data=data, message="OK"))
 
-    async def open(self, identifier=1):
+    async def open(self, identifier=1, analysis_tab=True):
         await self.page.locator(".document-row").filter(has_text=f"상세 갱신 공고 {identifier}").click()
         await self.wait_request(identifier, 1)
+        if analysis_tab:
+            await self.page.get_by_role("button", name="공고 분석", exact=True).click()
 
     async def wait_request(self, identifier, count):
         await asyncio.wait_for(self.started[identifier, count].wait(), 5)
@@ -238,10 +240,11 @@ async def retry_errors(browser):
     h = await Harness(browser).start()
     try:
         h.replies[1].append(Reply(status=500))
-        await h.open()
+        await h.open(analysis_tab=False)
         await expect(h.page.get_by_text(ERROR_MESSAGE, exact=True)).to_be_visible()
         await expect(h.page.get_by_role("button", name="다시 불러오기", exact=True)).to_be_visible()
         await h.tick()
+        await h.page.get_by_role("button", name="공고 분석", exact=True).click()
         await expect(h.page.get_by_text(WAITING, exact=True)).to_be_visible()
         h.states[1] = detail(result=analysis())
         await h.tick()
@@ -263,12 +266,13 @@ async def client_error_requires_manual_retry(browser):
     h = await Harness(browser).start()
     try:
         h.replies[1].append(Reply(status=404))
-        await h.open()
+        await h.open(analysis_tab=False)
         await expect(h.page.get_by_text(ERROR_MESSAGE, exact=True)).to_be_visible()
         await h.stopped()
         h.states[1] = detail(pending=False, result=analysis("READY"))
         await h.page.get_by_role("button", name="다시 불러오기", exact=True).click()
         await h.wait_request(1, 2)
+        await h.page.get_by_role("button", name="공고 분석", exact=True).click()
         await expect(h.page.locator(".summary-text")).to_have_text(SUMMARY)
         await h.stopped()
     finally:
@@ -341,6 +345,7 @@ async def closing_or_switching_ignores_late_response(browser, switch):
             await h.page.locator(".document-row").filter(has_text="상세 갱신 공고 2").evaluate("el => el.click()")
             await h.wait_request(2, 1)
             await expect(h.page.locator(".document-detail h2")).to_have_text("상세 갱신 공고 2")
+            await h.page.get_by_role("button", name="공고 분석", exact=True).click()
             await expect(h.page.locator(".summary-text")).to_have_text("두 번째 공고의 분석입니다.")
         else:
             await h.page.get_by_role("button", name="목록으로", exact=True).click()

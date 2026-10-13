@@ -80,7 +80,7 @@ class DocumentDetectionDetailServiceTest {
         Document document = Document.create(source, "https://example.com/notice/1", "1", now);
         ReflectionTestUtils.setField(document, "id", 2L);
         DocumentVersion version = DocumentVersion.create(
-                document, 1, "AI 지원사업", "본문", "a".repeat(64), now, 1, now
+                document, 1, "AI 지원사업", "운영기관 : 한국산업진흥원", "a".repeat(64), now, 1, now
         );
         ReflectionTestUtils.setField(version, "id", 3L);
         DocumentDetection detection = DocumentDetection.create(
@@ -103,10 +103,14 @@ class DocumentDetectionDetailServiceTest {
                 "mock-model",
                 now
         );
-        analysis.updateComparisonSummary("{\"applicationDeadline\":\"2026-10-01 18:00\"}");
+        analysis.updateComparisonSummary("""
+                {"applicationDeadline":"2026-10-01 18:00",
+                 "purpose":"제조 AI 실증 지원",
+                 "supportScale":"과제당 연간 최대 2억 원, 2년 이내 / 자부담 25% 이상"}
+                """);
         DocumentAttachment attachment = DocumentAttachment.create(
                 version, "공고문.hwpx", "https://example.com/file/1", "hwpx",
-                "application/zip", 100L, "b".repeat(64), "추출 본문",
+                "application/zip", 100L, "b".repeat(64), "주관기관 : 한국기술재단\n신청서류\n① 사업계획서",
                 AttachmentParseStatus.COMPLETED, null
         );
         ReflectionTestUtils.setField(attachment, "id", 5L);
@@ -121,6 +125,12 @@ class DocumentDetectionDetailServiceTest {
         assertThat(response.attachments()).hasSize(1);
         assertThat(response.analysis().keyPoints()).containsExactly("신청 자격 확인", "제출 기한 확인");
         assertThat(response.analysis().applicationDeadline()).isEqualTo("2026-10-01 18:00");
+        assertThat(response.analysis().businessSummary().purpose()).isEqualTo("제조 AI 실증 지원");
+        assertThat(response.analysis().businessSummary().supportScale())
+                .isEqualTo("과제당 연간 최대 2억 원, 2년 이내 / 자부담 25% 이상");
+        assertThat(response.responsibleOrganizations()).extracting(item -> item.name())
+                .containsExactly("한국산업진흥원", "한국기술재단");
+        assertThat(response.responsibleOrganizations().getLast().attachmentName()).isEqualTo("공고문.hwpx");
         assertThat(response.analysis().eligibility()).isEqualTo(AnalysisEligibility.REVIEW_REQUIRED);
         assertThat(response.analysis().opportunity().totalScore()).isEqualTo(75);
         assertThat(response.analysis().opportunity().priority().name()).isEqualTo("HIGH");
@@ -134,6 +144,15 @@ class DocumentDetectionDetailServiceTest {
         assertThat(response.attachments()).singleElement().satisfies(item ->
                 assertThat(item.parseStatus()).isEqualTo(AttachmentParseStatus.COMPLETED)
         );
+
+        given(analysisRepository.findByDocumentVersionId(3L)).willReturn(Optional.empty());
+        var withoutAnalysis = service().findById(4L);
+        assertThat(withoutAnalysis.analysis()).isNull();
+        assertThat(withoutAnalysis.submissionGuide().documents()).singleElement().satisfies(item -> {
+            assertThat(item.title()).isEqualTo("사업계획서");
+            assertThat(item.source().attachmentName()).isEqualTo("공고문.hwpx");
+        });
+        assertThat(withoutAnalysis.responsibleOrganizations()).isEqualTo(response.responsibleOrganizations());
     }
 
     @Test
@@ -150,6 +169,31 @@ class DocumentDetectionDetailServiceTest {
             String deadline = ReflectionTestUtils.invokeMethod(service(), "parseApplicationDeadline", json);
             assertThat(deadline).isNull();
         }
+    }
+
+    @Test
+    void 사업요약이_없거나_손상되어도_기존_상세를_조회한다() {
+        for (String json : new String[] {null, "", "{broken"}) {
+            Object summary = ReflectionTestUtils.invokeMethod(service(), "parseBusinessSummary", json);
+            assertThat(summary).isNull();
+        }
+        for (String json : new String[] {"{}", "null", "[]", "12"}) {
+            com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionDetailResponse.BusinessSummary summary =
+                    ReflectionTestUtils.invokeMethod(service(), "parseBusinessSummary", json);
+            assertThat(summary.purpose()).isNull();
+            assertThat(summary.supportScale()).isNull();
+        }
+    }
+
+    @Test
+    void 사업요약의_잘못된_자료형은_제외하고_정상_필드는_보존한다() {
+        com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionDetailResponse.BusinessSummary summary =
+                ReflectionTestUtils.invokeMethod(service(), "parseBusinessSummary",
+                        """
+                        {"purpose":42,"supportScale":"  총 9.03억 원 내외 (전체 연구기간 기준)  "}
+                        """);
+        assertThat(summary.purpose()).isNull();
+        assertThat(summary.supportScale()).isEqualTo("총 9.03억 원 내외 (전체 연구기간 기준)");
     }
 
     private String opportunityJson() {

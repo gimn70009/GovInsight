@@ -133,6 +133,7 @@ export interface StrategyCapabilityMatch {
 }
 
 export interface DocumentAnalysis {
+  businessSummary?: { purpose: string | null; supportScale: string | null } | null
   applicationDeadline?: string | null
   summary: string
   keyPoints: string[]
@@ -232,6 +233,21 @@ export interface DocumentAttachment {
   downloadUrl: string
 }
 
+export interface ResponsibleOrganization {
+  name: string
+  role: string
+  sourceType: 'NOTICE_BODY' | 'ATTACHMENT'
+  attachmentName: string | null
+  excerpt: string
+}
+
+export type SubmissionDocument = Pick<ProposalPreparationItem, 'title' | 'detail' | 'requirementLevel' | 'stage' | 'appliesTo' | 'source'>
+
+export interface SubmissionGuide {
+  documents: SubmissionDocument[]
+  notes: { text: string; source: ProposalPreparationItem['source'] }[]
+}
+
 export interface DocumentDetail {
   detectionId: number
   analysisPending: boolean
@@ -244,6 +260,8 @@ export interface DocumentDetail {
   lastCheckedAt: string
   analysis: DocumentAnalysis | null
   attachments: DocumentAttachment[]
+  responsibleOrganizations?: ResponsibleOrganization[]
+  submissionGuide?: SubmissionGuide
 }
 
 export interface SimilarNoticeComparisonSide {

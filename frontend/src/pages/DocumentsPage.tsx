@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { api, ApiError } from '../api/client'
 import { ProposalWriter } from '../components/ProposalWriter'
+import { BusinessSummary } from '../components/BusinessSummary'
 import { visibleMeetingAgenda } from '../utils/meetingAgenda'
 import type { ChangeType, DocumentAnalysis, DocumentDetail, DocumentDetection, MonitoringRun, OpportunityDimensionType, OpportunityPriority, ProposalPreparationItem, SimilarNoticeResult } from '../api/types'
 import { Badge, EmptyState, InlineError, Loading, Pagination } from '../components/ui'
@@ -721,7 +722,7 @@ function OpportunityScore({ opportunity }: { opportunity: NonNullable<DocumentAn
 }
 
 function DocumentContent({ detail, similarNotices, similarLoading }: { detail: DocumentDetail; similarNotices: SimilarNoticeResult | null; similarLoading: boolean }) {
-  const [activeDetailTab, setActiveDetailTab] = useState<'ANALYSIS' | 'PROPOSAL' | 'SIMILAR'>('ANALYSIS')
+  const [activeDetailTab, setActiveDetailTab] = useState<'SUMMARY' | 'ANALYSIS' | 'PROPOSAL' | 'SIMILAR'>('SUMMARY')
   const analysis = detail.analysis
   const applicationExpired = isApplicationExpired(detail.analysis)
   const eligible = analysis
@@ -757,7 +758,7 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
   ] : []
 
   useEffect(() => {
-    setActiveDetailTab('ANALYSIS')
+    setActiveDetailTab('SUMMARY')
   }, [detail.detectionId])
 
 
@@ -773,15 +774,14 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
         </div>
       </header>
 
-      {analysis && (
-        <nav className="detail-tabs" aria-label="문서 상세 보기">
-          <button className={activeDetailTab === 'ANALYSIS' ? 'active' : ''} onClick={() => setActiveDetailTab('ANALYSIS')}>공고 분석</button>
-          {showProposalTab && <button className={activeDetailTab === 'PROPOSAL' ? 'active' : ''} onClick={() => setActiveDetailTab('PROPOSAL')}>사업 제안</button>}
-          <button className={activeDetailTab === 'SIMILAR' ? 'active' : ''} onClick={() => setActiveDetailTab('SIMILAR')}>유사 공고 비교{!similarLoading && similarNotices && ` ${similarNotices.similarNotices.length}`}</button>
-        </nav>
-      )}
+      <nav className="detail-tabs detail-tabs--summary" aria-label="문서 상세 보기">
+        <button aria-pressed={activeDetailTab === 'SUMMARY'} className={activeDetailTab === 'SUMMARY' ? 'active' : ''} onClick={() => setActiveDetailTab('SUMMARY')}>사업 요약</button>
+        <button aria-pressed={activeDetailTab === 'ANALYSIS'} className={activeDetailTab === 'ANALYSIS' ? 'active' : ''} onClick={() => setActiveDetailTab('ANALYSIS')}>공고 분석</button>
+        {showProposalTab && <button aria-pressed={activeDetailTab === 'PROPOSAL'} className={activeDetailTab === 'PROPOSAL' ? 'active' : ''} onClick={() => setActiveDetailTab('PROPOSAL')}>사업 제안</button>}
+        {analysis && <button aria-pressed={activeDetailTab === 'SIMILAR'} className={activeDetailTab === 'SIMILAR' ? 'active' : ''} onClick={() => setActiveDetailTab('SIMILAR')}>유사 공고 비교{!similarLoading && similarNotices && ` ${similarNotices.similarNotices.length}`}</button>}
+      </nav>
 
-      {analysis ? (
+      {activeDetailTab === 'SUMMARY' ? <BusinessSummary detail={detail} /> : analysis ? (
         <>
           {activeDetailTab === 'ANALYSIS' ? (
           <>

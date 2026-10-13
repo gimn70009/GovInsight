@@ -46,11 +46,13 @@ public class DocumentDetectionDetailService {
         // Read processing state first so a concurrent completion cannot pair old results with a terminal state.
         boolean analysisPending = isAnalysisPending(detection, version);
         DocumentAnalysis analysis = analysisRepository.findByDocumentVersionId(version.getId()).orElse(null);
-        List<DocumentDetectionDetailResponse.Attachment> attachments = attachmentRepository
-                .findAllByDocumentVersionId(version.getId()).stream()
+        List<DocumentAttachment> storedAttachments = attachmentRepository.findAllByDocumentVersionId(version.getId());
+        List<DocumentDetectionDetailResponse.Attachment> attachments = storedAttachments.stream()
                 .map(this::toAttachment)
                 .toList();
 
+        var analysisResponse = toAnalysis(analysis);
+        var preparation = analysisResponse == null ? null : analysisResponse.proposal().preparation();
         return new DocumentDetectionDetailResponse(
                 detection.getId(),
                 detection.getMonitoringRunSource().getMonitoringSource().getOrganizationName(),
@@ -60,9 +62,11 @@ public class DocumentDetectionDetailService {
                 detection.getChangeType(),
                 detection.getDocument().getOriginalUrl(),
                 detection.getDocument().getLastDetectedAt(),
-                toAnalysis(analysis),
+                analysisResponse,
                 analysisPending,
-                attachments
+                attachments,
+                ResponsibleOrganizationExtractor.extract(version.getContentText(), storedAttachments),
+                SubmissionDocumentResolver.resolve(version.getContentText(), storedAttachments, preparation)
         );
     }
 
@@ -93,8 +97,24 @@ public class DocumentDetectionDetailService {
                 analysis.getFavorableOrNot(),
                 parseProposal(analysis.getProposalDirection()),
                 parseOpportunity(analysis),
-                parseApplicationDeadline(analysis.getComparisonSummary())
+                parseApplicationDeadline(analysis.getComparisonSummary()),
+                parseBusinessSummary(analysis.getComparisonSummary())
         );
+    }
+
+    private DocumentDetectionDetailResponse.BusinessSummary parseBusinessSummary(String comparisonSummary) {
+        if (comparisonSummary == null || comparisonSummary.isBlank()) return null;
+        try {
+            var summary = objectMapper.readTree(comparisonSummary);
+            var purpose = summary.path("purpose");
+            var supportScale = summary.path("supportScale");
+            return new DocumentDetectionDetailResponse.BusinessSummary(
+                    purpose.isString() ? purpose.asString().strip() : null,
+                    supportScale.isString() ? supportScale.asString().strip() : null
+            );
+        } catch (RuntimeException exception) {
+            return null;
+        }
     }
 
     private String parseApplicationDeadline(String comparisonSummary) {
