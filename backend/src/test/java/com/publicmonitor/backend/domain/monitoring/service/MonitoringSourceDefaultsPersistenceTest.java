@@ -36,20 +36,21 @@ class MonitoringSourceDefaultsPersistenceTest {
     @Autowired EntityManager em;
 
     @Test
-    void 빈_DB에_지정한_여섯_게시판을_최근_2건_활성으로_등록한다() {
+    void 빈_DB에_지정한_일곱_게시판을_최근_2건_활성으로_등록한다() {
         initialize();
         em.flush();
         em.clear();
 
         var sources = repository.findAll();
-        assertThat(sources).hasSize(6);
+        assertThat(sources).hasSize(7);
         assertThat(sources).extracting(MonitoringSource::getListUrl).containsExactlyInAnyOrder(
                 "https://www.motir.go.kr/kor/article/ATCL2826a2625",
                 "https://www.msit.go.kr/bbs/list.do?sCode=user&mId=311&mPid=121&pageIndex=1&bbsSeqNo=100",
                 "https://mcee.go.kr/home/web/board/list.do?menuId=10524&boardMasterId=39",
                 "https://www.moel.go.kr/info/govsupport/govsupportcon/govSupportSubList.do",
                 "https://www.molit.go.kr/USR/BORD0201/m_69/LST.jsp?id=N01_B",
-                "https://www.kiat.or.kr/front/board/boardContentsListPage.do?MenuId=b159c9dac684471b87256f1e25404f5e&board_id=90"
+                "https://www.kiat.or.kr/front/board/boardContentsListPage.do?MenuId=b159c9dac684471b87256f1e25404f5e&board_id=90",
+                "https://www.mss.go.kr/site/smba/ex/bbs/List.do?cbIdx=310"
         );
         var detailUrls = Map.of(
                 "산업통상부", "https://www.motir.go.kr/kor/article/ATCL2826a2625/71324/view",
@@ -57,7 +58,8 @@ class MonitoringSourceDefaultsPersistenceTest {
                 "기후에너지환경부", "https://mcee.go.kr/home/web/board/read.do?boardId=1891560",
                 "고용노동부", "https://www.moel.go.kr/info/govsupport/govsupportcon/govSupportSubView.do?bbs_seq=12345",
                 "국토교통부", "https://www.molit.go.kr/USR/BORD0201/m_69/DTL.jsp?id=N01_B&idx=270001",
-                "한국산업기술진흥원", "https://www.kiat.or.kr/front/board/boardContentsView.do?contents_id=6cbbabc261de4a2dabe7fc1fdb226da2"
+                "한국산업기술진흥원", "https://www.kiat.or.kr/front/board/boardContentsView.do?contents_id=6cbbabc261de4a2dabe7fc1fdb226da2",
+                "중소벤처기업부", "https://www.mss.go.kr/site/smba/ex/bbs/View.do?cbIdx=310&bcIdx=1001&parentSeq=1001"
         );
         assertThat(sources).allSatisfy(source -> {
             assertThat(source.getDetailFetchCount()).isEqualTo(2);
@@ -69,7 +71,9 @@ class MonitoringSourceDefaultsPersistenceTest {
 
     @Test
     void 반복_초기화에도_기존_설정과_식별자와_실행_이력을_보존한다() {
-        var kiat = MonitoringSourceDefaults.SOURCES.getLast().create();
+        var kiat = MonitoringSourceDefaults.SOURCES.stream()
+                .filter(source -> source.organizationName().equals("한국산업기술진흥원"))
+                .findFirst().orElseThrow().create();
         kiat.changeCollectionCount(7);
         kiat.changeEnabled(false);
         repository.saveAndFlush(kiat);
@@ -86,7 +90,7 @@ class MonitoringSourceDefaultsPersistenceTest {
         em.flush();
         em.clear();
 
-        assertThat(repository.count()).isEqualTo(6);
+        assertThat(repository.count()).isEqualTo(7);
         var restored = repository.findById(originalId).orElseThrow();
         assertThat(restored.getDetailFetchCount()).isEqualTo(7);
         assertThat(restored.isEnabled()).isFalse();
@@ -99,7 +103,7 @@ class MonitoringSourceDefaultsPersistenceTest {
         var legacy = repository.save(MonitoringSource.create("기존 기관", "기존 게시판", null,
                 "https://example.org/legacy", "/detail", 4, true));
         initialize();
-        assertThat(repository.count()).isEqualTo(7);
+        assertThat(repository.count()).isEqualTo(8);
         assertThat(repository.findById(legacy.getId()).orElseThrow().isEnabled()).isTrue();
     }
 
@@ -138,6 +142,40 @@ class MonitoringSourceDefaultsPersistenceTest {
         var restored = repository.findById(first.getId()).orElseThrow();
         assertThat(restored.getDetailFetchCount()).isEqualTo(2);
         assertThat(restored.isEnabled()).isTrue();
+    }
+
+    @Test
+    void 기존_여섯_기관에_중기부만_추가하고_재시작시_중기부_설정도_보존한다() {
+        MonitoringSourceDefaults.SOURCES.stream()
+                .filter(source -> !source.organizationName().equals("중소벤처기업부"))
+                .forEach(source -> repository.save(source.create()));
+        em.flush();
+        var existingIds = repository.findAll().stream().map(MonitoringSource::getId).toList();
+
+        initialize();
+        var mss = repository.findAll().stream()
+                .filter(source -> source.getOrganizationName().equals("중소벤처기업부"))
+                .findFirst().orElseThrow();
+        assertThat(mss.getBoardName()).isEqualTo("사업공고");
+        assertThat(mss.getDetailFetchCount()).isEqualTo(2);
+        assertThat(mss.isEnabled()).isTrue();
+        var mssId = mss.getId();
+        mss.changeCollectionCount(5);
+        mss.changeEnabled(false);
+        em.flush();
+        em.refresh(mss);
+        var updatedAt = mss.getUpdatedAt();
+
+        initialize();
+        em.flush();
+        em.clear();
+
+        assertThat(repository.findAll()).hasSize(7)
+                .extracting(MonitoringSource::getId).containsAll(existingIds);
+        var restored = repository.findById(mssId).orElseThrow();
+        assertThat(restored.getDetailFetchCount()).isEqualTo(5);
+        assertThat(restored.isEnabled()).isFalse();
+        assertThat(restored.getUpdatedAt()).isEqualTo(updatedAt);
     }
 
     private void initialize() {

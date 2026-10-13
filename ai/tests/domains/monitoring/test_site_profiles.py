@@ -1,3 +1,5 @@
+import pytest
+
 from app.domains.monitoring.collectors.site_profiles import (
     get_site_profile,
     is_direct_document_url,
@@ -136,3 +138,25 @@ def test_get_kiat_profile_and_direct_document_url() -> None:
     assert profile.document_id_query_keys == ("contents_id",)
     assert profile.list_ready_selector == "#contentsList a[href*='contentsView']"
     assert is_direct_document_url(url) is True
+
+
+@pytest.mark.parametrize("script", [
+    "doBbsFView('310','1001','16010100','900');",
+    'doBbsFView( "310", "1001", "16010100", "900" );',
+    "doBbsFView(310, 1001, 16010100, 900);",
+])
+def test_resolve_mss_row_link_preserves_board_post_and_parent(script: str) -> None:
+    assert resolve_link_target(
+        None, script, "https://www.mss.go.kr/site/smba/ex/bbs/List.do?cbIdx=310"
+    ) == "https://www.mss.go.kr/site/smba/ex/bbs/View.do?cbIdx=310&bcIdx=1001&parentSeq=900"
+
+
+@pytest.mark.parametrize("script", [
+    "doBbsFView('86','1001','16010100','1001');",
+    "doBbsFPag(2);",
+    "doBbsFView('310','invalid','16010100','1001');",
+])
+def test_mss_ignores_other_boards_pagination_and_invalid_post_ids(script: str) -> None:
+    assert resolve_link_target(
+        "#", script, "https://www.mss.go.kr/site/smba/ex/bbs/List.do?cbIdx=310"
+    ) is None

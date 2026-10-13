@@ -49,7 +49,7 @@ def test_select_document_urls_removes_session_id_from_path() -> None:
 
 
 @pytest.mark.parametrize("escaped_dots", [False, True], ids=["literal", "legacy-escaped"])
-def test_six_supported_boards_select_all_thirteen_requested_posts(escaped_dots: bool) -> None:
+def test_seven_supported_boards_select_all_fifteen_requested_posts(escaped_dots: bool) -> None:
     sources = [
         (
             "https://www.motir.go.kr",
@@ -93,6 +93,13 @@ def test_six_supported_boards_select_all_thirteen_requested_posts(escaped_dots: 
             "/front/board/boardContentsView.do?board_id=90&contents_id={}",
             3,
         ),
+        (
+            "https://www.mss.go.kr",
+            "/site/smba/ex/bbs/List.do?cbIdx=310",
+            "/site/smba/ex/bbs/View.do",
+            "/site/smba/ex/bbs/View.do?cbIdx=310&bcIdx={}",
+            2,
+        ),
     ]
     selected_by_source = []
     expected_by_source = []
@@ -121,7 +128,7 @@ def test_six_supported_boards_select_all_thirteen_requested_posts(escaped_dots: 
         )
         expected_by_source.append([origin + detail for detail in details[:count]])
 
-    assert sum(map(len, selected_by_source)) == 13
+    assert sum(map(len, selected_by_source)) == 15
     assert selected_by_source == expected_by_source
 
 
@@ -183,3 +190,12 @@ def test_extract_external_document_id_handles_case_and_encoded_value() -> None:
     assert extract_external_document_id(
         "https://example.go.kr/view.do?articleId=ABC%5F123"
     ) == "ABC_123"
+
+
+def test_mss_document_id_uses_post_number_not_board_or_parent() -> None:
+    assert extract_external_document_id(
+        "https://www.mss.go.kr/site/smba/ex/bbs/View.do?cbIdx=310&bcIdx=1001&parentSeq=900"
+    ) == "1001"
+    assert extract_external_document_id(
+        "https://www.mss.go.kr/site/smba/ex/bbs/List.do?cbIdx=310"
+    ) is None
