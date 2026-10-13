@@ -91,3 +91,36 @@ def test_regular_pdf_does_not_pay_for_layout_pass(monkeypatch):
 
     monkeypatch.setattr(pdf_parser, "PdfReader", lambda *_a, **_kw: FakeReader([Page()]))
     assert PdfParser().parse(Path("normal.pdf")).text == "본문 한 줄\n다음 안내"
+
+
+@pytest.mark.parametrize("flattened", [
+    "문의처 전화053-000-111102-000-2222",
+    "문의처 이메일help@agency.or.krdesk@society.or.kr",
+])
+def test_short_contact_table_uses_layout_even_below_generic_collapse_threshold(
+    monkeypatch, flattened,
+):
+    class Page:
+        def extract_text(self, **kwargs):
+            if kwargs.get("extraction_mode") == "layout":
+                return ("문의처\n기관 A 지원팀\n기관 B 사무국\n전화 053-000-1111\n"
+                        "02-000-2222\n이메일 help@agency.or.kr\ndesk@society.or.kr")
+            return "문의 가능 시간: 평일 10:00~17:00\n" + flattened + "\n점심시간 제외"
+
+    monkeypatch.setattr(pdf_parser, "PdfReader", lambda *_a, **_kw: FakeReader([Page()]))
+    text = PdfParser().parse(Path("contacts.pdf")).text
+    assert "전화 053-000-1111\n02-000-2222" in text
+    assert "help@agency.or.kr\ndesk@society.or.kr" in text
+
+
+def test_contact_layout_failure_preserves_plain_text(monkeypatch):
+    text = "문의처 전화053-000-111102-000-2222"
+
+    class Page:
+        def extract_text(self, **kwargs):
+            if kwargs:
+                raise NotImplementedError("layout unavailable")
+            return text
+
+    monkeypatch.setattr(pdf_parser, "PdfReader", lambda *_a, **_kw: FakeReader([Page()]))
+    assert PdfParser().parse(Path("contacts.pdf")).text == text

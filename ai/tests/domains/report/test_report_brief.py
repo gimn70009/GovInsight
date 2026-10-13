@@ -105,7 +105,8 @@ def test_no_proposal_still_gets_clean_facts_and_linked_required_documents():
     assert "[제4회 혁신대상 포상 신청서](https://example.go.kr/form?id=1)" in body
     assert "• 정관 사본\n" in body
     assert "법인에 한함" not in body
-    assert "미작성" not in body and "원문 확인 필요" not in body
+    assert "미작성" not in body
+    assert "원문 확인 필요" not in body.replace("• 금액·규모: 원문 확인 필요", "")
 
 
 def test_existing_checklist_cannot_override_verified_source_documents():
@@ -533,7 +534,7 @@ def test_model_receives_real_lines_and_reference_body_is_excluded(monkeypatch):
     prompt = invoke.call_args.args[0][1][1]
     assert "2027-01-28\n제출처" in prompt
     assert "other@example.org" not in prompt
-    assert factory.call_args.kwargs["reasoning_effort"] == "minimal"
+    assert factory.call_args.kwargs["reasoning_effort"] == "low"
 
 
 def test_verified_table_label_and_value_can_be_composed_without_new_words():

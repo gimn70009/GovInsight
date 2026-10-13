@@ -9,6 +9,7 @@ from app.domains.report import enrichment
 from app.domains.report.brief import BriefOutput, build_context, validate_brief
 from app.domains.report.config import ReportBriefSettings
 from app.domains.report.fact_reuse import verified_submission_facts
+from app.domains.report.opportunity import OPPORTUNITY_FIELDS
 from tests.domains.report.test_report_brief import output, run
 from tests.domains.report.test_report_checklist_reuse import ready_request
 from tests.domains.report.test_report_template import with_document
@@ -24,6 +25,8 @@ SOURCE = (
 def request(source=SOURCE, *, saved=False):
     req = ready_request() if saved else with_document()
     doc = req.documents[0]
+    if saved:
+        doc.title = "선정 결과 및 후속 제출 안내"
     doc.content_text = source
     doc.attachments = []
     doc.comparison_summary = with_document(comparisonSummary={
@@ -43,7 +46,7 @@ def cache():
 def test_current_source_facts_leave_only_documents_for_model():
     req = request()
     ctx = build_context(req.documents[0], 16000)
-    assert json.loads(ctx.payload)["requested_fields"] == ["documents"]
+    assert json.loads(ctx.payload)["requested_fields"] == [*OPPORTUNITY_FIELDS, "documents"]
     assert ctx.reused_facts["destination"] == "온라인 접수 후 원본 우편 제출"
     runner = SimpleNamespace(extract=AsyncMock(return_value=output()))
     brief = run(req, runner)[2]
@@ -153,7 +156,7 @@ def test_partial_schema_and_prompt_only_request_missing_fields(monkeypatch):
 
             async def invoke(messages):
                 calls.append(messages)
-                return {"parsed": schema.model_validate({"documents": []})}
+                return {"parsed": schema.model_validate({name: [] for name in schema.model_fields})}
 
             return SimpleNamespace(ainvoke=invoke)
 
@@ -164,11 +167,10 @@ def test_partial_schema_and_prompt_only_request_missing_fields(monkeypatch):
     assert result == BriefOutput(
         applicants=[], deadlines=[], destinations=[], contacts=[], documents=[]
     )
-    assert list(schemas[-1].model_json_schema()["properties"]) == ["documents"]
-    assert "이번 응답에는 documents 항목만" in calls[0][0][1]
+    assert list(schemas[-1].model_json_schema()["properties"]) == [*OPPORTUNITY_FIELDS, "documents"]
+    assert "notice_kinds" in calls[0][0][1]
     for instruction in (
         "applicants:", "deadlines:", "destinations:", "contacts:", "표 원문:", "문의 원문:",
-        "display_text:", "fragments:",
     ):
         assert instruction not in calls[0][0][1]
     asyncio.run(runner.extract(ctx))

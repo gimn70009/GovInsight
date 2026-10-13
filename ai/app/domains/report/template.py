@@ -5,6 +5,7 @@ from urllib.parse import quote, urlsplit
 
 from app.domains.analysis.schemas.result import DocumentImportance
 from app.domains.report.brief import SubmissionBrief, source_brief_facts
+from app.domains.report.opportunity import source_opportunity_facts
 from app.domains.report.presentation import (
     foreign_prose,
     informational_notice,
@@ -21,6 +22,7 @@ from app.domains.report.submission_documents import (
     display_submission_documents,
     fallback_submission_documents,
 )
+from app.domains.report.summary import purpose_summary
 
 _MAX_STORAGE_UNITS = 20_000
 _LINK = re.compile(r"\[([^\[\]\r\n]+)\]\((https?://[^\s()<>\"]+)\)")
@@ -107,6 +109,7 @@ def _document_block(
     document: ReportDocumentRequest, compact: bool = False, brief: SubmissionBrief | None = None
 ) -> str:
     facts = brief.facts if brief else source_brief_facts(document)
+    opportunity = brief.opportunity if brief else source_opportunity_facts(document)
     kind = (
         _DOCUMENT_TYPE_LABEL.get(document.proposal.document_type, "유형 확인 필요")
         if document.proposal
@@ -120,8 +123,13 @@ def _document_block(
         f"▸ {_shorten(document.title, 120 if compact else 180)}",
         f"기관: {_text(document.organization_name)}",
         f"문서 유형: {kind} │ {change} │ 기회점수: {score}",
+        f"공고 성격: {opportunity.notice_kind}",
+        *([
+            f"사업 유형: {opportunity.business_type or '확인 필요'}",
+            f"사업 방식: {opportunity.business_method or '확인 필요'}",
+        ] if opportunity.notice_kind == "사업 기회" else []),
         "",
-        f"요약: {_summary(document)}",
+        f"요약: {_summary(document, facts, opportunity)}",
         "",
     ]
     schedule_issues = schedule_consistency_issues(document, facts.deadline)
@@ -138,9 +146,15 @@ def _document_block(
             "",
         ])
     missing = []
-    informational = informational_notice(document.title, document.content_text or "")
+    informational = (opportunity.notice_kind == "일반 공지" and not re.search(
+        r"이의신청|의견.{0,8}제출|신청|접수|제출", document.content_text or "",
+    )) or informational_notice(
+        document.title, document.content_text or "",
+    )
     schedules = schedule_fields(facts.deadline)
     for label, value in [
+        ("금액·규모", opportunity.amount or ""),
+        ("참여 역할", opportunity.participation_role or ""),
         ("제출 주체·대상", facts.applicant),
         ("공고일", "\n".join(schedules["공고일"])),
         ("제출·의견 기한", "\n".join(schedules["제출·의견 기한"])),
@@ -148,14 +162,23 @@ def _document_block(
         ("제출처·방법", facts.destination),
         ("문의 담당", facts.contact),
     ]:
-        display_lines = submission_display_lines(value, label)
-        items = [_field(item, compact) for item in display_lines if item.strip()]
+        display_lines = (
+            value.splitlines() if label == "금액·규모" else submission_display_lines(value, label)
+        )
+        items = [
+            _text(item) if label in {"금액·규모", "참여 역할"} else _field(item, compact)
+            for item in display_lines if item.strip()
+        ]
         items = [item for item in items if not foreign_prose(item)]
         valid = [item for item in items if item not in {"원문 확인 필요", "상세 조건은 원문 확인"}]
         if not valid:
-            if label not in {"공고일", "관련 일정"}:
+            if label not in {"공고일", "관련 일정", "금액·규모", "참여 역할"}:
                 missing.append(label)
-            if label == "제출·의견 기한" and not informational:
+            if (
+                label == "제출·의견 기한" and not informational
+                or opportunity.notice_kind == "사업 기회"
+                and label in {"금액·규모", "제출 주체·대상"}
+            ):
                 lines.append(f"• {label}: 원문 확인 필요")
         else:
             lines.append(f"• {label}: {valid[0]}")
@@ -267,11 +290,12 @@ def _submission_entries(required: list[SubmissionDocument]) -> list[str]:
     return entries
 
 
-def _summary(document: ReportDocumentRequest) -> str:
-    # Preserve the saved analysis; channel-specific limits belong to delivery.
+def _summary(document: ReportDocumentRequest, facts, opportunity) -> str:
+    # Only report prose changes; the saved analysis and source evidence stay intact.
     if unreadable_table(document.summary or ""):
         return source_check_message("사업 요약")
-    return _text(document.summary) or "분석 요약을 확인하지 못했습니다."
+    summary = _text(purpose_summary(document, facts, opportunity))
+    return summary or "분석 요약을 확인하지 못했습니다."
 
 
 def _field(value: str, compact: bool) -> str:

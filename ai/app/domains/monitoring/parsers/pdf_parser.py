@@ -40,9 +40,17 @@ class PdfParser:
         plain = _normalize_page_text(extract_text() or "")
         lines = plain.splitlines()
         # Layout is more expensive on long reference PDFs. Use it only when text
-        # runs have collapsed into a dominant line, as in the KIAT notice tables.
+        # runs have collapsed into a dominant line or merged contact-table cells.
         collapsed = bool(lines and max(map(len, lines)) > max(120, len(plain) * 0.7))
-        if collapsed:
+        # A small contact table can be flattened even when the surrounding prose
+        # keeps the longest line below the generic collapse threshold.
+        merged_contacts = any(
+            re.search(r"전화|이메일|문의처", line)
+            and (len(re.findall(r"0\d{1,2}[- ]\d{3,4}[- ]\d{4}", line)) >= 2
+                 or line.count("@") >= 2)
+            for line in lines
+        )
+        if collapsed or merged_contacts:
             try:
                 layout = _normalize_page_text(extract_text(extraction_mode="layout") or "")
                 if layout:

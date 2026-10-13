@@ -182,7 +182,7 @@ def test_facts_only_schema_and_prompt_omit_document_generation(monkeypatch):
     facts_model.ainvoke.assert_awaited_once()
     full_model.ainvoke.assert_not_awaited()
     messages = facts_model.ainvoke.call_args.args[0]
-    assert "자격·기한·접수 방법·문의처만" in messages[0][1]
+    assert "자격·기한·접수 방법·문의처 및 사업 기회 정보" in messages[0][1]
     assert "documents에" not in messages[0][1]
     assert "이전 분석의 서류 후보" not in messages[1][1]
     asyncio.run(runner.extract(build_context(request().documents[0], 16000)))

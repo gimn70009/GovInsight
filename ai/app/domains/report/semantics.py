@@ -25,7 +25,7 @@ _URL = re.compile(
 _CONTACT = re.compile(r"문의|담당|고객\s*센터|콜\s*센터|연락처|contact|helpdesk|\btel\b", re.I)
 _CONTACT_CUE = re.compile(
     r"문의|고객\s*센터|콜\s*센터|연락처|담당\s*(?:자|부서)?\s*[:：]|"
-    r"contact|helpdesk|\btel\b", re.I,
+    r"contact|helpdesk|\btel\b|(?:project|programme?|support)\s*office\s*[:：]", re.I,
 )
 _DEPARTMENT = re.compile(r"[가-힣A-Za-z0-9]{2,}(?:팀|과|실|부|센터)")
 _SOURCE_DATE = re.compile(
@@ -56,6 +56,7 @@ class _Row:
     text: str
     context: str
     note: bool = False
+    contact_allowed: bool = True
 
 
 def _key(text: str) -> str:
@@ -86,6 +87,132 @@ def _rows(text: str) -> list[_Row]:
             section = line
         rows.append(_Row(_clean(line), section + "\n" + _clean(line), bool(_NOTE.search(line))))
     return rows
+
+
+_CONTACT_EXAMPLE = re.compile(r"작성\s*예(?:시|제|문)?|기재\s*예|예시\s*[:：]|견본|샘플")
+_CONTACT_FORM = re.compile(
+    r"^[\[<【(\s]*(?:붙임|별첨|별지|서식|첨부)\s*(?:\d|[가-하][.)]|[\]>】)])|"
+    r"^(?:[\d.)\s-]+)?(?:공적\s*조서|인적\s*사항|개인\s*정보|신청서|추천서|제안서)"
+)
+_CONTACT_PERSON = re.compile(
+    r"^(?:신청인|신청자|제안자|응모자|추천인|추천대상자|수상후보자|후보자|"
+    r"성\s*명|생년월일|주민등록|본인\s*연락처)(?:\s|[:：(|]|$)"
+)
+_CONTACT_SECTION = re.compile(
+    r"^(?:(?:접수|신청|사업|과제|시스템)\s*(?:및|관련)?\s*)?"
+    r"문의(?:\s*(?:처|사항|안내|담당|부서|연락처))?\s*[:：]?$"
+)
+
+
+def _contact_rows(part: SourcePart) -> list[_Row]:
+    """Inquiry context stops at forms, personal details and writing examples."""
+    blocked = source_priority(part) != 0
+    inquiry = False
+    in_example = False
+    result = []
+    for row in _rows(part.text):
+        text = row.text
+        heading = re.sub(r"^[\s\d.)-]+", "", text)
+        example = bool(_CONTACT_EXAMPLE.search(text))
+        form = bool(_CONTACT_FORM.search(text) or _CONTACT_PERSON.search(text))
+        standalone = bool(_CONTACT_SECTION.fullmatch(heading))
+        explicit = bool(standalone or re.match(
+            r"^(?:(?:사업|과제|접수|신청|시스템)\s*(?:관련)?\s*)?"
+            r"문의\s*(?:처|담당|부서|안내)?\s*[:：]", text,
+        ))
+        # A sample contact field is still part of the example. Only a new,
+        # standalone inquiry section can reopen that context.
+        payload = re.split(r"[:：]", text, maxsplit=1)[-1].strip()
+        personal = bool(_CONTACT_PERSON.search(payload))
+        if example or form or personal:
+            blocked, inquiry = True, False
+            in_example = in_example or example
+        elif standalone or (explicit and not in_example):
+            blocked, inquiry, in_example = False, True, False
+        elif _HEADING.match(text) and not _CONTACT_CUE.search(text):
+            inquiry = False
+        context = row.context
+        if inquiry and not _CONTACT_CUE.search(context):
+            context = "문의 안내\n" + context
+        result.append(_Row(text, context, row.note, not blocked))
+    return result
+
+
+def _contact_table_groups(rows: list[_Row]) -> dict[int, tuple[list[str], set[int]]]:
+    """Recover only a complete labelled table with equally sized field columns."""
+    result = {}
+    for index, row in enumerate(rows):
+        if not re.match(r"^(?:전화|전화번호)\s+", row.text):
+            continue
+        owners = []
+        start = index
+        for previous in range(index - 1, max(-1, index - 5), -1):
+            text = re.sub(r"^.*?문의\s*[:：]?\s+", "", rows[previous].text)
+            if not re.fullmatch(
+                r"[가-힣A-Za-z0-9().·& -]{2,}(?:팀|과|실|센터|사업단|사무국|본부)", text,
+            ):
+                break
+            owners.insert(0, text)
+            start = previous
+        if not 2 <= len(owners) <= 4:
+            continue
+        phones, emails = [], []
+        cursor = index
+        for label, pattern, cells in ((r"전화(?:번호)?", _PHONE, phones),
+                                      (r"이메일|전자우편", _EMAIL, emails)):
+            if cursor >= len(rows) or not re.match(r"^(?:" + label + r")\s+", rows[cursor].text):
+                break
+            for offset in range(len(owners)):
+                if cursor >= len(rows):
+                    break
+                text = rows[cursor].text
+                if offset == 0:
+                    text = re.sub(r"^(?:" + label + r")\s+", "", text)
+                if not pattern.fullmatch(text):
+                    break
+                cells.append(text)
+                cursor += 1
+        consumed = set(range(start, cursor))
+        if (len(phones) != len(owners) or len(emails) != len(owners)
+                or not all(rows[i].contact_allowed and _CONTACT_CUE.search(rows[i].context)
+                           for i in consumed)):
+            continue
+        groups = [f"{owner}: {phone}, {email}"
+                  for owner, phone, email in zip(owners, phones, emails, strict=True)]
+        result[start] = (groups, consumed)
+    return result
+
+
+def _contact_source_parts(document, source=None) -> list[SourcePart]:
+    parts = [part for part in _parts(document) if source_priority(part) != 2]
+    if source is None:
+        return parts
+    # The model sees selected excerpts; inspect the matching complete source to
+    # retain form/example headings omitted from the bounded model context.
+    identity = (source.name, source.url, source.archive)
+    return [part for part in parts if (part.name, part.url, part.archive) == identity]
+
+
+def _contact_evidence_valid(value, quote, document, source=None) -> bool:
+    rows = [row for part in _contact_source_parts(document, source)
+            for row in _contact_rows(part)]
+    quoted = _key(quote)
+    direct = [row for row in rows if quoted in _key(row.context)]
+    related = direct or [row for row in rows if _key(row.text) in quoted]
+    anchors = _PHONE.findall(value) + _EMAIL.findall(value)
+    if anchors:
+        for anchor in anchors:
+            matches = [row for row in related if _key(anchor) in _key(row.text)]
+            if not matches or any(not row.contact_allowed
+                                  or not _CONTACT_CUE.search(row.context)
+                                  or _wrong_procedure(row.context, document) for row in matches):
+                return False
+        return True
+    payload = re.split(r"[:：]", value, maxsplit=1)[-1]
+    matches = [row for row in related if _key(payload) in _key(row.text)]
+    return bool(matches and all(row.contact_allowed and not _wrong_procedure(row.context, document)
+                                for row in matches)
+                and any(_CONTACT_CUE.search(row.context) for row in matches))
 
 
 def _primary_opinion(document: ReportDocumentRequest) -> bool:
@@ -124,12 +251,24 @@ def _route_valid(text: str, document: ReportDocumentRequest) -> bool:
 
 
 def _contact_valid(value: str, evidence: str) -> bool:
+    if re.search(r"\S+@\S+@\S+", value):
+        return False
+    if re.search(r"(?:^|\s)(?:세부\s*)?(?:사업|과제|프로그램|공고)\s*명(?:\s*[:：]|\s+)", value):
+        return False
     if _PHONE.search(value) or _EMAIL.search(value):
         anchors = _PHONE.findall(value) + _EMAIL.findall(value)
         return all(_key(anchor) in _key(evidence) for anchor in anchors)
     # Publication authority + date has neither a contact channel nor an explicit
     # responsible department. An agency name ending in 부 alone is insufficient.
-    return bool(_RESPONSIBLE.search(evidence) and _DEPARTMENT.search(value)
+    department = re.sub(
+        r"^(?:(?:사업|국문|영문|국내|해외)\s*)?"
+        r"(?:(?:문의\s*)?담당\s*(?:부서|기관|팀|과)?|문의\s*(?:처|부서|담당))\s*[:：]\s*",
+        "", value,
+    ).strip()
+    department_name = re.fullmatch(
+        r"[가-힣A-Za-z0-9().·& -]{2,}(?:팀|과|실|부|센터|사업단)", department,
+    )
+    return bool(_RESPONSIBLE.search(evidence) and department_name
                 and len(value) <= 80 and not _ADDRESS.search(value)
                 and not re.search(
                     r"공고\s*기관|공고일|제출|검토|확인|추천|통보|심사|하여|경우|않|→", value,
@@ -190,6 +329,7 @@ def _matching_contexts(
 
 def field_evidence_valid(
     kind: str, value: str, quote: str, document: ReportDocumentRequest,
+    *, contact_source: SourcePart | None = None,
 ) -> bool:
     """Check field meaning after the caller has checked verbatim source support.
 
@@ -206,7 +346,9 @@ def field_evidence_valid(
         return False
     if _wrong_procedure(value, document):
         return False
-    if kind in {"deadline", "contact"}:
+    if kind == "contact":
+        return _contact_evidence_valid(value, quote, document, contact_source)
+    if kind == "deadline":
         contexts = _matching_contexts(value, quote, document, dates=kind == "deadline")
         return (all(not _wrong_procedure(context, document) for context in contexts)
                 if contexts else not _wrong_procedure(quote, document))
@@ -253,10 +395,12 @@ def _route_excerpt(text: str) -> str | None:
     return None
 
 
-def _recovery_parts(document: ReportDocumentRequest) -> list[SourcePart]:
+def _recovery_parts(
+    document: ReportDocumentRequest, *, contact: bool = False,
+) -> list[SourcePart]:
     families: dict[str, SourcePart] = {}
     for part in _parts(document):
-        if (source_priority(part) != 0
+        if (source_priority(part) > (1 if contact else 0)
                 or re.search(r"지침|가이드|매뉴얼", (part.name or "") + (part.archive or ""))):
             continue
         # HWPX and PDF copies of the same notice often contain identical rows,
@@ -274,21 +418,29 @@ def _source_values(document: ReportDocumentRequest, *, contact: bool) -> str | N
     found = []
     seen = set()
     route_urls = set()
-    for part in _recovery_parts(document):
-        rows = _rows(part.text)
+    for part in _recovery_parts(document, contact=contact):
+        rows = _contact_rows(part) if contact else _rows(part.text)
         consumed = set()
+        tables = _contact_table_groups(rows) if contact else {}
         for index, row in enumerate(rows):
             if index in consumed:
                 continue
+            if contact and index in tables:
+                groups, table_rows = tables[index]
+                if not any(_wrong_procedure(rows[i].context, document) for i in table_rows):
+                    found.extend(group for group in groups if _key(group) not in seen)
+                    seen.update(_key(group) for group in groups)
+                    consumed.update(table_rows)
+                    continue
             if contact:
                 value = row.text
                 if (re.fullmatch(r"연락처|전화(?:번호)?|이메일|전자우편", value)
-                        and index + 1 < len(rows)
+                        and index + 1 < len(rows) and rows[index + 1].contact_allowed
                         and (_PHONE.search(rows[index + 1].text)
                              or _EMAIL.search(rows[index + 1].text))):
                     value += " " + rows[index + 1].text
                     consumed.add(index + 1)
-                valid = (_CONTACT_CUE.search(row.context)
+                valid = (row.contact_allowed and _CONTACT_CUE.search(row.context)
                          and _contact_valid(value, row.context + "\n" + value)
                          and not _wrong_procedure(row.context, document)
                          and len(_CONTACT.findall(value)) <= 3
@@ -344,3 +496,15 @@ def source_submission_routes(document: ReportDocumentRequest) -> str | None:
 def source_contacts(document: ReportDocumentRequest) -> str | None:
     """Recover explicit contact rows, retaining their original department/channel."""
     return _source_values(document, contact=True)
+
+
+def preserve_contact_ownership(document: ReportDocumentRequest, value: str) -> str:
+    """Prefer explicit table ownership when every displayed channel is covered."""
+    anchors = {_key(item) for item in _PHONE.findall(value) + _EMAIL.findall(value)}
+    if not anchors or not any(_contact_table_groups(_contact_rows(part))
+                              for part in _recovery_parts(document, contact=True)):
+        return value
+    recovered = source_contacts(document)
+    covered = {_key(item) for item in _PHONE.findall(recovered or "")
+               + _EMAIL.findall(recovered or "")}
+    return recovered if recovered and anchors <= covered else value

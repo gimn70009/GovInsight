@@ -38,6 +38,22 @@ class ReportTelegramTemplateTest {
         assertThat(body).contains(summary);
     }
 
+    @Test void longReportsKeepBusinessFactsWhenProjectingTheirSummary() {
+        String metadata = "\n공고 성격: 사업 기회\n사업 유형: R&D·기술개발\n사업 방식: 연구개발비 지원";
+        String facts = "\n• 금액·규모: 과제당 연 최대 5억 원, 최대 3년\n  ↳ 자부담 25% 이상"
+                + "\n• 참여 역할: 국내 주관기관\n• 제출 주체·대상: 기업부설연구소 보유 필수"
+                + "\n  ↳ 대기업 단독 신청 불가";
+        String body = "신규 1건\n\n" + card("공고", "지원 조건을 안내합니다. ".repeat(400),
+                "https://example.org/notice?q=1&x=2")
+                .replace("\n요약:", metadata + "\n요약:")
+                .replace("\n원문:", facts + "\n원문:");
+        String telegram = ReportTelegramTemplate.render("보고서", body);
+        assertThat(telegram).contains(metadata, facts, "요약 전문은 게시글 상세",
+                "[게시글 보기](https://example.org/notice?q=1&x=2)");
+        assertThat(ReportBodyFormatter.displayLength(telegram)).isLessThanOrEqualTo(4096);
+        assertThat(body).doesNotContain("요약 전문은 게시글 상세");
+    }
+
     @Test void wholeCardsAreOmittedWithoutSplittingLongUrlsOrSurrogates() {
         String url = "https://example.org/notice?key=" + "x".repeat(1800);
         String body = "신규 100건\n\n" + (card("😀공고", "요약입니다.", url) + "\n\n").repeat(100);

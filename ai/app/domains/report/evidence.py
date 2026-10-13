@@ -9,7 +9,7 @@ _GAP = "\n[일부 원문 생략: 누락 부분은 확인되지 않음]\n"
 _FIELD = (
     r"(?:포상\s*)?신청\s*(?:자격|대상|기간|방법|요령|서류|및\s*접수)"
     r"|접수\s*(?:기간|기한|마감|방법|처)|제출\s*(?:기한|마감|방법|서류|처)"
-    r"|지원\s*대상|참여\s*자격|문의(?:\s*및\s*연락처|처)?|담당(?:자|부서)|연락처"
+    r"|지원\s*(?:대상|자격|규모|금액|방식)|사업비|예산액|기초금액|추정가격|자부담|참여\s*자격|문의(?:\s*및\s*연락처|처)?|담당(?:자|부서)|연락처"
 )
 _SECTION = (
     _FIELD + r"|사업\s*(?:개요|목적|내용)|지원\s*(?:내용|규모)|평가|선정|협약"
@@ -28,12 +28,23 @@ _PHONE = re.compile(r"(?<!\d)0\d{1,2}[- )]+\d{3,4}[- ]\d{4}(?!\d)")
 _EMAIL = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
 _DATE = re.compile(r"\d{2,4}\s*[.년/-]\s*\d{1,2}\s*[.월/-]\s*\d{1,2}")
 _TOPICS = tuple(re.compile(pattern) for pattern in (
-    r"신청\s*자격|신청\s*대상|지원\s*대상|참여\s*자격|주관.*기관|제외\s*대상",
+    r"신청\s*자격|신청\s*대상|지원\s*(?:대상|자격)|참여\s*자격|주관.*기관|"
+    r"제외\s*대상|컨소시엄|참여\s*필수|필수\s*참여",
     r"(?:신청|접수|제출)\s*(?:기간|기한|마감)|포상\s*신청\s*기간",
     r"(?:신청|접수|제출)\s*(?:방법|요령|처)|온라인\s*접수|우편\s*(?:접수|제출)",
     r"문의|담당|연락처|전화|이메일",
     r"(?:제출|구비|신청)\s*서류|제출\s*목록",
+    r"지원\s*(?:규모|금액|한도|방식)|사업비|연구개발비|보조금|출연금|"
+    r"바우처|융자|보증|사업예산|예산액|추정가격|기초금액|자부담",
+    r"사업\s*(?:개요|목적|내용)|운영기관|수행기관|모집\s*대상",
 ))
+
+
+_FUNDING_AMOUNT = re.compile(r"\d[\d,.]*\s*(?:천|만|백만|천만|억)?\s*원")
+_FUNDING_SCOPE = re.compile(
+    r"(?:과제|기업|업체)당|지원\s*(?:규모|금액|한도|금)|"
+    r"신규\s*예산|사업\s*예산|예산액|추정(?:가격|금액)|기초금액|계약(?:금액|규모)"
+)
 
 
 @dataclass(frozen=True)
@@ -135,8 +146,13 @@ def select_report_evidence(text: str | None, limit: int) -> Excerpt:
             bool(re.search(r"[:：]|https?://|필수|제외|기업|온라인|우편", value))
         )
         explicit = topic is not None and bool(_TOPICS[topic].search(value[:100]))
-        return (units[index].low_priority, not explicit, not concrete,
-                -len(topics[index]), index)
+        # A heading or an incidental cost mention must not satisfy the funding
+        # slot while an actual cap + participation table is dropped by the budget.
+        substantive_funding = topic == 5 and bool(
+            _FUNDING_SCOPE.search(value) and _FUNDING_AMOUNT.search(value)
+        )
+        return (units[index].low_priority, not substantive_funding, not explicit,
+                not concrete, -len(topics[index]), index)
 
     def add(index: int) -> bool:
         if index in chosen or not signatures[index] or signatures[index] in seen:
@@ -150,7 +166,7 @@ def select_report_evidence(text: str | None, limit: int) -> Excerpt:
 
     # Each requested kind gets a chance before repeated application prose consumes
     # the budget. Oversized candidates never mark their topic as covered.
-    for topic in (1, 2, 3, 0, 4):
+    for topic in (1, 2, 3, 0, 5, 6, 4):
         candidates = (index for index in range(len(units)) if topic in topics[index])
         for index in sorted(candidates, key=lambda index: rank(index, topic)):
             if index in chosen or add(index):

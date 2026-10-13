@@ -28,7 +28,7 @@ from app.domains.report.submission_documents import source_priority
 from app.observability.model_calls import ModelCallTrace, current_trace, error_details
 
 logger = logging.getLogger(__name__)
-_PROMPT_VERSION = "submission-brief-ko-v17-purpose-and-recovery"
+_PROMPT_VERSION = "submission-brief-ko-v21-contact-source-context"
 _CACHE: OrderedDict[str, tuple[float, BriefOutput]] = OrderedDict()
 _CACHE_SIZE = 256
 
@@ -44,8 +44,10 @@ PROMPT = """공공기관 공고에서 한국어 제출 안내를 추출하세요
 각 안내 항목은 다음 세 값으로 만듭니다.
 1. evidence: source_id와 실제 원문의 연속 구간을 그대로 복사한 quote(700자 이하).
 2. fragments: 표/긴 문단에서 필요한 구절을 등장 순서대로 복사(4개, 합계 150자 이하).
+   금액(amounts)의 fragments는 완전한 금액·조건을 위해 합계 700자까지 허용합니다.
    짧은 quote 전체를 쓸 때는 []. 구절에 머리말·콜론·국가명을 추가하거나 내용을 바꾸지 마세요.
 3. display_text: 위 구절을 읽기 쉬운 한국어로 정리. 역할/국가별 한 항목, 100자 안팎, 최대 150자.
+   금액(amounts)만 최대 300자이며, 조건이 길면 한 항목 안에서 짧은 문장 여러 개로 나누세요.
 
 표 원문: 주관기관유형 □ 제한없음 ■ 기업 □ 대학
 applicants 항목: fragments=[], display_text="주관기관: 기업",
@@ -79,10 +81,71 @@ destinations: 국가별 접수처·방법, 동시접수/원본 우편 등 의무
 contacts: 문의 담당부서·담당자와 실제 전화/이메일을 확인하세요.
 국내 담당자를 우선하고 필요한 해외 담당자는 한 명까지.
 공고기관 이름·기관장 서명·공고일만 있는 구절은 문의처가 아닙니다.
+신청인·제안자·추천인의 연락처 입력란과 작성예시 전화·이메일은 문의처가 아닙니다.
+공고문 뒤 붙임 양식도 별도 문맥으로 구분하고, 명시적인 실제 문의 절만 사용하세요.
+양식에 독립된 문의 안내가 있으면 해당 부서와 연락처만 쓸 수 있습니다.
+서로 다른 기관의 담당과 연락처를 섞지 말고 기관별로 나누세요.
 근거가 없으면 빈 배열로 반환하세요.
 문의처를 접수처로 분류하지 마세요. 이번 공고 원문의 현재 일정과 절차를 우선하세요.
 
 """.strip()
+
+
+OPPORTUNITY_PROMPT = """사업 기회 정보도 같은 응답에서 정리하세요.
+문서 종류
+GENERAL_NOTICE는 사업 여부를 뜻하지 않습니다.
+notice_kinds: value는 사업 기회/일반 공지/확인 필요 중 하나.
+모집·신청·계약의 실제 기회인지 원문으로
+판단하세요.
+선정 결과·정책 발표·인사·점검·단순 안내는 일반 공지입니다. 불명확하면 확인 필요 또는
+빈 배열.
+business_types: 대표 유형 1개를 다음 중 선택: R&D·기술개발,
+실증·도입, 창업·성장, 사업화·판로,
+수출·해외진출, 자금·금융, 인력·고용, 경영·전문지원, 공모·경진대회, 용역·조달,
+위탁운영, 공간·입주.
+프로그램 최종 수혜자가 아니라 이번에 모집하는 역할로 분류하세요. 창업지원 운영기관 모집은
+위탁운영,
+컨설팅 받을 기업은 경영·전문지원, 컨설팅 수행기관 모집은 용역·조달입니다.
+business_methods: 사업비 지원, 연구개발비 지원, 보조금, 출연금, 바우처,
+융자, 보증, 투자,
+투자유치 연계, 컨설팅·교육, 현물·시설, 용역·구매계약, 위탁·운영협약, 상금·포상 중
+원문에서 확인된 방식.
+보증과 융자, 직접 투자와 투자유치 연계를 구분하세요. 지원 없음·제외는 제공 방식이
+아닙니다.
+위 3개 필드는 value와 evidence(source_id와 실제 원문 quote)로
+답하세요. 일반 공지는
+유형/방식을 비웁니다.
+amounts: 금액을 display_text의 읽기 쉬운 한국어 문장이나 짧은 항목으로 정리하세요.
+신규 총예산과 과제당 지원금을 분리하고 연간/전체기간, 자부담, 부가세 조건을 보존하세요.
+동일한 사실이 본문·HWP·PDF·표에 반복되면 한 번만 쓰세요. 같은 액수라도 총예산과
+과제당 지원금은 서로 다른 정보입니다. □/■/o/ㅇ/*/절 번호·표의 열 제목은 표시하지 마세요.
+금액은 완결된 자연어 문장으로 쓰고, '기간/예산: 연도 / 금액' 같은 표 조각은 남기지 마세요.
+903백만 원은 9.03억 원으로 바꿀 수 있지만, 내외·약(예상액)을 최대·이내(한도)로 바꾸면 안 됩니다.
+단계평가에 따른 연구비 조정·과제 중단, 중단 과제 수만큼 신규 선정, 국회 예산 심의,
+예산 추가 확보 시 후순위 과제 선정, 개시일·연차별 예산·개월 수 변동 조건을 빠뜨리지 마세요.
+같은 금액에 연결된 조건은 한 항목에 모두 포함하되 짧은 문장 2~4개 이상으로 나누세요.
+같은 출처의 반복만 제거하고 전체 기간 예산을 특정 연도 지원금으로 바꾸지 마세요.
+문장 끝은 '입니다/합니다/있습니다'로 정리하세요. \
+원문의 '조정 가능/될 수 있음'을 그대로 붙이지 마세요.
+근거 quote는 표제·표·조건을 포함하는 실제 원문이며, fragments에는 필요한 완전한
+금액 문장과 떨어진 주석을 순서대로 복사하세요. 예: 신규예산 행 + 정부지원금 한정 주석.
+표의 다른 셀 숫자를 표시문에 섞지 마세요. 금액 근거가 재사용 가능해도 display_text를 작성하세요.
+예: '신규 예산은 총 3.2억 원 이내이며, 정부지원연구개발비에 한합니다.'
+예: '과제당 연 최대 5억 원을 최대 3년 지원합니다. 지원예산과 지원기간은 평가 결과에 따라
+변동될 수 있습니다.' 제한·의무·변동 가능성을 삭제하거나 총액을 연간액으로 바꾸지 마세요.
+연 최대 5억 원·최대 3년을 총 15억 원으로 곱하지 마세요. 날짜·연락처·일반 공지
+예산은 금액이 아닙니다.
+participation_roles: 신청 기업이 지원받는 역할인지, 용역
+수행·공급·운영·주관/공동기관인지 원문대로.
+금액과 역할도 evidence/fragments/display_text로 답하고 조건을
+생략하지 마세요.
+참여 자격·필수 파트너·컨소시엄·예외·제외조건은 applicants에서 역할별 전체 조건을
+보존하세요.
+일반 공지는 amounts/participation_roles를 비우고 실제 기한·행동이
+있을 때만 접수 정보를
+표시하세요.
+""".strip()
+PROMPT += "\n\n" + OPPORTUNITY_PROMPT
 
 DOCUMENT_PROMPT = """documents에 신청 단계 제출서류와 제출물을 추출하세요.
 제출표의 실행파일·서비스 URL·앱 링크·시연 영상도 빠뜨리지 마세요.
@@ -142,7 +205,7 @@ class SmallModelBriefRunner:
             api_key=settings.api_key,
             timeout=settings.timeout_seconds,
             max_retries=0,
-            reasoning_effort="minimal",
+            reasoning_effort=settings.reasoning_effort,
             max_tokens=5000,
             include_response_headers=True,
         )
@@ -183,7 +246,7 @@ class SmallModelBriefRunner:
         if reuse_checklist:
             prompt = (
                 PROMPT + "\n제출서류 목록은 저장된 체크리스트를 사용합니다. "
-                "자격·기한·접수 방법·문의처만 정리하세요."
+                "자격·기한·접수 방법·문의처 및 사업 기회 정보를 정리하세요."
             )
             model = self.facts_model
         else:
@@ -202,7 +265,9 @@ class SmallModelBriefRunner:
             if requested not in self.partial_models:
                 fields = BriefModelOutput.model_fields
                 schema = create_model(
-                    "MissingReportFields_" + "_".join(requested),
+                    "MissingReportFields_" + hashlib.sha256(
+                        ",".join(requested).encode()
+                    ).hexdigest()[:16],
                     __config__=ConfigDict(extra="forbid"),
                     **{name: (fields[name].annotation, fields[name]) for name in requested},
                 )
@@ -257,6 +322,7 @@ async def prepare_report_briefs(
         }
 
     event("report_brief_batch_start", document_count=len(request.documents), model=settings.model,
+          reasoning_effort=settings.reasoning_effort,
           timeout_seconds=settings.timeout_seconds,
           total_timeout_seconds=settings.total_timeout_seconds,
           max_total_timeout_seconds=settings.max_total_timeout_seconds,
@@ -345,7 +411,8 @@ async def prepare_report_briefs(
             result_event(document, "fallback", reason="empty_source")
             return
         key = hashlib.sha256(
-            (_PROMPT_VERSION + settings.model + context.payload).encode()
+            json.dumps([_PROMPT_VERSION, settings.model, settings.reasoning_effort,
+                        context.payload], ensure_ascii=False).encode()
         ).hexdigest()
         shared = key in jobs
         if not shared:

@@ -45,7 +45,12 @@ class ReportPreparationServiceTest {
                   "companyInputs": [{"title":"사업자등록증 사본","stage":"APPLICATION"}]
                 }}
                 """);
-        when(analysis.getComparisonSummary()).thenReturn("{\"applicationDeadline\":\"2026-10-06 18:00\"}");
+        when(analysis.getComparisonSummary()).thenReturn("""
+                {"applicationDeadline":"2026-10-06 18:00",
+                 "supportScale":"과제당 연 최대 5억 원, 최대 3년, 기업부담금 별도",
+                 "eligibility":"국내 주관기관은 기업만 가능",
+                 "requiredPartner":"일본 연구기관 참여 필수"}
+                """);
         when(analyses.findAllByDocumentVersionIdIn(List.of(2L))).thenReturn(List.of(analysis));
         var good = mock(DocumentAttachment.class);
         when(good.getFileName()).thenReturn("신청서.hwp");
@@ -72,6 +77,12 @@ class ReportPreparationServiceTest {
         assertThat(savedTask.getValue().getRequestJson()).contains("신청서.hwp");
         assertThat(request.contentText()).isEqualTo("제출처: 온라인 신청 시스템");
         assertThat(request.comparisonSummary().toString()).contains("2026-10-06 18:00");
+        var comparison = new ObjectMapper().readTree(request.comparisonSummary().toString());
+        assertThat(comparison.path("supportScale").asText()).isEqualTo("과제당 연 최대 5억 원, 최대 3년, 기업부담금 별도");
+        assertThat(comparison.path("eligibility").asText()).isEqualTo("국내 주관기관은 기업만 가능");
+        assertThat(comparison.path("requiredPartner").asText()).isEqualTo("일본 연구기관 참여 필수");
+        var storedRequest = new ObjectMapper().readTree(savedTask.getValue().getRequestJson());
+        assertThat(storedRequest.path("documents").get(0).path("comparisonSummary")).isEqualTo(comparison);
         assertThat(request.attachments()).hasSize(2);
         assertThat(request.attachments().getFirst().downloadUrl()).isEqualTo("https://example.go.kr/file?id=1&part=2");
         assertThat(request.attachments().getFirst().extractedText()).isEqualTo("제출서류: 신청서");

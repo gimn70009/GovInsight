@@ -96,7 +96,7 @@ def test_new_model_allows_full_choice_quote_without_truncating_evidence():
     )
     assert len(quote) > 150
     assert model.extracted().applicants[0].evidence.quote == quote
-    assert _PROMPT_VERSION == "submission-brief-ko-v17-purpose-and-recovery"
+    assert _PROMPT_VERSION == "submission-brief-ko-v21-contact-source-context"
 
 
 @pytest.mark.parametrize("mode", ["direct", "fallback", "model"])

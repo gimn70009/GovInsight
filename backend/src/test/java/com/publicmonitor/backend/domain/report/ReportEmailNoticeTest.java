@@ -23,7 +23,7 @@ class ReportEmailNoticeTest {
                 + "\n원문: [게시글 보기](https://example.org/notice)";
         String html = ReportEmailTemplate.render("보고서", body);
         assertThat(html).contains("연구개발을 지원합니다.", "신청 기업에 1.5 억원을 최대 3년 지원합니다.",
-                "2026년 10월 26일 18:00까지", "href=\"https://example.org/apply\"", "게시글 보기</a>");
+                "2026년 10월 26일 18:00까지", "href=\"https://example.org/apply\"", "공고 원문 보기</a>");
         assertThat(html).doesNotContain("2026.10.20", diagnostic, "data-report-note", "일정이 다릅니다");
         assertThat(body).contains("2026.10.20", diagnostic);
     }
@@ -60,6 +60,6 @@ class ReportEmailNoticeTest {
         String html = ReportEmailTemplate.render("보고서", "▸ 사업 공고\n제출 준비 서류 ↓\n◆ 신청서\n"
                 + "제출 조건: 원본 2부 제출\n안내: 일부 항목은 원문에서 확인해 주세요.\n"
                 + "원문: [게시글 보기](https://example.org/notice)");
-        assertThat(html).contains("원본 2부 제출", "게시글 보기</a>").doesNotContain("안내:", "일부 항목");
+        assertThat(html).contains("원본 2부 제출", "공고 원문 보기</a>").doesNotContain("안내:", "일부 항목");
     }
 }

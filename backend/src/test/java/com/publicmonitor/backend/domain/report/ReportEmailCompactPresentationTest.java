@@ -23,7 +23,7 @@ class ReportEmailCompactPresentationTest {
                 "[재무제표: 원클릭 제출](https://m.one-click.co.kr/#/ketep)");
         String html = ReportEmailTemplate.render("보고서", "▸ 공고\n• 제출처·방법: "
                 + ROUTES.replace("\n", "\n  ↳ ") + "\n원문: [게시글 보기](https://example.org/notice)");
-        assertThat(html).contains("href=\"https://m.one-click.co.kr/#/ketep\"", "게시글 보기</a>");
+        assertThat(html).contains("href=\"https://m.one-click.co.kr/#/ketep\"", "공고 원문 보기</a>");
         assertThat(html).doesNotContain("필수이행사항", "사전 등록", "※", "위변조", "aria-hidden=\"true\"");
     }
 
@@ -100,13 +100,13 @@ class ReportEmailCompactPresentationTest {
         assertThat(String.join("\n", rows)).doesNotContain("☎", "※", "o ");
     }
 
-    @Test void splitContactsMergeAndOnlyTwoCompleteRowsAreShown() {
+    @Test void splitContactsMergeAndEveryDistinctContactIsShown() {
         assertThat(ReportEmailCompactPresentation.lines("문의 담당",
                 "한국지원기관 사업지원실\n연락처 02-0000-0000/0001\n이메일 help@example.org (우편 접수 후 이메일 제출)"))
-                .containsExactly("한국지원기관 사업지원실: 02-0000-0000/0001, help@example.org");
+                .containsExactly("한국지원기관 사업지원실: 02-0000-0000/0001, help@example.org — (우편 접수 후 이메일 제출)");
         assertThat(ReportEmailCompactPresentation.lines("문의 담당",
                 "영문 접수: 해외기관 overseas@example.org\n국문 접수: 국내기관 02-0000-0000\n사업 문의: 지원실 02-0000-0001"))
-                .hasSize(2);
+                .hasSize(3);
     }
 
     @Test void sourceHtmlAndUnsafeUrlsNeverBecomeExecutableMarkup() {
@@ -145,5 +145,46 @@ class ReportEmailCompactPresentationTest {
         Path path = Path.of("build/report-preview/email-compact.html");
         Files.createDirectories(path.getParent());
         Files.writeString(path, ReportEmailTemplate.render("핵심 안내", body));
+    }
+    @Test void genericKpassDuplicateIsRemovedInFavorOfTheNamedKoreanRoute() {
+        String raw = "영문 접수: https://eureka.example.org/apply\n"
+                + "국문 접수: https://k-pass.kr/\nK-PASS 온라인 접수: https://k-pass.kr/";
+        assertThat(ReportEmailCompactPresentation.lines("제출처·방법", raw)).containsExactly(
+                "[영문 접수: 접수 페이지](https://eureka.example.org/apply)",
+                "[국문 접수: K-PASS 온라인 접수](https://k-pass.kr/)");
+    }
+
+    @Test void differentLanguageObligationsAtTheSameUrlBothSurvive() {
+        String raw = "온라인 접수: https://example.org/apply\n영문 접수: https://example.org/apply\n"
+                + "국문 접수: https://example.org/apply\n반드시 두 사이트에 동시에 접수";
+        assertThat(ReportEmailCompactPresentation.lines("제출처·방법", raw)).containsExactly(
+                "[영문 접수: 접수 페이지](https://example.org/apply)",
+                "[국문 접수: 접수 페이지](https://example.org/apply)", "반드시 두 사이트에 동시에 접수");
+    }
+
+    @Test void hostCaseDefaultPortAndEmptyRootPathCanIdentifyAnExactDuplicate() {
+        String raw = "온라인 접수: https://K-PASS.KR:443\n국문 접수: https://k-pass.kr/";
+        assertThat(ReportEmailCompactPresentation.lines("제출처·방법", raw))
+                .containsExactly("[국문 접수: K-PASS 온라인 접수](https://k-pass.kr/)");
+    }
+
+    @Test void queryParametersAndFragmentsAreNeverDiscardedForDeduplication() {
+        assertThat(ReportEmailCompactPresentation.lines("제출처·방법",
+                "국문 접수: https://example.org/apply?form=ko\n온라인 접수: https://example.org/apply?form=en"))
+                .containsExactly("[국문 접수: 접수 페이지](https://example.org/apply?form=ko)",
+                        "[온라인 접수 페이지](https://example.org/apply?form=en)");
+        assertThat(ReportEmailCompactPresentation.lines("제출처·방법",
+                "국문 접수: https://example.org/apply#domestic\n온라인 접수: https://example.org/apply#international"))
+                .containsExactly("[국문 접수: 접수 페이지](https://example.org/apply#domestic)",
+                        "[온라인 접수 페이지](https://example.org/apply#international)");
+    }
+
+    @Test void pathCaseTrailingSlashesAndProtocolKeepDifferentEndpoints() {
+        assertThat(ReportEmailCompactPresentation.lines("제출처·방법",
+                "국문 접수: https://example.org/Apply\n온라인 접수: https://example.org/apply/"))
+                .hasSize(2);
+        assertThat(ReportEmailCompactPresentation.lines("제출처·방법",
+                "국문 접수: https://example.org/apply\n온라인 접수: http://example.org/apply"))
+                .hasSize(2);
     }
 }
