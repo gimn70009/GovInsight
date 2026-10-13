@@ -6,6 +6,7 @@ import jakarta.validation.ConstraintViolationException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
@@ -16,10 +17,14 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.springframework.web.util.DisconnectedClientHelper;
 
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final DisconnectedClientHelper disconnectedClientHelper =
+            new DisconnectedClientHelper(GlobalExceptionHandler.class.getName());
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse<Map<String, String>>> handleMethodArgumentNotValid(
@@ -96,7 +101,11 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponse<Void>> handleUnexpectedException(Exception exception) {
+    public @Nullable ResponseEntity<ErrorResponse<Void>> handleUnexpectedException(Exception exception) {
+        if (disconnectedClientHelper.checkAndLogClientDisconnectedException(exception)) {
+            // A null ResponseEntity handles the exception without writing to the closed connection.
+            return null;
+        }
         log.error("처리하지 못한 서버 오류가 발생했습니다.", exception);
         return responseEntity(ErrorResponse.of(ErrorResponseCode.INTERNAL_SERVER_ERROR));
     }
