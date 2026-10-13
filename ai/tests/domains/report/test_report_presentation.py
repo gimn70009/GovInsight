@@ -35,7 +35,8 @@ def test_korean_rewrite_cannot_invent_or_drop_a_percentage():
 def test_translated_contact_cannot_change_email_or_phone():
     raw = "Project office: 02-0000-0000 help@example.org"
     brief, _ = check(raw, "국내 문의: 02-0000-0000 other@example.org", "contacts")
-    assert brief.facts.contact == "원문 확인 필요"
+    assert "other@example.org" not in brief.facts.contact
+    assert "help@example.org" in brief.facts.contact
     brief, _ = check(raw, "국내 문의: 02-0000-0000 help@example.org", "contacts")
     assert "help@example.org" in brief.facts.contact
 

@@ -25,14 +25,22 @@ final class ReportEmailSummary {
     }
 
     static List<String> lines(String value, boolean omitSchedule) {
-        var result = new ArrayList<String>();
-        int characters = 0;
+        return lines(value, omitSchedule, List.of(), List.of());
+    }
+
+    static List<String> lines(String value, boolean omitSchedule, List<ReportSchedulePresentation.Fact> amounts,
+                              List<ReportSchedulePresentation.Fact> schedule) {
+        var eligible = new ArrayList<String>();
         String sentences = value.replaceAll("(?<=[다요]\\.)\\s+", "\n");
         for (String sentence : ReportFactPresentation.lines("사업 요약", sentences)) {
             // A hidden diagnostic must not leave the disputed deadline in the email summary.
             if (omitSchedule && SUBMISSION_SCHEDULE.matcher(sentence).find()
                     && DATE_OR_TIME.matcher(sentence).find()) continue;
-            // Keep whole sentences, including dates, names, amounts and links.
+            eligible.add(sentence);
+        }
+        var result = new ArrayList<String>();
+        int characters = 0;
+        for (String sentence : ReportSummaryFocus.select(eligible, amounts, schedule)) {
             if (!result.isEmpty() && (result.size() >= MAX_SENTENCES
                     || characters + sentence.length() > PREFERRED_CHARACTERS)) break;
             result.add(sentence);

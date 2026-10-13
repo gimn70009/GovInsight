@@ -112,7 +112,7 @@ def test_source_contacts_preserve_their_purpose_without_inventing_table_phone():
     assert "02-0000-8421" not in result
 
 
-def test_reference_and_form_files_are_not_recovery_sources():
+def test_forms_only_recover_independent_inquiry_sections_and_references_never_recover():
     attachments = [
         {"fileName": name, "downloadUrl": "https://example.org/file",
          "extractedText": ROUTES + CONTACTS}
@@ -120,7 +120,9 @@ def test_reference_and_form_files_are_not_recovery_sources():
     ]
     doc = document("공고기관: 예시부", attachments=attachments)
     assert source_submission_routes(doc) is None
-    assert source_contacts(doc) is None
+    assert source_contacts(doc) is not None
+    reference_only = document("공고기관: 예시부", attachments=attachments[1:])
+    assert source_contacts(reference_only) is None
 
 
 def test_recovery_deduplicates_identical_primary_sources():

@@ -22,11 +22,20 @@ from app.domains.report.facts import (
     submission_facts,
     submission_routes,
 )
+from app.domains.report.opportunity import (
+    OPPORTUNITY_FIELDS,
+    ClassifiedFact,
+    OpportunityFacts,
+    opportunity_fields_needed,
+    source_opportunity_facts,
+    validate_opportunity,
+)
 from app.domains.report.presentation import korean_display, readable_source
 from app.domains.report.quality import schedule_consistency_issues
 from app.domains.report.schemas.request import ReportDocumentRequest
 from app.domains.report.semantics import (
     field_evidence_valid,
+    preserve_contact_ownership,
     source_contacts,
     source_submission_routes,
 )
@@ -68,6 +77,13 @@ class SourcedText(BaseModel):
     fragments: list[str] = Field(default_factory=list, max_length=4)
 
 
+class SourcedAmount(SourcedText):
+    display_text: str | None = Field(
+        default=None, max_length=300,
+        description="Short Korean sentences preserving the complete financial conditions.",
+    )
+
+
 class RequiredDocument(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=2, max_length=100)
@@ -84,6 +100,11 @@ class BriefOutput(BaseModel):
     contacts: list[SourcedText] = Field(max_length=3)
     documents: list[RequiredDocument] = Field(max_length=15)
     prevalidation_issues: list[str] = Field(default_factory=list)
+    notice_kinds: list[ClassifiedFact] = Field(default_factory=list, max_length=1)
+    business_types: list[ClassifiedFact] = Field(default_factory=list, max_length=1)
+    business_methods: list[ClassifiedFact] = Field(default_factory=list, max_length=3)
+    amounts: list[SourcedAmount] = Field(default_factory=list, max_length=3)
+    participation_roles: list[SourcedText] = Field(default_factory=list, max_length=3)
 
 
 class DisplayEvidence(BaseModel):
@@ -99,6 +120,13 @@ class DisplayEvidence(BaseModel):
     )
 
 
+class AmountDisplayEvidence(DisplayEvidence):
+    display_text: str = Field(
+        min_length=2, max_length=300,
+        description="Two to four short Korean sentences, including all financial conditions.",
+    )
+
+
 class BriefFactsModelOutput(BaseModel):
     """Model emits each source excerpt once; legacy extraction values are derived locally."""
 
@@ -108,20 +136,28 @@ class BriefFactsModelOutput(BaseModel):
     destinations: list[DisplayEvidence] = Field(max_length=4)
     contacts: list[DisplayEvidence] = Field(max_length=3)
 
+    notice_kinds: list[ClassifiedFact] = Field(default_factory=list, max_length=1)
+    business_types: list[ClassifiedFact] = Field(default_factory=list, max_length=1)
+    business_methods: list[ClassifiedFact] = Field(default_factory=list, max_length=3)
+    amounts: list[AmountDisplayEvidence] = Field(default_factory=list, max_length=3)
+    participation_roles: list[DisplayEvidence] = Field(default_factory=list, max_length=3)
+
     def extracted(self) -> BriefOutput:
-        fields = {}
+        fields = {name: getattr(self, name) for name in OPPORTUNITY_FIELDS[:3]}
         rejected = []
-        for name in ("applicants", "deadlines", "destinations", "contacts"):
+        for name in ("applicants", "deadlines", "destinations", "contacts",
+                     "amounts", "participation_roles"):
             fields[name] = []
             for item in getattr(self, name):
                 raw = " ".join(item.fragments) if item.fragments else item.evidence.quote
                 raw = " ".join(raw.split())
                 choice_table = name == "applicants" and checkbox_applicants(raw) is not None
-                limit = 700 if choice_table else 150
+                limit = 700 if choice_table or name in {"amounts", "participation_roles"} else 150
                 if not 2 <= len(raw) <= limit:
-                    rejected.append(f"{FACT_FIELDS[name]}:oversized_model_excerpt")
+                    rejected.append(f"{FACT_FIELDS.get(name, name)}:oversized_model_excerpt")
                     continue
-                fields[name].append(SourcedText(text=raw, **item.model_dump()))
+                value_type = SourcedAmount if name == "amounts" else SourcedText
+                fields[name].append(value_type(text=raw, **item.model_dump()))
         return BriefOutput(**fields, documents=[], prevalidation_issues=rejected)
 
 
@@ -147,6 +183,7 @@ class SubmissionBrief:
     uses_saved_checklist: bool = False
     validation_issues: tuple[str, ...] = ()
     recovered_fields: tuple[str, ...] = ()
+    opportunity: OpportunityFacts = field(default_factory=OpportunityFacts)
 
 
 def build_context(document: ReportDocumentRequest, budget: int) -> BriefContext:
@@ -205,6 +242,7 @@ def build_context(document: ReportDocumentRequest, budget: int) -> BriefContext:
         if field_evidence_valid(kind, value, value, document)
     }
     requested_fields = [name for name, kind in FACT_FIELDS.items() if kind not in reused_facts]
+    requested_fields.extend(opportunity_fields_needed(document))
     if not reuse_checklist:
         requested_fields.append("documents")
     payload = json.dumps(
@@ -279,7 +317,7 @@ def _values(
 
     for item in items:
         source = context.sources.get(item.evidence.source_id)
-        if not source or source_priority(source) != 0:
+        if not source or source_priority(source) > (1 if kind == "contact" else 0):
             reject("invalid_source")
             continue
         value = " ".join(item.text.split())
@@ -309,7 +347,7 @@ def _values(
             if cited and len(quote) <= 150 and re.search(r"@|\d{2,}", quote):
                 value = quote
         if document and not field_evidence_valid(
-            kind, value, item.evidence.quote if cited else value, document,
+            kind, value, item.evidence.quote if cited else value, document, contact_source=source,
         ):
             reject("wrong_purpose")
             continue
@@ -333,6 +371,7 @@ def _values(
         value = display or readable_source(value, kind)
         if value and document and not field_evidence_valid(
             kind, value, item.evidence.quote if cited else item.text, document,
+            contact_source=source,
         ):
             reject("wrong_display_purpose")
             continue
@@ -420,6 +459,16 @@ def validate_brief(
         else source_contacts(document) or "원문 확인 필요"
     )
     recovered = []
+    # An accepted publication date must not suppress independently verified
+    # submission deadlines when the model's other schedule rewrites were rejected.
+    current_schedule = values["deadline"]
+    source_schedule = _readable_fact(fallback_values["deadline"], "deadline")
+    if (re.search(r"공고|게시", current_schedule)
+            and not re.search(r"신청|접수|제출|마감|의견", current_schedule)
+            and source_schedule
+            and re.search(r"신청|접수|제출|마감|의견", source_schedule)):
+        values["deadline"] = source_schedule
+        recovered.append("deadline")
     for kind in groups:
         if values[kind] == "원문 확인 필요":
             replacement = _readable_fact(fallback_values[kind], kind)
@@ -430,9 +479,12 @@ def validate_brief(
     for kind, value in context.reused_facts.items():
         if field_evidence_valid(kind, value, value, document):
             values[kind] = value
+    values["contact"] = preserve_contact_ownership(document, values["contact"])
     facts = SubmissionFacts(**values)
     issues.extend(schedule_consistency_issues(document, facts.deadline))
+    opportunity = validate_opportunity(output, context, document, issues)
     quality = {
+        "opportunity": opportunity,
         "validation_issues": tuple(dict.fromkeys(issues)),
         "recovered_fields": tuple(dict.fromkeys(recovered)),
     }
@@ -532,6 +584,7 @@ def source_brief_facts(document: ReportDocumentRequest) -> SubmissionFacts:
             values[kind] = recovered_value or "원문 확인 필요"
         elif recovered_value and _compact(values[kind]) in _compact(recovered_value):
             values[kind] = recovered_value
+    values["contact"] = preserve_contact_ownership(document, values["contact"])
     facts = SubmissionFacts(**values)
     return facts
 
@@ -542,4 +595,5 @@ def fallback_brief(document: ReportDocumentRequest, note: str) -> SubmissionBrie
     return SubmissionBrief(
         facts, documents, note, uses_saved_checklist=uses_saved,
         validation_issues=schedule_consistency_issues(document, facts.deadline),
+        opportunity=source_opportunity_facts(document),
     )

@@ -125,3 +125,74 @@ def test_secondary_procedure_keeps_its_scope_heading_when_selected():
     excerpt = select_report_evidence(source, 400)
     assert "신청기간: 2026. 9. 1. ~ 2026. 9. 3." in excerpt.text
     assert "4. 중복성 이의신청" in excerpt.text
+
+
+@pytest.mark.parametrize("flattened", [False, True])
+def test_substantive_funding_and_partner_table_precedes_incidental_cost_mentions(flattened):
+    table = (
+        "4. 지원 규모 및 기간, 자격\n프로그램\n대상국가\n지원규모 및 기간\n지원 자격\n"
+        "국제공동연구\n과제당 연 5억원 이내 (최대 3년)\n"
+        "2개 이상 국가, 2개 이상의 독립된 기관으로 구성 (해외기관 참여 필수)\n"
+        "국내 컨소시엄 내 영리기업 참여 필수\n"
+        "* 지원예산 및 지원기간은 평가 결과에 따라 변동될 수 있음\n"
+    )
+    incidental = (
+        "□ 지원 방식: 주관기관 연구개발비의 행정 처리를 안내합니다. "
+        "신청자격 검토 및 접수기간 확인, 제출방법의 온라인 접수 안내입니다. "
+        "세부 집행 절차와 변경 기준은 해당 규정을 따릅니다.\n"
+    )
+    source = (
+        "1. 사업 개요\n" + "정책 수립과 사업 추진 배경을 설명합니다.\n" * 130
+        + incidental * 6 + table
+        + "5. 신청기간: 2026. 10. 1. ~ 2026. 10. 31.\n"
+        + "6. 제출방법: 온라인 접수 https://apply.example.org/\n"
+        + "7. 문의처: 사업지원팀 02-1234-5678\n"
+        + "8. 참고자료\n" + "참고 규정과 작성 사례입니다.\n" * 120
+    )
+    if flattened:
+        source = " ".join(source.splitlines())
+        table = " ".join(table.splitlines())
+    excerpt = select_report_evidence(source, 950)
+    assert table.strip() in excerpt.text
+    assert "해외기관 참여 필수" in excerpt.text
+    assert "국내 컨소시엄 내 영리기업 참여 필수" in excerpt.text
+    assert "변동될 수 있음" in excerpt.text
+    assert "2026. 10. 31." in excerpt.text
+    assert len(excerpt.text) <= 950
+
+
+def test_full_context_keeps_funding_and_partner_table_within_existing_source_budget():
+    from app.domains.report.brief import build_context
+    from tests.domains.report.test_report_template import with_document
+
+    table = (
+        "4. 지원 규모 및 기간, 자격\n프로그램\n대상국가\n지원규모 및 기간\n지원 자격\n"
+        "국제공동연구\n과제당 연 5억원 이내 (최대 3년)\n"
+        "2개 이상 국가, 2개 이상의 독립된 기관으로 구성 (해외기관 참여 필수)\n"
+        "국내 컨소시엄 내 영리기업 참여 필수\n"
+        "* 지원예산 및 지원기간은 평가 결과에 따라 변동될 수 있음\n"
+    )
+    source = (
+        "1. 사업 개요\n" + "정부 정책과 배경을 설명합니다.\n" * 300 + table
+        + "5. 신청기간: 2026. 10. 1. ~ 2026. 10. 31.\n"
+        + "6. 제출방법: 온라인 접수 https://apply.example.org/\n"
+        + "7. 문의처: 사업지원팀 02-1234-5678\n"
+        + "8. 유의사항\n" + "주관기관 연구개발비의 집행 및 증빙 기준입니다.\n" * 450
+    )
+    doc = with_document(
+        title="국제공동 기술개발사업 공고", contentText=" ".join(source.splitlines()),
+        attachments=[{
+            "fileName": "공고문.hwp", "downloadUrl": "https://example.org/notice",
+            "extractedText": source,
+        }, {
+            "fileName": "신청서 양식.hwp", "downloadUrl": "https://example.org/form",
+            "extractedText": "신청서 작성란과 안내입니다.\n" * 500,
+        }],
+    ).documents[0]
+    context = build_context(doc, 16000)
+    assert sum(len(part.text) for part in context.sources.values()) <= 16000
+    for part in list(context.sources.values())[:2]:
+        assert "과제당 연 5억원 이내 (최대 3년)" in part.text
+        assert "해외기관 참여 필수" in part.text
+        assert "국내 컨소시엄 내 영리기업 참여 필수" in part.text
+        assert "변동될 수 있음" in part.text

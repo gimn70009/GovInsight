@@ -149,13 +149,15 @@ class ReportEmailTemplateTest {
         String html = ReportEmailTemplate.render("보고서", body);
         assertThat(html).contains("필수 │ &lt;신청서&gt;", "href=\"https://example.org/form\"");
         assertThat(html).doesNotContain("<신청서>");
-        assertThat(html).contains("</div></div><div style=\"margin-top:22px");
+        assertThat(html).contains("</div></div></td></tr></table></td></tr></table><div data-report-original");
+        assertThat(html.substring(html.indexOf("data-report-original"))).contains("href=\"https://example.org/notice\"")
+                .doesNotContain("data-submission-card", "href=\"https://example.org/form\"");
     }
     @Test void separatesKoreanGuidanceAndUsesContactHeadingForResults() throws Exception {
         String body = java.nio.file.Files.readString(java.nio.file.Path.of("src/test/resources/reports/korean-guidance.txt"));
         String html = ReportEmailTemplate.render("보고서 · 한국어 제출 안내", body);
         assertThat(html).contains("제출 안내</h3>", "문의 안내</h3>", "국내 주관기관:", "스페인 접수:");
-        assertThat(html.split("data-report-fact-item", -1)).hasSize(10);
+        assertThat(html).contains("data-report-contact-group", "data-report-contact-channel=\"phone\"", "data-report-contact-channel=\"email\"");
         assertThat(html).doesNotContain("↳", "미확인 항목:", "data-report-note");
         var output = java.nio.file.Path.of("build/report-preview/korean-guidance.html");
         java.nio.file.Files.createDirectories(output.getParent());
@@ -166,5 +168,39 @@ class ReportEmailTemplateTest {
         String html = ReportEmailTemplate.render("보고서", "▸ 공고\n• 제출처·방법: 한국: 온라인\n  ↳ 해외: <script>alert(1)</script>");
         assertThat(html).contains("data-report-fact-item");
         assertThat(html).doesNotContain("<script>", "↳");
+    }
+    @Test void scoreStatusAndGeneralNoticeBadgesShareTheSameReadableDimensions() {
+        String html = ReportEmailTemplate.render("보고서", scoredCard("69점"));
+        String badges = html.substring(html.indexOf("data-report-badges"));
+        badges = badges.substring(0, badges.indexOf("</div>"));
+        var styles = java.util.regex.Pattern.compile("<span [^>]*style=\"([^\"]+)\"")
+                .matcher(badges).results().map(match -> match.group(1)).toList();
+        assertThat(styles).hasSize(3).allSatisfy(style ->
+                assertThat(style).contains("font-size:16px", "padding:6px 10px", "line-height:1.7", "border-radius:8px"));
+        assertThat(badges).containsSubsequence("기회점수: 69점</span>", "일반 공지</span>", "신규</span>");
+    }
+
+    @Test void originalFooterIsOneClearButtonAndNeverCopiesTheSubmissionLink() {
+        String html = ReportEmailTemplate.render("보고서", "▸ 공고\n• 제출처·방법: 온라인 접수: https://example.org/apply\n"
+                + "원문: [게시글 보기](https://example.org/view?a=1&b=2#top)");
+        String footer = html.substring(html.indexOf("data-report-original"));
+        assertThat(footer).contains("data-report-original-link", "공고 원문 보기</a>", "bgcolor=\"#193e68\"",
+                "href=\"https://example.org/view?a=1&amp;b=2#top\"", "padding:12px 16px")
+                .doesNotContain("원문:", "게시글 보기", "https://example.org/apply");
+        assertThat(footer.split("<a ", -1)).hasSize(2);
+    }
+
+    @Test void unknownOrUnsafeOriginalDoesNotBecomeAnActionButton() {
+        for (String original : new String[] {"원문 확인 필요", "[위험](javascript:alert(1))", "[위험](https://user:secret@example.org)"}) {
+            String html = ReportEmailTemplate.render("보고서", "▸ 공고\n원문: " + original);
+            assertThat(html).doesNotContain("data-report-original-link", "href=\"javascript:", "href=\"https://user:");
+        }
+    }
+    @Test void literalMarkdownInsideAnOriginalUrlCannotCreateNestedHtmlInTheHref() {
+        String url = "https://example.org/view?q=[ref](https://example.net)&source=notice";
+        String html = ReportEmailTemplate.render("보고서", "▸ 공고\n원문: " + url);
+        String footer = html.substring(html.indexOf("data-report-original"));
+        assertThat(footer).contains("href=\"https://example.org/view?q=[ref](https://example.net)&amp;source=notice\"", "공고 원문 보기</a>");
+        assertThat(footer.split("<a ", -1)).hasSize(2);
     }
 }

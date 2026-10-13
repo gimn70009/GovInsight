@@ -29,13 +29,18 @@ final class ReportFactPresentation {
         return "원문 표에서 " + subject + "을 확인해 주세요.";
     }
 
+    static String cleanMarkers(String value) {
+        return value.replaceAll("(?:^|\\s+)[ㅇ○●▪•□■◦▫◇▶▸▷►▹※][ \\t]*(?=[가-힣A-Za-z0-9(])", "\n")
+                .replaceAll("(?:^|\\s+)\\*[ \\t]*(?=[가-힣(])", "\n").strip();
+    }
+
     static List<String> lines(String label, String value) {
         if (label.equals("제출 주체·대상")) {
             var selection = ReportApplicantPresentation.lines(value);
             if (selection != null) return selection;
         }
         if (unreadableTable(value)) return List.of(sourceCheckMessage(label));
-        String text = value.replaceAll("(?:^|\\s+)[ㅇ○●▪•□■◦▫◇▶▸]\\s+", "\n").strip();
+        String text = cleanMarkers(value);
         if (label.equals("제출 주체·대상")) {
             text = text.replaceFirst("^(?:[가-하][.)]\\s*)?(?:신청\\s*자격|신청\\s*대상|지원\\s*대상)(?=\\s|[:：]|$)\\s*[:：]?\\s*", "");
         }

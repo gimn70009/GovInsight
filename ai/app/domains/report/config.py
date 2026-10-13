@@ -15,6 +15,7 @@ class ReportBriefSettings:
     api_key: str = field(default="", repr=False)
     enabled: bool = True
     model: str = "gpt-5-mini"
+    reasoning_effort: str = "low"
     timeout_seconds: float = 30
     total_timeout_seconds: float = 60
     max_total_timeout_seconds: float = 90
@@ -23,6 +24,8 @@ class ReportBriefSettings:
     cache_ttl_seconds: float = 86400
 
     def __post_init__(self):
+        if self.reasoning_effort not in {"minimal", "low", "medium", "high"}:
+            raise ValueError("REPORT_BRIEF_REASONING_EFFORT must be minimal, low, medium or high")
         limits = (
             self.timeout_seconds, self.total_timeout_seconds, self.max_total_timeout_seconds,
             self.concurrency, self.max_text_chars, self.cache_ttl_seconds,
@@ -61,5 +64,6 @@ class ReportBriefSettings:
             api_key=os.getenv("OPENAI_API_KEY", "").strip(),
             enabled=enabled == "true",
             model=os.getenv("REPORT_BRIEF_MODEL", "gpt-5-mini").strip(),
+            reasoning_effort=os.getenv("REPORT_BRIEF_REASONING_EFFORT", "low").strip().lower(),
             **values,
         )

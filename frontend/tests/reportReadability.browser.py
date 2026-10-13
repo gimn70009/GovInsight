@@ -43,9 +43,10 @@ async def main():
             await expect(missing).to_have_css("font-weight", "400")
             text = await page.locator("body").inner_text()
             assert not any(token in text for token in ("□", "■", "국공립연", "외국법인"))
-            await expect(page.get_by_role("link", name="온라인 신청")).to_have_attribute(
-                "href", "https://example.org/apply"
-            )
+            application = clear.locator('[data-report-fact="제출처·방법"] a')
+            await expect(application).to_have_count(1)
+            await expect(application).to_have_attribute("href", "https://example.org/apply")
+            await expect(application).to_be_visible()
             await expect(page.locator("script")).to_have_count(0)
             for width in (1000, 390, 320):
                 await page.set_viewport_size({"width": width, "height": 1000})

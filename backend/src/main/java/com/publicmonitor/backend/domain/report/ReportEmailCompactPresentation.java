@@ -2,9 +2,9 @@ package com.publicmonitor.backend.domain.report;
 
 import java.net.URI;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Pattern;
 
 /** Email only: show complete, explicit channels, with detailed instructions left in the source. */
@@ -12,8 +12,6 @@ final class ReportEmailCompactPresentation {
     private static final String UNKNOWN = "원문에서 확인해 주세요.";
     private static final Pattern URL = Pattern.compile(
             "(?i)(?:https?://|www\\.)[^\\s<>()\\[\\]\"']+|[a-z0-9.-]+\\.(?:go\\.kr|or\\.kr|co\\.kr|org|com)(?:/[^\\s<>()\\[\\]\"']*)?");
-    private static final Pattern PHONE = Pattern.compile(
-            "(?<!\\d)(?:0\\d{1,3}[-)\\s]+\\d{3,4}[-\\s]+\\d{4}(?:/\\d{4})?|1[568]\\d{2}-\\d{4})(?!\\d)");
     private static final Pattern EMAIL = Pattern.compile("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}");
     private static final Pattern DETAIL = Pattern.compile(
             "^(?:※|필수이행|유의|주의|[①-⑳])|회원가입|약관|사전\\s*등록|권한|허위|위[·․]변조|불이익|선정\\s*취소|접수시스템.*차단");
@@ -27,7 +25,7 @@ final class ReportEmailCompactPresentation {
     }
 
     static List<String> lines(String label, String value) {
-        return label.equals("문의 담당") ? contacts(value) : routes(value);
+        return label.equals("문의 담당") ? ReportContactPresentation.lines(value) : routes(value);
     }
 
     private static List<String> sourceLines(String value) {
@@ -99,10 +97,55 @@ final class ReportEmailCompactPresentation {
         for (String item : simple) {
             if (ROLE.matcher(item).find() || item.matches(".*(?:모두.*제출|동시.*(?:접수|제출)|한쪽.*제외|원본.*(?:우편|방문)).*")) routes.add(item);
         }
-        if (routes.isEmpty() || routes.size() > 3) return List.of(UNKNOWN);
-        return List.copyOf(routes);
+        var distinct = distinctRoutes(routes);
+        if (distinct.isEmpty() || distinct.size() > 3) return List.of(UNKNOWN);
+        return distinct;
     }
 
+    private static final Pattern ROUTE_LINK = Pattern.compile("^\\[([^\\[\\]\\r\\n]+)\\]\\((https?://[^\\s()<>\"]+)\\)$");
+    private record RouteAddress(String scheme, String host, int port, String path, String query, String fragment) {}
+    private record RouteIdentity(RouteAddress address, String role) {}
+    private record RouteEntry(String text, RouteAddress address, String role) {}
+
+    private static List<String> distinctRoutes(LinkedHashSet<String> routes) {
+        var entries = new ArrayList<RouteEntry>();
+        var specificAddresses = new LinkedHashSet<RouteAddress>();
+        for (String route : routes) {
+            var match = ROUTE_LINK.matcher(route);
+            if (!match.matches() || !ReportBodyFormatter.safeUrl(match.group(2))) {
+                entries.add(new RouteEntry(route, null, ""));
+                continue;
+            }
+            String label = match.group(1);
+            String role = label.contains(":") ? label.substring(0, label.indexOf(':')).strip() : "";
+            var address = routeAddress(match.group(2));
+            entries.add(new RouteEntry(route, address, role));
+            if (!role.isEmpty()) specificAddresses.add(address);
+        }
+        var result = new ArrayList<String>();
+        var seen = new LinkedHashSet<RouteIdentity>();
+        for (var entry : entries) {
+            if (entry.address() == null) {
+                result.add(entry.text());
+            } else if (!(entry.role().isEmpty() && specificAddresses.contains(entry.address()))
+                    && seen.add(new RouteIdentity(entry.address(), entry.role()))) {
+                result.add(entry.text());
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    private static RouteAddress routeAddress(String value) {
+        var uri = URI.create(value);
+        String scheme = uri.getScheme().toLowerCase(Locale.ROOT);
+        int port = uri.getPort();
+        if ((scheme.equals("https") && port == 443) || (scheme.equals("http") && port == 80)) port = -1;
+        String path = uri.getRawPath();
+        if (path == null || path.isEmpty()) path = "/";
+        // Query, fragment, path case and percent encoding may identify different submission steps.
+        return new RouteAddress(scheme, uri.getHost().toLowerCase(Locale.ROOT), port, path,
+                uri.getRawQuery(), uri.getRawFragment());
+    }
     private static boolean multipleActions(String value) {
         return value.matches(".*온라인.{0,20}후.{0,30}원본.{0,20}(?:우편|방문|제출|발송).*")
                 || value.matches(".*(?:두\\s*(?:사이트|곳)|양쪽|양국).{0,30}동시.{0,20}(?:접수|제출).*")
@@ -122,45 +165,4 @@ final class ReportEmailCompactPresentation {
         return role.isEmpty() ? "온라인 접수 페이지" : role + "접수 페이지";
     }
 
-    private static List<String> contacts(String value) {
-        var groups = new LinkedHashMap<String, LinkedHashSet<String>>();
-        String pending = "";
-        for (String line : sourceLines(value)) {
-            if (DETAIL.matcher(line).find() || PROCEDURE.matcher(line).find() || line.contains("공고기관")) continue;
-            var channels = new LinkedHashSet<String>();
-            var phone = PHONE.matcher(line);
-            while (phone.find()) channels.add(phone.group().replaceAll("\\s+", ""));
-            var email = EMAIL.matcher(line);
-            while (email.find()) channels.add(email.group());
-            if (channels.isEmpty()) {
-                if (line.length() <= 70 && line.matches(".*(?:팀|과|실|부서|센터).*")) pending = line;
-                continue;
-            }
-            String label = EMAIL.matcher(PHONE.matcher(line).replaceAll("")).replaceAll("")
-                    .replaceAll("\\([^)]*\\)", "").replaceAll("[(),/\\s]+$", "").strip();
-            label = label.replaceAll("^(?:연락처|전화|이메일)\\s*[:：]?\\s*", "");
-            if (label.isBlank()) label = pending;
-            label = contactLabel(label);
-            if (label.length() > 70) continue;
-            groups.computeIfAbsent(label.isBlank() ? "문의" : label, ignored -> new LinkedHashSet<>()).addAll(channels);
-        }
-        if (groups.isEmpty()) {
-            String clean = String.join(" ", sourceLines(value));
-            return List.of(clean.length() <= 70 && clean.matches(".*(?:문의|담당).*?(?:팀|과|실|부서|센터).*") ? clean : UNKNOWN);
-        }
-        var result = new ArrayList<String>();
-        for (var entry : groups.entrySet()) {
-            result.add(entry.getKey().replaceFirst("[:：]\\s*$", "") + ": " + String.join(", ", entry.getValue()));
-        }
-        return List.copyOf(result.subList(0, Math.min(2, result.size())));
-    }
-
-    private static String contactLabel(String label) {
-        return label.replaceAll("연구개발계획서\\s*전산\\s*등록\\s*관련\\s*문의\\s*[:：]?\\s*", "접수 시스템: ")
-                .replaceAll("재무제표\\s*온라인\\s*(?:전용시스템\\s*)?제출\\s*관련\\s*문의\\s*[:：]?\\s*", "재무제표: ")
-                .replaceAll("(영문|국문)\\s*연구개발계획서\\s*접수\\s*[:：]?\\s*", "$1 접수: ")
-                .replaceAll("^(?:문의처|문의 담당|담당부서)\\s*[:：]?\\s*", "")
-                .replaceAll("[:：]\\s*(?=\\S)", " · ")
-                .replaceAll("\\s+", " ").strip();
-    }
 }

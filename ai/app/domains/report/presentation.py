@@ -10,6 +10,8 @@ from app.domains.report.applicants import (
     equivalent_applicant_display,
 )
 from app.domains.report.facts import _DATE, source_schedule_rows
+from app.domains.report.opportunity import participation_display_lines
+from app.domains.report.outline import outline_display_lines
 
 _MONTHS = (
     "January February March April May June July August September October November December".split()
@@ -343,10 +345,13 @@ def submission_display_lines(value: str, label: str) -> list[str]:
     if label == "제출 주체·대상":
         checkbox = checkbox_applicants(value)
         if checkbox is not None:
-            return checkbox
+            return [" ".join(outline_display_lines(line)) for line in checkbox]
     if unreadable_table(value):
         return [source_check_message(label)]
-    text = re.sub(r"(?:^|\s+)[ㅇ○●▪•□■◦▫◇▶▸]\s+", "\n", value).strip()
+    text = "\n".join(
+        participation_display_lines(value) if label == "참여 역할"
+        else outline_display_lines(value)
+    )
     if label == "제출 주체·대상":
         text = re.sub(
             r"^(?:[가-하][.)]\s*)?(?:신청\s*자격|신청\s*대상|지원\s*대상)"

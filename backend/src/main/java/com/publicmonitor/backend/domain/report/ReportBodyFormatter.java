@@ -82,7 +82,8 @@ public final class ReportBodyFormatter {
         return body.lines().map(line -> {
             if (line.startsWith("▸ ") || line.startsWith("◆ ")) return "<b>" + html(line) + "</b>";
             if (line.equals("첨부파일 ↓") || line.equals("제출 준비 서류 ↓")) return "<b>" + html(line) + "</b>";
-            if (line.startsWith("• ") && line.contains(": ")) {
+            if ((line.startsWith("• ") || line.startsWith("공고 성격: ")
+                    || line.startsWith("사업 유형: ") || line.startsWith("사업 방식: ")) && line.contains(": ")) {
                 int colon = line.indexOf(": ") + 1;
                 return "<b>" + html(line.substring(0, colon)) + "</b>" + html(line.substring(colon));
             }
