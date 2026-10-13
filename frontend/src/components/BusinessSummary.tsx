@@ -1,6 +1,7 @@
-import { CalendarDays, CircleHelp, FileText, Banknote, ExternalLink } from 'lucide-react'
-import type { DocumentDetail, ProposalPreparationItem, SubmissionDocument } from '../api/types'
-import { evidenceAttachment, organizationEvidenceAttachment, summaryDocuments, summaryValue } from '../utils/businessSummary'
+import { useId, useState } from 'react'
+import { CalendarDays, ChevronDown, CircleHelp, FileText, Banknote, ExternalLink } from 'lucide-react'
+import type { DocumentAttachment, DocumentDetail, ProposalPreparationItem, ResponsibleOrganization, SubmissionDocument } from '../api/types'
+import { evidenceAttachment, formatSupportScale, organizationEvidenceAttachment, summaryDocuments, summaryValue } from '../utils/businessSummary'
 import './BusinessSummary.css'
 
 const requirementLabels = {
@@ -11,8 +12,17 @@ const stageLabels = {
   AGREEMENT: '협약 시', EXECUTION: '수행 중', REPORTING: '보고 시',
 } as const
 
-function MissingValue() {
-  return <span className="business-summary__missing"><CircleHelp size={14} aria-hidden="true" />확인 필요</span>
+function MissingValue({ hint }: { hint?: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const hintId = useId()
+  const label = <><CircleHelp size={14} aria-hidden="true" />확인 필요</>
+  return hint ? <div className="business-summary__missing-help">
+    <button type="button" className="business-summary__missing" aria-label="확인 필요 안내"
+      aria-expanded={expanded} aria-controls={hintId} onClick={() => setExpanded(value => !value)}>
+      {label}<ChevronDown className="business-summary__missing-chevron" size={12} aria-hidden="true" />
+    </button>
+    <p id={hintId} hidden={!expanded}>{hint}</p>
+  </div> : <span className="business-summary__missing">{label}</span>
 }
 
 function DocumentGuidance({ item, detail }: { item: SubmissionDocument; detail: DocumentDetail }) {
@@ -42,27 +52,35 @@ function SubmissionEvidence({ source, detail }: { source: ProposalPreparationIte
     </details>
 }
 
+function OrganizationRow({ item, attachments }: { item: ResponsibleOrganization; attachments: DocumentAttachment[] }) {
+  const [expanded, setExpanded] = useState(false)
+  const evidenceId = useId()
+  const file = organizationEvidenceAttachment(item, attachments)
+  return <li>
+    <div className="business-summary__organization">
+      <span className="business-summary__organization-role">{item.role}</span>
+      <strong>{item.name}</strong>
+      <button type="button" className="business-summary__organization-toggle"
+        aria-label={`${item.name} ${item.role} 기관 근거 보기`} aria-expanded={expanded} aria-controls={evidenceId}
+        onClick={() => setExpanded(value => !value)}>
+        근거 보기<ChevronDown size={13} aria-hidden="true" />
+      </button>
+    </div>
+    <div id={evidenceId} hidden={!expanded} className="business-summary__organization-source">
+      <span>{item.sourceType === 'NOTICE_BODY' ? '공고 본문' : item.attachmentName || '첨부 문서'}</span>
+      <blockquote>{item.excerpt}</blockquote>
+      {file && <a href={file.downloadUrl} target="_blank" rel="noreferrer">근거 문서 열기<ExternalLink size={12} aria-hidden="true" /></a>}
+    </div>
+  </li>
+}
+
 function ResponsibleOrganizations({ detail }: { detail: DocumentDetail }) {
   const organizations = (detail.responsibleOrganizations ?? [])
     .filter(item => summaryValue(item.name) && summaryValue(item.role) && summaryValue(item.excerpt))
-  return <>
-    {organizations.length > 0 ? <ul className="business-summary__organizations">
-      {organizations.map((item, index) => {
-        const file = organizationEvidenceAttachment(item, detail.attachments)
-        return <li key={`${item.role}-${item.name}-${index}`}>
-          <div className="business-summary__organization"><span>{item.role}</span><strong>{item.name}</strong></div>
-          <details className="business-summary__evidence">
-            <summary>기관 근거 보기</summary>
-            <div><span>{item.sourceType === 'NOTICE_BODY' ? '공고 본문' : item.attachmentName || '첨부 문서'}</span>
-              <blockquote>{item.excerpt}</blockquote>
-              {file && <a href={file.downloadUrl} target="_blank" rel="noreferrer">근거 문서 열기<ExternalLink size={12} aria-hidden="true" /></a>}
-            </div>
-          </details>
-        </li>
-      })}
-    </ul> : <><MissingValue /><span className="business-summary__subtext">저장된 공고 본문·첨부에서 담당기관과 역할을 확인하지 못했습니다.</span></>}
-    <span className="business-summary__subtext">공고 게시기관 · {detail.organizationName}</span>
-  </>
+  return organizations.length > 0 ? <ul className="business-summary__organizations">
+    {organizations.map((item, index) => <OrganizationRow
+      key={`${detail.detectionId}-${item.role}-${item.name}-${index}`} item={item} attachments={detail.attachments} />)}
+  </ul> : <MissingValue key={detail.detectionId} hint="공고 본문과 첨부파일에서 담당기관을 확인하지 못했습니다. 공고 원문을 확인해 주세요." />
 }
 
 export function BusinessSummary({ detail }: { detail: DocumentDetail }) {
@@ -87,8 +105,8 @@ export function BusinessSummary({ detail }: { detail: DocumentDetail }) {
       <table className="business-summary__facts" aria-label="사업 핵심 정보">
         <tbody>
           <tr><th scope="row">사업 담당기관</th><td><ResponsibleOrganizations detail={detail} /></td></tr>
-          <tr><th scope="row">사업명</th><td><strong className="business-summary__name">{detail.title}</strong><span className="business-summary__subtext">공고명 기준</span></td></tr>
-          <tr className="business-summary__emphasis"><th scope="row"><span><Banknote size={16} aria-hidden="true" />지원규모</span></th><td>{supportScale ? <p className="business-summary__amount">{supportScale}</p> : <MissingValue />}</td></tr>
+          <tr><th scope="row">사업명</th><td><strong className="business-summary__name">{detail.title}</strong></td></tr>
+          <tr className="business-summary__emphasis"><th scope="row"><span><Banknote size={16} aria-hidden="true" />지원규모</span></th><td>{supportScale ? <p className="business-summary__amount">{formatSupportScale(supportScale)}</p> : <MissingValue />}</td></tr>
           <tr className="business-summary__emphasis"><th scope="row"><span><CalendarDays size={16} aria-hidden="true" />제출기한</span></th><td>{deadline ? <p className="business-summary__deadline">{deadline}</p> : <MissingValue />}</td></tr>
           <tr><th scope="row">사업 설명</th><td>{purpose ? <p className="business-summary__description">{purpose}</p> : <MissingValue />}</td></tr>
         </tbody>

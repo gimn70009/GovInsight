@@ -1,6 +1,7 @@
 """Business summary tables: preserved qualifiers, grounded documents, legacy and live refresh."""
 import asyncio
 import importlib.util
+import re
 import sys
 from pathlib import Path
 from playwright.async_api import async_playwright, expect
@@ -48,13 +49,14 @@ async def table_and_tabs(browser):
         await expect(facts.get_by_role('row', name='지원규모')).to_contain_text(AMOUNT)
         await expect(facts.get_by_role('row', name='제출기한')).to_contain_text(DEADLINE)
         await expect(facts.get_by_role('row', name='사업 설명')).to_contain_text(PURPOSE)
-        await facts.get_by_text('기관 근거 보기').click()
+        await facts.get_by_role('button', name=re.compile('기관 근거 보기')).click()
         await expect(facts.locator('blockquote')).to_have_text('시행기관: 검증 사업운영원')
         await expect(facts.get_by_role('link', name='근거 문서 열기')).to_have_attribute('href', 'https://example.org/notice.pdf')
-        await facts.get_by_text('기관 근거 보기').click()
+        await facts.get_by_role('button', name=re.compile('기관 근거 보기')).click()
         await expect(facts.get_by_role('row', name='사업 담당기관')).to_contain_text('검증 사업운영원')
         await expect(facts.get_by_role('row', name='사업 담당기관')).not_to_contain_text('확인 필요')
-        await expect(facts.get_by_role('row', name='사업 담당기관')).to_contain_text('공고 게시기관 · 검증 기관')
+        await expect(facts.get_by_role('row', name='사업 담당기관')).not_to_contain_text('공고 게시기관')
+        await expect(facts).not_to_contain_text('공고명 기준')
         documents = h.page.get_by_role('table', name='제출서류 안내')
         await expect(documents.locator('tbody tr')).to_have_count(2)
         await expect(documents.get_by_role('row', name='이행보증보험증권')).to_contain_text('해당 시 제출')
@@ -139,9 +141,9 @@ async def organization_roles_without_analysis(browser):
             await h.page.set_viewport_size(dict(width=width, height=1100))
             assert await row.evaluate('el => el.scrollWidth <= el.clientWidth + 1')
             await row.screenshot(path=str(OUT / f'organizations-contact-{width}.png'))
-            await row.get_by_text('기관 근거 보기').click()
+            await row.get_by_role('button', name=re.compile('기관 근거 보기')).click()
             await expect(row.locator('blockquote')).to_contain_text('협력재단')
-            await row.get_by_text('기관 근거 보기').click()
+            await row.get_by_role('button', name=re.compile('기관 근거 보기')).click()
     finally:
         await h.close()
 
@@ -227,18 +229,114 @@ async def official_submission_fixtures(browser):
         await h.close()
 
 
+async def compact_organizations_and_amounts(browser):
+    h = await refresh.Harness(browser).start()
+    try:
+        data = ready()
+        data['title'] = '2026 중소기업 CBAM 대응 인프라구축 사업 4차 모집공고'
+        data['analysis']['businessSummary']['supportScale'] = '유형1은 기업당 최대 42백만원(보조율 70%)로 H/W·S/W 및 검증을 지원하고 유형2는 검증비용으로 기업당 최대 3.5백만원을 지원합니다.'
+        data['responsibleOrganizations'] = [
+            dict(name='중소벤처기업부', role='총괄기관', sourceType='NOTICE_BODY', attachmentName=None, excerpt='총괄기관: 중소벤처기업부'),
+            dict(name='중소벤처기업진흥공단', role='시행기관', sourceType='ATTACHMENT', attachmentName='사업 공고문.pdf', excerpt='시행기관: 중소벤처기업진흥공단\n기업당 최대 42백만원')]
+        h.states[1] = data
+        await h.open(analysis_tab=False)
+        facts = h.page.get_by_role('table', name='사업 핵심 정보')
+        await expect(facts).not_to_contain_text('공고 게시기관')
+        await expect(facts).not_to_contain_text('공고명 기준')
+        await expect(h.page.locator('.business-summary__amount')).to_have_text('유형1은 기업당 최대 4,200만 원(보조율 70%)로 H/W·S/W 및 검증을 지원하고 유형2는 검증비용으로 기업당 최대 350만 원을 지원합니다.')
+        buttons = facts.get_by_role('button', name=re.compile('기관 근거 보기'))
+        await expect(buttons).to_have_count(2)
+        first, second = buttons.nth(0), buttons.nth(1)
+        await first.focus()
+        await h.page.keyboard.press('Enter')
+        await expect(first).to_have_attribute('aria-expanded', 'true')
+        await expect(second).to_have_attribute('aria-expanded', 'false')
+        await expect(facts.get_by_text('총괄기관: 중소벤처기업부', exact=True)).to_be_visible()
+        await h.page.keyboard.press('Space')
+        await expect(first).to_have_attribute('aria-expanded', 'false')
+        await expect(facts.get_by_text('총괄기관: 중소벤처기업부', exact=True)).to_be_hidden()
+        OUT.mkdir(parents=True, exist_ok=True)
+        for width in (1440, 768, 390, 320):
+            await h.page.set_viewport_size(dict(width=width, height=1100))
+            for organization in await facts.locator('.business-summary__organization').all():
+                name = await organization.locator('strong').bounding_box()
+                button = await organization.get_by_role('button').bounding_box()
+                assert button['x'] >= name['x'] + name['width'] - 1, (width, name, button)
+                assert abs((name['y'] + name['height'] / 2) - (button['y'] + button['height'] / 2)) < 2
+            assert await facts.evaluate('el => el.scrollWidth <= el.clientWidth + 1'), width
+            await facts.screenshot(path=str(OUT / f'compact-summary-{width}.png'))
+            await second.click()
+            await expect(second).to_have_attribute('aria-expanded', 'true')
+            # Evidence is preserved verbatim even though the summary amount is converted.
+            await expect(facts.locator('blockquote').last).to_contain_text('42백만원')
+            await expect(facts.get_by_role('link', name='근거 문서 열기')).to_have_attribute('href', 'https://example.org/notice.pdf')
+            await facts.screenshot(path=str(OUT / f'compact-evidence-{width}.png'))
+            assert await facts.evaluate('el => el.scrollWidth <= el.clientWidth + 1'), width
+            await second.click()
+    finally:
+        await h.close()
+
+
+async def compact_missing_organization(browser):
+    h = await refresh.Harness(browser).start()
+    try:
+        h.states[1] = ready()
+        h.states[1]['responsibleOrganizations'] = []
+        await h.open(analysis_tab=False)
+        facts = h.page.get_by_role('table', name='사업 핵심 정보')
+        row = facts.get_by_role('row', name='사업 담당기관')
+        help_panel = row.locator('.business-summary__missing-help')
+        toggle = row.get_by_role('button', name='확인 필요 안내', exact=True)
+        explanation = help_panel.locator('p')
+        OUT.mkdir(parents=True, exist_ok=True)
+        for width in (1440, 768, 390, 320):
+            await h.page.set_viewport_size(dict(width=width, height=1000))
+            await expect(toggle).to_be_visible()
+            await expect(toggle).to_have_attribute('aria-expanded', 'false')
+            await expect(explanation).to_be_hidden()
+            assert '확인하지 못했습니다' not in await row.inner_text()
+            collapsed = await row.bounding_box()
+            assert collapsed['height'] < 85, (width, collapsed)
+            assert await row.evaluate('el => el.scrollWidth <= el.clientWidth + 1')
+            await row.screenshot(path=str(OUT / f'missing-organization-{width}.png'))
+            await toggle.focus()
+            await h.page.keyboard.press('Enter')
+            await expect(explanation).to_be_visible()
+            await expect(explanation).to_contain_text('공고 원문을 확인해 주세요.')
+            await expect(toggle).to_have_attribute('aria-expanded', 'true')
+            assert await row.evaluate('el => el.scrollWidth <= el.clientWidth + 1')
+            await row.screenshot(path=str(OUT / f'missing-organization-open-{width}.png'))
+            await h.page.keyboard.press('Space')
+            await expect(explanation).to_be_hidden()
+            # Pointer activation uses the same button as keyboard activation.
+            await toggle.click()
+            await expect(explanation).to_be_visible()
+            await toggle.click()
+            await expect(explanation).to_be_hidden()
+        await toggle.click()
+        await expect(explanation).to_be_visible()
+        await h.page.locator('.document-row').filter(has_text='상세 갱신 공고 2').evaluate('el => el.click()')
+        await h.wait_request(2, 1)
+        await expect(explanation).to_be_hidden()
+        await expect(toggle).to_be_visible()
+    finally:
+        await h.close()
+
+
 async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch(channel=refresh.os.environ.get('BROWSER_CHANNEL', 'msedge'))
         try:
             await table_and_tabs(browser)
+            await compact_organizations_and_amounts(browser)
+            await compact_missing_organization(browser)
             await legacy_and_pending(browser)
             await organization_roles_without_analysis(browser)
             await submission_guide_without_analysis(browser)
             await official_submission_fixtures(browser)
         finally:
             await browser.close()
-    print('PASS: summary fields, qualifiers, grounded documents, source links, four tabs, 1440/768/390/320px, legacy, live refresh and per-notice organization roles, independent submission guide, notes, conditional types and empty-guide switching')
+    print('PASS: compact missing-organization disclosure, inline keyboard-accessible organization evidence, exact readable won amounts, removed redundant labels, summary fields, qualifiers, grounded documents, source links, four tabs, 1440/768/390/320px, legacy, live refresh and per-notice organization roles, independent submission guide, notes, conditional types and empty-guide switching')
 
 
 if __name__ == '__main__':

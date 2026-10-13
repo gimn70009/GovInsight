@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { evidenceAttachment, organizationEvidenceAttachment, summaryDocuments, summaryValue } from '../src/utils/businessSummary.ts'
+import { evidenceAttachment, formatSupportScale, organizationEvidenceAttachment, summaryDocuments, summaryValue } from '../src/utils/businessSummary.ts'
 
 const source = { origin: 'NOTICE_BODY', sectionTitle: '제출서류', excerpt: '모든 신청기업은 사업계획서를 제출한다.' }
 const required = { title: '사업계획서', detail: '지정 서식 사용', requirementLevel: 'MANDATORY', stage: 'APPLICATION', source }
@@ -52,4 +52,48 @@ test('independent submission guide renders without AI analysis and an empty guid
   assert.deepEqual(summaryDocuments(analysis([{ ...required, title: '지난 서류' }]), guide), [required])
   assert.deepEqual(summaryDocuments(analysis([required]), { documents: [], notes: [] }), [])
   assert.deepEqual(summaryDocuments(analysis([required])), [required])
+})
+
+
+test('support amounts use readable Korean won units without changing business conditions', () => {
+  const text = '유형1은 기업당 최대 42백만원(보조율 70%)로 H/W·S/W 및 검증을 지원하고 유형2는 검증비용으로 기업당 최대 3.5백만원을 지원합니다.'
+  assert.equal(formatSupportScale(text), '유형1은 기업당 최대 4,200만 원(보조율 70%)로 H/W·S/W 및 검증을 지원하고 유형2는 검증비용으로 기업당 최대 350만 원을 지원합니다.')
+  assert.equal(formatSupportScale('총 903백만 원 내외, 연간 최대 42백만원\n자부담 25% 이상 / 2년 이내'), '총 9억 300만 원 내외, 연간 최대 4,200만 원\n자부담 25% 이상 / 2년 이내')
+  assert.equal(formatSupportScale('42백만원(70%), 3.5백만원 / 월'), '4,200만 원(70%), 350만 원 / 월')
+})
+
+test('currency conversion is exact for decimal amounts, comma groups and large numbers', () => {
+  const cases = [
+    ['42,000,000원', '4,200만 원'], ['3,500천원', '350만 원'],
+    ['0.5억원', '5,000만 원'], ['9.03억 원', '9억 300만 원'],
+    ['1.2345억원', '1억 2,345만 원'], ['0.000001백만원', '1원'],
+    ['42.001백만원', '4,200만 1,000원'], ['3.5천원', '3,500원'],
+    ['0백만원', '0원'], ['-3.5백만원', '-350만 원'], ['+42백만원', '+4,200만 원'],
+    ['1,234,567백만원', '1조 2,345억 6,700만 원'],
+    ['9,007,199,254,740,993원', '9,007조 1,992억 5,474만 993원'],
+  ]
+  for (const [input, output] of cases) {
+    assert.equal(formatSupportScale(input), output, input)
+    assert.equal(formatSupportScale(output), output, `idempotent: ${output}`)
+  }
+})
+
+test('both ends of explicit and shared-unit ranges keep their values', () => {
+  for (const separator of ['~', ' ~ ', '∼', '–', '-', '부터 ']) {
+    assert.equal(formatSupportScale(`3.5${separator}42백만원`), `350만 원${separator}4,200만 원`)
+  }
+  assert.equal(formatSupportScale('3.5백만원~42백만원 이하'), '350만 원~4,200만 원 이하')
+  assert.equal(formatSupportScale('42백만원, 50백만원'), '4,200만 원, 5,000만 원')
+  assert.equal(formatSupportScale('42백만원/50백만원'), '4,200만 원/5,000만 원')
+})
+
+test('uncertain money expressions, compound amounts and non-won values remain unchanged', () => {
+  for (const value of [
+    '1억 5천만원', '1억5,000만원', '3조 2억 5천만원',
+    '42·50백만원', '42, 50백만원', '10~20~30백만원',
+    '1,23백만원', '1.2.3백만원', '1e3백만원', '1e-3백만원',
+    '0.0000001백만원', '0.5원', '0.0015~3백원',
+    '1~1,23백만원', '42백만 달러', 'USD 42 million',
+    '지원액 42 (단위: 백만원)', '보조율 70%, 3.5개월, 2026-10-19', '확인 필요',
+  ]) assert.equal(formatSupportScale(value), value, value)
 })
