@@ -19,7 +19,9 @@ final class MonitoringSourceDefaults {
                     "https://www.molit.go.kr/USR/BORD0201/m_69/LST.jsp?id=N01_B", "/USR/BORD0201/m_69/DTL.jsp"),
             new Source("한국산업기술진흥원", "사업공고", "한국산업기술진흥원의 산업기술 지원사업과 사업공고를 수집합니다.",
                     "https://www.kiat.or.kr/front/board/boardContentsListPage.do?MenuId=b159c9dac684471b87256f1e25404f5e&board_id=90",
-                    "/front/board/boardContentsView.do")
+                    "/front/board/boardContentsView.do"),
+            new Source("중소벤처기업부", "사업공고", "중소기업·벤처·창업·소상공인 분야의 지원사업 공고를 수집합니다.",
+                    "https://www.mss.go.kr/site/smba/ex/bbs/List.do?cbIdx=310", "/site/smba/ex/bbs/View.do")
     );
 
     private MonitoringSourceDefaults() {

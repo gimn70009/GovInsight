@@ -12,6 +12,10 @@ class SiteProfile:
     document_id_query_keys: tuple[str, ...] = ()
     document_id_path_pattern: str | None = None
     list_ready_selector: str | None = None
+    list_link_selector: str = "a[href], a[onclick]"
+    list_date_selector: str | None = None
+    content_html_selector: str | None = None
+    attachment_name_selector: str | None = None
 
 # 전용 기관 프로필이 없는 사이트에 적용하는 공통 CSS 선택자
 DEFAULT_PROFILE = SiteProfile(
@@ -95,6 +99,18 @@ SITE_PROFILES = {
         document_id_query_keys=("contents_id",),
         list_ready_selector="#contentsList a[href*='contentsView']",
     ),
+
+    # 중소벤처기업부 사업공고: 행 클릭 링크와 iframe 원본 HTML을 사용한다.
+    "mss.go.kr": SiteProfile(
+        title_selectors=(".board_view #sj",),
+        content_selectors=(".board_view .view_contents",),
+        date_selectors=(".board_view th:has-text('등록일') + td",),
+        document_id_query_keys=("bcIdx",),
+        list_link_selector="tr[onclick*='doBbsFView']",
+        list_date_selector="td:nth-child(4)",
+        content_html_selector=".board_view #editContents",
+        attachment_name_selector=".info .name",
+    ),
 }
 
 MOLIT_TENDER_PROFILE = SiteProfile(
@@ -128,6 +144,12 @@ MCEE_DOWNLOAD_PATTERN = re.compile(
 KIAT_DETAIL_PATTERN = re.compile(r"contentsView\(['\"]([A-Za-z0-9_-]+)['\"]\)")
 
 
+MSS_DETAIL_PATTERN = re.compile(
+    r"doBbsFView\(\s*['\"]?(\d+)['\"]?\s*,\s*['\"]?(\d+)['\"]?\s*,"
+    r"\s*['\"]?\d+['\"]?\s*,\s*['\"]?(\d+)['\"]?\s*\)"
+)
+
+
 # URL에 맞는 기관별 프로필을 반환하고, 없으면 기본 프로필을 사용
 def get_site_profile(url: str) -> SiteProfile:
     parsed = urlparse(url)
@@ -140,6 +162,20 @@ def resolve_link_target(href: str | None, onclick: str | None, list_url: str) ->
     script = " ".join(value for value in (href, onclick) if value)
     hostname = _hostname(list_url)
     list_path = urlparse(list_url).path
+
+    if hostname == "mss.go.kr" and list_path == "/site/smba/ex/bbs/List.do":
+        match = MSS_DETAIL_PATTERN.search(script)
+        if not match:
+            return None
+        parsed = urlparse(list_url)
+        if match.group(1) != parse_qs(parsed.query).get("cbIdx", [None])[0]:
+            return None
+        detail_query = urlencode({
+            "cbIdx": match.group(1),
+            "bcIdx": match.group(2),
+            "parentSeq": match.group(3),
+        })
+        return urljoin(list_url, f"/site/smba/ex/bbs/View.do?{detail_query}")
 
     # 산업통상부 처리
     if hostname == "motir.go.kr":
