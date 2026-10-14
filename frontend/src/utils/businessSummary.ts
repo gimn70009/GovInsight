@@ -7,6 +7,11 @@ export function summaryValue(value: string | null | undefined): string | null {
   return text
 }
 
+// Use familiar clause separators in summary prose without changing stored text or evidence.
+export function formatSummaryText(value: string): string {
+  return value.replace(/[ \t]*[;；]+[ \t]*/gu, ', ')
+}
+
 const wonUnitPowers: Record<string, number> = {
   '': 0, '백': 2, '천': 3, '만': 4, '십만': 5, '백만': 6, '천만': 7,
   '억': 8, '십억': 9, '백억': 10, '천억': 11, '조': 12,

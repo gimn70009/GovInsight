@@ -2,7 +2,7 @@ import { ParticipationConditions } from './ParticipationConditions'
 import { Fragment, useId, useState } from 'react'
 import { CalendarDays, ChevronDown, CircleHelp, FileText, Banknote, ExternalLink } from 'lucide-react'
 import type { DocumentAttachment, DocumentDetail, ProposalPreparationItem, ResponsibleOrganization, SubmissionDocument, SubmissionGuide } from '../api/types'
-import { documentPresentation, evidenceAttachment, formatSupportScale, organizationEvidenceAttachment, summaryDocuments, summaryValue } from '../utils/businessSummary'
+import { documentPresentation, evidenceAttachment, formatSummaryText, formatSupportScale, organizationEvidenceAttachment, summaryDocuments, summaryValue } from '../utils/businessSummary'
 import './BusinessSummary.css'
 
 const requirementLabels = {
@@ -194,9 +194,9 @@ export function BusinessSummary({ detail }: { detail: DocumentDetail }) {
         <tbody>
           <tr><th scope="row">사업 담당기관</th><td><ResponsibleOrganizations detail={detail} /></td></tr>
           <tr><th scope="row">사업명</th><td><strong className="business-summary__name">{detail.title}</strong></td></tr>
-          <tr className="business-summary__emphasis"><th scope="row"><span><Banknote size={16} aria-hidden="true" />지원규모</span></th><td>{supportScale ? <p className="business-summary__amount">{formatSupportScale(supportScale)}</p> : <MissingValue />}</td></tr>
-          <tr><th scope="row">사업 설명</th><td>{purpose ? <p className="business-summary__description">{purpose}</p> : <MissingValue />}</td></tr>
-          <tr className="business-summary__emphasis"><th scope="row"><span><CalendarDays size={16} aria-hidden="true" />제출기한</span></th><td>{deadline ? <p className="business-summary__deadline">{deadline}</p> : <MissingValue />}</td></tr>
+          <tr className="business-summary__emphasis"><th scope="row"><span><Banknote size={16} aria-hidden="true" />지원규모</span></th><td>{supportScale ? <p className="business-summary__amount">{formatSummaryText(formatSupportScale(supportScale))}</p> : <MissingValue />}</td></tr>
+          <tr><th scope="row">사업 설명</th><td>{purpose ? <p className="business-summary__description">{formatSummaryText(purpose)}</p> : <MissingValue />}</td></tr>
+          <tr className="business-summary__emphasis"><th scope="row"><span><CalendarDays size={16} aria-hidden="true" />제출기한</span></th><td>{deadline ? <p className="business-summary__deadline">{formatSummaryText(deadline)}</p> : <MissingValue />}</td></tr>
         </tbody>
       </table>
     </div>
