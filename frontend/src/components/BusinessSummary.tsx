@@ -1,6 +1,6 @@
 import { useId, useState } from 'react'
 import { CalendarDays, ChevronDown, CircleHelp, FileText, Banknote, ExternalLink } from 'lucide-react'
-import type { DocumentAttachment, DocumentDetail, ProposalPreparationItem, ResponsibleOrganization, SubmissionDocument } from '../api/types'
+import type { DocumentAttachment, DocumentDetail, ProposalPreparationItem, ResponsibleOrganization, SubmissionDocument, SubmissionGuide } from '../api/types'
 import { evidenceAttachment, formatSupportScale, organizationEvidenceAttachment, summaryDocuments, summaryValue } from '../utils/businessSummary'
 import './BusinessSummary.css'
 
@@ -39,17 +39,40 @@ function DocumentGuidance({ item, detail }: { item: SubmissionDocument; detail: 
   </>
 }
 
-function SubmissionEvidence({ source, detail }: { source: ProposalPreparationItem['source']; detail: DocumentDetail }) {
+function SubmissionSource({ source, detail }: { source: ProposalPreparationItem['source']; detail: DocumentDetail }) {
   const file = evidenceAttachment({ source }, detail.attachments)
+  return <>
+    <span>{source?.origin === 'NOTICE_BODY' ? '공고 본문' : source?.attachmentName || '첨부 문서'}</span>
+    {(source?.sectionTitle || source?.location) && <small>{[source?.sectionTitle, source?.location].filter(Boolean).join(' · ')}</small>}
+    <blockquote>{source?.excerpt}</blockquote>
+    {file && <a href={file.downloadUrl} target="_blank" rel="noreferrer">근거 문서 열기<ExternalLink size={12} aria-hidden="true" /></a>}
+  </>
+}
+
+function SubmissionEvidence({ source, detail }: { source: ProposalPreparationItem['source']; detail: DocumentDetail }) {
   return <details className="business-summary__evidence">
-      <summary>근거 보기</summary>
-      <div>
-        <span>{source?.origin === 'NOTICE_BODY' ? '공고 본문' : source?.attachmentName || '첨부 문서'}</span>
-        {(source?.sectionTitle || source?.location) && <small>{[source?.sectionTitle, source?.location].filter(Boolean).join(' · ')}</small>}
-        <blockquote>{source?.excerpt}</blockquote>
-        {file && <a href={file.downloadUrl} target="_blank" rel="noreferrer">근거 문서 열기<ExternalLink size={12} aria-hidden="true" /></a>}
-      </div>
-    </details>
+    <summary>근거 보기</summary>
+    <div><SubmissionSource source={source} detail={detail} /></div>
+  </details>
+}
+
+function SubmissionNoteRow({ note, detail }: { note: SubmissionGuide['notes'][number]; detail: DocumentDetail }) {
+  const [expanded, setExpanded] = useState(false)
+  const evidenceId = useId()
+  return <li>
+    {note.appliesTo && <span className="business-summary__note-scope">{note.appliesTo}</span>}
+    <div className="business-summary__note-line">
+      <p>{note.text.replace(/^[*※◦]+\s*/u, '')}</p>
+      <button type="button" className="business-summary__organization-toggle"
+        aria-label={`${note.appliesTo ? `${note.appliesTo} · ` : ''}${note.text} 근거 보기`}
+        aria-expanded={expanded} aria-controls={evidenceId} onClick={() => setExpanded(value => !value)}>
+        근거 보기<ChevronDown size={13} aria-hidden="true" />
+      </button>
+    </div>
+    <div id={evidenceId} hidden={!expanded} className="business-summary__note-source">
+      <SubmissionSource source={note.source} detail={detail} />
+    </div>
+  </li>
 }
 
 function OrganizationRow({ item, attachments }: { item: ResponsibleOrganization; attachments: DocumentAttachment[] }) {
@@ -115,9 +138,7 @@ export function BusinessSummary({ detail }: { detail: DocumentDetail }) {
     <div className="business-summary__documents-heading"><h4>제출서류</h4>{documents.length > 0 && <span>확인된 서류 {documents.length}건</span>}</div>
     {documents.length > 0 && notes.length > 0 && <aside className="business-summary__submission-notes" aria-label="제출 유의사항">
       <strong>제출 유의사항</strong>
-      <ul>{notes.map((note, index) => <li key={`${note.text}-${index}`}>
-        <p>{note.text.replace(/^[*※◦]\s*/u, '')}</p><SubmissionEvidence source={note.source} detail={detail} />
-      </li>)}</ul>
+      <ul>{notes.map((note, index) => <SubmissionNoteRow key={`${detail.detectionId}-${note.text}-${index}`} note={note} detail={detail} />)}</ul>
     </aside>}
     {documents.length > 0 ? <div className="business-summary__table-wrap">
       <table className="business-summary__documents" aria-label="제출서류 안내">

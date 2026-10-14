@@ -102,6 +102,7 @@ final class SubmissionDocumentResolver {
                     if (block != null) emit(block, fileName, documents, notes);
                     block = new Block(line, stage(heading.group(1), context));
                     block.lines.addAll(precedingNotes);
+                    block.precedingNotes.addAll(precedingNotes);
                 }
                 if (!heading.group(2).isBlank()) block.lines.add(heading.group(2));
                 continue;
@@ -113,10 +114,13 @@ final class SubmissionDocumentResolver {
                 precedingNotes.clear();
                 continue;
             }
-            if (block == null && line.length() <= 500 && (line.startsWith("*") || line.startsWith("◦"))
+            if (block == null && line.length() <= 500 && (line.startsWith("*") || line.startsWith("※") || line.startsWith("◦"))
                     && line.contains("서류") && line.contains("제출")) {
                 if (precedingNotes.size() == 3) precedingNotes.removeFirst();
                 precedingNotes.add(line);
+            } else if (block == null && !precedingNotes.isEmpty() && line.startsWith("- ")
+                    && line.contains("동의") && line.contains("제출") && precedingNotes.getLast().contains("행정정보")) {
+                precedingNotes.set(precedingNotes.size() - 1, precedingNotes.getLast() + "\n" + line);
             }
             if (block != null) {
                 block.lines.add(line);
@@ -131,6 +135,7 @@ final class SubmissionDocumentResolver {
         final String heading;
         final String stage;
         final List<String> lines = new ArrayList<>();
+        final List<String> precedingNotes = new ArrayList<>();
         int size;
         boolean invalid;
         Block(String heading, String stage) { this.heading = heading; this.stage = stage; }
@@ -141,8 +146,13 @@ final class SubmissionDocumentResolver {
         final String original;
         final String title;
         final List<String> cells = new ArrayList<>();
+        SubmissionDocument resolved;
+        String scope;
+        String noteContext;
         Row(String original) { this.original = original; this.title = cleanTitle(original); }
     }
+
+    private record NoteCandidate(String text, Row owner) {}
 
     private static void emit(Block block, String fileName, LinkedHashMap<String, SubmissionDocument> documents,
                              LinkedHashMap<String, SubmissionNote> notes) {
@@ -150,13 +160,17 @@ final class SubmissionDocumentResolver {
         var columns = new ArrayList<String>();
         var rows = new ArrayList<Row>();
         var shared = new ArrayList<String>();
+        var candidates = new ArrayList<NoteCandidate>();
         Row row = null;
+        Row noteOwner = null;
         for (String line : block.lines) {
             if (line.matches("^[*※].*") || line.matches("^(?:모든|공통)\\h*서류.*") || (rows.isEmpty() && line.contains("서류") && line.contains("제출") && !isDocument(line))) {
                 shared.add(line);
+                candidates.add(new NoteCandidate(line, noteOwner));
             } else if (isDocument(line)) {
                 row = new Row(line);
                 rows.add(row);
+                noteOwner = row;
             } else if (row == null) {
                 var names = COLUMN.matcher(line);
                 if (names.replaceAll("").replaceAll("[\\h|]", "").isEmpty()) {
@@ -165,6 +179,7 @@ final class SubmissionDocumentResolver {
                 }
             } else {
                 row.cells.add(line);
+                if (line.matches("[0-9]+|구분|비고|.*(?:경우|택\\h*1|해당시제출).*") || SubmissionNoteFormatter.empty(line)) noteOwner = null;
             }
         }
         if (rows.isEmpty()) return;
@@ -192,7 +207,8 @@ final class SubmissionDocumentResolver {
             if (instruction.contains("권장")) continue;
             for (String note : shared) {
                 boolean applies = titleKey(note).contains(titleKey(entry.title))
-                        || note.matches(".*(?:모든|전체)\\h*서류.*");
+                        || note.matches(".*(?:모든|전체)\\h*서류.*")
+                        || (block.precedingNotes.contains(note) && note.matches("(?s).*(?:아래|다음).{0,30}서류\\h*제출.*"));
                 if (!applies) continue;
                 if (note.contains("선택")) level = "OPTIONAL";
                 else if (EXEMPTION.matcher(note).find() || CONDITIONAL.matcher(note).find()) level = "CONDITIONAL";
@@ -209,11 +225,31 @@ final class SubmissionDocumentResolver {
             boolean knownStage = documents.entrySet().stream().anyMatch(item -> item.getKey().startsWith(key + ":") && item.getValue().stage() != null);
             if (document.stage() != null) documents.remove(key + ":");
             if (document.stage() != null || !knownStage) documents.putIfAbsent(key + ":" + key(document.stage()), document);
+            entry.noteContext = block.heading + "\n" + (columns.isEmpty() ? "" : String.join(" | ", columns) + "\n")
+                    + entry.original + (matrix && !value.isBlank() ? "\n" + value : "");
+            entry.resolved = document;
+            entry.scope = entry.title + (included.isEmpty() ? "" : " · " + String.join(" · ", included));
             accepted = true;
         }
         if (accepted) {
-            for (String note : shared) {
-                if (note.length() <= 1000) notes.putIfAbsent(key(note), new SubmissionNote(note, source(fileName, block.heading, block.heading + "\n" + note)));
+            for (var candidate : candidates) {
+                String note = candidate.text();
+                if (!SubmissionNoteFormatter.actionable(note)) continue;
+                Row owner = candidate.owner();
+                // Explicitly named documents take precedence over proximity in a flattened table.
+                var named = rows.stream().filter(item -> item.resolved != null && titleKey(note).contains(titleKey(item.title))).toList();
+                boolean standalone = SubmissionNoteFormatter.selfContained(note);
+                if (SubmissionNoteFormatter.common(note)) owner = null;
+                else if (named.size() == 1) owner = named.getFirst();
+                else if (standalone) owner = null;
+                if (owner != null && owner.resolved == null) continue;
+                if (owner == null && !standalone) continue;
+                if (!standalone && named.isEmpty() && !SubmissionNoteFormatter.localCondition(note)) continue;
+                String appliesTo = owner == null ? null : SubmissionNoteFormatter.label(owner.scope);
+                String quote = (owner == null ? block.heading : owner.noteContext) + "\n" + note;
+                String display = SubmissionNoteFormatter.format(note);
+                String noteKey = display + ":" + appliesTo + ":" + block.stage;
+                notes.putIfAbsent(noteKey, new SubmissionNote(display, appliesTo, source(fileName, block.heading, quote)));
             }
         }
     }

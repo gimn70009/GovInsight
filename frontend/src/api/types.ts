@@ -245,7 +245,7 @@ export type SubmissionDocument = Pick<ProposalPreparationItem, 'title' | 'detail
 
 export interface SubmissionGuide {
   documents: SubmissionDocument[]
-  notes: { text: string; source: ProposalPreparationItem['source'] }[]
+  notes: { text: string; appliesTo?: string | null; source: ProposalPreparationItem['source'] }[]
 }
 
 export interface DocumentDetail {

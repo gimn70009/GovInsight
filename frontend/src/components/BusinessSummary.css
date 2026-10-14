@@ -38,10 +38,10 @@
 .business-summary__document-detail { margin: 7px 0 0; white-space: pre-line; color: #425268; }
 .business-summary__evidence { margin-top: 10px; }
 .business-summary__evidence summary { width: fit-content; color: #3269a8; font-size: 12px; cursor: pointer; }
-.business-summary__evidence > div, .business-summary__organization-source { margin-top: 9px; padding: 12px 14px; background: #f6f8fb; border-radius: 8px; color: #56677c; }
-.business-summary__evidence small { display: block; margin-top: 3px; color: #738196; }
-.business-summary__evidence blockquote, .business-summary__organization-source blockquote { margin: 10px 0 0; padding-left: 10px; border-left: 2px solid #cbd9eb; white-space: pre-line; }
-.business-summary__evidence a, .business-summary__organization-source a { display: inline-flex; align-items: center; gap: 4px; margin-top: 10px; color: #2764a8; }
+.business-summary__evidence > div, .business-summary__organization-source, .business-summary__note-source { margin-top: 9px; padding: 12px 14px; background: #f6f8fb; border-radius: 8px; color: #56677c; }
+.business-summary__evidence small, .business-summary__note-source small { display: block; margin-top: 3px; color: #738196; }
+.business-summary__evidence blockquote, .business-summary__organization-source blockquote, .business-summary__note-source blockquote { margin: 10px 0 0; padding-left: 10px; border-left: 2px solid #cbd9eb; white-space: pre-line; }
+.business-summary__evidence a, .business-summary__organization-source a, .business-summary__note-source a { display: inline-flex; align-items: center; gap: 4px; margin-top: 10px; color: #2764a8; }
 .business-summary__documents-empty { display: flex; align-items: flex-start; gap: 12px; padding: 21px; border: 1px dashed #d8e1ec; border-radius: 12px; color: #748196; background: #fbfcfe; }
 .business-summary__documents-empty > svg { flex: 0 0 auto; margin-top: 2px; }
 .business-summary__documents-empty strong { color: #586b83; font-size: 14px; font-weight: 600; }
@@ -67,7 +67,7 @@
   .business-summary__documents th:first-child { width: 33%; }
   .business-summary__documents tbody th { font-size: 13px; }
   .business-summary__documents td { font-size: 12px; }
-  .business-summary__evidence > div, .business-summary__organization-source { padding: 10px; }
+  .business-summary__evidence > div, .business-summary__organization-source, .business-summary__note-source { padding: 10px; }
 }
 
 .business-summary__organizations { list-style: none; margin: 0; padding: 0; }
@@ -86,9 +86,18 @@
   .business-summary__organization > strong { font-size: 14px; }
 }
 
-.business-summary__submission-notes { margin-bottom: 14px; padding: 16px 18px; border: 1px solid #dce5ef; border-radius: 10px; background: #f7faff; font-size: 13px; line-height: 1.75; overflow-wrap: anywhere; }
+.business-summary__submission-notes { margin-bottom: 14px; padding: 18px 20px; border: 1px solid #dce5ef; border-radius: 10px; background: #f8faff; font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
 .business-summary__submission-notes > strong { color: #335d8e; font-size: 13px; }
-.business-summary__submission-notes ul { margin: 8px 0 0; padding-left: 18px; }
-.business-summary__submission-notes li + li { margin-top: 12px; }
-.business-summary__submission-notes p { margin: 0; white-space: pre-line; }
-.business-summary__submission-notes .business-summary__evidence { margin-top: 5px; }
+.business-summary__submission-notes ul { list-style: none; margin: 12px 0 0; padding: 0; }
+.business-summary__submission-notes li + li { margin-top: 12px; padding-top: 12px; border-top: 1px solid #e6edf5; }
+.business-summary__note-scope { display: block; margin-bottom: 3px; color: #5a708a; font-size: 11px; font-weight: 600; }
+.business-summary__note-line { display: flex; align-items: baseline; gap: 8px 12px; }
+.business-summary__note-line > p { min-width: 0; margin: 0; color: #344b65; white-space: pre-line; word-break: keep-all; }
+.business-summary__note-line > button { flex: 0 0 auto; }
+.business-summary__note-source { color: #62748a; background: #fff; border: 1px solid #e6edf5; font-size: 12px; }
+.business-summary__note-source > span { overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .business-summary__submission-notes { padding: 14px; }
+  .business-summary__note-line { gap: 8px; }
+  .business-summary__note-line > button { padding: 3px 6px; font-size: 10px; }
+}

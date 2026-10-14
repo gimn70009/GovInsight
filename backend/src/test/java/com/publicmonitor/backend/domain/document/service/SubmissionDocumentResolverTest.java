@@ -132,6 +132,84 @@ class SubmissionDocumentResolverTest {
         }
     }
 
+    @Test
+    void 클린제조환경_원문의_빈_가점서류를_공통_유의사항으로_표시하지_않는다() throws IOException {
+        var guide = SubmissionDocumentResolver.resolve(null, List.of(attachment("클린제조환경_공고.hwpx", fixture("clean"))), null);
+        // Keep the resolver output available for the offline browser check of this real notice.
+        var output = java.nio.file.Path.of("build/submission-note-checks/clean-guide.json");
+        java.nio.file.Files.createDirectories(output.getParent());
+        java.nio.file.Files.writeString(output, new ObjectMapper().writeValueAsString(guide), StandardCharsets.UTF_8);
+        assertThat(guide.notes()).noneSatisfy(note -> assertThat(note.text()).contains("제출서류 없음"));
+        assertThat(guide.notes()).anySatisfy(note -> {
+            assertThat(note.appliesTo()).isEqualTo("중소기업(소상공인) 확인서");
+            assertThat(note.text()).isEqualTo("신청일 기준으로 유효한 서류여야 합니다. ‘소상공인’임이 명시되어 있어야 합니다.");
+            assertThat(note.source().excerpt()).contains("□ 중소기업(소상공인) 확인서", "* 신청일 기준 기간유효 必, 소상공인 명시 必");
+        });
+        assertThat(guide.notes()).anySatisfy(note -> {
+            assertThat(note.text()).contains("제공을 요구하지 않은 경우", "7~11번", "동의한 경우에는 제출하지 않습니다");
+            assertThat(note.appliesTo()).isNull();
+        });
+        assertThat(guide.notes()).anySatisfy(note -> {
+            assertThat(note.text()).isEqualTo("가점 항목마다 필요한 서류가 다릅니다. 8쪽의 가점 항목을 확인해 주세요.");
+            assertThat(note.source().excerpt()).contains("8p 가점항목 참고");
+        });
+    }
+
+    @Test
+    void 같은_발급조건도_적용서류가_다르면_대상을_보존한다() {
+        var guide = SubmissionDocumentResolver.resolve("신청서류\n① 사업자등록증명원\n* 신청일로부터 1개월 이내 발급분\n② 납세증명서\n* 신청일로부터 1개월 이내 발급분", List.of(), null);
+        assertThat(guide.notes()).hasSize(2);
+        assertThat(guide.notes()).extracting(note -> note.appliesTo()).containsExactly("사업자등록증명원", "납세증명서");
+        assertThat(guide.notes()).allSatisfy(note -> {
+            assertThat(note.text()).isEqualTo("신청일로부터 1개월 이내에 발급된 서류여야 합니다.");
+            assertThat(note.source().excerpt()).contains(note.appliesTo(), "* 신청일로부터 1개월 이내 발급분");
+        });
+    }
+
+    @Test
+    void 연결할_서류가_없거나_관련없는_주석을_공통조건으로_승격하지_않는다() {
+        var guide = SubmissionDocumentResolver.resolve("제출서류\n* 신청일 기준 기간유효 必\n(제출서류 없음)\n① 사업계획서\n* 선정규모는 50개사\n* 문의전화 1234\n2\n* 신청일 기준 기간유효 必", List.of(), null);
+        assertThat(guide.notes()).isEmpty();
+    }
+
+    @Test
+    void 공통조건과_특정기업_면제조건은_원문_대상과_예외를_유지한다() {
+        var guide = SubmissionDocumentResolver.resolve("신청서류\n① 사업자등록증\n② 동의서\n* 개인기업은 사업자등록증 제출 면제\n* 모든 서류는 마감일 기준 유효한 경우만 인정", List.of(), null);
+        assertThat(guide.notes()).hasSize(2);
+        assertThat(guide.notes().getFirst().appliesTo()).isEqualTo("사업자등록증");
+        assertThat(guide.notes().getFirst().text()).contains("개인기업", "제출 면제");
+        assertThat(guide.notes().getLast().appliesTo()).isNull();
+        assertThat(guide.notes().getLast().text()).contains("모든 서류", "마감일 기준", "유효한 경우만");
+    }
+
+    @Test
+    void 숫자_문장부호가_다른_조건을_중복으로_합치지_않는다() {
+        var guide = SubmissionDocumentResolver.resolve("신청서류\n① 확인서\n* 유효기간 1.5개월\n* 유효기간 15개월\n* 유효기간 1.5개월", List.of(), null);
+        assertThat(guide.notes()).extracting(note -> note.text()).containsExactly("유효기간 1.5개월.", "유효기간 15개월.");
+    }
+
+    @Test
+    void 유형별_조건은_대상과_원문_표식을_함께_보존한다() {
+        var guide = SubmissionDocumentResolver.resolve("신청서류\n유형1 유형2\n① 확인서\n○ X\n* 신청일 기준 기간유효 必", List.of(), null);
+        assertThat(guide.notes()).singleElement().satisfies(note -> {
+            assertThat(note.appliesTo()).isEqualTo("확인서 · 유형1");
+            assertThat(note.source().excerpt()).contains("유형1 | 유형2", "○ X", "* 신청일 기준 기간유효 必");
+        });
+    }
+
+    @Test
+    void 별도_주어가_있는_조건을_직전_서류에_연결하지_않는다() {
+        var guide = SubmissionDocumentResolver.resolve("제출서류\n① 사업계획서\n* 풍수해보험 보험기간이 신청마감일 기준 유효한 경우 인정", List.of(), null);
+        assertThat(guide.notes()).isEmpty();
+    }
+
+    @Test
+    void 아래_목록_조건을_앞선_서류에_소급_적용하지_않는다() {
+        var guide = SubmissionDocumentResolver.resolve("제출서류\n① 사업계획서\n※ 아래 추가 서류 제출은 해당 기업만 제출", List.of(), null);
+        assertThat(guide.documents()).singleElement().satisfies(item -> assertThat(item.requirementLevel()).isEqualTo("MANDATORY"));
+        assertThat(guide.notes()).singleElement().satisfies(item -> assertThat(item.text()).contains("해당 기업만"));
+    }
+
     private static String fixture(String name) throws IOException {
         try (var stream = SubmissionDocumentResolverTest.class.getResourceAsStream("/submission-documents/" + name + ".txt")) {
             return new String(stream.readAllBytes(), StandardCharsets.UTF_8);

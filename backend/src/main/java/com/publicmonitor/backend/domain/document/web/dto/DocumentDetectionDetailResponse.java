@@ -50,8 +50,12 @@ public record DocumentDetectionDetailResponse(
         }
     }
 
-    public record SubmissionNote(String text, RequirementSource source) {
-        public SubmissionNote { text = YearNotation.display(text); }
+    @Schema(description = "원문의 제출 조건을 읽기 쉽게 정리한 안내. appliesTo는 명시적으로 연결된 서류명이며 공통 안내는 null. source에는 수정하지 않은 원문을 보존")
+    public record SubmissionNote(String text, String appliesTo, RequirementSource source) {
+        public SubmissionNote {
+            text = YearNotation.display(text);
+            appliesTo = YearNotation.display(appliesTo);
+        }
     }
 
     @Schema(description = "문서별 AI 분석", nullable = true)

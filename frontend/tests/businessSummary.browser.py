@@ -323,6 +323,65 @@ async def compact_missing_organization(browser):
         await h.close()
 
 
+async def readable_submission_notes(browser):
+    import json
+    h = await refresh.Harness(browser).start()
+    try:
+        data = ready()
+        source = dict(origin='ATTACHMENT', attachmentName='사업 공고문.pdf', sectionTitle='신청서류',
+                      excerpt='□ 중소기업(소상공인) 확인서\n* 신청일 기준 기간유효 必, 소상공인 명시 必')
+        guide = dict(documents=[dict(title='중소기업(소상공인) 확인서', source=source)], notes=[
+            dict(text='신청일 기준으로 유효한 서류여야 합니다. ‘소상공인’임이 명시되어 있어야 합니다.', appliesTo='중소기업(소상공인) 확인서', source=source)])
+        fixture = refresh.os.environ.get('SUBMISSION_NOTE_CHECK_FIXTURE')
+        if fixture:
+            guide = json.loads(Path(fixture).read_text(encoding='utf-8'))
+            data['attachments'] = [dict(fileName='클린제조환경_공고.hwpx', fileExtension='hwpx', fileSize=1024, parseStatus='COMPLETED', downloadUrl='https://example.org/notice.pdf')]
+        data['submissionGuide'] = guide
+        h.states[1] = data
+        h.states[2] = dict(data, detectionId=2)
+        await h.open(analysis_tab=False)
+        notes = h.page.get_by_role('complementary', name='제출 유의사항')
+        rows = notes.locator('li')
+        await expect(rows).to_have_count(len(guide['notes']))
+        await expect(notes).not_to_contain_text('제출서류 없음')
+        for index, note in enumerate(guide['notes']):
+            row = rows.nth(index)
+            await expect(row.locator('.business-summary__note-line > p')).to_have_text(note['text'])
+            if note.get('appliesTo'):
+                await expect(row.locator('.business-summary__note-scope')).to_have_text(note['appliesTo'])
+            await expect(row.locator('.business-summary__note-source')).to_be_hidden()
+        first = rows.first
+        button = first.get_by_role('button', name=re.compile('근거 보기'))
+        evidence = first.locator('.business-summary__note-source')
+        OUT.mkdir(parents=True, exist_ok=True)
+        for width in (1440, 768, 390, 320):
+            await h.page.set_viewport_size(dict(width=width, height=1100))
+            await expect(button).to_have_attribute('aria-expanded', 'false')
+            for row in await rows.all():
+                paragraph = await row.locator('.business-summary__note-line > p').bounding_box()
+                toggle = await row.get_by_role('button').bounding_box()
+                assert toggle['x'] >= paragraph['x'] + paragraph['width'] - 1, (width, paragraph, toggle)
+            assert await notes.evaluate('el => el.scrollWidth <= el.clientWidth + 1')
+            await notes.screenshot(path=str(OUT / f'readable-notes-{width}.png'))
+            await button.focus()
+            await h.page.keyboard.press('Enter')
+            await expect(button).to_have_attribute('aria-expanded', 'true')
+            await expect(evidence.locator('blockquote')).to_have_text(guide['notes'][0]['source']['excerpt'])
+            await expect(evidence.get_by_role('link', name='근거 문서 열기')).to_have_attribute('href', 'https://example.org/notice.pdf')
+            assert await notes.evaluate('el => el.scrollWidth <= el.clientWidth + 1')
+            await notes.screenshot(path=str(OUT / f'readable-notes-open-{width}.png'))
+            await h.page.keyboard.press('Space')
+            await expect(evidence).to_be_hidden()
+        await button.click()
+        await expect(evidence).to_be_visible()
+        await h.page.locator('.document-row').filter(has_text='상세 갱신 공고 2').evaluate('el => el.click()')
+        await h.wait_request(2, 1)
+        await expect(button).to_have_attribute('aria-expanded', 'false')
+        await expect(evidence).to_be_hidden()
+    finally:
+        await h.close()
+
+
 async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch(channel=refresh.os.environ.get('BROWSER_CHANNEL', 'msedge'))
@@ -330,6 +389,7 @@ async def main():
             await table_and_tabs(browser)
             await compact_organizations_and_amounts(browser)
             await compact_missing_organization(browser)
+            await readable_submission_notes(browser)
             await legacy_and_pending(browser)
             await organization_roles_without_analysis(browser)
             await submission_guide_without_analysis(browser)
