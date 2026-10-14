@@ -35,7 +35,6 @@
 .business-summary__document-name-group { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 7px; max-width: 100%; }
 .business-summary__document-name { padding: 3px 9px; border: 1px solid #e0e7ef; border-radius: 6px; background: #f6f8fb; color: #203d5b; font-size: 14px; font-weight: 650; line-height: 1.6; }
 .business-summary__document-name-group > button { flex: 0 0 auto; cursor: pointer; }
-.business-summary__document-detail { margin: 9px 0 0; color: #65758a; font-size: 12px; font-weight: 400; line-height: 1.8; white-space: pre-line; }
 .business-summary__document-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; min-height: 30px; }
 .business-summary__requirement, .business-summary__stage, .business-summary__format, .business-summary__condition-toggle { display: inline-flex; align-items: center; gap: 5px; min-height: 29px; padding: 4px 9px; border: 1px solid transparent; border-radius: 6px; font-size: 12px; font-weight: 650; line-height: 1.5; white-space: nowrap; }
 .business-summary__requirement.is-mandatory { background: #e5efff; border-color: #b8d3fb; color: #1c55ac; }

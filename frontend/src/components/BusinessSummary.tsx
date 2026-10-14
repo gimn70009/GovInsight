@@ -47,7 +47,7 @@ function SubmissionDocumentRow({ item, detail }: { item: SubmissionDocument; det
     : unknownField === 'requirement' && !item.requirementLevel ? submissionUnknownHelp.requirement : null
   const evidenceId = useId()
   const conditionsId = useId()
-  const { names, conditions, description, formats } = documentPresentation(item)
+  const { names, conditions, formats } = documentPresentation(item)
   const conditional = item.requirementLevel === 'CONDITIONAL'
   const level = item.requirementLevel?.toLowerCase() ?? 'unknown'
   const requirement = item.requirementLevel ? requirementLabels[item.requirementLevel] : '제출 여부 확인'
@@ -76,7 +76,6 @@ function SubmissionDocumentRow({ item, detail }: { item: SubmissionDocument; det
             </button>
           </span>)}
         </div>
-        {description && <p className="business-summary__document-detail">{description}</p>}
       </th>
       <td>
         <div className="business-summary__document-meta">
