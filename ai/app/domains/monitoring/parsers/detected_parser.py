@@ -21,6 +21,11 @@ def detect_document_extension(path: Path, declared: str) -> str:
                 if any(SECTION_PATH.fullmatch(e.filename.replace("\\", "/"))
                        for e in archive.infolist()):
                     return ".hwpx"
+                names = set(archive.namelist())
+                if "word/document.xml" in names:
+                    return ".docx"
+                if "xl/workbook.xml" in names:
+                    return ".xlsx"
         except (OSError, zipfile.BadZipFile):
             pass
     return declared

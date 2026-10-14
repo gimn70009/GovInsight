@@ -64,8 +64,7 @@ def test_nested_table_preserves_roles_and_choices_without_flattened_duplicate() 
     </hp:tbl></hp:run></hp:p></section>
     """
     assert HwpxParser()._parse_section(xml.encode()) == [
-        "주관기관유형", "□ 제한없음 ■ 기업",
-        "주관기관 외 필수참여기관", "■ 제한없음 □ 기업",
+        "[표]\n주관기관유형\t□ 제한없음 ■ 기업\n주관기관 외 필수참여기관\t■ 제한없음 □ 기업\n[/표]",
     ]
 
 
@@ -89,4 +88,4 @@ def test_repeated_cell_values_are_preserved_for_each_role() -> None:
       <tr><tc><p><t>공동기관</t></p></tc><tc><p><t>기업</t></p></tc></tr>
     </tbl></run></p></section>
     """
-    assert HwpxParser()._parse_section(xml.encode()) == ["주관기관", "기업", "공동기관", "기업"]
+    assert HwpxParser()._parse_section(xml.encode()) == ["[표]\n주관기관\t기업\n공동기관\t기업\n[/표]"]

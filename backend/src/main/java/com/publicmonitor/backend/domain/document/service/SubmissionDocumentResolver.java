@@ -86,6 +86,15 @@ final class SubmissionDocumentResolver {
         if (text == null || text.isBlank()) return;
         boolean truncated = text.length() > MAX_TEXT;
         String bounded = text.substring(0, Math.min(text.length(), MAX_TEXT));
+        var structured = StructuredSubmissionTable.read(bounded, fileName);
+        for (var note : structured.notes()) {
+            notes.putIfAbsent(note.text() + ":" + note.appliesTo(), note);
+        }
+        for (var item : structured.documents()) {
+            String identity = titleKey(item.title()) + ":" + item.stage() + ":" + item.requirementLevel() + ":" + key(item.appliesTo());
+            documents.putIfAbsent(identity, item);
+        }
+        bounded = StructuredSubmissionTable.withoutTables(bounded);
         String[] lines = bounded.replace('\u00a0', ' ').replaceAll("([①-⑳])", "\n$1").split("\\R");
         Block block = null;
         String context = "";
@@ -287,7 +296,7 @@ final class SubmissionDocumentResolver {
         return TITLE.matcher(cleanTitle(line)).matches();
     }
 
-    private static String cleanTitle(String text) {
+    static String cleanTitle(String text) {
         String title = PREFIX.matcher(text.strip()).replaceFirst("");
         title = REFERENCE.matcher(title).replaceFirst("");
         return title.replace("“", "").replace("”", "").replace("\"", "").strip();

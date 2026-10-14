@@ -20,8 +20,8 @@ def test_registry_reads_hwpx_content_with_hwp_or_pdf_extension(tmp_path: Path) -
         parser = registry.find(name)
         assert parser is not None
         assert parser.parse(path).text == "실제 본문"
-    assert registry.find("양식.docx") is None
-    assert registry.find("표.xlsx") is None
+    assert registry.find("양식.doc") is None
+    assert registry.find("표.xls") is None
 
 
 def test_zip_recovers_mislabeled_hwpx_and_prefers_correct_extension(tmp_path: Path) -> None:
@@ -30,7 +30,7 @@ def test_zip_recovers_mislabeled_hwpx_and_prefers_correct_extension(tmp_path: Pa
         archive.writestr("신청서.hwp", hwpx_bytes("사업 목표"))
         archive.writestr("신청서.hwpx", hwpx_bytes("사업 목표"))
         archive.writestr("서약서.hwp", hwpx_bytes("서약 내용"))
-        archive.writestr("신청서.docx", "미지원")
+        archive.writestr("신청서.doc", "미지원")
     result = AttachmentParserRegistry().find(path.name).parse(path)
     assert result.text == "[파일: 신청서.hwpx]\n사업 목표\n\n[파일: 서약서.hwp]\n서약 내용"
     assert [e["status"] for e in result.archive_entries] == [

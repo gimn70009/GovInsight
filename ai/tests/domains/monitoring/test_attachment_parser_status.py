@@ -53,7 +53,7 @@ def test_zip_entry_metadata_survives_download_and_spring_contract() -> None:
     for failed in (False, True):
         data = io.BytesIO()
         with zipfile.ZipFile(data, "w") as archive:
-            archive.writestr("표.xlsx", "지원하지 않음")
+            archive.writestr("표.xls", "지원하지 않음")
             if failed:
                 archive.writestr("고장.hwp", "읽을 수 없음")
         results = [
@@ -79,7 +79,7 @@ def test_zip_entry_metadata_survives_download_and_spring_contract() -> None:
             AttachmentParseStatus.FAILED if failed else AttachmentParseStatus.UNSUPPORTED
         )
         assert not attachment.extracted_text
-        assert json.loads(attachment.archive_entries_json)[0]["fileName"] == "표.xlsx"
+        assert json.loads(attachment.archive_entries_json)[0]["fileName"] == "표.xls"
         body = CollectionResultRequest.from_collected(1, uuid4(), enriched).model_dump(
             by_alias=True
         )

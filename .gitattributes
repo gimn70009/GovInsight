@@ -1,0 +1,2 @@
+# Tabs encode empty cells in structured document regression fixtures.
+backend/src/test/resources/submission-documents/*-structured.txt whitespace=-blank-at-eol
