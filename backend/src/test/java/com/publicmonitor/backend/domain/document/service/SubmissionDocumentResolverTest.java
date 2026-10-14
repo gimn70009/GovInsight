@@ -29,7 +29,7 @@ class SubmissionDocumentResolverTest {
         assertThat(financial.title()).contains("최근 3년간 표준재무제표증명원", "‘23", "’24", "2025");
         assertThat(financial.requirementLevel()).isEqualTo("CONDITIONAL");
         assertThat(financial.appliesTo()).isEqualTo("유형1");
-        assertThat(financial.detail()).contains("유형2: 제출 대상 아님");
+        assertThat(financial.conditions()).anySatisfy(condition -> assertThat(condition).contains("유형2: 제출 대상 아님"));
         assertThat(financial.source().excerpt()).contains("유형1 | 유형2", "○\nX");
         assertThat(guide.notes()).singleElement().satisfies(note -> assertThat(note.text()).contains("1개월 이내", "마감일 기준"));
     }
@@ -58,7 +58,7 @@ class SubmissionDocumentResolverTest {
     void 줄바꿈_조건과_선택_서류_및_면제_주석을_보존한다() {
         var guide = SubmissionDocumentResolver.resolve("신청서류\n① 확인서\n해당 기업만 제출\n② 추천서(선택)\n③ 사업자등록증\n* 개인기업은 사업자등록증 제출 면제\n□ 평가 방법", List.of(), null);
         assertThat(guide.documents()).extracting(SubmissionDocument::requirementLevel).containsExactly("CONDITIONAL", "OPTIONAL", "CONDITIONAL");
-        assertThat(guide.documents().getFirst().detail()).contains("해당 기업만");
+        assertThat(guide.documents().getFirst().conditions()).anySatisfy(condition -> assertThat(condition).contains("해당 기업만"));
         assertThat(guide.notes()).singleElement().satisfies(note -> assertThat(note.text()).contains("개인기업"));
     }
 
@@ -110,7 +110,7 @@ class SubmissionDocumentResolverTest {
                   {"title":"추천서","source":{"origin":"NOTICE_BODY","excerpt":" "}}
                 ]}
                 """, Preparation.class);
-        var guide = SubmissionDocumentResolver.resolve("신청서류\n유형1\n유형2\n① 재무제표\n○\nX", List.of(), preparation);
+        var guide = SubmissionDocumentResolver.resolve("신청서류\n유형1\n유형2\n① 재무제표\n○\nX\n□ 유의사항\n협약 시 보증서 제출", List.of(), preparation);
         assertThat(guide.documents()).hasSize(2);
         assertThat(guide.documents().getFirst().requirementLevel()).isEqualTo("CONDITIONAL");
         assertThat(guide.documents().getLast().stage()).isEqualTo("AGREEMENT");
@@ -208,6 +208,93 @@ class SubmissionDocumentResolverTest {
         var guide = SubmissionDocumentResolver.resolve("제출서류\n① 사업계획서\n※ 아래 추가 서류 제출은 해당 기업만 제출", List.of(), null);
         assertThat(guide.documents()).singleElement().satisfies(item -> assertThat(item.requirementLevel()).isEqualTo("MANDATORY"));
         assertThat(guide.notes()).singleElement().satisfies(item -> assertThat(item.text()).contains("해당 기업만"));
+    }
+
+    @Test
+    void 초격차_원문표의_서류_5개와_설명_형식_민간기관_조건을_구별한다() throws IOException {
+        var guide = SubmissionDocumentResolver.resolve(null, List.of(attachment("초격차_공고.hwpx", fixture("startup"))), null);
+        assertThat(guide.documents()).extracting(SubmissionDocument::title).containsExactly(
+                "제출 공문", "사업계획서", "증빙자료", "발표자료", "기업신용평가등급 확인서");
+        assertThat(guide.documents()).extracting(SubmissionDocument::requirementLevel).containsExactly(
+                "MANDATORY", "MANDATORY", "MANDATORY", "MANDATORY", "CONDITIONAL");
+        assertThat(guide.documents()).allSatisfy(item -> {
+            assertThat(item.stage()).isEqualTo("APPLICATION");
+            assertThat(item.documentNames()).containsExactly(item.title());
+            assertThat(item.source().excerpt()).doesNotContain("평가 및 선정절차");
+        });
+        assertThat(guide.documents().get(1).conditions()).isEmpty();
+        assertThat(guide.documents().get(2).detail()).isEqualTo("사업계획에 기재한 내용을 증빙하는 자료를 준비해 주세요.");
+        assertThat(guide.documents().get(3).formats()).containsExactly("PDF");
+        assertThat(guide.documents().get(3).conditions()).singleElement().asString().contains("제출하지 않은 기관", "사업계획서로 발표");
+        assertThat(guide.documents().getLast().conditions()).containsExactly("제출 대상: 민간기관");
+        assertThat(guide.documents().getLast().detail()).contains("신청·접수 기간 안에 평가받은");
+        assertThat(guide.documents().getLast().source().excerpt()).contains("해당시", "신청‧접수기간 내 평가된 확인서", "민간기관");
+        var output = java.nio.file.Path.of("build/submission-document-checks/startup-guide.json");
+        java.nio.file.Files.createDirectories(output.getParent());
+        java.nio.file.Files.writeString(output, new ObjectMapper().writeValueAsString(guide), StandardCharsets.UTF_8);
+    }
+
+    @Test
+    void 명시한_여러_서류만_이름을_나누고_복합명과_수량은_보존한다() {
+        var guide = SubmissionDocumentResolver.resolve("신청서류\n① 사업자등록증 및 법인등기부등본 각 1부\n② 운영·지원 사업계획서\n③ 사업계획서 또는 제안서", List.of(), null);
+        assertThat(guide.documents().getFirst().documentNames()).containsExactly("사업자등록증", "법인등기부등본");
+        assertThat(guide.documents().getFirst().detail()).contains("각 1부");
+        assertThat(guide.documents().get(1).documentNames()).containsExactly("운영·지원 사업계획서");
+        assertThat(guide.documents().getLast().documentNames()).containsExactly("사업계획서", "제안서");
+        assertThat(guide.documents().getLast().conditions()).anySatisfy(value -> assertThat(value).contains("선택 조건"));
+    }
+
+    @Test
+    void 표_내용을_잘못_서류로_저장했거나_인용이_없는_후보를_보완하지_않는다() throws IOException {
+        var preparation = new ObjectMapper().readValue("""
+                {"submissionDocuments":[
+                  {"title":"운영·지원 사업계획서","stage":"APPLICATION","source":{"origin":"NOTICE_BODY","excerpt":"사업계획서\\n운영·지원 사업계획서"}},
+                  {"title":"신청‧접수기간 내 평가된 확인서","stage":"APPLICATION","source":{"origin":"NOTICE_BODY","excerpt":"기업신용평가등급 확인서\\n신청‧접수기간 내 평가된 확인서\\n민간기관"}},
+                  {"title":"동의서","source":{"origin":"NOTICE_BODY","excerpt":"동의서 필수 제출"}}
+                ]}
+                """, Preparation.class);
+        var guide = SubmissionDocumentResolver.resolve(fixture("startup"), List.of(), preparation);
+        assertThat(guide.documents()).hasSize(5);
+    }
+
+    @Test
+    void 조건부_표의_적용대상이_없으면_추정하지_않는다() {
+        var guide = SubmissionDocumentResolver.resolve("신청서류\n주요내용\n비고\n해당시\n확인서\n자격 확인", List.of(), null);
+        assertThat(guide.documents()).singleElement().satisfies(item -> {
+            assertThat(item.requirementLevel()).isEqualTo("CONDITIONAL");
+            assertThat(item.appliesTo()).isNull();
+            assertThat(item.conditions()).singleElement().asString().contains("구체적인 적용 대상은 원문을 확인");
+        });
+    }
+
+    @Test
+    void 묶음_서류의_다른_수량을_하나로_축약하지_않는다() {
+        var guide = SubmissionDocumentResolver.resolve("신청서류\n사업계획서 1부 및 제안서 2부", List.of(), null);
+        assertThat(guide.documents()).singleElement().satisfies(item -> {
+            assertThat(item.documentNames()).containsExactly("사업계획서", "제안서");
+            assertThat(item.detail()).contains("사업계획서 1부", "제안서 2부");
+        });
+    }
+
+    @Test
+    void 일반_서류명에_포함되더라도_원문의_특정기간_의무는_보완한다() {
+        var preparation = new ObjectMapper().readValue("""
+                {"submissionDocuments":[{"title":"2025년 재무제표","stage":"APPLICATION", "requirementLevel":"MANDATORY",
+                  "source":{"origin":"NOTICE_BODY","excerpt":"2025년 재무제표 제출"}}]}
+                """, Preparation.class);
+        var guide = SubmissionDocumentResolver.resolve("신청서류\n재무제표\n□ 유의사항\n2025년 재무제표 제출", List.of(), preparation);
+        assertThat(guide.documents()).extracting(SubmissionDocument::title).containsExactly("재무제표", "2025년 재무제표");
+    }
+
+    @Test
+    void 내용표_뒤_공통_제출_예외를_필수_표식보다_우선한다() {
+        var guide = SubmissionDocumentResolver.resolve("신청서류\n주요내용\n비고\n필수\n사업계획서\n운영 계획\n발표자료\n발표 내용\n* 모든 서류는 해당 기업만 제출", List.of(), null);
+        assertThat(guide.documents()).hasSize(2).allSatisfy(item -> {
+            assertThat(item.requirementLevel()).isEqualTo("CONDITIONAL");
+            assertThat(item.conditions()).contains("모든 서류는 해당 기업만 제출.");
+            assertThat(item.source().excerpt()).contains("모든 서류는 해당 기업만 제출");
+        });
+        assertThat(guide.notes()).singleElement().satisfies(note -> assertThat(note.text()).contains("모든 서류"));
     }
 
     private static String fixture(String name) throws IOException {

@@ -241,7 +241,11 @@ export interface ResponsibleOrganization {
   excerpt: string
 }
 
-export type SubmissionDocument = Pick<ProposalPreparationItem, 'title' | 'detail' | 'requirementLevel' | 'stage' | 'appliesTo' | 'source'>
+export type SubmissionDocument = Pick<ProposalPreparationItem, 'title' | 'detail' | 'requirementLevel' | 'stage' | 'appliesTo' | 'source'> & {
+  documentNames?: string[]
+  conditions?: string[]
+  formats?: string[]
+}
 
 export interface SubmissionGuide {
   documents: SubmissionDocument[]

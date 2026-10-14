@@ -18,7 +18,7 @@ import java.util.regex.Pattern;
 final class SubmissionDocumentResolver {
     private static final int MAX_TEXT = 200_000;
     private static final int MAX_BLOCK = 8_000;
-    private static final String DOCUMENT = "체크리스트|계획서|신청서|공적조서|동의서|확인서|증명서|증명원|확약서|서약서|추천서|제안서|보고서|재무제표|등록증|등기부등본|등본|초본|증빙양식|증빙서류|증빙자료|이력서|사본";
+    private static final String DOCUMENT = "체크리스트|계획서|신청서|공적조서|동의서|확인서|증명서|증명원|확약서|서약서|추천서|제안서|보고서|재무제표|등록증|등기부등본|등본|초본|증빙양식|증빙서류|증빙자료|이력서|사본|공문|발표자료";
     private static final Pattern TITLE = Pattern.compile("^.{0,150}?(?:" + DOCUMENT + ")[\\\"”’']?(?:\\h*(?:각\\h*)?\\d+\\h*(?:부|매|개))?(?:\\h*[（(][^\\n]{0,100}[)）])?\\h*$");
     private static final Pattern HEADING = Pattern.compile("^(?:(?:[□■○◦●ㅇ•*-]|\\d+[.)])\\h*)?[<\\[(（]?\\h*((?:(?:협약|선정|평가)[가-힣\\h]{0,12})?(?:제\\h*출|신\\h*청|접\\h*수|구\\h*비)\\h*(?:서\\h*류|자\\h*료)(?:\\h*(?:목록|안내))?)\\h*[>\\])）]?\\h*[:：]?\\h*(.*)$");
     private static final Pattern PREFIX = Pattern.compile("^(?:[①-⑳□○◦●ㅇ•-]|\\d+[.)])\\h*");
@@ -26,7 +26,7 @@ final class SubmissionDocumentResolver {
     private static final Pattern COLUMN = Pattern.compile("(?:유형\\h*\\d+|주관(?:연구개발)?기관|공동(?:연구개발)?기관|영리기관|비영리기관|개인기업|법인기업)");
     private static final Pattern MARK = Pattern.compile("[○◯O●◎✓√X×✕✗-]", Pattern.CASE_INSENSITIVE);
     private static final Pattern OUTLINE = Pattern.compile("^(?:[□■]|\\d+[.)]\\h*|[가-하][.)]\\h*)");
-    private static final Pattern BOUNDARY = Pattern.compile("^(?:[<\\[(（]?\\h*)?(?:문의처|유의사항|서류\\h*작성|신청\\h*방법|제출\\h*방법|평가\\h*방법|선정\\h*절차|지원\\h*내용|첨부\\h*파일|붙임\\h*\\d|서식\\h*\\d|별지\\h*\\d)");
+    private static final Pattern BOUNDARY = Pattern.compile("^(?:[<\\[(（]?\\h*)?(?:평가\\h*및\\h*선정절차|신청[·ㆍ\\h]*접수$|문의처|유의사항|서류\\h*작성|신청\\h*방법|제출\\h*방법|평가\\h*방법|선정\\h*절차|지원\\h*내용|첨부\\h*파일|붙임\\h*\\d|서식\\h*\\d|별지\\h*\\d)");
     private static final Pattern BLOCKED = Pattern.compile("^(?:[□■\\[<(]|\\d+[.)])?\\h*(?:참고\\h*자료|작성\\h*예시|작성\\h*견본|양식\\h*목록|첨부\\h*목록)");
     private static final Pattern EXCLUDED_FILE = Pattern.compile("(?i)예시|견본|FAQ|참고자료|신청서|계획서|동의서|서식|양식|운영지침");
     private static final Pattern CONDITIONAL = Pattern.compile("해당\\h*(?:시|자|기업|기관)|경우|한하여|한해|한함|대상만|기관만|기업만|택\\h*1|택일|중\\h*하나");
@@ -47,27 +47,38 @@ final class SubmissionDocumentResolver {
         var result = new ArrayList<>(documents.values());
         if (preparation != null && preparation.submissionDocuments() != null) {
             for (var item : preparation.submissionDocuments()) {
-                if (!grounded(item)) continue;
+                if (!grounded(item, body, attachments)) continue;
                 // Explicit current-source rows keep their type/period/recipient conditions over a generic saved title.
                 if (result.stream().anyMatch(raw -> sameDocument(raw, item))) continue;
                 result.add(new SubmissionDocument(item.title(), item.detail(), item.requirementLevel(),
                         item.stage(), item.appliesTo(), item.source()));
             }
         }
-        return new SubmissionGuide(List.copyOf(result), List.copyOf(notes.values()));
+        return new SubmissionGuide(result.stream().map(SubmissionDocumentDisplay::prepare).toList(), List.copyOf(notes.values()));
     }
 
-    private static boolean grounded(PreparationItem item) {
-        return item != null && item.title() != null && !item.title().isBlank()
+    private static boolean grounded(PreparationItem item, String body, List<DocumentAttachment> attachments) {
+        boolean eligible = item != null && item.title() != null && !item.title().isBlank()
                 && !"RECOMMENDED".equals(item.requirementLevel()) && item.source() != null
                 && ("NOTICE_BODY".equals(item.source().origin()) || "ATTACHMENT".equals(item.source().origin()))
                 && item.source().excerpt() != null && !item.source().excerpt().isBlank();
+        if (!eligible) return false;
+        String original = body;
+        if ("ATTACHMENT".equals(item.source().origin())) {
+            var matches = attachments.stream().filter(file -> file.getParseStatus() == AttachmentParseStatus.COMPLETED
+                    && file.getFileName().equals(item.source().attachmentName())).toList();
+            if (matches.size() != 1) return false;
+            original = matches.getFirst().getExtractedText();
+        }
+        // An origin label alone does not prove the saved quotation belongs to this notice version.
+        return original != null && original.replaceAll("\\s+", "").contains(item.source().excerpt().replaceAll("\\s+", ""));
     }
 
     private static boolean sameDocument(SubmissionDocument raw, PreparationItem saved) {
         boolean stage = raw.stage() == null || saved.stage() == null || raw.stage().equals(saved.stage());
         String a = titleKey(raw.title()), b = titleKey(saved.title());
-        return stage && (a.equals(b) || (b.length() >= 4 && a.contains(b)));
+        return stage && (a.equals(b) || (b.length() >= 4 && a.contains(b))
+                || (!raw.documentNames().isEmpty() && b.length() >= 4 && key(raw.source().excerpt()).contains(b)));
     }
 
     private static void collect(String text, String fileName, LinkedHashMap<String, SubmissionDocument> documents,
@@ -157,6 +168,16 @@ final class SubmissionDocumentResolver {
     private static void emit(Block block, String fileName, LinkedHashMap<String, SubmissionDocument> documents,
                              LinkedHashMap<String, SubmissionNote> notes) {
         if (block.invalid || block.lines.isEmpty()) return;
+        while (!block.lines.isEmpty() && block.lines.getLast().matches("\\d+")) block.lines.removeLast();
+        var table = SubmissionContentTable.read(block.lines, block.heading, block.stage, fileName);
+        if (table != null) {
+            for (var document : table.documents()) {
+                String identity = titleKey(document.title()) + ":" + document.stage() + ":" + document.requirementLevel() + ":" + key(document.appliesTo());
+                documents.putIfAbsent(identity, document);
+            }
+            for (var note : table.notes()) notes.putIfAbsent(note.text() + ":" + block.stage, note);
+            return;
+        }
         var columns = new ArrayList<String>();
         var rows = new ArrayList<Row>();
         var shared = new ArrayList<String>();
@@ -205,19 +226,22 @@ final class SubmissionDocumentResolver {
             if (EXEMPTION.matcher(instruction).find() && !conditional) continue;
             String level = instruction.contains("선택") ? "OPTIONAL" : conditional ? "CONDITIONAL" : "MANDATORY";
             if (instruction.contains("권장")) continue;
+            var rowNotes = new ArrayList<String>();
             for (String note : shared) {
                 boolean applies = titleKey(note).contains(titleKey(entry.title))
                         || note.matches(".*(?:모든|전체)\\h*서류.*")
                         || (block.precedingNotes.contains(note) && note.matches("(?s).*(?:아래|다음).{0,30}서류\\h*제출.*"));
                 if (!applies) continue;
+                rowNotes.add(note);
                 if (note.contains("선택")) level = "OPTIONAL";
                 else if (EXEMPTION.matcher(note).find() || CONDITIONAL.matcher(note).find()) level = "CONDITIONAL";
             }
             String appliesTo = matrix ? String.join(" · ", included) : conditional ? instruction : null;
-            String detail = instruction;
+            String detail = instruction + (rowNotes.isEmpty() ? "" : "\n" + String.join("\n", rowNotes));
             if (!excluded.isEmpty()) detail += "\n" + String.join(" · ", excluded) + ": 제출 대상 아님";
             String quote = block.heading + "\n" + (columns.isEmpty() ? "" : String.join(" | ", columns) + "\n")
-                    + entry.original + (value.isBlank() ? "" : "\n" + value);
+                    + entry.original + (value.isBlank() ? "" : "\n" + value)
+                    + (rowNotes.isEmpty() ? "" : "\n" + String.join("\n", rowNotes));
             var document = new SubmissionDocument(entry.title, detail, level, block.stage, appliesTo,
                     source(fileName, block.heading, quote));
             String key = titleKey(entry.title) + ":" + level + ":" + key(appliesTo);
@@ -258,7 +282,7 @@ final class SubmissionDocumentResolver {
         return new RequirementSource(fileName == null ? "NOTICE_BODY" : "ATTACHMENT", fileName, heading, null, quote);
     }
 
-    private static boolean isDocument(String line) {
+    static boolean isDocument(String line) {
         if (line.matches("^[*※].*")) return false;
         return TITLE.matcher(cleanTitle(line)).matches();
     }

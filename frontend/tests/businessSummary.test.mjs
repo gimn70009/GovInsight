@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { evidenceAttachment, formatSupportScale, organizationEvidenceAttachment, summaryDocuments, summaryValue } from '../src/utils/businessSummary.ts'
+import { documentPresentation, evidenceAttachment, formatSupportScale, organizationEvidenceAttachment, summaryDocuments, summaryValue } from '../src/utils/businessSummary.ts'
 
 const source = { origin: 'NOTICE_BODY', sectionTitle: '제출서류', excerpt: '모든 신청기업은 사업계획서를 제출한다.' }
 const required = { title: '사업계획서', detail: '지정 서식 사용', requirementLevel: 'MANDATORY', stage: 'APPLICATION', source }
@@ -96,4 +96,24 @@ test('uncertain money expressions, compound amounts and non-won values remain un
     '1~1,23백만원', '42백만 달러', 'USD 42 million',
     '지원액 42 (단위: 백만원)', '보조율 70%, 3.5개월, 2026-10-19', '확인 필요',
   ]) assert.equal(formatSupportScale(value), value, value)
+})
+
+
+test('document presentation separates verified names from formats and conditions without changing evidence', () => {
+  const item = { ...required, documentNames: ['사업자등록증', '법인등기부등본'], formats: ['PDF'],
+    conditions: ['법인기업은 두 서류를 모두 제출합니다.'], detail: '각 1부를 준비해 주세요.' }
+  assert.deepEqual(documentPresentation(item), {
+    names: ['사업자등록증', '법인등기부등본'], formats: ['PDF'],
+    conditions: ['법인기업은 두 서류를 모두 제출합니다.'], description: '각 1부를 준비해 주세요.',
+  })
+  assert.equal(item.source.excerpt, source.excerpt)
+})
+
+test('legacy guidance is kept in a disclosure and missing conditional criteria are not invented', () => {
+  const legacy = { ...required, detail: '증빙자료\n사업계획 내 기재사항 증빙 등\n발표자료\nPDF', requirementLevel: 'CONDITIONAL' }
+  assert.deepEqual(documentPresentation(legacy).names, ['사업계획서'])
+  assert.equal(documentPresentation(legacy).description, null)
+  assert.deepEqual(documentPresentation(legacy).conditions, [legacy.detail])
+  const unknown = { ...required, documentNames: ['확인서'], detail: null, requirementLevel: 'CONDITIONAL' }
+  assert.match(documentPresentation(unknown).conditions[0], /구체적인 적용 대상은 원문을 확인/u)
 })

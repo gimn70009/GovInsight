@@ -1,7 +1,7 @@
-import { useId, useState } from 'react'
+import { Fragment, useId, useState } from 'react'
 import { CalendarDays, ChevronDown, CircleHelp, FileText, Banknote, ExternalLink } from 'lucide-react'
 import type { DocumentAttachment, DocumentDetail, ProposalPreparationItem, ResponsibleOrganization, SubmissionDocument, SubmissionGuide } from '../api/types'
-import { evidenceAttachment, formatSupportScale, organizationEvidenceAttachment, summaryDocuments, summaryValue } from '../utils/businessSummary'
+import { documentPresentation, evidenceAttachment, formatSupportScale, organizationEvidenceAttachment, summaryDocuments, summaryValue } from '../utils/businessSummary'
 import './BusinessSummary.css'
 
 const requirementLabels = {
@@ -10,6 +10,19 @@ const requirementLabels = {
 const stageLabels = {
   APPLICATION: '신청 시', EVALUATION: '평가 시', POST_SELECTION: '선정 후',
   AGREEMENT: '협약 시', EXECUTION: '수행 중', REPORTING: '보고 시',
+} as const
+
+const submissionUnknownHelp = {
+  stage: {
+    label: '제출 시기 확인',
+    title: '언제 제출하는지 확인이 필요해요',
+    description: '이 서류를 신청할 때 내는지, 평가·선정 이후나 협약 때 내는지 확인하지 못했습니다.',
+  },
+  requirement: {
+    label: '제출 여부 확인',
+    title: '어떤 경우에 제출하는지 확인이 필요해요',
+    description: '이 서류가 필수인지, 특정 대상만 제출하는지, 선택 제출인지 확인하지 못했습니다.',
+  },
 } as const
 
 function MissingValue({ hint }: { hint?: string }) {
@@ -25,18 +38,77 @@ function MissingValue({ hint }: { hint?: string }) {
   </div> : <span className="business-summary__missing">{label}</span>
 }
 
-function DocumentGuidance({ item, detail }: { item: SubmissionDocument; detail: DocumentDetail }) {
-  return <>
-    <div className="business-summary__document-meta">
-      <span className={`business-summary__requirement${item.requirementLevel === 'MANDATORY' ? ' is-required' : ''}`}>
-        {item.requirementLevel ? requirementLabels[item.requirementLevel] : '필수 여부 확인 필요'}
-      </span>
-      <span>{item.stage ? stageLabels[item.stage] : '제출 단계 확인 필요'}</span>
-    </div>
-    {item.appliesTo && <p className="business-summary__recipient">제출 대상 · {item.appliesTo}</p>}
-    {item.detail && item.detail !== item.title && <p className="business-summary__document-detail">{item.detail}</p>}
-    <SubmissionEvidence source={item.source} detail={detail} />
-  </>
+function SubmissionDocumentRow({ item, detail }: { item: SubmissionDocument; detail: DocumentDetail }) {
+  const [evidenceName, setEvidenceName] = useState<string | null>(null)
+  const [conditionsExpanded, setConditionsExpanded] = useState(false)
+  const [unknownField, setUnknownField] = useState<keyof typeof submissionUnknownHelp | null>(null)
+  const unknownId = useId()
+  const unknownHelp = unknownField === 'stage' && !item.stage ? submissionUnknownHelp.stage
+    : unknownField === 'requirement' && !item.requirementLevel ? submissionUnknownHelp.requirement : null
+  const evidenceId = useId()
+  const conditionsId = useId()
+  const { names, conditions, description, formats } = documentPresentation(item)
+  const conditional = item.requirementLevel === 'CONDITIONAL'
+  const level = item.requirementLevel?.toLowerCase() ?? 'unknown'
+  const requirement = item.requirementLevel ? requirementLabels[item.requirementLevel] : '제출 여부 확인'
+  const conditionToggle = (label: string, className: string) => <button type="button" className={className}
+    aria-label={`${names.join(' · ')} ${label} 조건 보기`} aria-expanded={conditionsExpanded} aria-controls={conditionsId}
+    onClick={() => setConditionsExpanded(value => !value)}>
+    {label}<ChevronDown size={13} aria-hidden="true" />
+  </button>
+  const unknownToggle = (field: keyof typeof submissionUnknownHelp, className: string) => <button type="button"
+    id={`${unknownId}-${field}`} className={`${className} is-unknown`}
+    aria-label={`${names.join(' · ')} ${submissionUnknownHelp[field].label} 안내`}
+    aria-expanded={unknownField === field} aria-controls={unknownId}
+    onClick={() => setUnknownField(value => value === field ? null : field)}>
+    <CircleHelp size={13} aria-hidden="true" />{submissionUnknownHelp[field].label}<ChevronDown size={13} aria-hidden="true" />
+  </button>
+  return <Fragment>
+    <tr className="business-summary__document-row">
+      <th scope="row">
+        <div className="business-summary__document-names">
+          {names.map(name => <span key={name} className="business-summary__document-name-group">
+            <span className="business-summary__document-name">{name}</span>
+            <button type="button" className="business-summary__organization-toggle"
+              aria-label={`${name} 근거 보기`} aria-expanded={evidenceName === name} aria-controls={evidenceId}
+              onClick={() => setEvidenceName(value => value === name ? null : name)}>
+              근거 보기<ChevronDown size={13} aria-hidden="true" />
+            </button>
+          </span>)}
+        </div>
+        {description && <p className="business-summary__document-detail">{description}</p>}
+      </th>
+      <td>
+        <div className="business-summary__document-meta">
+          {!item.requirementLevel ? unknownToggle('requirement', 'business-summary__requirement')
+            : conditional ? conditionToggle(requirement, `business-summary__requirement is-${level}`)
+              : <span className={`business-summary__requirement is-${level}`}>{requirement}</span>}
+          {item.stage ? <span className="business-summary__stage">{stageLabels[item.stage]}</span>
+            : unknownToggle('stage', 'business-summary__stage')}
+          {formats.map(format => <span key={format} className="business-summary__format">{format}</span>)}
+          {!conditional && conditions.length > 0 && conditionToggle('제출 조건', 'business-summary__condition-toggle')}
+        </div>
+        <div id={unknownId} hidden={!unknownHelp} className="business-summary__document-help"
+          role="region" aria-labelledby={unknownField ? `${unknownId}-${unknownField}` : undefined}>
+          {unknownHelp && <>
+            <strong>{unknownHelp.title}</strong>
+            <p>{unknownHelp.description}</p>
+            <p>원문에 안내가 있어도 자동으로 구분하지 못했을 수 있습니다. 서류명 옆 ‘근거 보기’와 공고 원문을 함께 확인해 주세요.</p>
+          </>}
+        </div>
+        {conditions.length > 0 && <div id={conditionsId} hidden={!conditionsExpanded} className="business-summary__document-conditions">
+          <strong>{conditional ? '이 경우에 제출해 주세요' : '함께 확인할 제출 조건'}</strong>
+          <ul>{conditions.map(condition => <li key={condition}>{condition}</li>)}</ul>
+        </div>}
+      </td>
+    </tr>
+    {evidenceName && <tr className="business-summary__document-evidence-row">
+      <td colSpan={2}><div id={evidenceId} className="business-summary__document-source">
+        <strong>{evidenceName} · 원문 근거</strong>
+        <SubmissionSource source={item.source} detail={detail} />
+      </div></td>
+    </tr>}
+  </Fragment>
 }
 
 function SubmissionSource({ source, detail }: { source: ProposalPreparationItem['source']; detail: DocumentDetail }) {
@@ -47,13 +119,6 @@ function SubmissionSource({ source, detail }: { source: ProposalPreparationItem[
     <blockquote>{source?.excerpt}</blockquote>
     {file && <a href={file.downloadUrl} target="_blank" rel="noreferrer">근거 문서 열기<ExternalLink size={12} aria-hidden="true" /></a>}
   </>
-}
-
-function SubmissionEvidence({ source, detail }: { source: ProposalPreparationItem['source']; detail: DocumentDetail }) {
-  return <details className="business-summary__evidence">
-    <summary>근거 보기</summary>
-    <div><SubmissionSource source={source} detail={detail} /></div>
-  </details>
 }
 
 function SubmissionNoteRow({ note, detail }: { note: SubmissionGuide['notes'][number]; detail: DocumentDetail }) {
@@ -143,9 +208,8 @@ export function BusinessSummary({ detail }: { detail: DocumentDetail }) {
     {documents.length > 0 ? <div className="business-summary__table-wrap">
       <table className="business-summary__documents" aria-label="제출서류 안내">
         <thead><tr><th scope="col">서류명</th><th scope="col">제출 안내</th></tr></thead>
-        <tbody>{documents.map((item, index) => <tr key={`${item.title}-${index}`}>
-          <th scope="row">{item.title}</th><td><DocumentGuidance item={item} detail={detail} /></td>
-        </tr>)}</tbody>
+        <tbody>{documents.map((item, index) => <SubmissionDocumentRow
+          key={`${detail.detectionId}-${item.title}-${index}`} item={item} detail={detail} />)}</tbody>
       </table>
     </div> : <div className="business-summary__documents-empty">
       <FileText size={21} aria-hidden="true" /><div><strong>{preparingDocuments ? '제출서류를 정리하고 있습니다' : '제출서류 확인 필요'}</strong>

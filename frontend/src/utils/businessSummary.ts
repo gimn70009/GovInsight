@@ -57,6 +57,26 @@ export function summaryDocuments(analysis: DocumentAnalysis | null, guide?: Subm
   )
 }
 
+// Old API responses retain their full guidance in a disclosure; do not guess row boundaries in the UI.
+export function documentPresentation(item: SubmissionDocument) {
+  const names = item.documentNames?.filter(name => name.trim()) ?? []
+  const structured = names.length > 0
+  const conditions = item.conditions?.filter(condition => condition.trim()) ?? []
+  if (!structured) {
+    if (item.appliesTo?.trim()) conditions.push(`제출 대상: ${item.appliesTo.trim()}`)
+    if (item.detail?.trim() && item.detail !== item.title && item.detail !== item.appliesTo) conditions.push(item.detail.trim())
+  }
+  if (item.requirementLevel === 'CONDITIONAL' && conditions.length === 0) {
+    conditions.push('원문에 ‘해당 시 제출’로 명시되어 있습니다. 구체적인 적용 대상은 원문을 확인해 주세요.')
+  }
+  return {
+    names: structured ? names : [item.title],
+    conditions: [...new Set(conditions)],
+    description: structured && item.detail !== item.title ? item.detail : null,
+    formats: [...new Set(item.formats ?? [])],
+  }
+}
+
 export function evidenceAttachment(item: Pick<ProposalPreparationItem, 'source'>, attachments: DocumentAttachment[]): DocumentAttachment | null {
   if (item.source?.origin !== 'ATTACHMENT' || !item.source.attachmentName) return null
   return attachmentByName(item.source.attachmentName, attachments)

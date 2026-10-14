@@ -41,12 +41,21 @@ public record DocumentDetectionDetailResponse(
 
     public record SubmissionDocument(
             String title, String detail, String requirementLevel, String stage, String appliesTo,
-            RequirementSource source
+            RequirementSource source,
+            @Schema(description = "명시된 개별 서류명. 파일 형식이나 설명 문장은 포함하지 않음") List<String> documentNames,
+            @Schema(description = "서류별 제출 대상·예외·대체 제출 조건") List<String> conditions,
+            @Schema(description = "해당 서류에 명시된 파일 형식") List<String> formats
     ) {
+        public SubmissionDocument(String title, String detail, String requirementLevel, String stage, String appliesTo, RequirementSource source) {
+            this(title, detail, requirementLevel, stage, appliesTo, source, List.of(), List.of(), List.of());
+        }
         public SubmissionDocument {
             title = YearNotation.display(title);
             detail = YearNotation.display(detail);
             appliesTo = YearNotation.display(appliesTo);
+            documentNames = documentNames == null ? List.of() : documentNames.stream().map(YearNotation::display).toList();
+            conditions = conditions == null ? List.of() : conditions.stream().map(YearNotation::display).toList();
+            formats = formats == null ? List.of() : List.copyOf(formats);
         }
     }
 
