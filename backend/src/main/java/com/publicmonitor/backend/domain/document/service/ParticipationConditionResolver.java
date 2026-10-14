@@ -6,6 +6,7 @@ import com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionDetail
 import com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionDetailResponse.ParticipationGuide;
 import com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionDetailResponse.ParticipationKind;
 import com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionDetailResponse.Preparation;
+import com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionDetailResponse.ParticipationReviewReason;
 import com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionDetailResponse.RequirementSource;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -63,7 +64,7 @@ final class ParticipationConditionResolver {
                 // A saved fragment never overrides a fuller paragraph already extracted from this source.
                 if (result.values().stream().anyMatch(row -> key(row.text()).contains(key(clean(lines.getFirst()))))) continue;
                 add(result, ParticipationKind.REVIEW_REQUIRED, clean(lines.getFirst()), null,
-                        lines.subList(1, lines.size()), source);
+                        lines.subList(1, lines.size()), source, ParticipationReviewReason.SOURCE_CONTEXT_UNCONFIRMED);
             }
         }
         var display = new LinkedHashMap<String, ParticipationCondition>();
@@ -71,7 +72,7 @@ final class ParticipationConditionResolver {
         for (var raw : result.values()) {
             var row = ParticipationConditionText.prepare(raw);
             sourcedConditions.add(row);
-            String identity = row.kind() + ":" + key(row.text()) + ":" + key(row.scope()) + ":" + key(String.join(" ", row.details()));
+            String identity = row.kind() + ":" + row.reviewReason() + ":" + key(row.text()) + ":" + key(row.scope()) + ":" + key(String.join(" ", row.details()));
             display.putIfAbsent(identity, row);
         }
         var conditions = List.copyOf(display.values());
@@ -184,7 +185,7 @@ final class ParticipationConditionResolver {
                             preceding.isEmpty() ? "" : clean(preceding.getLast())).strip();
                     add(result, ParticipationKind.REVIEW_REQUIRED, "표에서 적용 대상별 자격 요건을 구분하지 못했습니다.",
                             tableScope.isBlank() ? null : tableScope, List.of(),
-                            source(fileName, block.heading, quote));
+                            source(fileName, block.heading, quote), ParticipationReviewReason.TABLE_MAPPING_UNCLEAR);
                     block = null;
                     i = end - 1;
                     continue;
@@ -449,7 +450,8 @@ final class ParticipationConditionResolver {
                 } else details.addAll(0, clauses.subList(1, clauses.size()));
             } else if (!role.isBlank()) rowText = role + ": " + rowText;
             add(result, type, rowText, rowScope.isBlank() ? null : rowScope, details,
-                    source(file, context == null ? "참여 조건 표" : context.heading, tableQuote));
+                    source(file, context == null ? "참여 조건 표" : context.heading, tableQuote),
+                    type == ParticipationKind.REVIEW_REQUIRED ? ParticipationReviewReason.CLASSIFICATION_UNCLEAR : null);
         }
         return true;
     }
@@ -469,18 +471,26 @@ final class ParticipationConditionResolver {
 
     private static void add(LinkedHashMap<String, ParticipationCondition> result, ParticipationKind kind,
                             String text, String scope, List<String> details, RequirementSource source) {
+        add(result, kind, text, scope, details, source, null);
+    }
+
+    private static void add(LinkedHashMap<String, ParticipationCondition> result, ParticipationKind kind,
+                            String text, String scope, List<String> details, RequirementSource source,
+                            ParticipationReviewReason reviewReason) {
         if (result.size() >= 80 || text.isBlank()) return;
         if (kind == ParticipationKind.MANDATORY && text.matches(".*(?:우대|가점).*")) {
             // A mixed eligibility/preference sentence cannot establish that every clause is mandatory.
             kind = ParticipationKind.REVIEW_REQUIRED;
+            reviewReason = ParticipationReviewReason.MIXED_REQUIREMENT;
         }
         if (kind == ParticipationKind.PREFERENCE && (text + String.join(" ", details))
                 .matches("(?s).*(?:우대|가점).{0,12}(?:없음|없습니다|미적용|미부여|부여하지|적용하지|하지 않).*")) {
             kind = ParticipationKind.REVIEW_REQUIRED;
+            reviewReason = ParticipationReviewReason.PREFERENCE_NEGATED;
         }
-        String identity = kind + ":" + key(text) + ":" + key(scope) + ":" + key(String.join("\n", details)) + ":" + source;
+        String identity = kind + ":" + reviewReason + ":" + key(text) + ":" + key(scope) + ":" + key(String.join("\n", details)) + ":" + source;
         String category = scope != null && scope.contains("주관기관 자격과 별도") ? "지원 대상" : category(text);
-        result.putIfAbsent(identity, new ParticipationCondition(kind, category, text, scope, details, source));
+        result.putIfAbsent(identity, new ParticipationCondition(kind, category, text, scope, details, source, reviewReason));
     }
 
     private static String category(String text) {

@@ -20,9 +20,9 @@ def guide():
         return dict(section=section, label=label, text=text, scope=extra.get("scope"),
                     audience=extra.get("audience"), details=extra.get("details", []),
                     exceptions=extra.get("exceptions", []), guidance=extra.get("guidance", []),
-                    outcomes=extra.get("outcomes", []),
-                    sources=[dict(origin="ATTACHMENT", attachmentName="사업 공고문.pdf",
-                                  sectionTitle="신청 자격", location="3쪽", excerpt="□ 신청자격\n" + text)])
+                    outcomes=extra.get("outcomes", []), reviewReason=extra.get("reviewReason"),
+                    sources=extra.get("sources", [dict(origin="ATTACHMENT", attachmentName="사업 공고문.pdf",
+                                  sectionTitle="신청 자격", location="3쪽", excerpt="□ 신청자격\n" + text)]))
     return dict(conditions=[], variants=[], rules=[
         row("BASIC", "업력·창업", "공고일 기준 업력 7년 이내 중소기업", details=["법인기업은 회사성립연월일을 기준으로 합니다."]),
         row("BASIC", "매출", "직전년도 매출액 10억 원 이상 50억 원 미만", scope="주관기업에 한함"),
@@ -31,7 +31,15 @@ def guide():
         row("PREFERENCE", "특허", "관련 분야 등록 특허 보유 기업은 가점 2점"),
         row("EXCLUSION", "세금 체납", "국세 또는 지방세를 체납 중인 기업",
             exceptions=["단, 접수 마감일까지 완납한 경우 신청할 수 있습니다."]),
-        row("REVIEW", "신청 유형", "원문에서 같은 대상·유형의 신청 기준이 서로 다르게 확인됩니다.", outcomes=[dict(variant="유형1", status="ELIGIBLE"), dict(variant="유형1", status="INELIGIBLE")]),
+        row("REVIEW", "신청 유형", "원문에서 같은 대상·유형의 신청 기준이 서로 다르게 확인됩니다.",
+            sources=[dict(origin="NOTICE_BODY", excerpt="기존 참여기업은 유형1에 신청할 수 있습니다."),
+                     dict(origin="NOTICE_BODY", excerpt="기존 참여기업은 유형1에 신청할 수 없습니다.")],
+            outcomes=[dict(variant="유형1", status="ELIGIBLE"), dict(variant="유형1", status="INELIGIBLE")]),
+        row("REVIEW", "참여 자격", "표에서 적용 대상별 자격 요건을 구분하지 못했습니다.", scope="주관기관 전담조직",
+            sources=[dict(origin="NOTICE_BODY", excerpt="구분 | 운영 기준\n공공기관 | 전담인력 3명 이상\n민간기관 | 전담인력 5명 이상")]),
+        row("REVIEW", "참여 자격", "(전문가단) 기술 실증·판로지원 전문가 30명 이상을 구축하고 창업기업 선정평가, 컨설팅, 프로그램 등 운영 지원.", reviewReason="SOURCE_CONTEXT_UNCONFIRMED"),
+        row("REVIEW", "참여 자격", "전담인력 5인 이상, 팀원 4인 이상. 창업유관기관 창업지원 경력 3년 이상 또는 중소기업·창업기업 판로지원 경력 3년 이상.",
+            reviewReason="SOURCE_CONTEXT_UNCONFIRMED", exceptions=["단, 별도 지정기관은 전담인력 3인 이상을 적용합니다."]),
     ])
 
 
@@ -54,13 +62,13 @@ async def verify(browser):
         h.states[2] = dict(data, detectionId=2)
         await h.open(analysis_tab=False)
         section = h.page.get_by_role("region", name="신청 자격과 제한", exact=True)
-        await expect(section.locator(".participation-guide__rule")).to_have_count(6)
+        await expect(section.locator(".participation-guide__rule")).to_have_count(9)
         assert await section.locator("h5").all_text_contents() == [
-            "기본 신청 자격", "특정 기업에 적용되는 제한", "신청 제외 사유", "우대·가점", "추가 확인"]
+            "기본 신청 자격", "특정 기업에 적용되는 제한", "신청 제외 사유", "우대·가점"]
         await expect(section.get_by_text("필수", exact=True)).to_have_count(0)
-        await expect(section.get_by_role("region", name="추가 확인", exact=True).locator(".participation-guide__outcome")).to_have_count(0)
+        await expect(section.get_by_role("note", name="원문 확인이 필요한 조건", exact=True).locator(".participation-guide__outcome")).to_have_count(0)
         await expect(section.locator(".participation-guide__scope").filter(has_text="주관기업에 한함")).to_be_visible()
-        await expect(section.get_by_text("적용 대상이나 기준을 확정하지 못한", exact=False)).to_be_visible()
+        await expect(section.get_by_text("적용 대상이나 기준을 확정하지 못한", exact=False)).to_have_count(0)
         documents = h.page.get_by_role("heading", name="제출서류", exact=True)
         assert await section.evaluate("(el, y) => el.getBoundingClientRect().top > y", (await documents.bounding_box())["y"])
         evidence = section.get_by_role("button", name="공고일 기준 업력 7년 이내 중소기업 근거 보기", exact=True)
@@ -95,6 +103,76 @@ async def verify(browser):
         await h.wait_request(2, 1)
         await expect(evidence).to_have_attribute("aria-expanded", "false")
         await expect(exception_button).to_have_attribute("aria-expanded", "false")
+    finally:
+        await h.close()
+
+
+async def review_notice(browser):
+    h = await refresh.Harness(browser).start()
+    try:
+        data = summary.ready()
+        data["analysis"] = None
+        data["participationGuide"] = guide()
+        data["participationGuide"]["rules"] = [rule for rule in data["participationGuide"]["rules"] if rule["section"] == "REVIEW"]
+        h.states[1] = data
+        h.states[2] = dict(data, detectionId=2)
+        await h.open(analysis_tab=False)
+        section = h.page.get_by_role("region", name="신청 자격과 제한", exact=True)
+        notice = section.get_by_role("note", name="원문 확인이 필요한 조건", exact=True)
+        toggle = notice.get_by_role("button", name="원문 확인이 필요한 조건 4건", exact=True)
+        content = notice.locator(".participation-guide__review-content")
+        await expect(section.get_by_role("table")).to_have_count(0)
+        await expect(section.locator("h5")).to_have_count(0)
+        await expect(section.get_by_text("참여 조건 확인 필요", exact=True)).to_have_count(0)
+        await expect(notice.locator(".participation-guide__review-note")).to_have_count(1)
+        await expect(notice.get_by_text("표에서 적용 대상별 자격 요건을 구분하지 못했습니다.", exact=True)).to_have_count(0)
+        await expect(notice.get_by_text("원문에서 같은 대상·유형의 신청 기준이 서로 다르게 확인됩니다.", exact=True)).to_have_count(0)
+        await expect(notice.locator(".participation-guide__outcome")).to_have_count(0)
+        for width in (1440, 768, 390, 320):
+            await h.page.set_viewport_size(dict(width=width, height=1300))
+            await expect(toggle).to_have_attribute("aria-expanded", "false")
+            await expect(content).to_be_hidden()
+            assert (await notice.bounding_box())["height"] < 90
+            await notice.screenshot(path=str(OUT / f"review-collapsed-{width}.png"))
+            await toggle.focus()
+            await h.page.keyboard.press("Enter")
+            await expect(content).to_be_visible()
+            await expect(notice.locator(".participation-guide__review-note")).to_be_visible()
+            await expect(notice.get_by_text("주관기관 전담조직", exact=False)).to_be_visible()
+            await expect(notice.locator(".participation-guide__main")).to_have_count(4)
+            await expect(notice.locator(".participation-guide__review-reason")).to_have_count(4)
+            assert "전문가 30명 이상" not in await content.inner_text()
+            assert "공공기관 | 전담인력 3명 이상" not in await content.inner_text()
+            assert "기존 참여기업은 유형1에 신청할 수 있습니다." not in await content.inner_text()
+            await expect(notice.get_by_text("전문가단 구성·운영 요건", exact=True)).to_be_visible()
+            await expect(notice.get_by_text("신청 시 갖춰야 하는 자격인지 선정 후 수행할 업무인지", exact=False)).to_be_visible()
+            await expect(notice.get_by_text("직급별 인원수와 경력 기준의 적용 대상", exact=False)).to_be_visible()
+            await notice.get_by_role("button", name="참여 자격 세부 조건·예외", exact=True).click()
+            await expect(notice.get_by_text("단, 별도 지정기관은 전담인력 3인 이상을 적용합니다.", exact=True)).to_be_visible()
+            await notice.get_by_role("button", name="참여 자격 세부 조건·예외", exact=True).click()
+            titles = ["유형1 신청 기준", "기관 유형별 신청 자격", "전문가단 구성·운영 요건", "전담인력·경력 요건"]
+            for original, title in zip(data["participationGuide"]["rules"], titles):
+                item = notice.locator(".participation-guide__rule").filter(has=h.page.get_by_text(title, exact=True))
+                button = item.get_by_role("button", name="근거 보기", exact=False)
+                await button.click()
+                for index, source in enumerate(original["sources"]):
+                    if len(original["sources"]) > 1:
+                        await item.get_by_role("combobox", name="원문 선택").select_option(str(index))
+                    assert await item.locator("blockquote").text_content() == source["excerpt"]
+                    await expect(item.locator(".participation-guide__review-reason")).to_be_visible()
+                    if source["origin"] == "ATTACHMENT":
+                        await expect(item.get_by_role("link", name="근거 문서 열기")).to_have_attribute("href", "https://example.org/notice.pdf")
+                await button.click()
+            for target in (section, notice, content):
+                assert await target.evaluate("el => el.scrollWidth <= el.clientWidth + 1"), width
+            await notice.screenshot(style=".drawer__top { visibility: hidden; }", path=str(OUT / f"review-expanded-{width}.png"))
+            await toggle.focus()
+            await h.page.keyboard.press("Space")
+            await expect(content).to_be_hidden()
+        await toggle.click()
+        await h.page.locator(".document-row").filter(has_text="상세 갱신 공고 2").evaluate("el => el.click()")
+        await h.wait_request(2, 1)
+        await expect(toggle).to_have_attribute("aria-expanded", "false")
     finally:
         await h.close()
 
@@ -187,12 +265,17 @@ async def empty_and_pending(browser):
 
 
 async def official_sources(browser):
-    for name in ("cbam", "startup-structured", "startup-legacy", "startup-combined", "policy-loan-hwpx", "policy-loan-pdf"):
+    for name in ("cbam", "startup-structured", "startup-legacy", "startup-combined", "startup-review", "clean-combined", "policy-loan-hwpx", "policy-loan-pdf"):
         fixture = Path(__file__).resolve().parents[2] / ("backend/build/participation-guide-checks/" + name + "-guide.json")
         data = summary.ready()
         data["analysis"] = None
         data["participationGuide"] = json.loads(fixture.read_text(encoding="utf-8"))
         data["attachments"][0]["fileName"] = "CBAM 공고.hwpx" if name == "cbam" else name + " 공고.hwpx"
+        if name == "clean-combined":
+            data["attachments"] = [dict(data["attachments"][0], attachmentId=index + 1,
+                                        fileName="클린제조 " + label + " 공고.hwpx",
+                                        downloadUrl="https://example.org/clean-" + str(index) + ".hwpx")
+                                   for index, label in enumerate(("구조화", "평문"))]
         h = await refresh.Harness(browser).start()
         try:
             h.states[1] = data
@@ -223,6 +306,48 @@ async def official_sources(browser):
                     await targeted.get_by_role("combobox", name="원문 선택").select_option(str(index))
                     assert await targeted.locator("blockquote").text_content() == source["excerpt"]
                 await targeted.get_by_role("button", name="근거 보기", exact=False).click()
+            elif name == "clean-combined":
+                matching = section.locator(".participation-guide__main").filter(has_text="도시형소공인 지원에 관한 특별법")
+                await expect(matching).to_have_count(1)
+                item = section.locator(".participation-guide__rule").filter(has=h.page.locator(".participation-guide__main").filter(has_text="도시형소공인 지원에 관한 특별법"))
+                original = next(rule for rule in data["participationGuide"]["rules"] if "도시형소공인 지원에 관한 특별법" in rule["text"])
+                details = item.get_by_role("button", name="업종·분야 세부 조건", exact=True)
+                evidence = item.get_by_role("button", name="근거 보기", exact=False)
+                for width in (1440, 768, 390, 320):
+                    await fit(section, width)
+                    await expect(details).to_have_attribute("aria-expanded", "false")
+                    await details.focus()
+                    await h.page.keyboard.press("Enter")
+                    panel = item.locator(".participation-guide__detail-panel")
+                    await expect(panel).to_be_visible()
+                    await expect(panel.get_by_text("신청조건 ①, ②를 모두 충족해야 합니다.", exact=True)).to_have_count(1)
+                    assert await panel.locator("li").all_text_contents() == original["details"]
+                    await item.screenshot(style=".drawer__top { visibility: hidden; }", path=str(OUT / f"clean-merged-details-{width}.png"))
+                    await evidence.click()
+                    await expect(details).to_have_attribute("aria-expanded", "false")
+                    selector = item.get_by_role("combobox", name="원문 선택")
+                    await expect(selector.locator("option")).to_have_count(2)
+                    for index, source in enumerate(original["sources"]):
+                        await selector.select_option(str(index))
+                        assert await item.locator("blockquote").text_content() == source["excerpt"]
+                        file_index = 0 if "구조화" in source["attachmentName"] else 1
+                        await expect(item.get_by_role("link", name="근거 문서 열기")).to_have_attribute("href", f"https://example.org/clean-{file_index}.hwpx")
+                    await fit(section, width)
+                    await evidence.click()
+            elif name == "startup-review":
+                notice = section.get_by_role("note", name="원문 확인이 필요한 조건", exact=True)
+                await notice.get_by_role("button", name="원문 확인이 필요한 조건 3건", exact=True).click()
+                titles = ["기관 유형별 신청 자격", "전문가단 구성·운영 요건", "전담인력·경력 요건"]
+                assert await notice.locator(".participation-guide__main").all_text_contents() == titles
+                await expect(notice.locator(".participation-guide__review-reason")).to_have_count(3)
+                for original, title in zip([r for r in data["participationGuide"]["rules"] if r["section"] == "REVIEW"], titles):
+                    item = notice.locator(".participation-guide__rule").filter(has=h.page.get_by_text(title, exact=True))
+                    await item.get_by_role("button", name="근거 보기", exact=False).click()
+                    assert await item.locator("blockquote").text_content() == original["sources"][0]["excerpt"]
+                    await item.get_by_role("button", name="근거 보기", exact=False).click()
+                for width in (1440, 768, 390, 320):
+                    await fit(section, width)
+                    await notice.screenshot(style=".drawer__top { visibility: hidden; }", path=str(OUT / f"startup-review-reasons-{width}.png"))
             elif name.startswith("startup"):
                 await expect(section.locator(".participation-guide__main").filter(has_text="공공기관의 신청 대상은")).to_have_count(1)
                 await expect(section.locator(".participation-guide__main").filter(has_text="민간기관").filter(has_text="산학연협력기술지주회사")).to_have_count(1)
@@ -250,7 +375,7 @@ async def official_sources(browser):
                     await refund.screenshot(style=".drawer__top { visibility: hidden; }", path=str(OUT / "startup-refund-single-evidence.png"))
                     await refund.get_by_role("button", name="근거 보기", exact=False).click()
             else:
-                paragraphs = section.locator(".participation-guide__main")
+                paragraphs = section.locator(".participation-guide__section .participation-guide__main")
                 await expect(paragraphs.filter(has_text="투자금을 지원받고")).to_contain_text("선투자 추천서")
                 await expect(paragraphs.filter(has_text="스마트기술")).to_contain_text("신사업창업사관학교 수료생")
                 await expect(paragraphs.filter(has_text="희망형")).to_contain_text("협약")
@@ -270,12 +395,13 @@ async def main():
         browser = await p.chromium.launch(channel=refresh.os.environ.get("BROWSER_CHANNEL", "msedge"))
         try:
             await verify(browser)
+            await review_notice(browser)
             await multiple_sources(browser)
             await empty_and_pending(browser)
             await official_sources(browser)
         finally:
             await browser.close()
-    print("PASS: application sections, single evidence panel with all original sources, exact duplicate removal, source-specific links, keyboard selection, merged outcomes, collapsed details and visible exception buttons, mutual exclusion of details/evidence, keyboard, notice reset, empty/pending refresh, 1440/768/390/320px, CBAM/startup/policy-loan sources")
+    print("PASS: collapsed review notice, single shared guidance, cause-specific explanations separate from exact original evidence, review-only state, application sections, single evidence panel with all original sources, exact duplicate removal, source-specific links, keyboard selection, merged outcomes, collapsed details and visible exception buttons, mutual exclusion of details/evidence, keyboard, notice reset, empty/pending refresh, 1440/768/390/320px, CBAM/startup/clean/policy-loan sources; clean duplicate merged with all details and both original excerpts preserved")
 
 
 if __name__ == "__main__":

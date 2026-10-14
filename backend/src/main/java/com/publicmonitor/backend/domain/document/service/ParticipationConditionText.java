@@ -13,7 +13,16 @@ final class ParticipationConditionText {
 
     static List<String> paragraphs(List<String> physicalLines) {
         List<String> result = new ArrayList<>();
-        for (String physical : physicalLines) {
+        for (int index = 0; index < physicalLines.size(); index++) {
+            String physical = physicalLines.get(index);
+            // A flat table can split its row label across two lines immediately before numbered criteria.
+            // Keep those words in the source excerpt, not appended to the preceding requirement.
+            if (index + 2 < physicalLines.size() && physical.strip().matches("신청|지원|참여")
+                    && physicalLines.get(index + 1).strip().equals("조건")
+                    && physicalLines.get(index + 2).strip().matches("^[①-⑳➀-➉].*")) {
+                index++;
+                continue;
+            }
             // Bullets inside a table cell are real list boundaries; physical line breaks are not.
             for (String part : physical.replaceAll("\\h+([•⦁])", "\n$1")
                     .replaceAll("\\h+(-\\h+(?=[가-힣])|\\*{1,2}\\h+|\\d+[.]\\h+)", "\n$1")
@@ -48,7 +57,7 @@ final class ParticipationConditionText {
             if (!value.isBlank() && !value.equals(main) && !details.contains(value)) details.add(value);
         }
         return new ParticipationCondition(row.kind(), row.category(), main,
-                row.scope() == null ? null : spacing(row.scope()), details, row.source());
+                row.scope() == null ? null : spacing(row.scope()), details, row.source(), row.reviewReason());
     }
 
     static String spacing(String value) {

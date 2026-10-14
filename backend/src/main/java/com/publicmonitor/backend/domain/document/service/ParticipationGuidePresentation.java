@@ -27,7 +27,8 @@ final class ParticipationGuidePresentation {
             if (previous == null) result.put(identity, row);
             else result.put(identity, merge(previous, row));
         }
-        return result.values().stream().sorted(Comparator.comparingInt(row -> order(row.section()))).toList();
+        return mergeIncludedDetails(List.copyOf(result.values())).stream()
+                .sorted(Comparator.comparingInt(row -> order(row.section()))).toList();
     }
 
     private static ParticipationRule present(ParticipationCondition condition, List<String> sharedScopes) {
@@ -52,6 +53,7 @@ final class ParticipationGuidePresentation {
         }
         String scope = usefulScope(condition.scope());
         if (scope != null && sharedScopes.contains(compact(scope))) scope = null;
+        var reviewReason = condition.reviewReason();
         String text = ParticipationConditionText.displaySentence(condition.text(), condition.kind());
         String label = label(condition);
         String section = switch (condition.kind()) {
@@ -96,11 +98,12 @@ final class ParticipationGuidePresentation {
         text = organizationSummary(condition.text(), details, text);
         if (ParticipationConditionText.incomplete(condition.text())) {
             section = "REVIEW";
+            reviewReason = ParticipationReviewReason.INCOMPLETE_TEXT;
             details.add(0, condition.text());
             text = "자격 조건의 문장이 끝까지 확인되지 않아 원문 확인이 필요합니다.";
         }
         return new ParticipationRule(section, label, text, scope, audience, List.copyOf(details),
-                List.copyOf(exceptions), List.copyOf(guidance), List.copyOf(outcomes), List.of(condition.source()));
+                List.copyOf(exceptions), List.copyOf(guidance), List.copyOf(outcomes), List.of(condition.source()), reviewReason);
     }
 
 
@@ -167,10 +170,47 @@ final class ParticipationGuidePresentation {
     }
 
     private static String identity(ParticipationRule row) {
+        return criterionKey(row) + ":" + clausesKey(row.details());
+    }
+
+    private static String criterionKey(ParticipationRule row) {
         // Never merge different fund scopes, numerical thresholds, exceptions or logical operators.
-        return row.section() + ":" + compact(row.label()) + ":" + compact(row.scope()) + ":"
-                + compact(row.audience() == null ? row.text() : row.audience()) + ":"
-                + clausesKey(row.details()) + ":" + clausesKey(row.exceptions());
+        return row.section() + ":" + row.reviewReason() + ":" + compact(row.label()) + ":" + compact(row.scope()) + ":"
+                + compact(row.audience() == null ? row.text() : row.audience()) + ":" + clausesKey(row.exceptions());
+    }
+
+    private static List<ParticipationRule> mergeIncludedDetails(List<ParticipationRule> rows) {
+        var supersets = new ArrayList<List<Integer>>();
+        for (var row : rows) {
+            var candidates = new ArrayList<Integer>();
+            for (int i = 0; i < rows.size(); i++) {
+                if (includesDetails(rows.get(i), row)) candidates.add(i);
+            }
+            supersets.add(candidates);
+        }
+        var result = new LinkedHashMap<Integer, ParticipationRule>();
+        for (int i = 0; i < rows.size(); i++) {
+            // Resolve against all originals before merging: a shared fragment must not be
+            // attached arbitrarily to one of several incompatible, fuller criteria.
+            var fullest = supersets.get(i).stream().filter(index -> supersets.get(index).isEmpty()).toList();
+            int target = fullest.size() == 1 ? fullest.getFirst() : i;
+            var full = result.getOrDefault(target, rows.get(target));
+            result.put(target, target == i && !result.containsKey(target) ? full : merge(full, rows.get(i)));
+        }
+        return List.copyOf(result.values());
+    }
+
+    private static boolean includesDetails(ParticipationRule full, ParticipationRule partial) {
+        if (full.section().equals("REVIEW") || full.details().size() <= partial.details().size()
+                || !criterionKey(full).equals(criterionKey(partial))
+                || !compact(full.text()).equals(compact(partial.text()))
+                || !full.outcomes().equals(partial.outcomes())) return false;
+        // Compare whole clauses in order; substring matching would confuse 1.5/15 or AND/OR.
+        int next = 0;
+        for (String detail : full.details()) {
+            if (next < partial.details().size() && compact(detail).equals(compact(partial.details().get(next)))) next++;
+        }
+        return next == partial.details().size();
     }
 
     private static String clausesKey(List<String> values) {
@@ -203,11 +243,11 @@ final class ParticipationGuidePresentation {
                 .map(ParticipationOutcome::variant).distinct().count() > 1) conflict = true;
         if (conflict) {
             return new ParticipationRule("REVIEW", a.label(), "원문에서 같은 대상·유형의 신청 기준이 서로 다르게 확인됩니다.",
-                    a.scope(), a.audience(), a.details(), a.exceptions(), guidance, outcomes, sources);
+                    a.scope(), a.audience(), a.details(), a.exceptions(), guidance, outcomes, sources, ParticipationReviewReason.CONFLICTING_CRITERIA);
         }
         outcomes.sort(Comparator.comparing(ParticipationOutcome::variant));
         return new ParticipationRule(a.section(), a.label(), exclusive ? EXCLUSIVE_TEXT : a.text(), a.scope(), a.audience(), a.details(),
-                a.exceptions(), guidance, outcomes, sources);
+                a.exceptions(), guidance, outcomes, sources, a.reviewReason());
     }
 
     static List<ParticipationVariant> variants(List<String> texts) {

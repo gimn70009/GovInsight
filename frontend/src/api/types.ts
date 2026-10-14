@@ -252,7 +252,11 @@ export interface SubmissionGuide {
   notes: { text: string; appliesTo?: string | null; source: ProposalPreparationItem['source'] }[]
 }
 
+export type ParticipationReviewReason = 'TABLE_MAPPING_UNCLEAR' | 'CLASSIFICATION_UNCLEAR' | 'SOURCE_CONTEXT_UNCONFIRMED'
+  | 'MIXED_REQUIREMENT' | 'PREFERENCE_NEGATED' | 'INCOMPLETE_TEXT' | 'CONFLICTING_CRITERIA'
+
 export interface ParticipationCondition {
+  reviewReason?: ParticipationReviewReason | null
   kind: 'MANDATORY' | 'PREFERENCE' | 'EXCLUSION' | 'REVIEW_REQUIRED'
   category: string
   text: string
@@ -262,6 +266,7 @@ export interface ParticipationCondition {
 }
 
 export interface ParticipationRule {
+  reviewReason?: ParticipationReviewReason | null
   section: 'BASIC' | 'TARGETED' | 'EXCLUSION' | 'PREFERENCE' | 'REVIEW'
   label: string
   text: string

@@ -41,12 +41,25 @@ public record DocumentDetectionDetailResponse(
 
     public enum ParticipationKind { MANDATORY, PREFERENCE, EXCLUSION, REVIEW_REQUIRED }
 
+    public enum ParticipationReviewReason {
+        TABLE_MAPPING_UNCLEAR, CLASSIFICATION_UNCLEAR, SOURCE_CONTEXT_UNCONFIRMED,
+        MIXED_REQUIREMENT, PREFERENCE_NEGATED, INCOMPLETE_TEXT, CONFLICTING_CRITERIA
+    }
+
     public record ParticipationGuide(List<ParticipationCondition> conditions, List<ParticipationRule> rules,
                                      List<ParticipationVariant> variants) {}
 
     public record ParticipationRule(String section, String label, String text, String scope, String audience,
                                     List<String> details, List<String> exceptions, List<String> guidance,
-                                    List<ParticipationOutcome> outcomes, List<RequirementSource> sources) {}
+                                    List<ParticipationOutcome> outcomes, List<RequirementSource> sources,
+                                    @Schema(description = "원문 확인이 필요한 실제 분류 사유. REVIEW 이외에는 null")
+                                    ParticipationReviewReason reviewReason) {
+        public ParticipationRule(String section, String label, String text, String scope, String audience,
+                                 List<String> details, List<String> exceptions, List<String> guidance,
+                                 List<ParticipationOutcome> outcomes, List<RequirementSource> sources) {
+            this(section, label, text, scope, audience, details, exceptions, guidance, outcomes, sources, null);
+        }
+    }
 
     public record ParticipationOutcome(String variant, String status) {}
     public record ParticipationVariant(String name, String description) {}
@@ -54,8 +67,12 @@ public record DocumentDetectionDetailResponse(
     @Schema(description = "필수 자격·우대/가점·지원 제외 조건. scope와 details의 대상·논리관계·예외를 함께 적용")
     public record ParticipationCondition(
             ParticipationKind kind, String category, String text, String scope,
-            List<String> details, RequirementSource source
+            List<String> details, RequirementSource source, ParticipationReviewReason reviewReason
     ) {
+        public ParticipationCondition(ParticipationKind kind, String category, String text, String scope,
+                                      List<String> details, RequirementSource source) {
+            this(kind, category, text, scope, details, source, null);
+        }
         public ParticipationCondition {
             text = YearNotation.display(text);
             scope = YearNotation.display(scope);
