@@ -231,7 +231,7 @@ class RequirementSource(CamelCaseModel):
     attachment_name: str | None = Field(default=None, max_length=500)
     section_title: str = Field(min_length=2, max_length=200)
     location: str | None = Field(default=None, max_length=200)
-    excerpt: str = Field(min_length=5, max_length=300)
+    excerpt: str = Field(min_length=5, max_length=1200)
 
 
 class PreparationChecklistItem(CamelCaseModel):
@@ -271,7 +271,7 @@ class PreparationChecklistItem(CamelCaseModel):
         return self
 
 
-PREPARATION_SCHEMA_VERSION = 19
+PREPARATION_SCHEMA_VERSION = 22
 
 
 class StrategyCapabilityMatch(CamelCaseModel):

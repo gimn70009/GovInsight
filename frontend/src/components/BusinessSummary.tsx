@@ -1,3 +1,4 @@
+import { ParticipationConditions } from './ParticipationConditions'
 import { Fragment, useId, useState } from 'react'
 import { CalendarDays, ChevronDown, CircleHelp, FileText, Banknote, ExternalLink } from 'lucide-react'
 import type { DocumentAttachment, DocumentDetail, ProposalPreparationItem, ResponsibleOrganization, SubmissionDocument, SubmissionGuide } from '../api/types'
@@ -215,5 +216,6 @@ export function BusinessSummary({ detail }: { detail: DocumentDetail }) {
         <p>{preparingDocuments ? '분석이 완료되면 자동으로 표시됩니다.' : '저장된 공고 본문·첨부와 분석에서 제출서류를 확인하지 못했습니다. 공고 원문을 확인해 주세요.'}</p></div>
     </div>}
     {documents.length > 0 && <p className="business-summary__footnote">원문 근거가 확인된 서류입니다. 전체 제출 목록과 조건은 공고 원문을 함께 확인해 주세요.</p>}
+    <ParticipationConditions key={detail.detectionId} detail={detail} />
   </section>
 }

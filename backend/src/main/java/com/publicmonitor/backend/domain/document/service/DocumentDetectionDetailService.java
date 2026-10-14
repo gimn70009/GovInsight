@@ -66,7 +66,8 @@ public class DocumentDetectionDetailService {
                 analysisPending,
                 attachments,
                 ResponsibleOrganizationExtractor.extract(version.getContentText(), storedAttachments),
-                SubmissionDocumentResolver.resolve(version.getContentText(), storedAttachments, preparation)
+                SubmissionDocumentResolver.resolve(version.getContentText(), storedAttachments, preparation),
+                ParticipationConditionResolver.resolve(version.getContentText(), storedAttachments, preparation)
         );
     }
 

@@ -110,7 +110,7 @@ class DocumentDetectionDetailServiceTest {
                 """);
         DocumentAttachment attachment = DocumentAttachment.create(
                 version, "공고문.hwpx", "https://example.com/file/1", "hwpx",
-                "application/zip", 100L, "b".repeat(64), "주관기관 : 한국기술재단\n신청서류\n① 사업계획서",
+                "application/zip", 100L, "b".repeat(64), "주관기관 : 한국기술재단\n□ 신청자격: 업력 7년 이내 기업\n신청서류\n① 사업계획서",
                 AttachmentParseStatus.COMPLETED, null
         );
         ReflectionTestUtils.setField(attachment, "id", 5L);
@@ -153,6 +153,12 @@ class DocumentDetectionDetailServiceTest {
             assertThat(item.source().attachmentName()).isEqualTo("공고문.hwpx");
         });
         assertThat(withoutAnalysis.responsibleOrganizations()).isEqualTo(response.responsibleOrganizations());
+        assertThat(withoutAnalysis.participationGuide()).isEqualTo(response.participationGuide());
+        assertThat(withoutAnalysis.participationGuide().conditions()).singleElement().satisfies(item -> {
+            assertThat(item.text()).isEqualTo("업력이 7년 이내인 기업이 대상입니다.");
+            assertThat(item.kind().name()).isEqualTo("MANDATORY");
+            assertThat(item.source().attachmentName()).isEqualTo("공고문.hwpx");
+        });
     }
 
     @Test

@@ -253,7 +253,7 @@ def test_generates_outline_then_draft_only_for_matching_proposal_request() -> No
     assert generated.proposal.preparation is not None
     assert generated.proposal.preparation.strategy.recommended_project.startswith("제조 현장")
     assert generated.proposal.source_attachment_names == ["신청서식.hwp"]
-    assert generated.proposal.preparation_schema_version == 19
+    assert generated.proposal.preparation_schema_version == PREPARATION_SCHEMA_VERSION
     assert "map_proposal_sources" in generated.used_tools
     assert "build_proposal_preparation" in generated.used_tools
 
@@ -300,7 +300,8 @@ def test_low_fit_decision_is_current_without_generating_preparation(company_fit:
     assert generated.proposal.preparation is None
     assert generated.proposal.preparation_schema_version == PREPARATION_SCHEMA_VERSION
     assert generated.opportunity.model_dump() == before
-    assert generated.proposal.model_dump(by_alias=True)["preparationSchemaVersion"] == 19
+    serialized = generated.proposal.model_dump(by_alias=True)
+    assert serialized["preparationSchemaVersion"] == PREPARATION_SCHEMA_VERSION
 
 
 def test_ineligible_decision_is_current_before_delivery() -> None:
@@ -350,7 +351,7 @@ def test_proposal_stage_failure_preserves_base_analysis() -> None:
     assert generated.summary.startswith("산업 AI 실증")
     assert generated.proposal.draft_status == ProposalDraftStatus.REVIEW_REQUIRED
     assert generated.proposal.draft_sections == []
-    assert generated.proposal.preparation_schema_version == 19
+    assert generated.proposal.preparation_schema_version == PREPARATION_SCHEMA_VERSION
     assert "사업 제안 생성 제한 시간을 초과했습니다." in generated.proposal.draft_reason
 
 
@@ -835,3 +836,44 @@ def test_model_limit_stays_15_while_final_document_limit_is_27() -> None:
     model_schema = ProposalModelOutput.model_json_schema()
     preparation_schema = model_schema["$defs"]["ProposalPreparationModelOutput"]
     assert preparation_schema["properties"]["submissionDocuments"]["maxItems"] == 15
+
+def test_complete_long_eligibility_quote_retains_exception_and_requires_exact_source() -> None:
+    proposal = asyncio.run(ProposalRunner().generate(document(), result()))
+    quote = (
+        "□ 신청 자격\n공고일 기준 업력 7년 이내인 중소기업이 신청할 수 있습니다.\n"
+        + ("법인기업은 법인등기부등본의 회사성립연월일을 기준으로 하고 "
+           "개인기업은 사업자등록증의 개업연월일을 기준으로 합니다. ") * 5
+        + "\n단, 지원 제외 업종에 해당하는 기업은 신청할 수 없습니다."
+    )
+    assert 300 < len(quote) <= 1200
+    item = PreparationChecklistItem(
+        title="신청 기업의 업력 기준",
+        detail=("공고일 기준 업력 7년 이내인 중소기업이 대상이며 "
+                "지원 제외 업종은 신청할 수 없습니다."),
+        requirement_level=RequirementLevel.MANDATORY,
+        next_action="공고일 기준 업력과 지원 제외 업종 여부를 확인합니다.",
+        source=RequirementSource(
+            origin=EvidenceOrigin.NOTICE_BODY, section_title="신청 자격", excerpt=quote
+        ),
+    )
+    proposal.preparation.eligibility_checklist = [item]
+    request = document()
+    request.content_text = quote
+    _retain_verified_source_references(proposal, request)
+    verified = next(
+        value for value in proposal.preparation.eligibility_checklist if value.title == item.title
+    )
+    assert verified.source.excerpt == quote
+    assert verified.detail != quote
+    request.content_text = "사업과 관련된 일반 안내만 있습니다."
+    request.attachments = []
+    with pytest.raises(ValueError, match="원문에서 확인되는 지원 조건이 없습니다"):
+        _retain_verified_source_references(proposal, request)
+    assert all(value.title != item.title for value in proposal.preparation.eligibility_checklist)
+
+
+def test_requirement_source_rejects_excessive_quote_without_silently_truncating() -> None:
+    with pytest.raises(ValidationError):
+        RequirementSource(
+            origin=EvidenceOrigin.NOTICE_BODY, section_title="신청 자격", excerpt="가" * 1201
+        )

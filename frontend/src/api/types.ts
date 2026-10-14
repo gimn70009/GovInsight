@@ -252,6 +252,34 @@ export interface SubmissionGuide {
   notes: { text: string; appliesTo?: string | null; source: ProposalPreparationItem['source'] }[]
 }
 
+export interface ParticipationCondition {
+  kind: 'MANDATORY' | 'PREFERENCE' | 'EXCLUSION' | 'REVIEW_REQUIRED'
+  category: string
+  text: string
+  scope: string | null
+  details: string[]
+  source: NonNullable<ProposalPreparationItem['source']>
+}
+
+export interface ParticipationRule {
+  section: 'BASIC' | 'TARGETED' | 'EXCLUSION' | 'PREFERENCE' | 'REVIEW'
+  label: string
+  text: string
+  scope: string | null
+  audience: string | null
+  details: string[]
+  exceptions: string[]
+  guidance: string[]
+  outcomes: { variant: string; status: 'ELIGIBLE' | 'INELIGIBLE' }[]
+  sources: NonNullable<ProposalPreparationItem['source']>[]
+}
+
+export interface ParticipationGuide {
+  conditions: ParticipationCondition[]
+  rules?: ParticipationRule[]
+  variants?: { name: string; description: string }[]
+}
+
 export interface DocumentDetail {
   detectionId: number
   analysisPending: boolean
@@ -265,6 +293,7 @@ export interface DocumentDetail {
   analysis: DocumentAnalysis | null
   attachments: DocumentAttachment[]
   responsibleOrganizations?: ResponsibleOrganization[]
+  participationGuide?: ParticipationGuide
   submissionGuide?: SubmissionGuide
 }
 

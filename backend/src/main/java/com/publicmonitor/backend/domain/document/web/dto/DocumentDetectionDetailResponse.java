@@ -29,13 +29,39 @@ public record DocumentDetectionDetailResponse(
         @Schema(description = "현재 본문·첨부에 역할과 이름이 명시된 사업 담당기관. 근거가 없으면 빈 목록")
         List<ResponsibleOrganization> responsibleOrganizations,
         @Schema(description = "원문의 명시된 제출서류와 기존 준비서류를 통합한 안내. 분석 완료 여부와 독립적")
-        SubmissionGuide submissionGuide
+        SubmissionGuide submissionGuide,
+        @Schema(description = "현재 원문 근거로 분류한 참여 조건. 회사의 충족 여부를 판정하지 않음")
+        ParticipationGuide participationGuide
 ) {
 
     @Schema(description = "현재 공고 원문에서 확인한 기관과 역할. 문의처를 주관기관으로 바꾸지 않음")
     public record ResponsibleOrganization(
             String name, String role, String sourceType, String attachmentName, String excerpt
     ) {}
+
+    public enum ParticipationKind { MANDATORY, PREFERENCE, EXCLUSION, REVIEW_REQUIRED }
+
+    public record ParticipationGuide(List<ParticipationCondition> conditions, List<ParticipationRule> rules,
+                                     List<ParticipationVariant> variants) {}
+
+    public record ParticipationRule(String section, String label, String text, String scope, String audience,
+                                    List<String> details, List<String> exceptions, List<String> guidance,
+                                    List<ParticipationOutcome> outcomes, List<RequirementSource> sources) {}
+
+    public record ParticipationOutcome(String variant, String status) {}
+    public record ParticipationVariant(String name, String description) {}
+
+    @Schema(description = "필수 자격·우대/가점·지원 제외 조건. scope와 details의 대상·논리관계·예외를 함께 적용")
+    public record ParticipationCondition(
+            ParticipationKind kind, String category, String text, String scope,
+            List<String> details, RequirementSource source
+    ) {
+        public ParticipationCondition {
+            text = YearNotation.display(text);
+            scope = YearNotation.display(scope);
+            details = details == null ? List.of() : details.stream().map(YearNotation::display).toList();
+        }
+    }
 
     public record SubmissionGuide(List<SubmissionDocument> documents, List<SubmissionNote> notes) {}
 
