@@ -133,3 +133,15 @@ def test_official_cbam_xml_matches_backend_submission_fixture():
     assert "제출서류 목록\t유형1\t유형2" in parsed[0]
     assert "EU 수출실적 증빙양식(해당 시)\t○\t○" in parsed[0]
     assert "표준재무제표증명원 각 1부(‘23, ’24, ‘25년)\t○\tX" in parsed[0]
+
+
+def test_official_smart_award_organization_merges_match_backend_fixture():
+    root = Path(__file__).resolve().parents[4]
+    xml = (root / "test-fixtures/document-tables/smart-award-organizations.xml").read_bytes()
+    text = (
+        root / "backend/src/test/resources/organizations/smart-award-structured.txt"
+    ).read_text(encoding="utf-8")
+    parsed = HwpxParser()._parse_section(xml)
+    assert len(parsed) == 1 and parsed[0] == text.strip("\n")
+    row = parsed[0].splitlines()[1].split("\t")
+    assert row == ["주관기관"] * 5 + [""] + ["중소벤처기업부"] * 5

@@ -111,6 +111,63 @@ class ResponsibleOrganizationExtractorTest {
         assertThat(ResponsibleOrganizationExtractor.extract("", List.of(attachment("공고.hwpx", null)))).isEmpty();
     }
 
+    @Test
+    void 실제_스마트제조_포상_표의_병합_역할명을_기관명에_붙이지_않는다() throws Exception {
+        String text;
+        try (var stream = getClass().getResourceAsStream("/organizations/smart-award-structured.txt")) {
+            text = new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        var result = ResponsibleOrganizationExtractor.extract(null, List.of(attachment("포상_공고.hwpx", text)));
+        assertThat(result).singleElement().satisfies(item -> {
+            assertThat(item.name()).isEqualTo("중소벤처기업부");
+            assertThat(item.role()).isEqualTo("주관기관");
+            assertThat(item.excerpt()).isEqualTo("주관기관\t\t중소벤처기업부");
+            assertThat(text).contains(item.excerpt());
+        });
+    }
+
+    @Test
+    void 표의_반복_셀은_줄이고_서로_다른_기관과_역할은_구별한다() {
+        String text = "[표]\n주관기관\t주관기관\t한국진흥원\t한국진흥원\t운영기관\t한국재단\n"
+                + "문의처\t문의처\t한국진흥원\t한국진흥원\t전담기관\t한국연구원\n[/표]";
+        var result = ResponsibleOrganizationExtractor.extract(text, List.of());
+        assertThat(result).extracting(ResponsibleOrganization::name).containsExactly("한국진흥원", "한국재단", "한국연구원");
+        assertThat(result).extracting(ResponsibleOrganization::role).containsExactly("주관기관", "운영기관", "전담기관");
+        assertThat(result).allSatisfy(item -> assertThat(text).contains(item.excerpt()));
+    }
+
+    @Test
+    void 위아래_기관_셀은_같은_열끼리만_연결한다() {
+        String text = "[표]\n주관기관\t운영기관\n한국진흥원\t한국재단\n[/표]";
+        var result = ResponsibleOrganizationExtractor.extract(text, List.of());
+        assertThat(result).extracting(ResponsibleOrganization::name).containsExactly("한국진흥원", "한국재단");
+        assertThat(result).extracting(ResponsibleOrganization::role).containsExactly("주관기관", "운영기관");
+        assertThat(result).allSatisfy(item -> assertThat(text).contains(item.excerpt()));
+        assertThat(ResponsibleOrganizationExtractor.extract("[표]\n주관기관\t설명\n\t한국재단\n[/표]", List.of())).isEmpty();
+    }
+
+    @Test
+    void 잘린_표와_작성예시_표는_기관을_확정하지_않는다() {
+        String table = "[표]\n주관기관\t한국진흥원\n운영기관\t한국재단\n[/표]";
+        assertThat(ResponsibleOrganizationExtractor.extract(table.replace("[/표]", ""), List.of())).isEmpty();
+        assertThat(ResponsibleOrganizationExtractor.extract("작성 예시\n" + table, List.of())).isEmpty();
+        assertThat(ResponsibleOrganizationExtractor.extract("서식1 신청서\n" + table, List.of())).isEmpty();
+        assertThat(ResponsibleOrganizationExtractor.extract("[표]\n주관기관\t\n[/표]\n한국진흥원", List.of())).isEmpty();
+        assertThat(ResponsibleOrganizationExtractor.extract("주관기관 주관기관 한국진흥원", List.of())).isEmpty();
+    }
+
+    @Test
+    void 실제_CBAM_전체_구조화_본문에서도_총괄기관과_시행기관을_보존한다() throws Exception {
+        String text;
+        try (var stream = getClass().getResourceAsStream("/submission-documents/cbam-structured.txt")) {
+            text = new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        var result = ResponsibleOrganizationExtractor.extract(null, List.of(attachment("CBAM_공고.hwpx", text)));
+        assertThat(result).extracting(ResponsibleOrganization::name).containsExactly("중소벤처기업부", "중소벤처기업진흥공단");
+        assertThat(result).extracting(ResponsibleOrganization::role).containsExactly("총괄기관", "시행기관");
+        assertThat(result).allSatisfy(item -> assertThat(text).contains(item.excerpt()));
+    }
+
     private DocumentAttachment attachment(String name, String text) {
         return DocumentAttachment.create(null, name, "https://example.org/file", "hwpx", "application/zip", 1L,
                 "hash", text, AttachmentParseStatus.COMPLETED, null);
