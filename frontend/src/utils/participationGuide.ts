@@ -4,7 +4,9 @@ export const participationSections = [
   { key: 'BASIC', title: '기본 신청 자격', note: '신청 대상과 충족해야 하는 기준' },
   { key: 'TARGETED', title: '특정 기업에 적용되는 제한', note: '해당하는 대상만 확인하세요' },
   { key: 'EXCLUSION', title: '신청 제외 사유', note: '제외 기준과 예외를 함께 확인하세요' },
+  { key: 'FUNDING', title: '자부담·사업비', note: '지원금에 따른 비용 부담과 사용 기준' },
   { key: 'PREFERENCE', title: '우대·가점', note: '신청 자격과 별도로 적용되는 우대 기준' },
+  { key: 'DEDUCTION', title: '감점 기준', note: '신청 제외와는 별도로 평가 점수에서 차감되는 기준' },
   { key: 'REVIEW', title: '원문 확인이 필요한 조건', note: '아래 조건은 적용 대상이나 기준을 원문에서 확인해 주세요.' },
 ] as const
 
@@ -29,16 +31,28 @@ function reviewContent(item: ParticipationRule): PresentedParticipationRule {
   return { ...item, text: original || excerpts.join('\n\n'), details, guidance, review }
 }
 
-export function groupParticipationRules(guide?: ParticipationGuide) {
+export type ParticipationDomain = 'eligibility' | 'funding' | 'evaluation'
+
+function ruleDomain(rule: ParticipationRule): ParticipationDomain {
+  if (rule.section === 'FUNDING' || (rule.section === 'REVIEW' && rule.label === '자부담·사업비')) return 'funding'
+  if (rule.section === 'PREFERENCE' || rule.section === 'DEDUCTION'
+    || (rule.section === 'REVIEW' && (/^평가 (?:가점|감점)$/u.test(rule.label)
+      || rule.reviewReason === 'PREFERENCE_NEGATED'
+      || (rule.sources.length > 0 && rule.sources.every(source => /^(?:우대|(?:공통\s*)?가점|(?:공통\s*)?감점|평가 기준)/u.test(source.sectionTitle?.trim() ?? '')))))) return 'evaluation'
+  return 'eligibility'
+}
+
+export function groupParticipationRules(guide?: ParticipationGuide, domain?: ParticipationDomain) {
   // Compatibility for saved responses produced before presentation rules were added.
   const rules: ParticipationRule[] = guide?.rules ?? (guide?.conditions ?? []).map(item => ({
-    section: ({ MANDATORY: 'BASIC', PREFERENCE: 'PREFERENCE', EXCLUSION: 'EXCLUSION', REVIEW_REQUIRED: 'REVIEW' } as const)[item.kind] ?? 'REVIEW',
+    section: ({ MANDATORY: 'BASIC', FUNDING: 'FUNDING', PREFERENCE: 'PREFERENCE', DEDUCTION: 'DEDUCTION', EXCLUSION: 'EXCLUSION', REVIEW_REQUIRED: 'REVIEW' } as const)[item.kind] ?? 'REVIEW',
     reviewReason: item.reviewReason, label: item.category, text: item.text, scope: item.scope, audience: null,
     details: item.details ?? [], exceptions: [], guidance: [], outcomes: [], sources: [item.source],
   }))
   return participationSections.map(section => {
     const groups: { scope: string | null; labels: { label: string; rules: PresentedParticipationRule[] }[] }[] = []
     for (const rule of rules) {
+      if (domain && ruleDomain(rule) !== domain) continue;
       const knownSection = participationSections.some(value => value.key === rule.section) ? rule.section : 'REVIEW'
       if (knownSection !== section.key || !rule.text?.trim() || !rule.sources?.some(source => source?.excerpt?.trim())) continue
       const item = knownSection === 'REVIEW' ? reviewContent(rule) : rule
@@ -113,6 +127,16 @@ export function explainParticipationReview(item: ParticipationRule) {
   const subject = topic(item)
   switch (reason) {
     case 'TABLE_MAPPING_UNCLEAR': {
+      if (item.label === '참여기관 구성') return {
+        title: '기관별 역할과 필수 참여 구성',
+        reason: '추출된 표에서 기관별 역할과 조건의 연결을 확인할 수 없습니다. 주관·공동기관의 자격, 필수 참여기관과 예외를 원문 표에서 확인해 주세요.',
+      }
+
+      if (/평가 (?:가점|감점)/u.test(item.label)) return {
+        title: item.label + '의 항목별 인정 기준',
+        reason: '추출된 표에서 조건·점수·증빙의 연결을 확인할 수 없습니다. 원문 표의 각 항목과 공통 적용 기준을 확인해 주세요.',
+      }
+
       const original = item.sources.map(source => source?.excerpt ?? '').join(' ').replace(/\s+/g, '')
       const institutions = /공공/.test(original) && /민간/.test(original)
       return {

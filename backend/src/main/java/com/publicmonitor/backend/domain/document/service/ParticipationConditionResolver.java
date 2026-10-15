@@ -20,11 +20,11 @@ final class ParticipationConditionResolver {
     private static final int MAX_BLOCK = 12_000;
     private static final String LABELS = "(?:신청|지원|참여|모집)\\h*(?:자격|대상|요건|조건)"
             + "|(?:신청|지원|참여)\\h*(?:제외(?:대상)?|제한(?:대상)?)|제외대상|결격사유|융자\\h*(?:대상|제한|제외(?:대상)?)"
-            + "|우대\\h*(?:사항|조건|대상|기업|항목)?|가점\\h*(?:사항|항목|기준|대상)?";
+            + "|(?:공통\\h*)?감점\\h*(?:사항|항목|기준)?|우대\\h*(?:사항|조건|대상|기업|항목)?|가점\\h*(?:사항|항목|기준|대상)?";
     private static final Pattern HEADING = Pattern.compile("^(" + LABELS + ")(?:\\h*[:：)）\\]>]\\h*|\\h+|$)(.*)$");
     private static final Pattern PREFIX = Pattern.compile("^(?:[□■○◦●ㅇ•*-]|[①-⑳➀-➉]|\\d+[.)]|[가-하][.)])\\h*");
     private static final Pattern BOUNDARY = Pattern.compile("^(?:사업개요|지원내용|지원규모|지원기간|사업기간|신청방법|접수방법|신청기간|신청절차"
-            + "|제출서류|신청서류|구비서류|제출방법|평가방법|평가기준|평가및선정|선정절차|선정평가|선정기준|평가절차|사업내용|추진일정|사후관리|유의사항|문의처|융자범위|융자조건|융자규모|사업목적|주요과업|(?:지원한도|지원비율|지원금액|지원항목|지원비용|모집규모|모집일정)(?:[:：]|$))");
+            + "|제출서류|신청서류|구비서류|제출방법|평가방법|평가기준|평가및선정|선정절차|선정평가|선정기준|평가절차|사업내용|추진일정|사후관리|유의사항|문의처|융자범위|융자조건|융자규모|사업목적|주요과업|기타사항|공통적용사항|동시수행과제제한|정부지원연구개발비지원기준|(?:지원한도|지원비율|지원금액|지원항목|지원비용|모집규모|모집일정)(?:[:：]|$))");
     private static final Pattern BLOCKED = Pattern.compile("^(?:붙임|별첨|별지|서식|양식|작성예시|작성견본|참고자료)\\h*\\d*");
     private static final Pattern EXCLUDED_FILE = Pattern.compile("(?i)예시|견본|FAQ|참고자료|신청서|계획서|동의서|서식|양식|운영지침");
     private static final Pattern ALTERNATIVE = Pattern.compile("중\\h*(?:어느\\h*)?하나|중\\h*\\d+\\h*개\\h*이상|어느\\h*하나|택\\h*1");
@@ -53,7 +53,8 @@ final class ParticipationConditionResolver {
                 }
                 String quote = source.excerpt();
                 if (original == null || quote == null || quote.isBlank() || quote.length() > MAX_BLOCK
-                        || !ELIGIBILITY.matcher(quote).find()) continue;
+                        || !ELIGIBILITY.matcher(quote).find()
+                        || ParticipationEligibilityContext.spendingInstruction(quote)) continue;
                 if (result.values().stream().anyMatch(row -> key(row.source().excerpt()).contains(key(quote))
                         || key(quote).contains(key(row.source().excerpt())))) continue;
                 // Re-run section guards so a matching quote inside a form/example is not treated as a notice condition.
@@ -69,7 +70,7 @@ final class ParticipationConditionResolver {
         }
         var display = new LinkedHashMap<String, ParticipationCondition>();
         var sourcedConditions = new ArrayList<ParticipationCondition>();
-        for (var raw : result.values()) {
+        for (var raw : result.values().stream().flatMap(row -> ParticipationEligibilityContext.separateFunding(row).stream()).toList()) {
             var row = ParticipationConditionText.prepare(raw);
             sourcedConditions.add(row);
             String identity = row.kind() + ":" + row.reviewReason() + ":" + key(row.text()) + ":" + key(row.scope()) + ":" + key(String.join(" ", row.details()));
@@ -92,12 +93,17 @@ final class ParticipationConditionResolver {
     private static String noticeText(String text) {
         StringBuilder result = new StringBuilder();
         boolean blocked = false;
+        boolean postAward = false;
         for (String raw : text.substring(0, Math.min(MAX_TEXT, text.length())).split("\\R")) {
             String line = raw.strip();
+            if (line.startsWith("[파일:")) postAward = false;
+            if (line.matches("^[□■▶▷].*")) postAward = ParticipationEligibilityContext.postAwardHeading(clean(line));
+            if (postAward) continue;
             if (line.startsWith("[파일:")) {
                 int end = line.indexOf(']');
                 blocked = end < 0 || !allowedFile(line.substring(4, end).strip());
-            } else if (BLOCKED.matcher(clean(line).replaceFirst("^[<\\[(（]\\h*", "")).find() || line.startsWith("[일부 원문 생략")) {
+            } else if ((BLOCKED.matcher(clean(line).replaceFirst("^[<\\[(（]\\h*", "")).find()
+                    && !ParticipationEligibilityContext.referenceFootnote(line)) || line.startsWith("[일부 원문 생략")) {
                 blocked = true;
             } else if (!blocked) {
                 result.append(raw).append('\n');
@@ -112,12 +118,20 @@ final class ParticipationConditionResolver {
         String[] lines = sourceLines.lines();
         Block block = null;
         boolean blocked = false;
+        boolean postAward = false;
         String program = "";
         String introduction = text.substring(0, Math.min(text.length(), 1800)).replaceAll("\\s+", " ");
         boolean separateBeneficiary = introduction.matches(".*주관기관.{0,40}모집.*")
                 && introduction.matches(".*창업기업.{0,40}별도.{0,10}공고.*");
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i].strip();
+            if (line.startsWith("[파일:")) postAward = false;
+            if (line.matches("^[□■▶▷].*")) {
+                boolean nextPostAward = ParticipationEligibilityContext.postAwardHeading(clean(line));
+                if (nextPostAward) { emit(block, fileName, result); block = null; }
+                postAward = nextPostAward;
+            }
+            if (postAward) continue;
             String fundTitle = fundTitle(line, i > 0 ? lines[i - 1].strip() : "");
             if (fundTitle != null) {
                 emit(block, fileName, result);
@@ -137,7 +151,8 @@ final class ParticipationConditionResolver {
                 continue;
             }
             if (line.startsWith("[일부 원문 생략")) { block = null; blocked = true; continue; }
-            if (BLOCKED.matcher(clean(line).replaceFirst("^[<\\[(（]\\h*", "")).find()) {
+            if (BLOCKED.matcher(clean(line).replaceFirst("^[<\\[(（]\\h*", "")).find()
+                    && !ParticipationEligibilityContext.referenceFootnote(line)) {
                 emit(block, fileName, result);
                 block = null;
                 blocked = true;
@@ -212,6 +227,34 @@ final class ParticipationConditionResolver {
                 continue;
             }
             String candidate = clean(line).replaceFirst("^[<\\[(（]\\h*", "");
+            // These headings describe funded projects or the next section, not eligible applicants.
+            if (ParticipationEligibilityContext.projectHeading(candidate)
+                    || (i + 1 < lines.length && lines[i + 1].strip().matches("사업|과제|기술|품목")
+                        && ParticipationEligibilityContext.projectHeading(candidate + " " + lines[i + 1].strip()))
+                    ) {
+                emit(block, fileName, result);
+                block = null;
+                continue;
+            }
+            if (ParticipationEligibilityContext.compositionHeading(candidate)) {
+                emit(block, fileName, result);
+                block = new Block(ParticipationKind.MANDATORY, candidate, "", sourceLines, i, program);
+                continue;
+            }
+            String exclusionTitle = key(candidate).replaceFirst("^\\d+[.)]?", "");
+            if (exclusionTitle.matches("(?:신청|지원)대상제외(?:등유의사항|유의사항)?")) {
+                emit(block, fileName, result);
+                boolean hasSubtitle = Arrays.stream(lines).skip(i + 1).limit(6)
+                        .anyMatch(value -> key(value).matches("[<〈]다음의경우는(?:지원|신청)대상에서제외.*"));
+                block = hasSubtitle ? null : new Block(ParticipationKind.EXCLUSION, "신청 제외", "", sourceLines, i, program);
+                continue;
+            }
+            if (key(line).matches("[<〈]다음의경우는(?:지원|신청)대상에서제외(?:처리됨|할수있음)[>〉]")) {
+                emit(block, fileName, result);
+                String scope = line.contains("수 있음") ? "아래 조건에 해당하면 지원 대상에서 제외될 수 있습니다." : "아래 조건에 해당하면 지원 대상에서 제외됩니다.";
+                block = new Block(ParticipationKind.EXCLUSION, "신청 제외", scope, sourceLines, i, program);
+                continue;
+            }
             String sectionCandidate = candidate.replaceFirst("^\\d+(?:-\\d+)?[.)]?\\h+", "").replaceAll("\\h+", "");
             if (BOUNDARY.matcher(sectionCandidate).find()) {
                 emit(block, fileName, result);
@@ -294,6 +337,7 @@ final class ParticipationConditionResolver {
 
     private static ParticipationKind kind(String heading) {
         if (heading.matches(".*(?:제외|제한|결격).*")) return ParticipationKind.EXCLUSION;
+        if (heading.contains("감점")) return ParticipationKind.DEDUCTION;
         if (heading.matches(".*(?:우대|가점).*")) return ParticipationKind.PREFERENCE;
         return ParticipationKind.MANDATORY;
     }
@@ -301,6 +345,18 @@ final class ParticipationConditionResolver {
     private static void emit(Block block, String file, LinkedHashMap<String, ParticipationCondition> result) {
         if (block == null || (block.lead.isBlank() && block.lines.isEmpty())) return;
         if (block.lead.matches("(?:해당\\h*)?(?:없음|없습니다)[.!]?") && block.lines.stream().noneMatch(ParticipationConditionResolver::displayLine)) return;
+        if (ParticipationEligibilityContext.compositionHeading(block.heading)) {
+            var row = ParticipationCompositionTable.review(source(file, block.heading,
+                    block.sourceLines.excerpt(block.startLine, block.endLine)));
+            result.putIfAbsent("composition-review:" + row.source(), row);
+            return;
+        }
+        if (ParticipationScoreTables.flattened(String.join(" ", block.lines))) {
+            var row = ParticipationScoreTables.review(block.kind, source(file, block.heading,
+                    block.sourceLines.excerpt(block.startLine, block.endLine)));
+            result.putIfAbsent("score-review:" + row.source(), row);
+            return;
+        }
         List<String> raw = new ArrayList<>();
         if (!block.lead.isBlank()) raw.add(block.lead);
         raw.addAll(ParticipationConditionText.paragraphs(block.lines.stream().filter(ParticipationConditionResolver::displayLine).toList()));
@@ -336,7 +392,7 @@ final class ParticipationConditionResolver {
         List<String> common = new ArrayList<>();
         for (List<String> row : rows) {
             for (int i = 1; i < row.size(); i++) {
-                if (row.get(i).strip().matches("^[*※]\\h*(?:공통|모든|전체|상기|위의\\h*조건).*")) {
+                if (row.get(i).strip().matches("^[*※]\\h*(?:공통|모든|전체|상기\\h*(?:조건|항목|요건|기준)|위의\\h*조건).*")) {
                     common.addAll(row.subList(i, row.size()));
                     row.subList(i, row.size()).clear();
                     break;
@@ -373,6 +429,10 @@ final class ParticipationConditionResolver {
         if (paragraphs.isEmpty()) return;
         String text = clean(paragraphs.getFirst());
         if (text.isBlank()) return;
+        if (block.kind == ParticipationKind.MANDATORY
+                && ((paragraphs.size() == 1 && ParticipationEligibilityContext.headingFragment(text))
+                    || (ParticipationEligibilityContext.spendingInstruction(text)
+                        && paragraphs.stream().skip(1).noneMatch(ParticipationEligibilityContext::applicantRequirement)))) return;
         List<String> details = paragraphs.stream().skip(1).filter(v -> !v.isBlank()).toList();
         // Include the entire source block: shared scope and exceptions remain verifiable verbatim.
         String quote = block.sourceLines.excerpt(block.startLine, block.endLine);
@@ -382,6 +442,20 @@ final class ParticipationConditionResolver {
 
     private static boolean readTable(String[] rows, Block context, List<String> footnotes, String tableQuote, String file, LinkedHashMap<String, ParticipationCondition> result) {
         if (rows.length < 2 || tableQuote.length() > MAX_BLOCK) return false;
+        if (context != null && ParticipationEligibilityContext.compositionHeading(context.heading)) {
+            var evidence = source(file, context.heading, tableQuote);
+            for (var row : ParticipationCompositionTable.read(rows, footnotes, evidence))
+                result.putIfAbsent("composition:" + row.text() + ":" + evidence, row);
+            return true;
+        }
+        if (ParticipationScoreTables.header(rows[0]) || ParticipationScoreTables.flattened(rows[0])) {
+            var evidence = source(file, context == null ? "평가 기준" : context.heading, tableQuote);
+            var scoreTable = ParticipationScoreTables.read(rows, footnotes, evidence);
+            if (scoreTable == null) scoreTable = ParticipationScoreTables.review(
+                    context == null ? (rows[0].contains("감점") ? ParticipationKind.DEDUCTION : ParticipationKind.PREFERENCE) : context.kind, evidence);
+            result.putIfAbsent("score-table:" + evidence, scoreTable);
+            return true;
+        }
         String[] headers = rows[0].split("\t", -1);
         int criteria = -1, classification = -1, scopeColumn = -1;
         for (int i = 0; i < headers.length; i++) {
@@ -500,6 +574,7 @@ final class ParticipationConditionResolver {
 
     private static String category(String text) {
         if (text.matches(".*(?:업력|창업\\h*\\d|설립.{0,8}\\d).*")) return "업력·창업";
+        if (text.matches(".*(?:민간부담금|기관부담연구개발비|자부담).*")) return "자부담";
         if (text.matches(".*(?:매출|매출액).*")) return "매출";
         if (text.matches(".*(?:특허|지식재산|실용신안).*")) return "특허·지식재산";
         if (text.matches(".*(?:체납|채무|휴업|폐업|휴[·‧ㆍ]폐업|부도|파산).*")) return "경영·재무";

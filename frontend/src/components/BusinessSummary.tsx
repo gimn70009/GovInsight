@@ -1,5 +1,5 @@
 import { BusinessTypeRow } from './BusinessTypeRow'
-import { ParticipationConditions } from './ParticipationConditions'
+import { ParticipationConditions, EvaluationCriteria } from './ParticipationConditions'
 import { Fragment, useId, useState } from 'react'
 import { CalendarDays, ChevronDown, CircleHelp, FileText, Banknote, ExternalLink, LayoutList } from 'lucide-react'
 import type { DocumentAttachment, DocumentDetail, ProposalPreparationItem, ResponsibleOrganization, SubmissionDocument, SubmissionGuide } from '../api/types'
@@ -232,5 +232,6 @@ export function BusinessSummary({ detail }: { detail: DocumentDetail }) {
       </div>
     </section>
     <ParticipationConditions key={detail.detectionId} detail={detail} />
+    <EvaluationCriteria key={"evaluation-" + detail.detectionId} detail={detail} />
   </div>
 }

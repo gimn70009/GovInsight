@@ -8,13 +8,16 @@ import java.util.regex.Pattern;
 
 /** Presentation only: reconnect wrapped prose and preserve the official qualifiers in visible clauses. */
 final class ParticipationConditionText {
-    private static final Pattern MARKER = Pattern.compile("^(?:[□■○◦●ㅇ•⦁∘※*→▶▷▸►-]|[①-⑳➀-➉]|\\d+[.)])\\h*");
+    private static final Pattern MARKER = Pattern.compile("^(?:[□■○◦●ㅇ•⦁▪∘※*→▶▷▸►-]|[①-⑳➀-➉]|\\d+[.)])\\h*");
     private ParticipationConditionText() {}
 
     static List<String> paragraphs(List<String> physicalLines) {
         List<String> result = new ArrayList<>();
+        String joined = String.join(" ", physicalLines);
+        boolean proofLabels = joined.contains("확인근거") && joined.contains("(증빙서류)");
         for (int index = 0; index < physicalLines.size(); index++) {
             String physical = physicalLines.get(index);
+            if (proofLabels) physical = physical.replace("확인근거", "").replace("(증빙서류)", "");
             // A flat table can split its row label across two lines immediately before numbered criteria.
             // Keep those words in the source excerpt, not appended to the preceding requirement.
             if (index + 2 < physicalLines.size() && physical.strip().matches("신청|지원|참여")
@@ -24,7 +27,7 @@ final class ParticipationConditionText {
                 continue;
             }
             // Bullets inside a table cell are real list boundaries; physical line breaks are not.
-            for (String part : physical.replaceAll("\\h+([•⦁▶▷▸►])", "\n$1")
+            for (String part : physical.replaceAll("\\h+([•⦁▪▶▷▸►])", "\n$1")
                     .replaceAll("\\h+(-\\h+(?=[가-힣])|\\*{1,2}\\h+|\\d+[.]\\h+)", "\n$1")
                     .replaceAll("(?<=[.。])\\h+(?=단,|다만)", "\n").split("\\R")) {
                 String line = part.replace('\u00a0', ' ').strip();
@@ -44,6 +47,7 @@ final class ParticipationConditionText {
     }
 
     static ParticipationCondition prepare(ParticipationCondition row) {
+        if (ParticipationScoreTables.organized(row)) return row;
         List<String> input = new ArrayList<>();
         input.add(row.text());
         input.addAll(row.details());
@@ -75,7 +79,7 @@ final class ParticipationConditionText {
     }
 
     static String unmark(String value) {
-        return spacing(value).replaceFirst("^(?:[□■○◦●ㅇ•⦁∘※*→▶▷▸►-]+|[①-⑳➀-➉]|\\d+[.)])\\h*", "").strip();
+        return spacing(value).replaceFirst("^(?:[□■○◦●ㅇ•⦁▪∘※*→▶▷▸►-]+|[①-⑳➀-➉]|\\d+[.)])\\h*", "").strip();
     }
 
     static String sentence(String raw, ParticipationKind kind) {
@@ -126,6 +130,10 @@ final class ParticipationConditionText {
         if (criteria.matches()) return criteria.group(1) + topic(criteria.group(1)) + " 공고에 명시된 자격 요건을 충족해야 합니다.";
         var legal = Pattern.compile("^(.+?) \\(근거: (.+)\\)$").matcher(value);
         if (legal.matches()) return nominal(legal.group(1)) + " (적용 법령: " + legal.group(2) + ")";
+        var matching = Pattern.compile("^(.+?) 대비 (민간부담금|기관부담연구개발비|자부담금?) 의무\\h*매칭\\*?\\((.+?)별 상이\\)$").matcher(value);
+        if (matching.matches()) return matching.group(1) + " 대비 " + matching.group(2)
+                + "을 부담해야 합니다. 부담 기준은 " + matching.group(3) + "별로 다릅니다.";
+        value = value.replaceFirst("할 수 있음$", "할 수 있습니다");
         value = value.replaceFirst("부여함$", "부여합니다").replaceFirst("인정함$", "인정합니다")
                 .replaceFirst("제출해야 함$", "제출해야 합니다").replaceFirst("제출 가능$", "제출할 수 있습니다")
                 .replaceFirst("인정 가능$", "인정될 수 있습니다");

@@ -257,7 +257,7 @@ export type ParticipationReviewReason = 'TABLE_MAPPING_UNCLEAR' | 'CLASSIFICATIO
 
 export interface ParticipationCondition {
   reviewReason?: ParticipationReviewReason | null
-  kind: 'MANDATORY' | 'PREFERENCE' | 'EXCLUSION' | 'REVIEW_REQUIRED'
+  kind: 'MANDATORY' | 'FUNDING' | 'PREFERENCE' | 'DEDUCTION' | 'EXCLUSION' | 'REVIEW_REQUIRED'
   category: string
   text: string
   scope: string | null
@@ -267,7 +267,7 @@ export interface ParticipationCondition {
 
 export interface ParticipationRule {
   reviewReason?: ParticipationReviewReason | null
-  section: 'BASIC' | 'TARGETED' | 'EXCLUSION' | 'PREFERENCE' | 'REVIEW'
+  section: 'BASIC' | 'FUNDING' | 'TARGETED' | 'EXCLUSION' | 'PREFERENCE' | 'DEDUCTION' | 'REVIEW'
   label: string
   text: string
   scope: string | null

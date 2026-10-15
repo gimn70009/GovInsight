@@ -72,7 +72,7 @@ class ParticipationPlainLanguageTest {
         String raw = criterion(4, "또는", "기업 지원법") + qualifier;
         assertThat(ParticipationPlainLanguage.explain(raw, "기업 규모")).isNull();
         var row = ParticipationConditionResolver.resolve("□ 신청자격\n◦ (창업기업) " + raw, List.of(), null).rules().getFirst();
-        assertThat(row.text()).contains(qualifier);
+        assertThat(row.text()).contains(qualifier.replace("한함", "한합니다"));
     }
 
     @Test

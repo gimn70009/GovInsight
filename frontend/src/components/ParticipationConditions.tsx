@@ -52,6 +52,7 @@ function Rule({ item, detail, showLabel = false }: { item: PresentedParticipatio
   const criteria = item.details.filter(text => !text.startsWith('법적 자격 기준: '))
   const legalCriteria = item.details.filter(text => text.startsWith('법적 자격 기준: ')).map(text => text.slice('법적 자격 기준: '.length))
   const detailsLabel = item.exceptions.length > 0 ? '세부 조건·예외' : '세부 조건'
+  const criteriaLabel = ['PREFERENCE', 'DEDUCTION'].includes(item.section) ? '세부 기준' : '세부 자격·추가 요건'
   return <li className="participation-guide__rule">
     <div className="participation-guide__rule-heading">
       <div className="participation-guide__description">
@@ -76,8 +77,8 @@ function Rule({ item, detail, showLabel = false }: { item: PresentedParticipatio
     </div>
     {hasDetails && <div id={id + '-details'} hidden={openPanel !== 'details'} className="participation-guide__detail-panel">
       {criteria.length > 0 && <div className="participation-guide__detail-section">
-        <strong>세부 자격·추가 요건</strong>
-        <ul className="participation-guide__clauses" aria-label="세부 자격·추가 요건">{criteria.map((text, index) => <li key={index}>{text}</li>)}</ul>
+        <strong>{criteriaLabel}</strong>
+        <ul className="participation-guide__clauses" aria-label={criteriaLabel}>{criteria.map((text, index) => <li key={index}><DetailClause text={text} /></li>)}</ul>
       </div>}
       {legalCriteria.length > 0 && <div className="participation-guide__detail-section">
         <strong>적용 법령</strong>
@@ -111,11 +112,26 @@ function RuleSummary({ text }: { text: string }) {
     : <p key={index}>{block.lines[0]}</p>)}</div>
 }
 
+function DetailClause({ text }: { text: string }) {
+  const lines = text.split(/\n+/u).filter(Boolean)
+  if (lines.length === 1) return <>{text}</>
+  return <div className="participation-guide__detail-clause"><strong>{lines[0]}</strong>
+    {lines.slice(1).map((line, index) => <p key={index}>{line}</p>)}</div>
+}
+
 function Scope({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const id = useId()
   const paragraphs = text.split(/\n+/u).map(line => line.trim()).filter(Boolean)
+  const long = text.length > 240 || paragraphs.length > 3
   return <div className="participation-guide__scope">
     <span>적용 대상·범위</span>
-    <div className="participation-guide__scope-content">{paragraphs.map((line, index) => <p key={index}>{line}</p>)}</div>
+    <div className="participation-guide__scope-content">
+      {long && <div className="participation-guide__scope-summary"><p>여러 대상과 공통 기준이 적용됩니다.</p>
+        <button type="button" className="business-summary__organization-toggle" aria-expanded={expanded}
+          aria-controls={id} onClick={() => setExpanded(value => !value)}>적용 범위 {expanded ? '접기' : '보기'}<ChevronDown size={13} aria-hidden="true" /></button></div>}
+      <div id={id} hidden={long && !expanded}>{paragraphs.map((line, index) => <p key={index}>{line}</p>)}</div>
+    </div>
   </div>
 }
 
@@ -144,7 +160,7 @@ function ReviewNotice({ section, detail }: { section: ReturnType<typeof groupPar
 }
 
 export function ParticipationConditions({ detail }: { detail: DocumentDetail }) {
-  const sections = groupParticipationRules(detail.participationGuide)
+  const sections = groupParticipationRules(detail.participationGuide, 'eligibility')
   const review = sections.find(section => section.key === 'REVIEW')
   const variants = detail.participationGuide?.variants ?? []
   const headingId = useId()
@@ -152,7 +168,7 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
     <header className="business-summary__heading">
       <span className="business-summary__heading-icon" aria-hidden="true"><ClipboardCheck size={22} /></span>
       <div className="business-summary__heading-text"><h3 id={headingId}>신청 자격과 제한</h3>
-        <p>신청 자격을 먼저 살펴보고, 우리 기업에 해당하는 제한과 예외를 확인하세요.</p>
+        <p>신청할 수 있는 기업·기관의 요건과 신청 제외 조건을 확인하세요.</p>
       </div>
     </header>
     <div className="business-summary__section-body">
@@ -181,10 +197,34 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
         <p className="business-summary__footnote">공고에서 확인된 기준을 정리한 안내입니다. 우리 회사의 신청 가능 여부를 판정한 결과는 아닙니다.</p>
       </> : <div className="participation-guide__empty" role="status">
         <ClipboardCheck size={21} aria-hidden="true" />
-        <div><strong>참여 조건 확인 필요</strong>
-          <p>저장된 공고와 첨부에서 참여 조건을 확인하지 못했습니다. 조건이 없다는 뜻은 아니므로 공고 원문을 확인해 주세요.</p>
+        <div><strong>신청 자격 확인 필요</strong>
+          <p>저장된 공고와 첨부에서 신청 자격을 확인하지 못했습니다. 조건이 없다는 뜻은 아니므로 공고 원문을 확인해 주세요.</p>
         </div>
       </div>}
+    </div>
+  </section>
+}
+
+export function EvaluationCriteria({ detail }: { detail: DocumentDetail }) {
+  const [open, setOpen] = useState(false)
+  const id = useId()
+  const sections = groupParticipationRules(detail.participationGuide, 'evaluation')
+  if (!sections.length) return null
+  return <section className="business-summary__card participation-guide participation-guide__evaluation" aria-labelledby={id + '-title'}>
+    <button type="button" className="participation-guide__evaluation-toggle" aria-expanded={open} aria-controls={id + '-content'} onClick={() => setOpen(value => !value)}>
+      <div><h3 id={id + '-title'}>평가 기준</h3><p>선정 평가에 반영되는 우대·가점과 감점을 확인하세요.</p></div>
+      <span>{open ? '접기' : '보기'}<ChevronDown size={16} aria-hidden="true" /></span>
+    </button>
+    <div className="business-summary__section-body" id={id + '-content'} hidden={!open}>
+      {sections.map(section => section.key === 'REVIEW' ? <ReviewNotice key={section.key} section={section} detail={detail} />
+        : <section key={section.key} className={'participation-guide__section is-' + section.key.toLowerCase()} aria-labelledby={id + section.key}>
+          <div className="participation-guide__section-title"><h4 id={id + section.key}>{section.title}</h4><span>{section.note}</span></div>
+          {section.groups.map((group, index) => <div className="participation-guide__scope-group" key={group.scope ?? index}>
+            {group.scope && <Scope text={group.scope} />}
+            <ul className="participation-guide__rules">{group.labels.flatMap(label => label.rules.map((item, index) =>
+              <Rule key={label.label + index} item={item} detail={detail} />))}</ul>
+          </div>)}
+        </section>)}
     </div>
   </section>
 }
