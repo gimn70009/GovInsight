@@ -56,6 +56,28 @@ export function groupParticipationRules(guide?: ParticipationGuide) {
 }
 
 
+/** Render only explicitly supplied type outcomes; do not infer other types or final eligibility. */
+export function applicationTypeSentence(item: ParticipationRule, variants: ParticipationGuide['variants'] = []): string | null {
+  if (item.section !== 'TARGETED' || item.outcomes.length === 0) return null
+  const allowed = [...new Set(item.outcomes.filter(outcome => outcome.status === 'ELIGIBLE').map(outcome => outcome.variant))]
+  const denied = [...new Set(item.outcomes.filter(outcome => outcome.status === 'INELIGIBLE').map(outcome => outcome.variant))]
+  if (allowed.some(name => denied.includes(name)) || allowed.length + denied.length === 0) return null
+  const nameWithMeaning = (name: string) => {
+    const descriptions = [...new Set(variants.filter(variant => variant.name === name)
+      .map(variant => variant.description.trim()).filter(Boolean))]
+    return descriptions.length === 1 ? `${name}(${descriptions[0]})` : name
+  }
+  const audience = item.audience?.trim() ?? ''
+  const last = audience.charCodeAt(audience.length - 1)
+  const particle = last >= 0xac00 && last <= 0xd7a3 ? ((last - 0xac00) % 28 === 0 ? '는' : '은') : '의 경우,'
+  const subject = audience ? `${audience}${particle} ` : ''
+  const exclusive = /(?:에\s*한해|에만)\s*신청/u.test(item.text)
+  const permitted = `${allowed.map(nameWithMeaning).join(', ')}에${exclusive ? '만' : ''} 신청할 수`
+  const prohibited = `${denied.map(nameWithMeaning).join(', ')}에는 신청할 수 없습니다.`
+  if (allowed.length && denied.length) return `${subject}${permitted} 있으며, ${prohibited}`
+  return allowed.length ? `${subject}${permitted} 있습니다.` : subject + prohibited
+}
+
 export type PresentedParticipationRule = ParticipationRule & { review?: { title: string; reason: string } }
 
 const legacyReasons: Record<string, ParticipationReviewReason> = {

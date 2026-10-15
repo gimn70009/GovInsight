@@ -25,11 +25,6 @@
 .participation-guide__rule-heading { display: flex; align-items: flex-start; gap: 14px; }
 .participation-guide__description { flex: 1; min-width: 0; }
 .participation-guide__main, .participation-guide__audience { margin: 0; color: #213c5b; font-weight: 600; font-size: 13px; white-space: pre-line; }
-.participation-guide__supporting { margin: 5px 0 0; color: #61758c; font-size: 12px; line-height: 1.8; white-space: pre-line; }
-.participation-guide__outcomes { display: flex; flex-wrap: wrap; gap: 9px; margin: 12px 0 6px; }
-.participation-guide__outcome { display: inline-flex; align-items: center; gap: 8px; padding: 5px 11px; border-radius: 6px; font-size: 12px; }
-.participation-guide__outcome.is-eligible { background: #edf4ff; color: #205ca7; }
-.participation-guide__outcome.is-ineligible { background: #fff0f1; color: #a73c46; }
 .participation-guide__clauses { margin: 8px 0 0; padding-left: 18px; color: #536b83; font-size: 12px; line-height: 1.85; }
 .participation-guide__clauses li { padding-left: 2px; white-space: pre-line; }
 .participation-guide__clauses li + li { margin-top: 5px; }

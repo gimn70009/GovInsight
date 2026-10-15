@@ -2,7 +2,7 @@ import { useId, useState } from 'react'
 import { ChevronDown, ClipboardCheck, ExternalLink, Info } from 'lucide-react'
 import type { DocumentDetail, ParticipationRule } from '../api/types'
 import { evidenceAttachment } from '../utils/businessSummary'
-import { groupParticipationRules, type PresentedParticipationRule } from '../utils/participationGuide'
+import { applicationTypeSentence, groupParticipationRules, type PresentedParticipationRule } from '../utils/participationGuide'
 import './ParticipationConditions.css'
 
 type RuleSource = ParticipationRule['sources'][number]
@@ -47,13 +47,14 @@ function Rule({ item, detail, showLabel = false }: { item: PresentedParticipatio
   const id = useId()
   const hasDetails = item.details.length + item.exceptions.length + item.guidance.length > 0
   const toggle = (panel: 'details' | 'evidence') => setOpenPanel(current => current === panel ? null : panel)
-  const displayTitle = item.review?.title ?? item.text
+  const typeSentence = applicationTypeSentence(item, detail.participationGuide?.variants)
+  const displayTitle = item.review?.title ?? typeSentence ?? item.text
   const detailsLabel = item.exceptions.length > 0 ? '세부 조건·예외' : '세부 조건'
   return <li className="participation-guide__rule">
     <div className="participation-guide__rule-heading">
       <div className="participation-guide__description">
         {showLabel && !item.review && item.label !== '참여 자격' && <span className="participation-guide__review-label">{item.label}</span>}
-        {item.audience && <p className="participation-guide__audience"><span>적용 대상</span>{item.audience}</p>}
+        {item.audience && !typeSentence && <p className="participation-guide__audience"><span>적용 대상</span>{item.audience}</p>}
         <p className="participation-guide__main">{displayTitle}</p>
         {item.review && <p className="participation-guide__review-reason">{item.review.reason}</p>}
       </div>
@@ -71,15 +72,6 @@ function Rule({ item, detail, showLabel = false }: { item: PresentedParticipatio
         </button>
       </div>
     </div>
-    {item.outcomes.length > 0 && item.section !== 'REVIEW' && <>
-      <div className="participation-guide__outcomes" aria-label="유형별 신청 기준">
-        {item.outcomes.map(outcome => <span key={outcome.variant + outcome.status}
-          className={'participation-guide__outcome is-' + outcome.status.toLowerCase()}>
-          <strong>{outcome.variant}</strong>{outcome.status === 'INELIGIBLE' ? '신청 불가' : '신청 대상'}
-        </span>)}
-      </div>
-      <p className="participation-guide__supporting">기본 자격과 다른 제외 사유도 함께 확인해야 합니다.</p>
-    </>}
     {hasDetails && <div id={id + '-details'} hidden={openPanel !== 'details'} className="participation-guide__detail-panel">
       {item.details.length > 0 && <div className="participation-guide__detail-section">
         <strong>세부 자격·추가 요건</strong>

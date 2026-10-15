@@ -66,7 +66,10 @@ async def verify(browser):
         assert await section.locator("h5").all_text_contents() == [
             "기본 신청 자격", "특정 기업에 적용되는 제한", "신청 제외 사유", "우대·가점"]
         await expect(section.get_by_text("필수", exact=True)).to_have_count(0)
-        await expect(section.get_by_role("note", name="원문 확인이 필요한 조건", exact=True).locator(".participation-guide__outcome")).to_have_count(0)
+        await expect(section.locator(".participation-guide__outcome, .participation-guide__outcomes")).to_have_count(0)
+        targeted = section.get_by_role("region", name="특정 기업에 적용되는 제한", exact=True)
+        await expect(targeted.locator(".participation-guide__main")).to_have_text("2025년 기존 사업 참여기업은 유형2에 신청할 수 있으며, 유형1에는 신청할 수 없습니다.")
+        await expect(targeted.locator(".participation-guide__audience")).to_have_count(0)
         await expect(section.locator(".participation-guide__scope").filter(has_text="주관기업에 한함")).to_be_visible()
         await expect(section.get_by_text("적용 대상이나 기준을 확정하지 못한", exact=False)).to_have_count(0)
         documents = h.page.get_by_role("heading", name="제출서류", exact=True)
@@ -284,8 +287,10 @@ async def official_sources(browser):
             if name == "cbam":
                 targeted = section.get_by_role("region", name="특정 기업에 적용되는 제한", exact=True)
                 await expect(targeted.locator(".participation-guide__rule")).to_have_count(1)
-                await expect(targeted).to_contain_text("유형에 한해 신청할 수 있습니다.")
-                assert await targeted.locator(".participation-guide__outcome").all_text_contents() == ["유형1신청 불가", "유형2신청 대상"]
+                await expect(targeted.locator(".participation-guide__main")).to_have_text("2025년 ‘디지털기반 자동화 MRV 보급사업’ 수요기업은 유형2(제3자 검증)에만 신청할 수 있으며, 유형1(제품별 탄소배출량 산정 MRV 인프라 구축)에는 신청할 수 없습니다.")
+                await expect(targeted.locator(".participation-guide__outcome, .participation-guide__audience")).to_have_count(0)
+                await expect(targeted).not_to_contain_text("신청 대상으로 표시된")
+                await expect(targeted).not_to_contain_text("기본 자격과 다른 제외 사유도")
                 await expect(section.get_by_text("중소기업에 해당해야 합니다.", exact=True)).to_have_count(1)
                 certificate = section.get_by_text("신청 마감일 기준으로 유효한 중소기업확인서를 제출할 수 있어야 합니다.", exact=True)
                 await expect(certificate).to_be_hidden()
@@ -379,7 +384,7 @@ async def official_sources(browser):
                 await expect(paragraphs.filter(has_text="투자금을 지원받고")).to_contain_text("선투자 추천서")
                 await expect(paragraphs.filter(has_text="스마트기술")).to_contain_text("신사업창업사관학교 수료생")
                 await expect(paragraphs.filter(has_text="희망형")).to_contain_text("협약")
-            for width in (1440, 390):
+            for width in (1440, 768, 390, 320):
                 await fit(section, width)
                 await section.screenshot(style=".drawer__top { visibility: hidden; }", path=str(OUT / (name + "-" + str(width) + ".png")))
                 if name == "cbam":
@@ -401,7 +406,7 @@ async def main():
             await official_sources(browser)
         finally:
             await browser.close()
-    print("PASS: collapsed review notice, single shared guidance, cause-specific explanations separate from exact original evidence, review-only state, application sections, single evidence panel with all original sources, exact duplicate removal, source-specific links, keyboard selection, merged outcomes, collapsed details and visible exception buttons, mutual exclusion of details/evidence, keyboard, notice reset, empty/pending refresh, 1440/768/390/320px, CBAM/startup/clean/policy-loan sources; clean duplicate merged with all details and both original excerpts preserved")
+    print("PASS: collapsed review notice, single shared guidance, cause-specific explanations separate from exact original evidence, review-only state, application sections, single evidence panel with all original sources, exact duplicate removal, source-specific links, keyboard selection, plain application-type sentences with explicit exclusivity and verified meanings, collapsed details and visible exception buttons, mutual exclusion of details/evidence, keyboard, notice reset, empty/pending refresh, 1440/768/390/320px, CBAM/startup/clean/policy-loan sources; clean duplicate merged with all details and both original excerpts preserved")
 
 
 if __name__ == "__main__":
