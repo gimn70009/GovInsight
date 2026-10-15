@@ -88,6 +88,8 @@ SYSTEM_PROMPT = f"""
 - 각 section은 title과 body를 가지며, 제목만 있거나 본문만 있는 빈 항목을 만들지 않습니다.
 - 각 section의 body에는 번호 목록과 하이픈 불릿을 넣지 말고 같은 내용을 여러 section에서 반복하지 않습니다.
 - proposal.document_type은 일반 공지 GENERAL_NOTICE, 제출 양식 없는 사업 공고 BUSINESS_NOTICE, 제안서·사업계획서 제출 공고 PROPOSAL_REQUEST, 판단 근거 부족 REVIEW_REQUIRED 중 하나로 분류합니다.
+- 기관 지정·변경·해제 사실을 알리는 고시, 선정 결과와 단순 안내는 현재 모집이나 사업 신청을 받지 않음이 원문에서 확인되면 GENERAL_NOTICE입니다. 지정기관·수행기관을 새로 모집하거나 신청을 받는 공고는 실제 사업 공고로 구분합니다.
+- comparison_summary.business_type이 null이라는 이유만으로 GENERAL_NOTICE로 분류하지 않습니다. 일반 공지라는 판단과 사업 유형 근거 부족을 구분하고, 문서 성격 자체가 불명확하면 REVIEW_REQUIRED로 남깁니다.
 - HWP, HWPX, PDF 또는 ZIP 내부 문서의 확장자만으로 제안서 양식이라고 판단하지 말고, 본문과 첨부 텍스트에서 실제 제출 요구와 작성 항목을 확인합니다.
 - 1단계에서는 공고 분류와 회사 적합성만 판단하며 목차 추출과 제안서 본문 작성을 수행하지 않습니다.
 - PROPOSAL_REQUEST이고 COMPANY_FIT 61점 이상이며 eligibility가 INELIGIBLE이 아니면 draft_status를 REVIEW_REQUIRED로 설정합니다. source_attachment_names, template_sections와 draft_sections는 모두 비웁니다. 후속 조건부 단계가 목차 확정과 초안 생성을 담당합니다.

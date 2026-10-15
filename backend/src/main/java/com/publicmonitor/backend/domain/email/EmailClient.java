@@ -12,14 +12,19 @@ public class EmailClient {
     private final JavaMailSender reportMailSender;
     private final EmailProperties properties;
     public void send(String address, String title, String body) {
+        String text = body == null ? "" : YearNotation.display(body);
+        sendReport(address, title, new EmailMessageContent(text, html(title == null ? "GovInsight 보고서" : title, text)));
+    }
+    public void sendReport(String address, String title, EmailMessageContent content) {
         if (!properties.configured()) throw new EmailClientException("메일 발신 계정을 먼저 설정해 주세요.");
         try {
             var message = reportMailSender.createMimeMessage();
             var helper = new MimeMessageHelper(message, true, "UTF-8");
             helper.setValidateAddresses(true); helper.setFrom(properties.username(), properties.senderName()); helper.setTo(address);
             String subject = title == null ? "GovInsight 보고서" : YearNotation.display(title).replaceAll("[\\r\\n]", " ");
-            String text = body == null ? "" : YearNotation.display(body);
-            helper.setSubject(subject); helper.setText(text, html(subject, text)); reportMailSender.send(message);
+            helper.setSubject(subject);
+            helper.setText(content.plainText(), content.html());
+            reportMailSender.send(message);
         } catch (MailAuthenticationException exception) {
             throw new EmailClientException("메일 계정 인증에 실패했습니다. 앱 비밀번호와 SMTP 설정을 확인해 주세요.");
         } catch (MailException exception) {

@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from app.domains.analysis.schemas.business_type import BusinessTypeAssessment, BusinessTypeCode
 from app.domains.analysis.schemas.request import AnalysisAttachmentRequest
-from app.domains.analysis.schemas.result import Favorability
+from app.domains.analysis.schemas.result import Favorability, ProposalDocumentType
 from app.domains.analysis.workflow.agent import LangChainAnalysisRunner
 from app.domains.analysis.workflow.business_type import validated_business_type
 from tests.domains.analysis.evidence.fakes import collect_all_evidence
@@ -108,3 +108,30 @@ def test_archive_examples_do_not_ground_classification():
         primaryType="SPACE", sources=[dict(origin="NOTICE_BODY", excerpt="입주 공간을 제공합니다.")]
     )
     assert validated_business_type(valid, current) is not None
+
+
+@pytest.mark.parametrize(
+    "document_type",
+    [ProposalDocumentType.GENERAL_NOTICE, ProposalDocumentType.REVIEW_REQUIRED,
+     ProposalDocumentType.BUSINESS_NOTICE],
+)
+def test_null_business_type_preserves_the_separate_document_classification(document_type):
+    runner = LangChainAnalysisRunner.__new__(LangChainAnalysisRunner)
+    runner._settings = SimpleNamespace(max_text_chars=20_000, timeout_seconds=5, model_name="mock")
+    runner._evidence_agent = SimpleNamespace(collect=collect_all_evidence)
+    draft = analysis(Favorability.NOT_APPLICABLE).draft
+    draft.comparison_summary.business_type = None
+    draft.proposal.document_type = document_type
+    runner._analysis_model = AsyncMock()
+    runner._analysis_model.ainvoke.return_value = draft.model_dump()
+    runner._assess_legal_risks = AsyncMock(return_value=draft.comparison_summary.legal_risks)
+    current = document().model_copy(update={
+        "title": "기관 지정 및 고시",
+        "content_text": "소관 기관을 다음과 같이 지정하여 고시합니다.",
+    })
+
+    result = asyncio.run(runner.analyze(current)).draft
+
+    runner._analysis_model.ainvoke.assert_awaited_once()
+    assert result.comparison_summary.business_type is None
+    assert result.proposal.document_type == document_type
