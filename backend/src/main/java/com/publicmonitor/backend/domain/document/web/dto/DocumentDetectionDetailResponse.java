@@ -25,8 +25,90 @@ public record DocumentDetectionDetailResponse(
         Analysis analysis,
         @Schema(description = "같은 문서 버전의 최신 감지 실행에서 분석·제안 처리가 진행될 수 있으면 true")
         boolean analysisPending,
-        List<Attachment> attachments
+        List<Attachment> attachments,
+        @Schema(description = "현재 본문·첨부에 역할과 이름이 명시된 사업 담당기관. 근거가 없으면 빈 목록")
+        List<ResponsibleOrganization> responsibleOrganizations,
+        @Schema(description = "원문의 명시된 제출서류와 기존 준비서류를 통합한 안내. 분석 완료 여부와 독립적")
+        SubmissionGuide submissionGuide,
+        @Schema(description = "현재 원문 근거로 분류한 참여 조건. 회사의 충족 여부를 판정하지 않음")
+        ParticipationGuide participationGuide
 ) {
+
+    @Schema(description = "현재 공고 원문에서 확인한 기관과 역할. 문의처를 주관기관으로 바꾸지 않음")
+    public record ResponsibleOrganization(
+            String name, String role, String sourceType, String attachmentName, String excerpt
+    ) {}
+
+    public enum ParticipationKind { MANDATORY, PREFERENCE, EXCLUSION, REVIEW_REQUIRED }
+
+    public enum ParticipationReviewReason {
+        TABLE_MAPPING_UNCLEAR, CLASSIFICATION_UNCLEAR, SOURCE_CONTEXT_UNCONFIRMED,
+        MIXED_REQUIREMENT, PREFERENCE_NEGATED, INCOMPLETE_TEXT, CONFLICTING_CRITERIA
+    }
+
+    public record ParticipationGuide(List<ParticipationCondition> conditions, List<ParticipationRule> rules,
+                                     List<ParticipationVariant> variants) {}
+
+    public record ParticipationRule(String section, String label, String text, String scope, String audience,
+                                    List<String> details, List<String> exceptions, List<String> guidance,
+                                    List<ParticipationOutcome> outcomes, List<RequirementSource> sources,
+                                    @Schema(description = "원문 확인이 필요한 실제 분류 사유. REVIEW 이외에는 null")
+                                    ParticipationReviewReason reviewReason) {
+        public ParticipationRule(String section, String label, String text, String scope, String audience,
+                                 List<String> details, List<String> exceptions, List<String> guidance,
+                                 List<ParticipationOutcome> outcomes, List<RequirementSource> sources) {
+            this(section, label, text, scope, audience, details, exceptions, guidance, outcomes, sources, null);
+        }
+    }
+
+    public record ParticipationOutcome(String variant, String status) {}
+    public record ParticipationVariant(String name, String description) {}
+
+    @Schema(description = "필수 자격·우대/가점·지원 제외 조건. scope와 details의 대상·논리관계·예외를 함께 적용")
+    public record ParticipationCondition(
+            ParticipationKind kind, String category, String text, String scope,
+            List<String> details, RequirementSource source, ParticipationReviewReason reviewReason
+    ) {
+        public ParticipationCondition(ParticipationKind kind, String category, String text, String scope,
+                                      List<String> details, RequirementSource source) {
+            this(kind, category, text, scope, details, source, null);
+        }
+        public ParticipationCondition {
+            text = YearNotation.display(text);
+            scope = YearNotation.display(scope);
+            details = details == null ? List.of() : details.stream().map(YearNotation::display).toList();
+        }
+    }
+
+    public record SubmissionGuide(List<SubmissionDocument> documents, List<SubmissionNote> notes) {}
+
+    public record SubmissionDocument(
+            String title, String detail, String requirementLevel, String stage, String appliesTo,
+            RequirementSource source,
+            @Schema(description = "명시된 개별 서류명. 파일 형식이나 설명 문장은 포함하지 않음") List<String> documentNames,
+            @Schema(description = "서류별 제출 대상·예외·대체 제출 조건") List<String> conditions,
+            @Schema(description = "해당 서류에 명시된 파일 형식") List<String> formats
+    ) {
+        public SubmissionDocument(String title, String detail, String requirementLevel, String stage, String appliesTo, RequirementSource source) {
+            this(title, detail, requirementLevel, stage, appliesTo, source, List.of(), List.of(), List.of());
+        }
+        public SubmissionDocument {
+            title = YearNotation.display(title);
+            detail = YearNotation.display(detail);
+            appliesTo = YearNotation.display(appliesTo);
+            documentNames = documentNames == null ? List.of() : documentNames.stream().map(YearNotation::display).toList();
+            conditions = conditions == null ? List.of() : conditions.stream().map(YearNotation::display).toList();
+            formats = formats == null ? List.of() : List.copyOf(formats);
+        }
+    }
+
+    @Schema(description = "원문의 제출 조건을 읽기 쉽게 정리한 안내. appliesTo는 명시적으로 연결된 서류명이며 공통 안내는 null. source에는 수정하지 않은 원문을 보존")
+    public record SubmissionNote(String text, String appliesTo, RequirementSource source) {
+        public SubmissionNote {
+            text = YearNotation.display(text);
+            appliesTo = YearNotation.display(appliesTo);
+        }
+    }
 
     @Schema(description = "문서별 AI 분석", nullable = true)
     public record Analysis(
@@ -38,13 +120,22 @@ public record DocumentDetectionDetailResponse(
             AnalysisFavorability favorableOrNot,
             Proposal proposal,
             Opportunity opportunity,
-            String applicationDeadline
+            String applicationDeadline,
+            BusinessSummary businessSummary
     ) {
         public Analysis {
             summary = YearNotation.display(summary);
             keyPoints = displayLines(keyPoints);
             reason = YearNotation.display(reason);
             applicationDeadline = YearNotation.display(applicationDeadline);
+        }
+    }
+
+    @Schema(description = "저장된 공고 분석의 사업 요약. 별도 재분석 없이 제공하며 미확인 값은 null")
+    public record BusinessSummary(String purpose, String supportScale) {
+        public BusinessSummary {
+            purpose = YearNotation.display(purpose);
+            supportScale = YearNotation.display(supportScale);
         }
     }
 

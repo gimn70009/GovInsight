@@ -133,6 +133,7 @@ export interface StrategyCapabilityMatch {
 }
 
 export interface DocumentAnalysis {
+  businessSummary?: { purpose: string | null; supportScale: string | null } | null
   applicationDeadline?: string | null
   summary: string
   keyPoints: string[]
@@ -232,6 +233,58 @@ export interface DocumentAttachment {
   downloadUrl: string
 }
 
+export interface ResponsibleOrganization {
+  name: string
+  role: string
+  sourceType: 'NOTICE_BODY' | 'ATTACHMENT'
+  attachmentName: string | null
+  excerpt: string
+}
+
+export type SubmissionDocument = Pick<ProposalPreparationItem, 'title' | 'detail' | 'requirementLevel' | 'stage' | 'appliesTo' | 'source'> & {
+  documentNames?: string[]
+  conditions?: string[]
+  formats?: string[]
+}
+
+export interface SubmissionGuide {
+  documents: SubmissionDocument[]
+  notes: { text: string; appliesTo?: string | null; source: ProposalPreparationItem['source'] }[]
+}
+
+export type ParticipationReviewReason = 'TABLE_MAPPING_UNCLEAR' | 'CLASSIFICATION_UNCLEAR' | 'SOURCE_CONTEXT_UNCONFIRMED'
+  | 'MIXED_REQUIREMENT' | 'PREFERENCE_NEGATED' | 'INCOMPLETE_TEXT' | 'CONFLICTING_CRITERIA'
+
+export interface ParticipationCondition {
+  reviewReason?: ParticipationReviewReason | null
+  kind: 'MANDATORY' | 'PREFERENCE' | 'EXCLUSION' | 'REVIEW_REQUIRED'
+  category: string
+  text: string
+  scope: string | null
+  details: string[]
+  source: NonNullable<ProposalPreparationItem['source']>
+}
+
+export interface ParticipationRule {
+  reviewReason?: ParticipationReviewReason | null
+  section: 'BASIC' | 'TARGETED' | 'EXCLUSION' | 'PREFERENCE' | 'REVIEW'
+  label: string
+  text: string
+  scope: string | null
+  audience: string | null
+  details: string[]
+  exceptions: string[]
+  guidance: string[]
+  outcomes: { variant: string; status: 'ELIGIBLE' | 'INELIGIBLE' }[]
+  sources: NonNullable<ProposalPreparationItem['source']>[]
+}
+
+export interface ParticipationGuide {
+  conditions: ParticipationCondition[]
+  rules?: ParticipationRule[]
+  variants?: { name: string; description: string }[]
+}
+
 export interface DocumentDetail {
   detectionId: number
   analysisPending: boolean
@@ -244,6 +297,9 @@ export interface DocumentDetail {
   lastCheckedAt: string
   analysis: DocumentAnalysis | null
   attachments: DocumentAttachment[]
+  responsibleOrganizations?: ResponsibleOrganization[]
+  participationGuide?: ParticipationGuide
+  submissionGuide?: SubmissionGuide
 }
 
 export interface SimilarNoticeComparisonSide {

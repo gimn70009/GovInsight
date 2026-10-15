@@ -80,7 +80,7 @@ GovInsight는 이 두 가지 부담에서 출발했습니다. **공고를 찾는
 | --- | --- | --- |
 | 게시판 모니터링 | 기관별 게시글과 첨부파일 수집, 수동·예약 실행, 실행 이력과 경고 조회 | Playwright, FastAPI, Spring Boot 스케줄링 |
 | 문서 변경 감지 | 제목·본문·첨부파일 내용을 비교해 신규·수정·변경 없음 판정, 문서 버전 관리 | SHA-256, Spring Data JPA, Oracle |
-| 첨부파일 읽기 | PDF·HWP·HWPX 및 ZIP 내부 문서의 텍스트 추출, 처리 제한과 실패 상태 관리 | pypdf, olefile, Python XML·ZIP 처리 |
+| 첨부파일 읽기 | PDF·HWP·HWPX·DOCX·XLSX 및 ZIP 내부 문서의 텍스트·표 구조 추출, 처리 제한과 실패 상태 관리 | pypdf, olefile, Python XML·ZIP 처리 |
 | 회사 맞춤 공고 분석 | 본문·첨부·회사 정보·이전 버전 근거를 이용한 요약과 기회 검토 | LangChain, LangGraph, OpenAI API, Pydantic |
 | 사업 제안과 초안 작성 | 참여 전략·준비사항 정리, 양식별 국문·영문 초안, 재작성·저장·복원 | 구조화 출력, 양식·언어·인용 검증, JPA 저장 |
 | 유사 공고 비교 | 제목·사업 목적의 어휘 검색과 의미 검색을 결합해 비교 대상 선정, 신청 조건과 원문 조항 비교 | 임베딩, 코사인 유사도, RRF 순위 결합, Java 캐시 |

@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
+from app.domains.analysis.proposals.structured_submission import submission_table_rows
 from app.domains.analysis.proposals.submission_names import (
     period_submission_evidence,
     same_period_submission_source,
@@ -26,6 +27,7 @@ from app.domains.analysis.schemas.result import (
     RequirementSource,
     RequirementStage,
 )
+from app.domains.monitoring.parsers.table_text import without_tables
 
 logger = logging.getLogger(__name__)
 
@@ -390,6 +392,44 @@ def _referenced_application_enclosures(sources: list[_Source]) -> list[Submissio
     return result
 
 
+
+def _structured_table_requirements(source: _Source) -> list[SubmissionRequirement]:
+    result = []
+    for row in submission_table_rows(source.text):
+        title = re.sub(r"^(?:[①-⑳]|\d+[.)])\s*", "", row.title).strip()
+        named_material = re.fullmatch(
+            r"[가-힣A-Za-z0-9 ()·ㆍ-]{0,100}(?:증빙자료|발표자료|공문)(?:\s*\([^)]{0,60}\))?",
+            title,
+        )
+        if not (_TITLE.fullmatch(title) or named_material) or not 5 <= len(row.quote) <= 300:
+            continue
+        # There is no UNKNOWN enum in the model checklist. Leave unconfirmed
+        # stages/requirements for the source-backed model and the summary UI.
+        if not re.search(r"신청|접수|협약|계약|선정|평가|완료|종료", row.context):
+            continue
+        stage = _stage(row.context)
+        if stage is None:
+            continue
+        marker = re.sub(r"\s+", "", row.marker)
+        levels = {
+            "필수": RequirementLevel.MANDATORY, "필수제출": RequirementLevel.MANDATORY,
+            "해당시": RequirementLevel.CONDITIONAL, "해당시제출": RequirementLevel.CONDITIONAL,
+            "선택": RequirementLevel.OPTIONAL, "선택제출": RequirementLevel.OPTIONAL,
+        }
+        level = levels.get(marker)
+        if level is None or len(row.condition) > 200:
+            continue
+        if re.search(r"면제|생략|미제출|제출하지|대체|대신", row.quote):
+            continue  # Complex exceptions remain with the complete model input.
+        if row.condition and level != RequirementLevel.OPTIONAL:
+            level = RequirementLevel.CONDITIONAL
+        result.append(SubmissionRequirement(
+            title, source.reference(row.quote, "제출서류 표"), stage, level, row.condition,
+            detail=row.quote,
+        ))
+    return result
+
+
 def collect_submission_requirements(
     document: SubmissionSources,
     *,
@@ -398,7 +438,11 @@ def collect_submission_requirements(
     result: list[SubmissionRequirement] = []
     sources = _sources(document)
     for source in sources:
-        table_rows = _table_requirements(source) + _numbered_table_requirements(source)
+        structured_rows = _structured_table_requirements(source)
+        source = _Source(source.name, without_tables(source.text), source.truncated)
+        table_rows = (
+            structured_rows + _table_requirements(source) + _numbered_table_requirements(source)
+        )
         result.extend(table_rows)
         result.extend(_conditional_submission_sentences(source))
         forms: list[SubmissionRequirement] = []

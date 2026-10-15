@@ -83,8 +83,9 @@ class ZipParser:
 
         groups: dict[str, list[tuple[int, str, str, str]]] = {}
         for document in documents:
-            # Preserve wording, numbers and line breaks; only normalize surrounding whitespace.
-            normalized = "\n".join(line.strip() for line in document[2].splitlines()).strip()
+            # Tabs now encode cell positions, including empty first/last cells.
+            lines = (line.strip(" \r") for line in document[2].splitlines())
+            normalized = "\n".join(lines).strip(" \r\n")
             digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
             groups.setdefault(digest, []).append(document)
         representatives = []

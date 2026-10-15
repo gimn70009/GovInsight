@@ -182,7 +182,7 @@ public record AnalysisResultRequest(
             @Size(max = 500) String attachmentName,
             @Size(max = 200) String sectionTitle,
             @Size(max = 200) String location,
-            @Size(max = 300) String excerpt
+            @Size(max = 1200) String excerpt
     ) {
     }
 
