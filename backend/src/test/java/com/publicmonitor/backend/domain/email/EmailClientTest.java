@@ -66,6 +66,24 @@ class EmailClientTest {
         verify(sender).send(message);
     }
 
+    @Test void sendsPreparedSummaryAsBothMimeAlternativesWithoutReformatting() throws Exception {
+        var sender = mock(JavaMailSender.class);
+        var message = new MimeMessage(Session.getInstance(new Properties()));
+        when(sender.createMimeMessage()).thenReturn(message);
+        var content = com.publicmonitor.backend.domain.report.BusinessSummaryEmailTemplate.render(
+                "보고서", java.util.List.of(com.publicmonitor.backend.domain.report.BusinessSummaryEmailView.from(
+                        com.publicmonitor.backend.domain.report.BusinessSummaryEmailFixtures.jumpUp())), false);
+        new EmailClient(sender, properties(EmailProperties.Provider.GMAIL))
+                .sendReport("recipient@example.org", "요약 보고서", content);
+        message.saveChanges();
+        var texts = new java.util.HashMap<String, String>();
+        collectText(message, texts);
+        assertThat(texts.get("text/plain")).isEqualTo(content.plainText());
+        assertThat(texts.get("text/html")).isEqualTo(content.html()).contains("data-business-summary-table");
+        assertThat(message.getAllRecipients()).hasSize(1);
+        verify(sender).send(message);
+    }
+
     private void collectText(jakarta.mail.Part part, java.util.Map<String, String> texts) throws Exception {
         if (part.isMimeType("multipart/*")) {
             var multipart = (jakarta.mail.Multipart) part.getContent();
