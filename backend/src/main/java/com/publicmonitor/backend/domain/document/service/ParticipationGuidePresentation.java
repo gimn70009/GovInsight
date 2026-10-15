@@ -28,10 +28,16 @@ final class ParticipationGuidePresentation {
             else result.put(identity, merge(previous, row));
         }
         return mergeIncludedDetails(List.copyOf(result.values())).stream()
-                .sorted(Comparator.comparingInt(row -> order(row.section()))).toList();
+                .sorted(Comparator.comparingInt(row -> order(row.section())))
+                .map(ParticipationReadability::present).toList();
     }
 
     private static ParticipationRule present(ParticipationCondition condition, List<String> sharedScopes) {
+        if (ParticipationScoreTables.organized(condition)) {
+            return new ParticipationRule(condition.kind() == ParticipationKind.DEDUCTION ? "DEDUCTION" : "PREFERENCE",
+                    condition.category(), condition.text(), null, null, condition.details(), List.of(), List.of(),
+                    List.of(), List.of(condition.source()), null);
+        }
         var details = new ArrayList<String>();
         var exceptions = new ArrayList<String>();
         var guidance = new ArrayList<String>();
@@ -55,13 +61,29 @@ final class ParticipationGuidePresentation {
         if (scope != null && sharedScopes.contains(compact(scope))) scope = null;
         var reviewReason = condition.reviewReason();
         String text = ParticipationConditionText.displaySentence(condition.text(), condition.kind());
-        String label = label(condition);
+        if (condition.kind() == ParticipationKind.EXCLUSION && scope != null && scope.contains("제외될 수 있습니다"))
+            text = text.replace("신청이 제한됩니다", "지원 대상에서 제외될 수 있습니다");
+        String label = condition.kind() == ParticipationKind.FUNDING ? "자부담·사업비" : label(condition);
         String section = switch (condition.kind()) {
             case MANDATORY -> "BASIC";
+            case FUNDING -> "FUNDING";
             case PREFERENCE -> "PREFERENCE";
+            case DEDUCTION -> "DEDUCTION";
             case EXCLUSION -> "EXCLUSION";
             case REVIEW_REQUIRED -> "REVIEW";
         };
+        if (section.equals("EXCLUSION") && compact(text).contains("아래의어느하나")
+                && details.stream().anyMatch(value -> value.contains("부도") || value.contains("체납"))) {
+            var reasons = new ArrayList<String>();
+            String joined = String.join(" ", details);
+            for (String reason : List.of("부도", "체납", "채무불이행", "파산", "자본전액잠식"))
+                if (joined.contains(reason)) reasons.add(reason);
+            details.addFirst("적용 대상\n" + text);
+            var exemption = Pattern.compile("\\(단,\\h*(.+?)\\)").matcher(text);
+            if (exemption.find()) exceptions.add("단, " + exemption.group(1));
+            label = "경영·재무";
+            text = String.join("·", reasons.stream().limit(3).toList()) + " 등 경영·재무 제외 조건 중 하나에 해당하면 신청이 제한됩니다.";
+        }
         var outcomes = new ArrayList<ParticipationOutcome>();
         String audience = null;
         var type = TYPE_RULE.matcher(text);
@@ -142,9 +164,18 @@ final class ParticipationGuidePresentation {
 
     private static String label(ParticipationCondition condition) {
         String text = condition.text();
+        if (condition.category().equals("참여기관 구성") || condition.category().equals("자부담·사업비")) return condition.category();
+        if (text.matches("^주관연구개발기관으로 신청.*")) return "주관기관 자격";
+        if (text.matches(".*외국법인.*(?:참여|신청).*(?:가능|수 있음|수 있습니다).*")) return "국외기관 참여";
         if (text.contains("중소기업기본법") || text.matches("^(?:중소기업|소기업|대기업)(?:이|에).*")) return "기업 규모";
         if (text.contains("사업자등록증") && text.contains("제조")) return "제조업 여부";
         if (text.contains("수출") && !text.contains("가점") && !text.contains("특허")) return "수출 대상";
+        if (text.contains("과제기획위원")) return "과제 기획 참여";
+        if (text.contains("참여제한을 받고")) return "사업 참여 제재";
+        if (text.startsWith("신청과제") && text.contains("기술분야")) return "과제 분야 적합성";
+        if (text.contains("과제제안요구서")) return "과제 내용 적합성";
+        if (text.contains("기 지원, 기 개발")) return "중복 과제";
+        if (text.contains("의무사항을 불이행")) return "기존 의무 이행";
         if (text.contains("체납")) return "세금 체납";
         if (text.contains("채무불이행")) return "채무불이행";
         if (text.matches(".*휴[·‧ㆍ․]?폐업.*")) return "휴업·폐업";
@@ -296,7 +327,8 @@ final class ParticipationGuidePresentation {
             case "TARGETED" -> 1;
             case "EXCLUSION" -> 2;
             case "PREFERENCE" -> 3;
-            default -> 4;
+            case "DEDUCTION" -> 4;
+            default -> 5;
         };
     }
 }

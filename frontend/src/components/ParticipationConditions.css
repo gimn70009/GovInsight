@@ -106,3 +106,17 @@
 .participation-guide__main > p + p { margin-top: 4px; }
 .participation-guide__summary-options { margin: 8px 0 0; padding-left: 20px; }
 .participation-guide__summary-options li + li { margin-top: 4px; }
+
+.participation-guide__detail-clause > strong { display: block; margin-bottom: 7px; color: #294c72; font-size: 13px; }
+.participation-guide__detail-clause > p { margin: 5px 0 0; line-height: 1.85; }
+.participation-guide__scope-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.participation-guide__scope-summary + div:not([hidden]) { margin-top: 12px; }
+.is-deduction > .participation-guide__section-title::before { background: #ab6674; }
+
+.participation-guide__evaluation-toggle { display: flex; align-items: center; justify-content: space-between; gap: 18px; width: 100%; padding: 21px 23px; border: 0; background: transparent; text-align: left; color: #213c5b; cursor: pointer; font: inherit; }
+.participation-guide__evaluation-toggle h3 { margin: 0; font-size: 17px; }
+.participation-guide__evaluation-toggle p { margin: 7px 0 0; color: #61758c; font-size: 12px; line-height: 1.7; }
+.participation-guide__evaluation-toggle > span { display: flex; gap: 7px; align-items: center; flex-shrink: 0; font-size: 12px; }
+.participation-guide__evaluation-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.participation-guide__evaluation-toggle:focus-visible { outline: 2px solid #3182f6; outline-offset: -3px; border-radius: 12px; }
+.participation-guide__evaluation .business-summary__section-body { border-top: 1px solid #dce5ef; }

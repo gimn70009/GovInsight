@@ -107,3 +107,48 @@ test('missing or ambiguous type descriptions are not invented and review outcome
   assert.equal(applicationTypeSentence({ ...item, outcomes: [] }), null)
   assert.equal(applicationTypeSentence({ ...item, outcomes: [...item.outcomes, { variant: '유형1', status: 'ELIGIBLE' }] }), null)
 })
+
+
+test('deductions stay separate from eligibility, exclusions and positive bonus points, including legacy conditions', () => {
+  const sections = groupParticipationRules({ rules: [row({ section: 'DEDUCTION', label: '평가 감점', text: '납부기한 내 미납 시 1점 감점합니다.' }), row({ section: 'PREFERENCE' })] })
+  assert.deepEqual(sections.map(section => section.key), ['PREFERENCE', 'DEDUCTION'])
+  assert.equal(sections[1].title, '감점 기준')
+  const legacy = groupParticipationRules({ conditions: [{ kind: 'DEDUCTION', category: '평가 감점', text: '1점 감점합니다.', details: ['최대 3점'], source }] })
+  assert.equal(legacy[0].key, 'DEDUCTION')
+  assert.deepEqual(legacy[0].groups[0].labels[0].rules[0].details, ['최대 3점'])
+})
+
+test('unreadable score tables explain the missing row connections without displaying a raw table as the headline', () => {
+  const rule = reviewRows([row({ section: 'REVIEW', label: '평가 가점', reviewReason: 'TABLE_MAPPING_UNCLEAR', text: '가점 표 확인', sources: [{ ...source, excerpt: '구분 가점사항 가점 증빙 1 기업 2점' }] })])[0]
+  assert.equal(rule.review.title, '평가 가점의 항목별 인정 기준')
+  assert.match(rule.review.reason, /조건·점수·증빙/)
+  assert.equal(rule.sources[0].excerpt, '구분 가점사항 가점 증빙 1 기업 2점')
+})
+
+
+test('eligibility includes applicant prerequisites and excludes all cost and evaluation content, including unresolved score tables', () => {
+  const rules = [row({ text: '자부담 확보가 가능한 기업만 신청 가능합니다.' }),
+    row({ section: 'FUNDING', label: '자부담·사업비', text: '자부담 20%를 부담합니다.', details: ['현물 인정'], exceptions: ['비영리기관 면제'] }),
+    row({ section: 'PREFERENCE' }), row({ section: 'DEDUCTION' }),
+    row({ section: 'REVIEW', label: '평가 가점', reviewReason: 'TABLE_MAPPING_UNCLEAR' }),
+    row({ section: 'REVIEW', label: '참여기관 구성', reviewReason: 'TABLE_MAPPING_UNCLEAR' })]
+  const flatten = domain => groupParticipationRules({ rules }, domain).flatMap(section => section.groups.flatMap(group => group.labels.flatMap(label => label.rules)))
+  assert.deepEqual(flatten('eligibility').map(rule => rule.section), ['BASIC', 'REVIEW'])
+  assert.equal(flatten('eligibility')[0].text, rules[0].text)
+  assert.deepEqual(flatten('funding')[0], rules[1])
+  assert.deepEqual(flatten('evaluation').map(rule => rule.section), ['PREFERENCE', 'DEDUCTION', 'REVIEW'])
+})
+
+test('legacy funding stays separate from eligibility, and a cost-only notice cannot appear to have confirmed applicant qualifications', () => {
+  const guide = { conditions: [{ kind: 'FUNDING', category: '자부담·사업비', text: '사업비 30% 부담', source }] }
+  assert.deepEqual(groupParticipationRules(guide, 'eligibility'), [])
+  assert.equal(groupParticipationRules(guide, 'funding')[0].key, 'FUNDING')
+})
+
+
+test('unconfirmed preferences remain in evaluation while genuinely mixed applicant requirements remain in eligibility', () => {
+  const rules = [row({ section: 'REVIEW', reviewReason: 'INCOMPLETE_TEXT', text: '해외 수상 기업 우대에 관한', sources: [{ ...source, sectionTitle: '우대사항' }] }),
+    row({ section: 'REVIEW', reviewReason: 'MIXED_REQUIREMENT', text: '중소기업이며 특허 보유기업 우대', sources: [{ ...source, sectionTitle: '신청자격' }] })]
+  assert.equal(groupParticipationRules({ rules }, 'evaluation')[0].groups[0].labels[0].rules[0].reviewReason, 'INCOMPLETE_TEXT')
+  assert.equal(groupParticipationRules({ rules }, 'eligibility')[0].groups[0].labels[0].rules[0].reviewReason, 'MIXED_REQUIREMENT')
+})

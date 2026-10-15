@@ -62,9 +62,9 @@ async def verify(browser):
         h.states[2] = dict(data, detectionId=2)
         await h.open(analysis_tab=False)
         section = h.page.get_by_role("region", name="신청 자격과 제한", exact=True)
-        await expect(section.locator(".participation-guide__rule")).to_have_count(9)
+        await expect(section.locator(".participation-guide__rule")).to_have_count(8)
         assert await section.get_by_role("heading", level=4).all_text_contents() == [
-            "기본 신청 자격", "특정 기업에 적용되는 제한", "신청 제외 사유", "우대·가점"]
+            "기본 신청 자격", "특정 기업에 적용되는 제한", "신청 제외 사유"]
         await expect(section.get_by_text("필수", exact=True)).to_have_count(0)
         await expect(section.locator(".participation-guide__outcome, .participation-guide__outcomes")).to_have_count(0)
         targeted = section.get_by_role("region", name="특정 기업에 적용되는 제한", exact=True)
@@ -126,7 +126,7 @@ async def review_notice(browser):
         content = notice.locator(".participation-guide__review-content")
         await expect(section.get_by_role("table")).to_have_count(0)
         await expect(section.get_by_role("heading", level=4)).to_have_count(0)
-        await expect(section.get_by_text("참여 조건 확인 필요", exact=True)).to_have_count(0)
+        await expect(section.get_by_text("신청 자격 확인 필요", exact=True)).to_have_count(0)
         await expect(notice.locator(".participation-guide__review-note")).to_have_count(1)
         await expect(notice.get_by_text("표에서 적용 대상별 자격 요건을 구분하지 못했습니다.", exact=True)).to_have_count(0)
         await expect(notice.get_by_text("원문에서 같은 대상·유형의 신청 기준이 서로 다르게 확인됩니다.", exact=True)).to_have_count(0)
@@ -256,7 +256,7 @@ async def empty_and_pending(browser):
             h.states[1] = data
             await h.open(analysis_tab=False)
             section = h.page.get_by_role("region", name="신청 자격과 제한", exact=True)
-            await expect(section.get_by_text("참여 조건 확인 필요", exact=True)).to_be_visible()
+            await expect(section.get_by_text("신청 자격 확인 필요", exact=True)).to_be_visible()
             await expect(section).to_contain_text("조건이 없다는 뜻은 아니므로")
             await expect(section.get_by_role("table")).to_have_count(0)
             if pending:
@@ -499,6 +499,136 @@ async def plain_eligibility(browser):
         await h.close()
 
 
+async def research_eligibility(browser):
+    for extension in ("pdf", "hwpx", "combined"):
+        fixture = Path(__file__).resolve().parents[2] / f"backend/build/participation-guide-checks/ax-{extension}-guide.json"
+        data = summary.ready()
+        data["analysis"] = None
+        data["title"] = "지역거점 AX 혁신 기술개발 사업 신규지원 대상과제 공고"
+        data["participationGuide"] = json.loads(fixture.read_text(encoding="utf-8"))
+        data["attachments"] = [dict(data["attachments"][0], fileName=f"연구개발 사업 공고.{extension}",
+                                    downloadUrl=f"https://example.org/notice.{extension}")]
+        if extension == "combined":
+            data["attachments"] = [dict(data["attachments"][0], fileName=f"연구개발 사업 공고.{ext}", downloadUrl=f"https://example.org/notice.{ext}") for ext in ("hwpx", "pdf")]
+        h = await refresh.Harness(browser).start()
+        try:
+            h.states[1] = data
+            await h.open(analysis_tab=False)
+            section = h.page.get_by_role("region", name="신청 자격과 제한", exact=True)
+            await expect(section.get_by_role("region", name="기본 신청 자격", exact=True).locator(".participation-guide__rule")).to_have_count(2 if extension == "pdf" else 5)
+            await expect(section.locator(".participation-guide__main")).not_to_contain_text(["집행가능", "사업.", "의무매칭"])
+            await expect(section.get_by_role("row", name="주관기관 자격", exact=False)).to_contain_text("기업부설연구소")
+            overview = h.page.get_by_role("region", name="사업 정보 한눈에 보기", exact=True)
+            await expect(overview.get_by_role("row", name="자부담·사업비", exact=False)).to_have_count(0)
+            evaluation = h.page.get_by_role("region", name="평가 기준", exact=True)
+            evaluation_toggle = evaluation.locator(".participation-guide__evaluation-toggle")
+            await expect(evaluation_toggle).to_have_attribute("aria-expanded", "false")
+            await expect(section.get_by_text("민간부담금을 부담해야", exact=False)).to_have_count(0)
+            await expect(section.get_by_role("heading", name="우대·가점", exact=True)).to_have_count(0)
+            await expect(section.get_by_role("heading", name="감점 기준", exact=True)).to_have_count(0)
+            await expect(section.get_by_text("평가 가점의 항목별 인정 기준", exact=True)).to_have_count(0)
+            foreign = section.get_by_role("row", name="국외기관 참여", exact=False)
+            await h.page.add_style_tag(content=".drawer__top { display: none !important; }")
+            for width in (1440, 768, 390, 320):
+                await fit(section, width)
+                await h.page.set_viewport_size(dict(width=width, height=4000))
+                await expect(section.locator(".participation-guide__detail-panel:visible")).to_have_count(0)
+                if width in (1440, 390):
+                    await section.screenshot(path=str(OUT / f"ax-{extension}-{width}.png"))
+                await expect(overview.get_by_role("row", name="자부담·사업비", exact=False)).to_have_count(0)
+                foreign_toggle = foreign.get_by_role("button", name="국외기관 참여 세부 조건·예외", exact=True)
+                await foreign_toggle.click()
+                await expect(foreign.locator(".participation-guide__detail-panel")).to_contain_text("공동으로 수행하는 경우로 한정")
+                await foreign_toggle.click()
+                if extension != "pdf":
+                    await evaluation_toggle.focus()
+                    await h.page.keyboard.press("Enter")
+                    bonus = evaluation.get_by_role("region", name="우대·가점", exact=True)
+                    penalty = evaluation.get_by_role("region", name="감점 기준", exact=True)
+                    await expect(bonus.locator(".participation-guide__scope")).to_have_count(0)
+                    await expect(bonus.locator(".participation-guide__main")).to_contain_text("최대 3점")
+                    await expect(penalty.locator(".participation-guide__main")).to_contain_text("미납")
+                    bonus_toggle = bonus.get_by_role("button", name="평가 가점 세부 조건", exact=True)
+                    await bonus_toggle.focus()
+                    await h.page.keyboard.press("Enter")
+                    panel = bonus.locator(".participation-guide__detail-panel")
+                    for text in ("90점 이상", "2천만원 이상", "10% 이상", "보건복지부", "식품의약품안전처", "제출하지 않으면 인정되지 않습니다"):
+                        await expect(panel).to_contain_text(text)
+                    await expect(panel.locator(".participation-guide__detail-clause")).to_have_count(23)
+                    assert await panel.evaluate("el => el.scrollWidth <= el.clientWidth + 1")
+                    if width in (1440, 390):
+                        await panel.locator(".participation-guide__detail-clause").first.screenshot(path=str(OUT / f"ax-score-item-{extension}-{width}.png"))
+                    await bonus_toggle.click()
+                    await penalty.get_by_role("button", name="평가 감점 세부 조건", exact=True).click()
+                    await expect(penalty.locator(".participation-guide__detail-panel")).to_contain_text("납부기한까지 납부하지 않은")
+                    await penalty.get_by_role("button", name="평가 감점 세부 조건", exact=True).click()
+                    await evaluation_toggle.click()
+                else:
+                    await evaluation_toggle.click()
+                    await expect(evaluation.locator(".participation-guide__review-count")).to_have_text("2건")
+                    await evaluation_toggle.click()
+                if width in (1440, 390):
+                    await overview.screenshot(path=str(OUT / f"ax-overview-{extension}-{width}.png"))
+        finally:
+            await h.close()
+
+
+
+async def long_scope(browser):
+    h = await refresh.Harness(browser).start()
+    try:
+        data = summary.ready()
+        data["participationGuide"] = guide()
+        scope = "\n".join(f"적용 대상 {i}: 공고일 기준 해당 지역에 소재하고 사업자등록을 완료한 기업에 적용합니다." for i in range(1, 8))
+        data["participationGuide"]["rules"][0]["scope"] = scope
+        h.states[1] = data
+        await h.open(analysis_tab=False)
+        section = h.page.get_by_role("region", name="신청 자격과 제한", exact=True)
+        note = section.locator(".participation-guide__scope").filter(has_text="적용 대상 1:")
+        for width in (1440, 768, 390, 320):
+            await fit(section, width)
+            await expect(note.get_by_text("적용 대상 1:", exact=False)).to_be_hidden()
+            button = note.get_by_role("button", name="적용 범위 보기", exact=True)
+            await button.focus()
+            await h.page.keyboard.press("Enter")
+            await expect(note.get_by_text("적용 대상 7:", exact=False)).to_be_visible()
+            assert await note.evaluate("el => el.scrollWidth <= el.clientWidth + 1")
+            await note.get_by_role("button", name="적용 범위 접기", exact=True).click()
+    finally:
+        await h.close()
+
+
+async def supplementary_only(browser):
+    h = await refresh.Harness(browser).start()
+    try:
+        data = summary.ready()
+        base = guide()["rules"][0]
+        data["participationGuide"] = dict(conditions=[], rules=[dict(base, section="FUNDING", label="자부담·사업비", text="사업비의 20% 이상을 부담해야 합니다."),
+            dict(base, section="PREFERENCE", label="특허", text="특허 보유 기업은 2점 가점을 받습니다.")])
+        h.states[1] = data
+        h.states[2] = dict(data, detectionId=2)
+        await h.open(analysis_tab=False)
+        section = h.page.get_by_role("region", name="신청 자격과 제한", exact=True)
+        await expect(section.get_by_text("신청 자격 확인 필요", exact=True)).to_be_visible()
+        await expect(section.get_by_role("table")).to_have_count(0)
+        overview = h.page.get_by_role("region", name="사업 정보 한눈에 보기", exact=True)
+        await expect(overview.get_by_role("row", name="자부담·사업비", exact=False)).to_have_count(0)
+        await expect(h.page.get_by_text("사업비의 20% 이상을 부담해야 합니다.", exact=True)).to_have_count(0)
+        evaluation = h.page.get_by_role("region", name="평가 기준", exact=True)
+        toggle = evaluation.locator(".participation-guide__evaluation-toggle")
+        await expect(toggle).to_have_attribute("aria-expanded", "false")
+        await toggle.focus()
+        await h.page.keyboard.press("Enter")
+        await expect(evaluation.get_by_text("특허 보유 기업은 2점 가점을 받습니다.", exact=True)).to_be_visible()
+        await evaluation.screenshot(path=str(OUT / "evaluation-expanded.png"))
+        await h.page.locator(".document-row").filter(has_text="상세 갱신 공고 2").evaluate("el => el.click()")
+        await h.wait_request(2, 1)
+        await expect(toggle).to_have_attribute("aria-expanded", "false")
+        await evaluation.screenshot(path=str(OUT / "evaluation-collapsed.png"))
+    finally:
+        await h.close()
+
+
 async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch(channel=refresh.os.environ.get("BROWSER_CHANNEL", "msedge"))
@@ -510,9 +640,12 @@ async def main():
             await official_sources(browser)
             await certification_boundaries(browser)
             await plain_eligibility(browser)
+            await research_eligibility(browser)
+            await long_scope(browser)
+            await supplementary_only(browser)
         finally:
             await browser.close()
-    print("PASS: collapsed review notice, single shared guidance, cause-specific explanations separate from exact original evidence, review-only state, application sections, single evidence panel with all original sources, exact duplicate removal, source-specific links, keyboard selection, plain application-type sentences with explicit exclusivity and verified meanings, collapsed details and visible exception buttons, mutual exclusion of details/evidence, keyboard, notice reset, empty/pending refresh, 1440/768/390/320px, CBAM/startup/clean/policy-loan sources; clean duplicate merged with all details and both original excerpts preserved; certification PDF/HWPX heading boundaries, preserved eligibility and exceptions without cost definitions, readable scope paragraphs; plain-language eligibility with alternatives, incorporation dates and legal definitions, both original sources, keyboard and mobile layouts")
+    print("PASS: collapsed review notice, single shared guidance, cause-specific explanations separate from exact original evidence, review-only state, application sections, single evidence panel with all original sources, exact duplicate removal, source-specific links, keyboard selection, plain application-type sentences with explicit exclusivity and verified meanings, collapsed details and visible exception buttons, mutual exclusion of details/evidence, keyboard, notice reset, empty/pending refresh, 1440/768/390/320px, CBAM/startup/clean/policy-loan sources; clean duplicate merged with all details and both original excerpts preserved; certification PDF/HWPX heading boundaries, preserved eligibility and exceptions without cost definitions, readable scope paragraphs; plain-language eligibility with alternatives, incorporation dates and legal definitions, both original sources, keyboard and mobile layouts; AX PDF/HWPX actual applicant conditions, no project headings or spending rows, hidden cost-sharing rows and preserved foreign-participation limits; whole-notice bonus and deduction summaries, per-item evidence and limits, combined attachments and collapsed long scope with keyboard support; applicant-only eligibility, no dedicated funding display, separate collapsed evaluation and supplementary-only empty state")
 
 
 if __name__ == "__main__":

@@ -44,7 +44,7 @@ public record DocumentDetectionDetailResponse(
     public record BusinessTypeSummary(String status, String code, String label, String description,
                                       String explanation, List<String> details, List<RequirementSource> sources) {}
 
-    public enum ParticipationKind { MANDATORY, PREFERENCE, EXCLUSION, REVIEW_REQUIRED }
+    public enum ParticipationKind { MANDATORY, FUNDING, PREFERENCE, DEDUCTION, EXCLUSION, REVIEW_REQUIRED }
 
     public enum ParticipationReviewReason {
         TABLE_MAPPING_UNCLEAR, CLASSIFICATION_UNCLEAR, SOURCE_CONTEXT_UNCONFIRMED,
@@ -69,7 +69,7 @@ public record DocumentDetectionDetailResponse(
     public record ParticipationOutcome(String variant, String status) {}
     public record ParticipationVariant(String name, String description) {}
 
-    @Schema(description = "필수 자격·우대/가점·지원 제외 조건. scope와 details의 대상·논리관계·예외를 함께 적용")
+    @Schema(description = "필수 자격·사업비 조건·평가 가감점·지원 제외 조건. scope와 details의 대상·논리관계·예외를 함께 적용")
     public record ParticipationCondition(
             ParticipationKind kind, String category, String text, String scope,
             List<String> details, RequirementSource source, ParticipationReviewReason reviewReason

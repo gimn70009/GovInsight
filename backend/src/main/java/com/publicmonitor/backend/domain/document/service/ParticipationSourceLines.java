@@ -6,7 +6,7 @@ import java.util.regex.Pattern;
 
 /** Logical heading boundaries with offsets into the unchanged extracted source. */
 final class ParticipationSourceLines {
-    private static final Pattern BREAK = Pattern.compile("\\R|(?=[□■]\\h*[가-힣][가-힣\\h·/]{1,24}[:：])");
+    private static final Pattern BREAK = Pattern.compile("\\R|(?<=\\h)(?=ㅇ\\h+)|(?=[□■]\\h*[가-힣][가-힣\\h·/]{1,24}[:：])|(?=[□■]\\h*(?:공통\\h*)?(?:가점|감점)\\h*(?:사항|항목|기준))");
     private final String original;
     private final List<Integer> starts = new ArrayList<>();
     private final List<Integer> ends = new ArrayList<>();
