@@ -138,3 +138,9 @@
   .business-summary__note-line { gap: 8px; }
   .business-summary__note-line > button { padding: 3px 6px; font-size: 10px; }
 }
+
+.business-summary__type-label { color: #263f5d; font-size: 15px; font-weight: 650; }
+.business-summary__type-status { color: #748196; font-size: 13px; font-weight: 500; }
+@media (max-width: 600px) {
+  .business-summary__type-label { font-size: 14px; }
+}

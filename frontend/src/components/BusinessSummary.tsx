@@ -1,3 +1,4 @@
+import { BusinessTypeRow } from './BusinessTypeRow'
 import { ParticipationConditions } from './ParticipationConditions'
 import { Fragment, useId, useState } from 'react'
 import { CalendarDays, ChevronDown, CircleHelp, FileText, Banknote, ExternalLink, LayoutList } from 'lucide-react'
@@ -195,6 +196,7 @@ export function BusinessSummary({ detail }: { detail: DocumentDetail }) {
         <div className="business-summary__table-wrap">
           <table className="business-summary__facts" aria-label="사업 핵심 정보">
             <tbody>
+              <BusinessTypeRow detail={detail} />
               <tr><th scope="row">사업 담당기관</th><td><ResponsibleOrganizations detail={detail} /></td></tr>
               <tr><th scope="row">사업명</th><td><strong className="business-summary__name">{detail.title}</strong></td></tr>
               <tr className="business-summary__emphasis"><th scope="row"><span><Banknote size={16} aria-hidden="true" />지원규모</span></th><td>{supportScale ? <p className="business-summary__amount">{formatSummaryText(formatSupportScale(supportScale))}</p> : <MissingValue />}</td></tr>

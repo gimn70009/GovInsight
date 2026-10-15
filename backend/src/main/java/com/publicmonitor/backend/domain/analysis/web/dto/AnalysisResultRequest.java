@@ -1,6 +1,7 @@
 package com.publicmonitor.backend.domain.analysis.web.dto;
 
 import com.publicmonitor.backend.domain.analysis.entity.AnalysisEligibility;
+import com.publicmonitor.backend.domain.document.service.BusinessType;
 import com.publicmonitor.backend.domain.analysis.entity.AnalysisFavorability;
 import com.publicmonitor.backend.domain.analysis.entity.DocumentImportance;
 import com.publicmonitor.backend.domain.analysis.entity.OpportunityDimensionType;
@@ -88,9 +89,27 @@ public record AnalysisResultRequest(
             @NotBlank @Size(max = 300) String applicationDeadline,
             @NotBlank @Size(max = 1000) String eligibility,
             @NotBlank @Size(max = 1000) String requiredPartner,
-            @NotNull @Size(min = 5, max = 5) List<@Valid LegalRiskFinding> legalRisks
+            @NotNull @Size(min = 5, max = 5) List<@Valid LegalRiskFinding> legalRisks,
+            @Valid BusinessTypeAssessment businessType
     ) {
+        public ComparisonSummary(String purpose, String supportScale, String applicationDeadline, String eligibility,
+                                 String requiredPartner, List<LegalRiskFinding> legalRisks) {
+            this(purpose, supportScale, applicationDeadline, eligibility, requiredPartner, legalRisks, null);
+        }
     }
+
+    public record BusinessTypeAssessment(
+            @NotNull BusinessType primaryType,
+            @NotBlank @Size(max = 500) String explanation,
+            @NotNull @Size(max = 5) List<@NotBlank @Size(max = 300) String> details,
+            @NotNull @Size(min = 1, max = 4) List<@Valid BusinessTypeEvidence> sources
+    ) {}
+
+    public record BusinessTypeEvidence(
+            @NotBlank @jakarta.validation.constraints.Pattern(regexp = "NOTICE_BODY|ATTACHMENT") String origin,
+            @Size(max = 500) String attachmentName,
+            @NotBlank @Size(min = 5, max = 1000) String excerpt
+    ) {}
 
     public record LegalRiskFinding(
             @NotBlank @Size(max = 40) String type,
