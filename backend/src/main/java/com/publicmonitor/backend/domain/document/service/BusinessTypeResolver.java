@@ -33,12 +33,20 @@ final class BusinessTypeResolver {
 
     static BusinessTypeSummary resolve(String title, String body, List<DocumentAttachment> attachments,
                                        String saved, ObjectMapper mapper) {
-        if (ordinary(title)) return missing("NOT_APPLICABLE", "선정 결과나 일반 안내 게시글에는 지원사업 유형을 붙이지 않습니다.");
+        return resolve(title, body, attachments, saved, null, mapper);
+    }
+
+    static BusinessTypeSummary resolve(String title, String body, List<DocumentAttachment> attachments,
+                                       String saved, String documentType, ObjectMapper mapper) {
         var sources = sources(body, attachments);
         var analyzed = stored(saved, sources, mapper);
-        if (analyzed != null) return analyzed;
         var candidates = new ArrayList<Candidate>();
         for (var source : sources) collect(source, title, candidates);
+        if (GeneralNoticeClassifier.matches(title, sources.stream().map(Source::text).toList(),
+                documentType, analyzed != null || !candidates.isEmpty())) {
+            return missing("NOT_APPLICABLE", "기관 지정·고시, 선정 결과나 일반 안내로 확인된 공고에는 지원사업 유형을 붙이지 않습니다.");
+        }
+        if (analyzed != null) return analyzed;
         if (candidates.isEmpty()) return missing("REVIEW_REQUIRED", "현재 공고의 지원 내용에서 대표 유형을 확인하지 못했습니다. 공고 원문을 확인해 주세요.");
         candidates.sort(Comparator.comparingInt(Candidate::score).reversed().thenComparingInt(Candidate::order));
         var distinct = new LinkedHashMap<BusinessType, Candidate>();
@@ -69,13 +77,6 @@ final class BusinessTypeResolver {
 
     private static BusinessTypeSummary missing(String status, String explanation) {
         return new BusinessTypeSummary(status, null, null, null, explanation, List.of(), List.of());
-    }
-
-    private static boolean ordinary(String title) {
-        if (title == null) return false;
-        if (title.matches(".*(?:추가\\s*모집|재공모|신규\\s*모집).*")) return false;
-        return title.matches(".*(?:선정|평가|심사|합격|입찰).{0,10}결과.*|.*(?:보도자료|행정예고|입법예고|정책\\s*발표|설명회\\s*개최|시스템\\s*점검).*"
-                + "|.*(?:기간제|공무직|직원|연구원)\\s*채용.*");
     }
 
     private static List<Source> sources(String body, List<DocumentAttachment> attachments) {

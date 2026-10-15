@@ -164,6 +164,38 @@ class DocumentDetectionDetailServiceTest {
     }
 
     @Test
+    void 기존_상세_조회에서_일반공지_분류와_미확인_유형을_구분한다() {
+        LocalDateTime now = LocalDateTime.of(2026, 10, 16, 9, 0);
+        MonitoringSource source = MonitoringSource.create("기관", "공지사항", null, "https://example.com", null, 2, true);
+        MonitoringRun run = MonitoringRun.create(MonitoringTriggerType.MANUAL, 1, now);
+        MonitoringRunSource runSource = MonitoringRunSource.create(run, source);
+        Document document = Document.create(source, "https://example.com/notice/1", "1", now);
+        DocumentVersion version = DocumentVersion.create(
+                document, 1, "기관 현황 안내", "현재 기관 현황을 알려 드립니다.", "a".repeat(64), now, 0, now);
+        ReflectionTestUtils.setField(version, "id", 3L);
+        DocumentDetection detection = DocumentDetection.create(
+                runSource, document, version, DocumentChangeType.NEW_DOCUMENT, now);
+        given(detectionRepository.findById(4L)).willReturn(Optional.of(detection));
+        given(attachmentRepository.findAllByDocumentVersionId(3L)).willReturn(List.of());
+
+        for (String type : List.of("GENERAL_NOTICE", "REVIEW_REQUIRED", "BUSINESS_NOTICE")) {
+            DocumentAnalysis analysis = DocumentAnalysis.create(
+                    version, "기관 현황을 안내하는 공고입니다.", "[]", DocumentImportance.LOW,
+                    "공고의 성격을 확인합니다.", AnalysisEligibility.REVIEW_REQUIRED,
+                    AnalysisFavorability.NOT_APPLICABLE,
+                    "{\"sections\":[],\"documentType\":\"" + type + "\"}", 0, OpportunityPriority.LOW,
+                    opportunityJson(), "[]", "mock-model", now);
+            analysis.updateComparisonSummary("{\"businessType\":null}");
+            given(analysisRepository.findByDocumentVersionId(3L)).willReturn(Optional.of(analysis));
+            var response = service().findById(4L);
+            assertThat(response.businessType().status())
+                    .isEqualTo(type.equals("GENERAL_NOTICE") ? "NOT_APPLICABLE" : "REVIEW_REQUIRED");
+        }
+        given(analysisRepository.findByDocumentVersionId(3L)).willReturn(Optional.empty());
+        assertThat(service().findById(4L).businessType().status()).isEqualTo("REVIEW_REQUIRED");
+    }
+
+    @Test
     void 존재하지_않는_감지_문서는_예외를_반환한다() {
         given(detectionRepository.findById(999L)).willReturn(Optional.empty());
 
