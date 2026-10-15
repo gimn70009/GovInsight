@@ -7,3 +7,7 @@
 - policy-loan-hwpx.txt, policy-loan-pdf.txt: [소상공인 정책자금 융자사업 변경 5차 공고](https://www.mss.go.kr/site/smba/ex/bbs/View.do?bcIdx=1071565&cbIdx=310&parentSeq=1071565)의 각 형식 추출문. 자금별 대상·예외·문장 줄바꿈을 검증합니다.
 
 추출문은 원문 인용 동일성 확인에 쓰므로 공백·탭·줄바꿈을 임의로 정리하지 않습니다. 테스트는 네트워크나 모델 API를 호출하지 않습니다.
+
+- certification-pdf.txt, certification-hwpx.txt: [해외규격인증획득지원사업 일반지원 3차 모집 공고](https://www.mss.go.kr/site/smba/ex/bbs/View.do?cbIdx=310&bcIdx=1071736)의 PDF·HWPX 기존 파서 추출문 중 1~4절입니다. PDF에서 한 줄로 붙은 지원대상·지원기간·지원한도의 경계, 비용 설명 오분류 방지, 실제 대상·예외와 정확한 인용을 검증합니다.
+
+- bio-open-innovation.txt: [민관협력 오픈이노베이션 지원 2026년 제2차 상호 자율탐색형(바이오 분야) 참여기업 모집공고](https://www.mss.go.kr/site/smba/ex/bbs/View.do?bcIdx=1071550&cbIdx=310)의 HWPX 기존 파서 추출문 중 공고 시작부터 신청자격 절까지의 연속 구간입니다. 법령·업력·창업일 분리, 선택 관계, 개인/법인 기준, 공동대표 요건, 개요/상세 자격 통합과 양쪽 원문의 정확한 보존을 검증합니다.

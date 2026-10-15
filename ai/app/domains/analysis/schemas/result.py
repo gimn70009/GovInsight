@@ -5,6 +5,7 @@ from typing import Annotated
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.schemas import CamelCaseModel
+from app.domains.analysis.schemas.business_type import BusinessTypeAssessment
 
 
 class DocumentImportance(StrEnum):
@@ -72,6 +73,7 @@ class ComparisonSummary(CamelCaseModel):
     application_deadline: str = Field(min_length=5, max_length=300)
     eligibility: str = Field(min_length=5, max_length=1000)
     required_partner: str = Field(min_length=5, max_length=1000)
+    business_type: BusinessTypeAssessment | None = None
     legal_risks: list[LegalRiskFinding] = Field(min_length=5, max_length=5)
 
     @model_validator(mode="after")

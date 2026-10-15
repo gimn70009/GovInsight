@@ -285,6 +285,19 @@ export interface ParticipationGuide {
   variants?: { name: string; description: string }[]
 }
 
+export type BusinessTypeCode = 'RND' | 'DEMONSTRATION' | 'COMMERCIALIZATION' | 'ADOPTION'
+  | 'CERTIFICATION' | 'MARKET' | 'FINANCE' | 'WORKFORCE' | 'ADVISORY' | 'SPACE'
+
+export interface BusinessTypeSummary {
+  status: 'CLASSIFIED' | 'REVIEW_REQUIRED' | 'NOT_APPLICABLE'
+  code: BusinessTypeCode | null
+  label: string | null
+  description: string | null
+  explanation: string
+  details: string[]
+  sources: NonNullable<ProposalPreparationItem['source']>[]
+}
+
 export interface DocumentDetail {
   detectionId: number
   analysisPending: boolean
@@ -297,6 +310,7 @@ export interface DocumentDetail {
   lastCheckedAt: string
   analysis: DocumentAnalysis | null
   attachments: DocumentAttachment[]
+  businessType?: BusinessTypeSummary | null
   responsibleOrganizations?: ResponsibleOrganization[]
   participationGuide?: ParticipationGuide
   submissionGuide?: SubmissionGuide

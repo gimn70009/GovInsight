@@ -25,6 +25,7 @@ from app.domains.analysis.legal.risks import (
     find_legal_risk_candidates,
     no_candidate_legal_risks,
 )
+from app.domains.analysis.schemas.business_type import BusinessTypeAssessment
 from app.domains.analysis.schemas.request import (
     AnalysisChangeType,
     AnalysisDocumentRequest,
@@ -39,6 +40,10 @@ from app.domains.analysis.schemas.result import (
     ProposalDocumentType,
     ProposalDraftStatus,
     ProposalSection,
+)
+from app.domains.analysis.workflow.business_type import (
+    BUSINESS_TYPE_INSTRUCTIONS,
+    validated_business_type,
 )
 from app.domains.analysis.workflow.opportunity_scoring import OPPORTUNITY_SCORING_RUBRIC
 from app.domains.analysis.workflow.retry_policy import (
@@ -131,6 +136,7 @@ class BaseComparisonSummary(CamelCaseModel):
     application_deadline: str = Field(min_length=5, max_length=300)
     eligibility: str = Field(min_length=5, max_length=1000)
     required_partner: str = Field(min_length=5, max_length=1000)
+    business_type: BusinessTypeAssessment | None = None
 
 
 class BaseAnalysisDraft(BaseModel):
@@ -225,7 +231,7 @@ class LangChainAnalysisRunner:
             *input_sections,
         ])
         prompt = "\n".join(prompt_parts)
-        system_prompt = SYSTEM_PROMPT + "\n" + COMPANY_CONTEXT_INSTRUCTIONS + "\n" + NOTICE_APPLICABILITY_INSTRUCTIONS + "\n" + EVIDENCE_COVERAGE_INSTRUCTIONS
+        system_prompt = SYSTEM_PROMPT + "\n" + BUSINESS_TYPE_INSTRUCTIONS + "\n" + COMPANY_CONTEXT_INSTRUCTIONS + "\n" + NOTICE_APPLICABILITY_INSTRUCTIONS + "\n" + EVIDENCE_COVERAGE_INSTRUCTIONS
         if compact_retry:
             system_prompt += "\n" + COMPACT_RETRY_INSTRUCTIONS
         logger.info(
@@ -252,6 +258,10 @@ class LangChainAnalysisRunner:
             else BaseAnalysisDraft.model_validate(response)
         )
         draft_payload = base_draft.model_dump()
+        business_type = validated_business_type(base_draft.comparison_summary.business_type, document)
+        draft_payload["comparison_summary"]["business_type"] = (
+            business_type.model_dump() if business_type else None
+        )
         _normalize_base_proposal(draft_payload)
         draft_payload["proposal"].update(
             {

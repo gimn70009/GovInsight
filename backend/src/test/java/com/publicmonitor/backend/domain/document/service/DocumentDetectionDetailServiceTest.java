@@ -120,6 +120,8 @@ class DocumentDetectionDetailServiceTest {
 
         var response = service().findById(4L);
 
+        assertThat(response.businessType().status()).isEqualTo("REVIEW_REQUIRED");
+
         assertThat(response.organizationName()).isEqualTo("과학기술정보통신부");
         assertThat(response.title()).isEqualTo("AI 지원사업");
         assertThat(response.attachments()).hasSize(1);

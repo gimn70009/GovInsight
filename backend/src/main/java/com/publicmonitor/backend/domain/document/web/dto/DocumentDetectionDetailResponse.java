@@ -31,13 +31,18 @@ public record DocumentDetectionDetailResponse(
         @Schema(description = "원문의 명시된 제출서류와 기존 준비서류를 통합한 안내. 분석 완료 여부와 독립적")
         SubmissionGuide submissionGuide,
         @Schema(description = "현재 원문 근거로 분류한 참여 조건. 회사의 충족 여부를 판정하지 않음")
-        ParticipationGuide participationGuide
+        ParticipationGuide participationGuide,
+        @Schema(description = "대표 사업 유형 1개와 설명·원문 근거. 미확인 또는 일반 공지는 유형을 추정하지 않음")
+        BusinessTypeSummary businessType
 ) {
 
     @Schema(description = "현재 공고 원문에서 확인한 기관과 역할. 문의처를 주관기관으로 바꾸지 않음")
     public record ResponsibleOrganization(
             String name, String role, String sourceType, String attachmentName, String excerpt
     ) {}
+
+    public record BusinessTypeSummary(String status, String code, String label, String description,
+                                      String explanation, List<String> details, List<RequirementSource> sources) {}
 
     public enum ParticipationKind { MANDATORY, PREFERENCE, EXCLUSION, REVIEW_REQUIRED }
 

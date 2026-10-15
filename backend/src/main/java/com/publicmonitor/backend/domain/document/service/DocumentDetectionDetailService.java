@@ -67,7 +67,9 @@ public class DocumentDetectionDetailService {
                 attachments,
                 ResponsibleOrganizationExtractor.extract(version.getContentText(), storedAttachments),
                 SubmissionDocumentResolver.resolve(version.getContentText(), storedAttachments, preparation),
-                ParticipationConditionResolver.resolve(version.getContentText(), storedAttachments, preparation)
+                ParticipationConditionResolver.resolve(version.getContentText(), storedAttachments, preparation),
+                BusinessTypeResolver.resolve(version.getTitle(), version.getContentText(), storedAttachments,
+                        analysis == null ? null : analysis.getComparisonSummary(), objectMapper)
         );
     }
 
