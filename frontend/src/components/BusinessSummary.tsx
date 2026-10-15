@@ -1,6 +1,6 @@
 import { ParticipationConditions } from './ParticipationConditions'
 import { Fragment, useId, useState } from 'react'
-import { CalendarDays, ChevronDown, CircleHelp, FileText, Banknote, ExternalLink } from 'lucide-react'
+import { CalendarDays, ChevronDown, CircleHelp, FileText, Banknote, ExternalLink, LayoutList } from 'lucide-react'
 import type { DocumentAttachment, DocumentDetail, ProposalPreparationItem, ResponsibleOrganization, SubmissionDocument, SubmissionGuide } from '../api/types'
 import { documentPresentation, evidenceAttachment, formatSummaryText, formatSupportScale, organizationEvidenceAttachment, summaryDocuments, summaryValue } from '../utils/businessSummary'
 import './BusinessSummary.css'
@@ -172,6 +172,7 @@ function ResponsibleOrganizations({ detail }: { detail: DocumentDetail }) {
 }
 
 export function BusinessSummary({ detail }: { detail: DocumentDetail }) {
+  const headingId = useId()
   const analysis = detail.analysis
   const purpose = summaryValue(analysis?.businessSummary?.purpose) ?? summaryValue(analysis?.summary)
   const supportScale = summaryValue(analysis?.businessSummary?.supportScale)
@@ -181,41 +182,53 @@ export function BusinessSummary({ detail }: { detail: DocumentDetail }) {
   const notes = (detail.submissionGuide?.notes ?? []).filter(note => note.text.trim() && note.source?.excerpt?.trim())
   const preparingDocuments = detail.analysisPending && analysis?.proposal.draftStatus === 'GENERATING'
 
-  return <section className="business-summary" aria-labelledby="business-summary-title">
-    <div className="business-summary__heading">
-      <div><h3 id="business-summary-title">사업 정보 한눈에 보기</h3><p>저장된 공고와 분석을 기준으로 정리한 정보입니다.</p></div>
-      <span className="business-summary__heading-icon" aria-hidden="true"><FileText size={22} /></span>
-    </div>
-    {!analysis && <p className="business-summary__status" role="status">
-      {detail.analysisPending ? 'AI 분석을 준비하고 있어요. 완료되면 정보가 자동으로 갱신됩니다.' : 'AI 분석 결과가 없습니다. 확인되지 않은 정보는 공고 원문을 참고해 주세요.'}
-    </p>}
-    <div className="business-summary__table-wrap">
-      <table className="business-summary__facts" aria-label="사업 핵심 정보">
-        <tbody>
-          <tr><th scope="row">사업 담당기관</th><td><ResponsibleOrganizations detail={detail} /></td></tr>
-          <tr><th scope="row">사업명</th><td><strong className="business-summary__name">{detail.title}</strong></td></tr>
-          <tr className="business-summary__emphasis"><th scope="row"><span><Banknote size={16} aria-hidden="true" />지원규모</span></th><td>{supportScale ? <p className="business-summary__amount">{formatSummaryText(formatSupportScale(supportScale))}</p> : <MissingValue />}</td></tr>
-          <tr><th scope="row">사업 설명</th><td>{purpose ? <p className="business-summary__description">{formatSummaryText(purpose)}</p> : <MissingValue />}</td></tr>
-          <tr className="business-summary__emphasis"><th scope="row"><span><CalendarDays size={16} aria-hidden="true" />제출기한</span></th><td>{deadline ? <p className="business-summary__deadline">{formatSummaryText(deadline)}</p> : <MissingValue />}</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div className="business-summary__documents-heading"><h4>제출서류</h4>{documents.length > 0 && <span>확인된 서류 {documents.length}건</span>}</div>
-    {documents.length > 0 && notes.length > 0 && <aside className="business-summary__submission-notes" aria-label="제출 유의사항">
-      <strong>제출 유의사항</strong>
-      <ul>{notes.map((note, index) => <SubmissionNoteRow key={`${detail.detectionId}-${note.text}-${index}`} note={note} detail={detail} />)}</ul>
-    </aside>}
-    {documents.length > 0 ? <div className="business-summary__table-wrap">
-      <table className="business-summary__documents" aria-label="제출서류 안내">
-        <thead><tr><th scope="col">서류명</th><th scope="col">제출 안내</th></tr></thead>
-        <tbody>{documents.map((item, index) => <SubmissionDocumentRow
-          key={`${detail.detectionId}-${item.title}-${index}`} item={item} detail={detail} />)}</tbody>
-      </table>
-    </div> : <div className="business-summary__documents-empty">
-      <FileText size={21} aria-hidden="true" /><div><strong>{preparingDocuments ? '제출서류를 정리하고 있습니다' : '제출서류 확인 필요'}</strong>
-        <p>{preparingDocuments ? '분석이 완료되면 자동으로 표시됩니다.' : '저장된 공고 본문·첨부와 분석에서 제출서류를 확인하지 못했습니다. 공고 원문을 확인해 주세요.'}</p></div>
-    </div>}
-    {documents.length > 0 && <p className="business-summary__footnote">원문 근거가 확인된 서류입니다. 전체 제출 목록과 조건은 공고 원문을 함께 확인해 주세요.</p>}
+  return <div className="business-summary">
+    <section className="business-summary__card" aria-labelledby={headingId}>
+      <header className="business-summary__heading">
+        <span className="business-summary__heading-icon" aria-hidden="true"><LayoutList size={22} /></span>
+        <div className="business-summary__heading-text"><h3 id={headingId}>사업 정보 한눈에 보기</h3><p>저장된 공고와 분석을 기준으로 정리한 정보입니다.</p></div>
+      </header>
+      <div className="business-summary__section-body">
+        {!analysis && <p className="business-summary__status" role="status">
+          {detail.analysisPending ? 'AI 분석을 준비하고 있어요. 완료되면 정보가 자동으로 갱신됩니다.' : 'AI 분석 결과가 없습니다. 확인되지 않은 정보는 공고 원문을 참고해 주세요.'}
+        </p>}
+        <div className="business-summary__table-wrap">
+          <table className="business-summary__facts" aria-label="사업 핵심 정보">
+            <tbody>
+              <tr><th scope="row">사업 담당기관</th><td><ResponsibleOrganizations detail={detail} /></td></tr>
+              <tr><th scope="row">사업명</th><td><strong className="business-summary__name">{detail.title}</strong></td></tr>
+              <tr className="business-summary__emphasis"><th scope="row"><span><Banknote size={16} aria-hidden="true" />지원규모</span></th><td>{supportScale ? <p className="business-summary__amount">{formatSummaryText(formatSupportScale(supportScale))}</p> : <MissingValue />}</td></tr>
+              <tr><th scope="row">사업 설명</th><td>{purpose ? <p className="business-summary__description">{formatSummaryText(purpose)}</p> : <MissingValue />}</td></tr>
+              <tr className="business-summary__emphasis"><th scope="row"><span><CalendarDays size={16} aria-hidden="true" />제출기한</span></th><td>{deadline ? <p className="business-summary__deadline">{formatSummaryText(deadline)}</p> : <MissingValue />}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+    <section className="business-summary__card" aria-labelledby={headingId + '-documents'}>
+      <header className="business-summary__heading business-summary__documents-heading">
+        <span className="business-summary__heading-icon" aria-hidden="true"><FileText size={22} /></span>
+        <div className="business-summary__heading-text"><h3 id={headingId + '-documents'}>제출서류</h3><p>제출 대상과 시기, 서류별 조건을 확인하세요.</p></div>
+        {documents.length > 0 && <span className="business-summary__heading-count">확인된 서류 {documents.length}건</span>}
+      </header>
+      <div className="business-summary__section-body">
+        {documents.length > 0 && notes.length > 0 && <aside className="business-summary__submission-notes" aria-label="제출 유의사항">
+          <strong>제출 유의사항</strong>
+          <ul>{notes.map((note, index) => <SubmissionNoteRow key={`${detail.detectionId}-${note.text}-${index}`} note={note} detail={detail} />)}</ul>
+        </aside>}
+        {documents.length > 0 ? <div className="business-summary__table-wrap">
+          <table className="business-summary__documents" aria-label="제출서류 안내">
+            <thead><tr><th scope="col">서류명</th><th scope="col">제출 안내</th></tr></thead>
+            <tbody>{documents.map((item, index) => <SubmissionDocumentRow
+              key={`${detail.detectionId}-${item.title}-${index}`} item={item} detail={detail} />)}</tbody>
+          </table>
+        </div> : <div className="business-summary__documents-empty">
+          <FileText size={21} aria-hidden="true" /><div><strong>{preparingDocuments ? '제출서류를 정리하고 있습니다' : '제출서류 확인 필요'}</strong>
+            <p>{preparingDocuments ? '분석이 완료되면 자동으로 표시됩니다.' : '저장된 공고 본문·첨부와 분석에서 제출서류를 확인하지 못했습니다. 공고 원문을 확인해 주세요.'}</p></div>
+        </div>}
+        {documents.length > 0 && <p className="business-summary__footnote">원문 근거가 확인된 서류입니다. 전체 제출 목록과 조건은 공고 원문을 함께 확인해 주세요.</p>}
+      </div>
+    </section>
     <ParticipationConditions key={detail.detectionId} detail={detail} />
-  </section>
+  </div>
 }

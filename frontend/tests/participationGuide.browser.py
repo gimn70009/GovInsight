@@ -63,7 +63,7 @@ async def verify(browser):
         await h.open(analysis_tab=False)
         section = h.page.get_by_role("region", name="신청 자격과 제한", exact=True)
         await expect(section.locator(".participation-guide__rule")).to_have_count(9)
-        assert await section.locator("h5").all_text_contents() == [
+        assert await section.get_by_role("heading", level=4).all_text_contents() == [
             "기본 신청 자격", "특정 기업에 적용되는 제한", "신청 제외 사유", "우대·가점"]
         await expect(section.get_by_text("필수", exact=True)).to_have_count(0)
         await expect(section.locator(".participation-guide__outcome, .participation-guide__outcomes")).to_have_count(0)
@@ -125,7 +125,7 @@ async def review_notice(browser):
         toggle = notice.get_by_role("button", name="원문 확인이 필요한 조건 4건", exact=True)
         content = notice.locator(".participation-guide__review-content")
         await expect(section.get_by_role("table")).to_have_count(0)
-        await expect(section.locator("h5")).to_have_count(0)
+        await expect(section.get_by_role("heading", level=4)).to_have_count(0)
         await expect(section.get_by_text("참여 조건 확인 필요", exact=True)).to_have_count(0)
         await expect(notice.locator(".participation-guide__review-note")).to_have_count(1)
         await expect(notice.get_by_text("표에서 적용 대상별 자격 요건을 구분하지 못했습니다.", exact=True)).to_have_count(0)
@@ -395,6 +395,110 @@ async def official_sources(browser):
             await h.close()
 
 
+async def certification_boundaries(browser):
+    for name in ("pdf", "hwpx", "combined"):
+        fixture = Path(__file__).resolve().parents[2] / ("backend/build/participation-guide-checks/certification-" + name + "-guide.json")
+        data = summary.ready()
+        data["analysis"] = None
+        data["title"] = "2026년 해외규격인증획득지원사업(일반지원) 3차 참여기업 모집공고"
+        data["participationGuide"] = json.loads(fixture.read_text(encoding="utf-8"))
+        data["attachments"] = [dict(data["attachments"][0], attachmentId=index + 1,
+                                     fileName="인증 지원 공고." + ext, downloadUrl="https://example.org/certification." + ext)
+                               for index, ext in enumerate(("pdf", "hwpx"))]
+        h = await refresh.Harness(browser).start()
+        try:
+            h.states[1] = data
+            await h.open(analysis_tab=False)
+            section = h.page.get_by_role("region", name="신청 자격과 제한", exact=True)
+            basic = section.get_by_role("region", name="기본 신청 자격", exact=True)
+            await expect(basic.locator(".participation-guide__rule")).to_have_count(1)
+            await expect(basic.locator(".participation-guide__scope")).to_have_count(0)
+            await expect(basic.locator(".participation-guide__main")).to_have_text("전년도 직접수출액 5,000만불 미만의 중소기업이 대상입니다.")
+            await expect(section.locator(".participation-guide__main").filter(has_text="시험비 :")).to_have_count(0)
+            rule = next(row for row in data["participationGuide"]["rules"] if row["section"] == "BASIC")
+            await h.page.add_style_tag(content=".drawer__top { display: none !important; }")
+            for width in (1440, 768, 390, 320):
+                await fit(section, width)
+                await h.page.set_viewport_size(dict(width=width, height=5000))
+                toggle = basic.get_by_role("button", name="수출 대상 세부 조건·예외", exact=True)
+                await toggle.click()
+                await expect(basic.locator(".participation-guide__detail-panel")).to_contain_text("글로벌 강소기업 1000+")
+                await expect(basic.locator(".participation-guide__detail-panel")).to_contain_text("5,000만불 이상")
+                await basic.screenshot(path=str(OUT / ("certification-" + name + "-" + str(width) + ".png")))
+                evidence = basic.get_by_role("button", name=rule["text"] + " 근거 보기", exact=True)
+                await evidence.click()
+                assert await basic.locator("blockquote").text_content() == rule["sources"][0]["excerpt"]
+                if name == "combined":
+                    await basic.get_by_role("combobox", name="원문 선택").select_option("1")
+                    assert await basic.locator("blockquote").text_content() == rule["sources"][1]["excerpt"]
+                    await basic.get_by_role("combobox", name="원문 선택").select_option("0")
+                await evidence.click()
+        finally:
+            await h.close()
+
+    h = await refresh.Harness(browser).start()
+    try:
+        data = summary.ready()
+        data["participationGuide"] = guide()
+        scope = "주관기업과 공동 참여기업에 적용하는 기준입니다.\n공고일 기준으로 소재지와 사업자등록 상태를 확인하며, 다음 요건을 모두 충족해야 합니다."
+        data["participationGuide"]["rules"][0]["scope"] = scope
+        h.states[1] = data
+        await h.open(analysis_tab=False)
+        note = h.page.locator(".participation-guide__scope").filter(has_text="주관기업과 공동 참여기업")
+        assert await note.locator(".participation-guide__scope-content p").all_text_contents() == scope.split("\n")
+        await h.page.add_style_tag(content=".drawer__top { display: none !important; }")
+        for width in (1440, 768, 390, 320):
+            await h.page.set_viewport_size(dict(width=width, height=5000))
+            assert await note.evaluate("el => el.scrollWidth <= el.clientWidth + 1")
+            await note.screenshot(path=str(OUT / ("scope-paragraphs-" + str(width) + ".png")))
+    finally:
+        await h.close()
+
+
+async def plain_eligibility(browser):
+    fixture = Path(__file__).resolve().parents[2] / "backend/build/participation-guide-checks/bio-open-innovation-guide.json"
+    data = summary.ready()
+    data["analysis"] = None
+    data["participationGuide"] = json.loads(fixture.read_text(encoding="utf-8"))
+    data["attachments"] = [dict(data["attachments"][0], fileName="바이오 참여기업 모집공고.hwpx", downloadUrl="https://example.org/bio.hwpx")]
+    rule = next(row for row in data["participationGuide"]["rules"] if row["label"] == "창업기업 자격")
+    h = await refresh.Harness(browser).start()
+    try:
+        h.states[1] = data
+        await h.open(analysis_tab=False)
+        section = h.page.get_by_role("region", name="신청 자격과 제한", exact=True)
+        row = section.get_by_role("row", name="창업기업 자격", exact=False)
+        await expect(row).to_have_count(1)
+        await expect(row.locator(".participation-guide__main p")).to_have_text([
+            "신청 대상은 중소기업 대표자입니다.", "모집공고일 기준, 다음 중 하나에 해당해야 합니다."])
+        await expect(row.locator(".participation-guide__summary-options li")).to_have_text([
+            "창업 후 7년 이내 창업기업", "창업 후 10년 이내 신산업 분야 창업·중소기업"])
+        await expect(row.locator(".participation-guide__detail-panel")).to_be_hidden()
+        await h.page.add_style_tag(content=".drawer__top { display: none !important; }")
+        for width in (1440, 768, 390, 320):
+            await fit(section, width)
+            await h.page.set_viewport_size(dict(width=width, height=5000))
+            await row.screenshot(path=str(OUT / f"plain-eligibility-{width}.png"))
+            toggle = row.get_by_role("button", name="창업기업 자격 세부 조건", exact=True)
+            await toggle.focus()
+            await h.page.keyboard.press("Enter")
+            await expect(row.locator(".participation-guide__detail-panel")).to_be_visible()
+            await expect(row.get_by_role("list", name="세부 자격·추가 요건", exact=True)).to_contain_text("2019년 10월 2일~2026년 10월 1일")
+            await expect(row.get_by_role("list", name="세부 자격·추가 요건", exact=True)).to_contain_text("개인사업자는 사업자등록증")
+            await expect(row.get_by_role("list", name="적용 법령", exact=True).locator("li")).to_have_count(3)
+            assert await row.evaluate("el => el.scrollWidth <= el.clientWidth + 1")
+            await row.screenshot(path=str(OUT / f"plain-eligibility-details-{width}.png"))
+            evidence = row.get_by_role("button", name="근거 보기", exact=False)
+            await evidence.click()
+            await expect(row.locator(".participation-guide__detail-panel")).to_be_hidden()
+            for index, source in enumerate(rule["sources"]):
+                await row.get_by_role("combobox", name="원문 선택").select_option(str(index))
+                assert await row.locator("blockquote").text_content() == source["excerpt"]
+            await evidence.click()
+    finally:
+        await h.close()
+
+
 async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch(channel=refresh.os.environ.get("BROWSER_CHANNEL", "msedge"))
@@ -404,9 +508,11 @@ async def main():
             await multiple_sources(browser)
             await empty_and_pending(browser)
             await official_sources(browser)
+            await certification_boundaries(browser)
+            await plain_eligibility(browser)
         finally:
             await browser.close()
-    print("PASS: collapsed review notice, single shared guidance, cause-specific explanations separate from exact original evidence, review-only state, application sections, single evidence panel with all original sources, exact duplicate removal, source-specific links, keyboard selection, plain application-type sentences with explicit exclusivity and verified meanings, collapsed details and visible exception buttons, mutual exclusion of details/evidence, keyboard, notice reset, empty/pending refresh, 1440/768/390/320px, CBAM/startup/clean/policy-loan sources; clean duplicate merged with all details and both original excerpts preserved")
+    print("PASS: collapsed review notice, single shared guidance, cause-specific explanations separate from exact original evidence, review-only state, application sections, single evidence panel with all original sources, exact duplicate removal, source-specific links, keyboard selection, plain application-type sentences with explicit exclusivity and verified meanings, collapsed details and visible exception buttons, mutual exclusion of details/evidence, keyboard, notice reset, empty/pending refresh, 1440/768/390/320px, CBAM/startup/clean/policy-loan sources; clean duplicate merged with all details and both original excerpts preserved; certification PDF/HWPX heading boundaries, preserved eligibility and exceptions without cost definitions, readable scope paragraphs; plain-language eligibility with alternatives, incorporation dates and legal definitions, both original sources, keyboard and mobile layouts")
 
 
 if __name__ == "__main__":

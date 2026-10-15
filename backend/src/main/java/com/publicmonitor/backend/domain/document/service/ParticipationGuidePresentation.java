@@ -96,6 +96,14 @@ final class ParticipationGuidePresentation {
         details.replaceAll(value -> ParticipationConditionText.displaySentence(value, null));
         exceptions.replaceAll(value -> ParticipationConditionText.displaySentence(value, null));
         text = organizationSummary(condition.text(), details, text);
+        if (section.equals("BASIC")) {
+            var explanation = ParticipationPlainLanguage.explain(text, label);
+            if (explanation != null) {
+                text = explanation.text();
+                label = explanation.label();
+                details.addAll(explanation.legalDetails());
+            }
+        }
         if (ParticipationConditionText.incomplete(condition.text())) {
             section = "REVIEW";
             reviewReason = ParticipationReviewReason.INCOMPLETE_TEXT;
@@ -175,7 +183,11 @@ final class ParticipationGuidePresentation {
 
     private static String criterionKey(ParticipationRule row) {
         // Never merge different fund scopes, numerical thresholds, exceptions or logical operators.
-        return row.section() + ":" + row.reviewReason() + ":" + compact(row.label()) + ":" + compact(row.scope()) + ":"
+        return criterionKey(row, row.scope());
+    }
+
+    private static String criterionKey(ParticipationRule row, String scope) {
+        return row.section() + ":" + row.reviewReason() + ":" + compact(row.label()) + ":" + compact(scope) + ":"
                 + compact(row.audience() == null ? row.text() : row.audience()) + ":" + clausesKey(row.exceptions());
     }
 
@@ -202,7 +214,7 @@ final class ParticipationGuidePresentation {
 
     private static boolean includesDetails(ParticipationRule full, ParticipationRule partial) {
         if (full.section().equals("REVIEW") || full.details().size() <= partial.details().size()
-                || !criterionKey(full).equals(criterionKey(partial))
+                || !compatibleCriterion(full, partial)
                 || !compact(full.text()).equals(compact(partial.text()))
                 || !full.outcomes().equals(partial.outcomes())) return false;
         // Compare whole clauses in order; substring matching would confuse 1.5/15 or AND/OR.
@@ -211,6 +223,17 @@ final class ParticipationGuidePresentation {
             if (next < partial.details().size() && compact(detail).equals(compact(partial.details().get(next)))) next++;
         }
         return next == partial.details().size();
+    }
+
+    private static boolean compatibleCriterion(ParticipationRule full, ParticipationRule partial) {
+        if (criterionKey(full).equals(criterionKey(partial))) return true;
+        // An overview may repeat a role-specific criterion before the detailed qualification section.
+        // Only a shared collaboration audience can carry over; fund, period and other scopes stay distinct.
+        if (!full.label().equals("창업기업 자격") || !criterionKey(full, null).equals(criterionKey(partial, null))) return false;
+        String scope = full.scope() == null ? partial.scope() : partial.scope() == null ? full.scope() : null;
+        if (scope == null || scope.matches(".*(?:자금|융자|유형|트랙|제외|한정|한함).*")) return false;
+        var audience = Pattern.compile("(?:[가-힣]+\\h*){1,6}(?:을|를)\\h*희망하는\\h*([가-힣]+기업)과\\h*([가-힣]+기업)").matcher(scope);
+        return audience.matches() && (audience.group(1).equals("창업기업") || audience.group(2).equals("창업기업"));
     }
 
     private static String clausesKey(List<String> values) {
@@ -246,7 +269,7 @@ final class ParticipationGuidePresentation {
                     a.scope(), a.audience(), a.details(), a.exceptions(), guidance, outcomes, sources, ParticipationReviewReason.CONFLICTING_CRITERIA);
         }
         outcomes.sort(Comparator.comparing(ParticipationOutcome::variant));
-        return new ParticipationRule(a.section(), a.label(), exclusive ? EXCLUSIVE_TEXT : a.text(), a.scope(), a.audience(), a.details(),
+        return new ParticipationRule(a.section(), a.label(), exclusive ? EXCLUSIVE_TEXT : a.text(), a.scope() == null ? b.scope() : a.scope(), a.audience(), a.details(),
                 a.exceptions(), guidance, outcomes, sources, a.reviewReason());
     }
 

@@ -24,7 +24,7 @@ final class ParticipationConditionResolver {
     private static final Pattern HEADING = Pattern.compile("^(" + LABELS + ")(?:\\h*[:：)）\\]>]\\h*|\\h+|$)(.*)$");
     private static final Pattern PREFIX = Pattern.compile("^(?:[□■○◦●ㅇ•*-]|[①-⑳➀-➉]|\\d+[.)]|[가-하][.)])\\h*");
     private static final Pattern BOUNDARY = Pattern.compile("^(?:사업개요|지원내용|지원규모|지원기간|사업기간|신청방법|접수방법|신청기간|신청절차"
-            + "|제출서류|신청서류|구비서류|제출방법|평가방법|평가기준|평가및선정|선정절차|선정평가|선정기준|평가절차|사업내용|추진일정|사후관리|유의사항|문의처|융자범위|융자조건|융자규모|사업목적|주요과업)");
+            + "|제출서류|신청서류|구비서류|제출방법|평가방법|평가기준|평가및선정|선정절차|선정평가|선정기준|평가절차|사업내용|추진일정|사후관리|유의사항|문의처|융자범위|융자조건|융자규모|사업목적|주요과업|(?:지원한도|지원비율|지원금액|지원항목|지원비용|모집규모|모집일정)(?:[:：]|$))");
     private static final Pattern BLOCKED = Pattern.compile("^(?:붙임|별첨|별지|서식|양식|작성예시|작성견본|참고자료)\\h*\\d*");
     private static final Pattern EXCLUDED_FILE = Pattern.compile("(?i)예시|견본|FAQ|참고자료|신청서|계획서|동의서|서식|양식|운영지침");
     private static final Pattern ALTERNATIVE = Pattern.compile("중\\h*(?:어느\\h*)?하나|중\\h*\\d+\\h*개\\h*이상|어느\\h*하나|택\\h*1");
@@ -108,8 +108,8 @@ final class ParticipationConditionResolver {
 
     private static void collect(String text, String fileName, LinkedHashMap<String, ParticipationCondition> result) {
         if (text == null || text.isBlank()) return;
-        String separator = text.contains("\r\n") ? "\r\n" : "\n";
-        String[] lines = text.substring(0, Math.min(MAX_TEXT, text.length())).split("\\R");
+        var sourceLines = new ParticipationSourceLines(text.substring(0, Math.min(MAX_TEXT, text.length())));
+        String[] lines = sourceLines.lines();
         Block block = null;
         boolean blocked = false;
         String program = "";
@@ -126,7 +126,7 @@ final class ParticipationConditionResolver {
                 continue;
             }
             if (line.isBlank() || line.matches("-?\\h*\\d+\\h*-?")) {
-                if (block != null) block.lines.add(lines[i]);
+                if (block != null) { block.lines.add(lines[i]); block.endLine = i + 1; }
                 continue;
             }
             if (line.startsWith("[파일:")) {
@@ -171,7 +171,7 @@ final class ParticipationConditionResolver {
                     end++;
                 }
                 if (role != null) rows.add(role + "\t" + String.join(" ", content));
-                String quote = String.join(separator, Arrays.copyOfRange(lines, block == null ? i : block.startLine, end));
+                String quote = sourceLines.excerpt(block == null ? i : block.startLine, end);
                 if (rows.size() > 1 && readTable(rows.toArray(String[]::new), block, List.of(), quote, fileName, result)) {
                     block = null;
                     i = end - 1;
@@ -204,7 +204,7 @@ final class ParticipationConditionResolver {
                     if (!lines[after].isBlank()) footnotes.add(lines[after]);
                     after++;
                 }
-                String quote = String.join(separator, Arrays.copyOfRange(lines, block == null ? i : block.startLine, after));
+                String quote = sourceLines.excerpt(block == null ? i : block.startLine, after);
                 boolean conditionTable = readTable(Arrays.copyOfRange(lines, i + 1, end), block, footnotes, quote, fileName, result);
                 if (!conditionTable) emit(block, fileName, result);
                 block = null;
@@ -227,7 +227,7 @@ final class ParticipationConditionResolver {
                 emit(block, fileName, result);
                 String audience = separateBeneficiary && key(heading.group(1)).equals("지원대상")
                         ? "지원받는 창업기업의 조건 · 주관기관 자격과 별도" : program;
-                block = new Block(kind(heading.group(1)), heading.group(1), lines[i], heading.group(2).strip(), separator, i, audience);
+                block = new Block(kind(heading.group(1)), heading.group(1), heading.group(2).strip(), sourceLines, i, audience);
                 continue;
             }
             if (BOUNDARY.matcher(candidate.replaceAll("\\h+", "")).find()
@@ -238,6 +238,7 @@ final class ParticipationConditionResolver {
             }
             if (block != null) {
                 block.lines.add(lines[i]);
+                block.endLine = i + 1;
                 block.length += line.length();
                 if (block.length > MAX_BLOCK) { block = null; }
             }
@@ -263,12 +264,14 @@ final class ParticipationConditionResolver {
             if (family > 0 && current == family) { count++; last = i; }
         }
         if (count < 2) return block;
-        var earlier = new Block(block.kind, block.heading, block.rawHeading, block.lead,
-                block.separator, block.startLine, block.audience);
+        var earlier = new Block(block.kind, block.heading, block.lead,
+                block.sourceLines, block.startLine, block.audience);
+        earlier.endLine = block.endLine;
         earlier.lines.addAll(block.lines.subList(0, last));
         emit(earlier, file, result);
-        var current = new Block(block.kind, block.heading, block.rawHeading, block.lead,
-                block.separator, block.startLine, block.audience);
+        var current = new Block(block.kind, block.heading, block.lead,
+                block.sourceLines, block.startLine, block.audience);
+        current.endLine = block.endLine;
         current.lines.addAll(block.lines.subList(last, block.lines.size()));
         return current;
     }
@@ -276,15 +279,16 @@ final class ParticipationConditionResolver {
     private static final class Block {
         final ParticipationKind kind;
         final String heading;
-        final String rawHeading;
         final String lead;
-        final String separator;
+        final ParticipationSourceLines sourceLines;
+        int endLine;
         final int startLine;
         final String audience;
         final List<String> lines = new ArrayList<>();
         int length;
-        Block(ParticipationKind kind, String heading, String rawHeading, String lead, String separator, int startLine, String audience) {
-            this.kind = kind; this.heading = heading; this.rawHeading = rawHeading; this.lead = lead; this.separator = separator; this.startLine = startLine; this.audience = audience;
+        Block(ParticipationKind kind, String heading, String lead, ParticipationSourceLines sourceLines, int startLine, String audience) {
+            this.kind = kind; this.heading = heading; this.lead = lead; this.sourceLines = sourceLines;
+            this.startLine = startLine; this.endLine = startLine + 1; this.audience = audience;
         }
     }
 
@@ -355,9 +359,10 @@ final class ParticipationConditionResolver {
 
     private static int bulletFamily(String line) {
         if (line.strip().matches("^[①-⑳➀-➉].*")) return 1;
-        if (line.strip().matches("^[○◦●ㅇ•]\\h+.*")) return 2;
+        if (line.strip().matches("^[○◦●ㅇ]\\h+.*")) return 2;
         if (line.strip().matches("^\\d+[.)]\\h+.*")) return 3;
         if (line.strip().matches("^[-]\\h+.*")) return 4;
+        if (line.strip().matches("^[•⦁]\\h+.*")) return 5;
         return 0;
     }
 
@@ -370,7 +375,7 @@ final class ParticipationConditionResolver {
         if (text.isBlank()) return;
         List<String> details = paragraphs.stream().skip(1).filter(v -> !v.isBlank()).toList();
         // Include the entire source block: shared scope and exceptions remain verifiable verbatim.
-        String quote = block.rawHeading + (block.lines.isEmpty() ? "" : block.separator + String.join(block.separator, block.lines));
+        String quote = block.sourceLines.excerpt(block.startLine, block.endLine);
         add(result, block.kind,
                 text, scope, details, source(file, block.heading, quote));
     }
