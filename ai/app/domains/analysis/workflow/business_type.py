@@ -9,7 +9,7 @@ from app.domains.analysis.schemas.request import AnalysisDocumentRequest
 
 logger = logging.getLogger(__name__)
 
-VALIDATOR_VERSION = "business-type-v5-service-notices"
+VALIDATOR_VERSION = "business-type-v6-contest-support"
 
 BUSINESS_TYPE_INSTRUCTIONS = """
 comparison_summary.business_type은 현재 공고의 대표 사업 유형입니다. 확인되지 않으면 null입니다.
@@ -32,6 +32,14 @@ FINANCE=자금·금융, WORKFORCE=인력·고용·교육, ADVISORY=조사·컨�
   사업 예시 표와 작성 예시는 현재 확정된 과업·지원 항목의 근거로 쓰지 않습니다.
   정부인증 서비스·인증기관이라는 수식어만으로 CERTIFICATION을 만들지 않습니다.
   상담사의 역량 강화 코칭·교육훈련 운영은 WORKFORCE이며 홈페이지 운영은 부대 과업입니다.
+- 참가자가 아이디어·성과물·시제품을 출품하고 심사·시상하는 공모전·경진대회는
+  지원 유형과 별개의 공고 성격입니다. 제목만으로 판단하지 않고 현재 대회 개최와
+  상금·시상 내용을 확인합니다. 공모전 운영기관 모집이나 수상기업 대상 후속 지원은
+  해당 사업의 실제 과업·지원 활동으로 분류합니다.
+- 지원 규모 표의 감축설비 투자비 보조는 ADOPTION이며, 투자라는 말만으로 FINANCE가 아닙니다.
+  해외 진출이라는 목적보다 현재 제공하는 설비·조사 등 구체적인 지원 항목을 우선합니다.
+  수요조사라는 제목이어도 선정기업에 수출기회·수출상담회를 제공하면 MARKET입니다.
+  접수 기간에 나열된 사업명은 활동 근거로 쓰지 않습니다.
 - 개요·목적·지원 내용을 문단 단위로 함께 읽습니다.
   제도에 시범적으로 참여하는 활동은 DEMONSTRATION입니다.
   결과 안내의 사업명이나 설비 도입 가능성만으로 ADOPTION을 만들지 않습니다.
@@ -141,7 +149,7 @@ _ACTIVITY = {
     "DEMONSTRATION": r"실증|테스트베드|PoC|시범(?:사업|운영|적용|적으로참여)|현장검증",
     "COMMERCIALIZATION": r"시제품|제품화|사업화|양산|제품고도화|제품디자인",
     "ADOPTION": (
-        r"인프라구축|시스템(?:을)?구축|시스템(?:을)?도입|솔루션도입|(?:설비|시설)(?:를|을|의)?(?:도입|구축|개선|교체|구매|설치|지원)"
+        r"인프라구축|시스템(?:을)?구축|시스템(?:을)?도입|솔루션도입|(?:설비|시설)(?:를|을|의)?(?:도입|구축|개선|교체|구매|설치|지원|투자비)"
         r"|장비도입|장비구축|시설개선|환경개선|환경조성|스마트공장|공정개선"
     ),
     "CERTIFICATION": (
@@ -149,7 +157,7 @@ _ACTIVITY = {
         r"|제3자검증|배출량검증|성능시험|규격시험"
     ),
     "MARKET": (
-        r"판로|마케팅|해외진출|수출(?:지원|마케팅|상담|바우처|판로|촉진)"
+        r"판로|마케팅|해외진출|수출(?:지원|마케팅|상담|바우처|판로|촉진|기회)"
         r"|전시회|박람회|구매상담|시장진출"
     ),
     "FINANCE": r"융자|이차보전|이자지원|신용보증|기술보증|보증지원|직접투자|투자유치|정책자금",
@@ -170,7 +178,7 @@ def _supports_activity(code: str, text: str) -> bool:
     if not re.search(_ACTIVITY[code], value, re.I) or _UNSUPPORTED.search(text):
         return False
     if re.search(
-        r"지원대상|신청자격|보유자격|접수마감|제출기한|접수기한|제출마감|신청마감", value
+        r"지원대상|신청자격|보유자격|접수마감|접수기간|제출기한|접수기한|제출마감|신청마감", value
     ) and not re.search(
         r"(?:비용|취득비|제작비|개발비|구축비)(?:를|을)?지원|지원합니다|제공합니다|수행합니다",
         value,
@@ -179,7 +187,9 @@ def _supports_activity(code: str, text: str) -> bool:
     return bool(re.search(r"지원|제공|수행|구축|도입|모집|융자|입주|개발|실증|컨설팅", value)) or (
         code == "DEMONSTRATION" and bool(re.search(r"시범.{0,80}(?:참여|적용|허용|유지)", value))
     ) or (
-        code == "ADOPTION" and bool(re.search(r"설치|교체|개선|구매", value))
+        code == "ADOPTION" and bool(re.search(
+            r"설치|교체|개선|구매|(?:설비|시설)(?:의)?투자비", value,
+        ))
     ) or (
         code == "WORKFORCE" and bool(re.search(r"코칭|교육|훈련", value))
     ) or (
@@ -218,8 +228,38 @@ def _filed_application_opinion(heading: str, sources: list[str]) -> bool:
     )
 
 
+def _contest_notice(title: str, sources: list[str]) -> bool:
+    title_pattern = (
+        r"(?:공모전|경진대회|챌린지)(?:참가자|참가팀|참여자|참여팀)?"
+        r"(?:모집|접수|공고|개최|안내)(?:수정|연장|추가)?(?:공고)?$"
+    )
+    action = (
+        r"(?:공모전|경진대회|대회)(?:를|을)?(?:(?:다음|아래)과같이)?"
+        r"(?:개최합니다|개최하오니|개최하고자|공고하오니|진행합니다)"
+    )
+    prize = r"시상(?:내역|계획|규모)|(?:상금|장관상|상품)(?:을|은|의|과|\(|형태|지급)|상금$"
+    if not re.search(title_pattern, title):
+        return False
+    for text in sources:
+        introduction = text[:6000]
+        sentences = (
+            re.sub(r"\s+", "", sentence)
+            for sentence in re.split(r"[。!?]|(?<=\.)\s+|\n\s*\n", introduction)
+        )
+        current = any(
+            re.search(action, sentence)
+            and not re.search(r"전년도|지난해|과거|예시|견본|참고자료|개최하지않", sentence)
+            for sentence in sentences
+        )
+        if current and re.search(prize, re.sub(r"\s+", "", introduction)):
+            return True
+    return False
+
+
 def _notice_kind(title: str, sources: list[str]) -> str | None:
     heading = re.sub(r"\s+", "", title)
+    if _contest_notice(heading, sources):
+        return "CONTEST"
     if _filed_application_opinion(heading, sources):
         return "GENERAL"
     introductions = [re.sub(r"\s+", "", text[:6000]) for text in sources]

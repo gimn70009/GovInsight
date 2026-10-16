@@ -11,9 +11,9 @@ class BusinessSummaryEmailViewTest {
     @Test
     void 공고_성격을_메일에_그대로_표시한다() {
         var mapper = tools.jackson.databind.json.JsonMapper.builder().build();
-        for (String label : java.util.List.of("일반 공고 · 결과 발표", "일반 공고 · 규정 고시", "포상·표창 모집", "지정 모집")) {
+        for (String label : java.util.List.of("일반 공고 · 결과 발표", "일반 공고 · 규정 고시", "포상·표창 모집", "지정 모집", "공모전·경진대회")) {
             var payload = mapper.writeValueAsString(java.util.Map.of("analysisPending", false, "businessType", java.util.Map.of(
-                    "status", "NOT_APPLICABLE", "noticeNature", java.util.Map.of("code", "AWARD", "label", label))));
+                    "status", "NOT_APPLICABLE", "noticeNature", java.util.Map.of("code", "공모전·경진대회".equals(label) ? "CONTEST" : "AWARD", "label", label))));
             var detail = mapper.readValue(payload, com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionDetailResponse.class);
             assertThat(BusinessSummaryEmailView.from(detail).type()).isEqualTo(label);
         }

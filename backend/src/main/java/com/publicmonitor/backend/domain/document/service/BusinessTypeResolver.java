@@ -22,10 +22,10 @@ final class BusinessTypeResolver {
     private static final Pattern UNSUPPORTED = Pattern.compile("전년도|지난해|타\\h*사업|다른\\h*사업|작성\\h*예시|지원\\h*(?:제외|없음|불가|하지)|미지원|후속|향후|추후|연계\\h*가능|참고용|일부 원문 생략");
     private static final Pattern ACTION = Pattern.compile("지원|제공|수행|구축|도입|모집|융자|입주|개발|실증|컨설팅");
     private static final Pattern SPECULATIVE_EXPLANATION = Pattern.compile("수반될가능성|가능성이있어|가능성을시사|유형으로추정");
-    private static final Pattern ADMINISTRATIVE_ACTIVITY = Pattern.compile("지원대상|신청자격|보유자격|접수마감|제출기한|접수기한|제출마감|신청마감");
+    private static final Pattern ADMINISTRATIVE_ACTIVITY = Pattern.compile("지원대상|신청자격|보유자격|접수마감|접수기간|제출기한|접수기한|제출마감|신청마감");
     private static final Pattern EXPLICIT_SUPPORT = Pattern.compile("(?:비용|취득비|제작비|개발비|구축비)(?:를|을)?지원|지원합니다|제공합니다|수행합니다");
     private static final Pattern DEMONSTRATION_ACTION = Pattern.compile("시범.{0,80}(?:참여|적용|허용|유지)");
-    private static final Pattern INSTALLATION_ACTION = Pattern.compile("설치|교체|개선|구매");
+    private static final Pattern INSTALLATION_ACTION = Pattern.compile("설치|교체|개선|구매|(?:설비|시설)(?:의)?투자비");
     private static final Pattern TRAINING_ACTION = Pattern.compile("코칭|교육|훈련");
     private static final Pattern ADVISORY_ACTION = Pattern.compile("조사|분석|검토|수립");
     private static final int LIMIT = 200_000;
@@ -71,7 +71,7 @@ final class BusinessTypeResolver {
             summary = new BusinessTypeSummary("NOT_APPLICABLE", null, null, null,
                     "현재 공고는 " + nature.label() + "입니다. 지원 유형과 구분하며 신청·접수 정보는 별도로 확인합니다.",
                     List.of(), List.of(), new NoticeNature(nature.name(), nature.label()));
-            reason = nature == GeneralNoticeClassifier.Nature.AWARD || nature == GeneralNoticeClassifier.Nature.DESIGNATION_RECRUITMENT
+            reason = nature == GeneralNoticeClassifier.Nature.CONTEST || nature == GeneralNoticeClassifier.Nature.AWARD || nature == GeneralNoticeClassifier.Nature.DESIGNATION_RECRUITMENT
                     ? nature.name() : "GENERAL_NOTICE";
         } else if (analyzed != null) {
             summary = analyzed;
@@ -274,6 +274,19 @@ final class BusinessTypeResolver {
     }
 
 
+    private static boolean endsSupportSection(String line, String heading, int rank) {
+        if (!BOUNDARY.matcher(line).find()) return false;
+        // A box can introduce a support sentence, not just a new section heading.
+        if (heading == null || rank < 200 || !line.matches("^[□■].*")) return true;
+        String content = line.replaceFirst("^[□■]\\h*", "");
+        if (content.matches("^(?:신청|접수|제출|지원\\h*대상|지원\\h*자격|참여\\h*자격|참고|유의|문의|평가|선정\\h*기준|추진\\h*절차).*")
+                || UNSUPPORTED.matcher(content).find()) return true;
+        for (var type : BusinessType.values()) {
+            if (supportsActivity(type, content)) return false;
+        }
+        return true;
+    }
+
     private static void collect(Source source, String title, List<Candidate> result) {
         var sourceLines = new ParticipationSourceLines(source.text());
         String[] lines = sourceLines.lines();
@@ -287,9 +300,9 @@ final class BusinessTypeResolver {
             boolean headingLine = match.find();
             if (headingLine) {
                 heading = match.group(1).replaceAll("\\h+", "");
-                rank = heading.matches("지원내용|지원분야|지원항목|지원설비|지원범위|지원방식|(?:주요)?사업내용|(?:주요)?과업(?:의)?(?:주요|세부)?내용|과업(?:의)?범위|주요과업|연구(?:내용(?:및범위)?|범위)|모집내용") ? 200 : 100;
+                rank = heading.matches("지원규모|지원내용|지원분야|지원항목|지원설비|지원범위|지원방식|(?:주요)?사업내용|(?:주요)?과업(?:의)?(?:주요|세부)?내용|과업(?:의)?범위|주요과업|연구(?:내용(?:및범위)?|범위)|모집내용") ? 200 : 100;
                 count = 0;
-            } else if (BOUNDARY.matcher(line).find()) heading = null;
+            } else if (endsSupportSection(line, heading, rank)) heading = null;
             if (heading != null && ++count < 35 && line.length() <= 1000 && line.length() >= 8
                     && !UNSUPPORTED.matcher(line).find()) {
                 // Split current support from attached headings in flattened PDFs.
@@ -299,7 +312,7 @@ final class BusinessTypeResolver {
                 String excerpt = line;
                 for (int nextLine = lineIndex + 1; nextLine < Math.min(lines.length, lineIndex + 3); nextLine++) {
                     String following = lines[nextLine].strip();
-                    if (HEADING.matcher(following).find() || BOUNDARY.matcher(following).find()
+                    if (HEADING.matcher(following).find() || endsSupportSection(following, heading, rank)
                             || FORM.matcher(following).find() || UNSUPPORTED.matcher(following).find()
                             || excerpt.length() + following.length() + 1 > 700) break;
                     excerpt = sourceLines.excerpt(lineIndex, nextLine + 1).strip();

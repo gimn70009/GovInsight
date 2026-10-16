@@ -31,7 +31,7 @@ final class GeneralNoticeClassifier {
 
     enum Nature {
         RESULT("일반 공고 · 결과 발표"), REGULATION("일반 공고 · 규정 고시"),
-        AWARD("포상·표창 모집"), DESIGNATION_RECRUITMENT("지정 모집"), GENERAL("일반 공고");
+        AWARD("포상·표창 모집"), CONTEST("공모전·경진대회"), DESIGNATION_RECRUITMENT("지정 모집"), GENERAL("일반 공고");
         private final String label;
         Nature(String label) { this.label = label; }
         String label() { return label; }
@@ -66,10 +66,21 @@ final class GeneralNoticeClassifier {
                         && FILED_APPLICATION.matcher(text).find() && OPINION_REQUEST.matcher(text).find());
     }
 
+    private static final Pattern CONTEST_TITLE = Pattern.compile("(?:공모전|경진대회|챌린지)(?:참가자|참가팀|참여자|참여팀)?(?:모집|접수|공고|개최|안내)(?:수정|연장|추가)?(?:공고)?$");
+    private static final Pattern CONTEST_ACTION = Pattern.compile("(?:공모전|경진대회|대회)(?:를|을)?(?:(?:다음|아래)과같이)?(?:개최합니다|개최하오니|개최하고자|공고하오니|진행합니다)");
+    private static final Pattern CONTEST_PRIZE = Pattern.compile("시상(?:내역|계획|규모)|(?:상금|장관상|상품)(?:을|은|의|과|\\(|형태|지급)|상금\\s*$");
+
+    private static boolean contestNotice(String title, List<String> introductions) {
+        if (!CONTEST_TITLE.matcher(title).find()) return false;
+        return introductions.stream().anyMatch(text -> affirmative(text, CONTEST_ACTION)
+                && CONTEST_PRIZE.matcher(compact(text)).find());
+    }
+
     static Nature classify(String title, List<String> sources, String documentType, boolean hasBusinessType) {
         String heading = compact(title);
         var introductions = sources.stream().map(text -> text.substring(0, Math.min(6000, text.length()))).toList();
         boolean currentTitle = recruitmentTitle(heading);
+        if (contestNotice(heading, introductions)) return Nature.CONTEST;
         if (filedApplicationOpinion(heading, sources, introductions)) return Nature.GENERAL;
         if (AWARD_TITLE.matcher(heading).find() && !CLOSED_TITLE.matcher(heading).find()
                 && introductions.stream().anyMatch(text -> AWARD_PROOF.matcher(compact(text)).find())) return Nature.AWARD;

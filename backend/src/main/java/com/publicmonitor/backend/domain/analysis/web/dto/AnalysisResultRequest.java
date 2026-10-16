@@ -108,7 +108,7 @@ public record AnalysisResultRequest(
             BusinessType candidateType,
             @NotBlank @Size(max = 40) @jakarta.validation.constraints.Pattern(regexp = "[A-Z_]+") String reason,
             @jakarta.validation.constraints.Min(0) @jakarta.validation.constraints.Max(3) Integer sourceIndex,
-            @jakarta.validation.constraints.Pattern(regexp = "RESULT|REGULATION|AWARD|DESIGNATION_RECRUITMENT|GENERAL") String noticeKind
+            @jakarta.validation.constraints.Pattern(regexp = "RESULT|REGULATION|AWARD|DESIGNATION_RECRUITMENT|GENERAL|CONTEST") String noticeKind
     ) {}
 
     public record BusinessTypeAssessment(
