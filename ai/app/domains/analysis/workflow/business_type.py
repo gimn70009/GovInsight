@@ -9,7 +9,7 @@ from app.domains.analysis.schemas.request import AnalysisDocumentRequest
 
 logger = logging.getLogger(__name__)
 
-VALIDATOR_VERSION = "business-type-v3-task-and-result"
+VALIDATOR_VERSION = "business-type-v4-opinion-notice"
 
 BUSINESS_TYPE_INSTRUCTIONS = """
 comparison_summary.business_type은 현재 공고의 대표 사업 유형입니다. 확인되지 않으면 null입니다.
@@ -19,6 +19,9 @@ ADOPTION=설비·시스템 도입, CERTIFICATION=시험·인증, MARKET=판로·
 FINANCE=자금·금융, WORKFORCE=인력·고용·교육, ADVISORY=조사·컨설팅·전문지원, SPACE=공간·입주.
 - 공고가 지금 무엇을 요청하는지 먼저 구분합니다. 선정 결과 발표, 규정 개정·고시,
   포상·표창 후보 모집은 신규 지원사업 모집과 다릅니다.
+  지정·인증 등의 신청이 이미 접수되어 이해관계인의 의견서를 받는 공고는 일반 공지입니다.
+  제목의 신청이라는 단어와 의견 제출 기간을 신규 지정 신청 모집으로 읽지 않습니다.
+  실제 신규 신청·참여기업 모집이 함께 있으면 해당 모집은 별도로 유지합니다.
   규정 속 신청서와 예시를 현재 모집으로 읽지 않습니다.
   지정·선정 모집도 현재 지원 활동과 구별하며
   별도 심사나 향후 연계 혜택을 확정 지원으로 바꾸지 않습니다.
@@ -144,8 +147,41 @@ def _supports_activity(code: str, text: str) -> bool:
     )
 
 
+def _filed_application_opinion(heading: str, sources: list[str]) -> bool:
+    if not re.search(r"(?:지정|인증|허가|승인).{0,16}신청", heading) or re.search(
+        r"모집|공모|접수|입찰|(?:신규|추가)신청", heading
+    ):
+        return False
+    # Do not suppress new applications merely because the same paragraph mentions opinions.
+    new_application = (
+        r"(?:모집|공모)(?:합니다|한다|하고자|하오니|공고|안내|대상|기간)"
+        r"|(?:지정|인증|허가|승인|지원|참여)신청(?:서)?(?:을|를)?(?:받|접수)"
+        r"|(?:제안서|사업계획서|(?<!이의)(?<!의견)신청서)(?:를|을)?(?:작성하여)?제출"
+        r"|(?<!의견)(?<!이의)신청(?:기간|기한|방법|대상|하세요|하시기|바랍니다)"
+    )
+    if any(re.search(new_application, re.sub(r"\s+", "", text)) for text in sources):
+        return False
+    introductions = [re.sub(r"\s+", "", text[:6000]) for text in sources]
+    return any(
+        not re.search(
+            r"전년도|지난해|과거|예시|견본|참고자료|모집하지않|공모하지않"
+            r"|(?:신청|접수|제출).{0,25}(?:받지않|요구하지않|필요없|필요하지않|없습니다)"
+            r"|(?:모집|접수|신청).{0,20}(?:종료되|마감되|완료되|마감하였|종료하였)",
+            text,
+        )
+        and re.search(r"(?:지정|인증|허가|승인)신청이(?:있어|있으므로|접수되어|접수되었)", text)
+        and re.search(
+            r"(?:이해관계인|이해관계자|주민).{0,220}(?:의견서?|이의신청).{0,160}(?:제출|접수)",
+            text,
+        )
+        for text in introductions
+    )
+
+
 def _notice_kind(title: str, sources: list[str]) -> str | None:
     heading = re.sub(r"\s+", "", title)
+    if _filed_application_opinion(heading, sources):
+        return "GENERAL"
     introductions = [re.sub(r"\s+", "", text[:6000]) for text in sources]
     current_title = bool(re.search(r"추가모집|재공모|신규모집", heading)) or (
         bool(re.search(r"모집|공모|신청|접수|입찰", heading))
@@ -173,7 +209,7 @@ def _notice_kind(title: str, sources: list[str]) -> str | None:
     if re.search(r"선정계획|지정.{0,20}(?:모집|공모|신청)", heading) and any(
         re.search(
             r"지정되더라도.{0,25}지원.{0,25}(?:확정되는것은아님|확정되지않)"
-            r"|지정신청(?:을)?(?:받습니다|접수합니다)|지정을희망하는.{0,20}(?:신청|제출)",
+            r"|지정신청(?:서)?(?:을|를)?(?:받습니다|접수합니다)|지정을희망하는.{0,20}(?:신청|제출)",
             text,
         )
         for text in introductions

@@ -39,6 +39,8 @@ import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
@@ -94,8 +96,12 @@ class AnalysisResultServiceTest {
         given(detectionRepository.findById(50L)).willReturn(Optional.of(detection));
     }
 
-    @Test
-    void 검증에서_제외된_사업유형의_후보와_사유도_분석_JSON에_저장한다() {
+    @ParameterizedTest
+    @CsvSource({
+            "business-type-v2-notice-activity, RESULT, ADOPTION",
+            "business-type-v4-opinion-notice, GENERAL, ADVISORY"
+    })
+    void 검증에서_제외된_사업유형의_후보와_사유도_분석_JSON에_저장한다(String version, String noticeKind, String candidateType) {
         given(analysisRepository.findByDocumentVersionIdForUpdate(40L)).willReturn(Optional.empty());
         var mapper = new ObjectMapper();
         var payload = mapper.valueToTree(request());
@@ -110,16 +116,22 @@ class AnalysisResultServiceTest {
             risks.addObject().put("type", type).put("status", "NOT_FOUND").put("summary", "확인된 위험 근거가 없습니다.");
         }
         summary.putNull("businessType");
-        summary.putObject("businessTypeReview").put("validatorVersion", "business-type-v2-notice-activity")
-                .put("candidateType", "ADOPTION").put("reason", "NOTICE_RESULT").put("noticeKind", "RESULT");
+        summary.putObject("businessTypeReview").put("validatorVersion", version)
+                .put("candidateType", candidateType).put("reason", "NOTICE_" + noticeKind).put("noticeKind", noticeKind);
+        try (var factory = jakarta.validation.Validation.buildDefaultValidatorFactory()) {
+            var review = mapper.treeToValue(summary.path("businessTypeReview"), AnalysisResultRequest.BusinessTypeReview.class);
+            assertThat(factory.getValidator().validate(review)).isEmpty();
+            assertThat(factory.getValidator().validateValue(AnalysisResultRequest.BusinessTypeReview.class,
+                    "noticeKind", "UNKNOWN")).isNotEmpty();
+        }
         ((tools.jackson.databind.node.ObjectNode) payload.path("results").get(0)).set("comparisonSummary", summary);
         service.receive(mapper.treeToValue(payload, AnalysisResultRequest.class));
         var captor = ArgumentCaptor.forClass(DocumentAnalysis.class);
         verify(analysisRepository).save(captor.capture());
         var saved = mapper.readTree(captor.getValue().getComparisonSummary());
         assertThat(saved.path("businessType").isNull()).isTrue();
-        assertThat(saved.path("businessTypeReview").path("reason").asString()).isEqualTo("NOTICE_RESULT");
-        assertThat(saved.path("businessTypeReview").path("candidateType").asString()).isEqualTo("ADOPTION");
+        assertThat(saved.path("businessTypeReview").path("reason").asString()).isEqualTo("NOTICE_" + noticeKind);
+        assertThat(saved.path("businessTypeReview").path("candidateType").asString()).isEqualTo(candidateType);
         assertThat(saved.path("legalRisks").size()).isEqualTo(5);
     }
 

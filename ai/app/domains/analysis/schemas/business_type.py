@@ -39,4 +39,6 @@ class BusinessTypeReview(CamelCaseModel):
     candidate_type: BusinessTypeCode | None = None
     reason: str = Field(min_length=1, max_length=40, pattern=r"^[A-Z_]+$")
     source_index: int | None = Field(default=None, ge=0, le=3)
-    notice_kind: Literal["RESULT", "REGULATION", "AWARD", "DESIGNATION_RECRUITMENT"] | None = None
+    notice_kind: Literal[
+        "RESULT", "REGULATION", "AWARD", "DESIGNATION_RECRUITMENT", "GENERAL"
+    ] | None = None

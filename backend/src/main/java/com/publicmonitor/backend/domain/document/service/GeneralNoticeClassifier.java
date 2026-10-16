@@ -30,7 +30,7 @@ final class GeneralNoticeClassifier {
 
 
     enum Nature {
-        RESULT("일반 공고 · 선정 결과"), REGULATION("일반 공고 · 규정 고시"),
+        RESULT("일반 공고 · 결과 발표"), REGULATION("일반 공고 · 규정 고시"),
         AWARD("포상·표창 모집"), DESIGNATION_RECRUITMENT("지정 모집"), GENERAL("일반 공고");
         private final String label;
         Nature(String label) { this.label = label; }
@@ -46,12 +46,29 @@ final class GeneralNoticeClassifier {
     private static final Pattern DESIGNATION_RECRUITMENT_TITLE = Pattern.compile("선정계획|지정.{0,20}(?:모집|공모|신청)");
     private static final Pattern CONDITIONAL_DESIGNATION = Pattern.compile(
             "지정되더라도.{0,25}지원.{0,25}(?:확정되는것은아님|확정되지않)|"
-                    + "지정신청(?:을)?(?:받습니다|접수합니다)|지정을희망하는.{0,20}(?:신청|제출)");
+                    + "지정신청(?:서)?(?:을|를)?(?:받습니다|접수합니다)|지정을희망하는.{0,20}(?:신청|제출)");
+
+    private static final Pattern FILED_APPLICATION_TITLE = Pattern.compile("(?:지정|인증|허가|승인).{0,16}신청");
+    private static final Pattern FILED_APPLICATION = Pattern.compile("(?:지정|인증|허가|승인)신청이(?:있어|있으므로|접수되어|접수되었)");
+    private static final Pattern OPINION_REQUEST = Pattern.compile("(?:이해관계인|이해관계자|주민).{0,220}(?:의견서?|이의신청).{0,160}(?:제출|접수)");
+    private static final Pattern NEW_APPLICATION_TITLE = Pattern.compile("모집|공모|접수|입찰|(?:신규|추가)신청");
+    private static final Pattern NEW_APPLICATION_ACTION = Pattern.compile("(?:모집|공모)(?:합니다|한다|하고자|하오니|공고|안내|대상|기간)|(?:지정|인증|허가|승인|지원|참여)신청(?:서)?(?:을|를)?(?:받|접수)|(?:제안서|사업계획서|(?<!이의)(?<!의견)신청서)(?:를|을)?(?:작성하여)?제출|(?<!의견)(?<!이의)신청(?:기간|기한|방법|대상|하세요|하시기|바랍니다)");
+
+    private static boolean filedApplicationOpinion(String title, List<String> sources, List<String> introductions) {
+        if (!FILED_APPLICATION_TITLE.matcher(title).find() || NEW_APPLICATION_TITLE.matcher(title).find()) return false;
+        // A notice about an already filed application may still request opinions, not new applications.
+        // Check new applications separately so mixed opinion/recruitment paragraphs remain actionable.
+        if (sources.stream().anyMatch(text -> NEW_APPLICATION_ACTION.matcher(compact(text)).find())) return false;
+        return introductions.stream().map(GeneralNoticeClassifier::compact)
+                .anyMatch(text -> !NON_CURRENT.matcher(text).find()
+                        && FILED_APPLICATION.matcher(text).find() && OPINION_REQUEST.matcher(text).find());
+    }
 
     static Nature classify(String title, List<String> sources, String documentType, boolean hasBusinessType) {
         String heading = compact(title);
         var introductions = sources.stream().map(text -> text.substring(0, Math.min(6000, text.length()))).toList();
         boolean currentTitle = recruitmentTitle(heading);
+        if (filedApplicationOpinion(heading, sources, introductions)) return Nature.GENERAL;
         if (AWARD_TITLE.matcher(heading).find() && !CLOSED_TITLE.matcher(heading).find()
                 && introductions.stream().anyMatch(text -> AWARD_PROOF.matcher(compact(text)).find())) return Nature.AWARD;
         if (DESIGNATION_RECRUITMENT_TITLE.matcher(heading).find()

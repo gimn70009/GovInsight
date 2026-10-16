@@ -18,7 +18,7 @@ const render = (businessType, analysisPending = false) => renderToStaticMarkup(
 )
 
 test('notice nature distinguishes results, regulations, awards, and designation recruitment', () => {
-  for (const label of ['일반 공고 · 선정 결과', '일반 공고 · 규정 고시', '포상·표창 모집', '지정 모집']) {
+  for (const label of ['일반 공고 · 결과 발표', '일반 공고 · 규정 고시', '포상·표창 모집', '지정 모집']) {
     const html = render({ status: 'NOT_APPLICABLE', noticeNature: { label } }, true)
     assert.ok(html.includes(label))
     assert.ok(!html.includes('확인 필요') && !html.includes('분석 중'))

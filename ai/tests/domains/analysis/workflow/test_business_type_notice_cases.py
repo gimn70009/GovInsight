@@ -17,7 +17,7 @@ from tests.domains.analysis.workflow.test_graph import analysis, document
 CASE_DIR = Path(__file__).resolve().parents[5] / "backend/src/test/resources/business-type"
 CASES = [
     case
-    for name in ("notice-cases.json", "climate-cases.json")
+    for name in ("notice-cases.json", "climate-cases.json", "molit-cases.json")
     for case in json.loads((CASE_DIR / name).read_text(encoding="utf-8"))
 ]
 
@@ -37,7 +37,7 @@ def test_notice_kind_and_support_activity_share_backend_cases(case):
     ) if case["candidateType"] else None
     value, review = reviewed_business_type(candidate, current)
     assert review.reason == case["expectedAiReason"]
-    assert review.notice_kind == case["expectedNature"]
+    assert review.notice_kind == case.get("expectedAiNature", case["expectedNature"])
     assert review.candidate_type == case["candidateType"]
     assert (value is not None) == (case["expectedAiReason"] == "VALIDATED")
 
@@ -60,7 +60,7 @@ def test_final_result_keeps_validation_diagnostics_when_type_is_rejected():
     }))).draft.comparison_summary.model_dump(mode="json", by_alias=True)
     assert result["businessType"] is None
     assert result["businessTypeReview"] == {
-        "validatorVersion": "business-type-v3-task-and-result", "candidateType": "ADOPTION",
+        "validatorVersion": "business-type-v4-opinion-notice", "candidateType": "ADOPTION",
         "reason": "NOTICE_RESULT", "sourceIndex": None, "noticeKind": "RESULT",
     }
     runner._analysis_model.ainvoke.assert_awaited_once()
