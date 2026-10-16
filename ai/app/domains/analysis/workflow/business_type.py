@@ -9,7 +9,7 @@ from app.domains.analysis.schemas.request import AnalysisDocumentRequest
 
 logger = logging.getLogger(__name__)
 
-VALIDATOR_VERSION = "business-type-v6-contest-support"
+VALIDATOR_VERSION = "business-type-v7-planning-surveys"
 
 BUSINESS_TYPE_INSTRUCTIONS = """
 comparison_summary.business_type은 현재 공고의 대표 사업 유형입니다. 확인되지 않으면 null입니다.
@@ -40,6 +40,14 @@ FINANCE=자금·금융, WORKFORCE=인력·고용·교육, ADVISORY=조사·컨�
   해외 진출이라는 목적보다 현재 제공하는 설비·조사 등 구체적인 지원 항목을 우선합니다.
   수요조사라는 제목이어도 선정기업에 수출기회·수출상담회를 제공하면 MARKET입니다.
   접수 기간에 나열된 사업명은 활동 근거로 쓰지 않습니다.
+- 수요조사는 제목만으로 조사용역이나 지원사업으로 분류하지 않습니다.
+  현재 지원 대상 선정이 아닌 신규사업 기획용 의견 수렴이라고 명시된 경우 일반 공지입니다.
+  배경 설명의 향후 R&D 예산은 현재 지원이 아닙니다. 수요조사 수행기관 모집이나
+  현재 신청기업에 실제 제공하는 지원이 함께 있으면 그 활동을 별도로 확인합니다.
+- 연구개발기관·R&D기관은 수행기관의 명칭이며 그 단어만으로 RND를 정하지 않습니다.
+  기관 모집은 수행내용을 확인합니다. 신뢰성인증·성능시험 서비스는 CERTIFICATION입니다.
+  가./나./바. 등 한글 항목 번호 뒤의 수행내용과 선정목적도 읽습니다.
+  후보과제 선정 단계의 컨설팅과 최종 지정 이후의 실증·R&D 지원을 구별합니다.
 - 개요·목적·지원 내용을 문단 단위로 함께 읽습니다.
   제도에 시범적으로 참여하는 활동은 DEMONSTRATION입니다.
   결과 안내의 사업명이나 설비 도입 가능성만으로 ADOPTION을 만들지 않습니다.
@@ -93,7 +101,26 @@ def _is_notice_heading(line: str) -> bool:
     )
 
 
+def _without_later_designation_support(text: str) -> str:
+    introduction = re.sub(r"\s+", "", text[:6000])
+    if not re.search(r"후보과제(?:를)?모집", introduction) or not re.search(
+        r"선정목적[:：]?.{0,120}후보과제.{0,120}컨설팅.{0,120}지원", introduction,
+    ):
+        return text
+    heading = re.compile(r"※[^□◦※\r\n]{0,100}지정목적[^□◦※\r\n]{0,60}지원내용")
+    boundary = re.compile(r"[□◦]|\[파일:")
+    parts, cursor = [], 0
+    for match in heading.finditer(text):
+        if match.start() < cursor:
+            continue
+        end = boundary.search(text, match.end())
+        parts.extend((text[cursor:match.start()], "\n[참고 구간 제외]\n"))
+        cursor = end.start() if end else len(text)
+    return "".join(parts) + text[cursor:]
+
+
 def _without_reference_sections(text: str) -> str:
+    text = _without_later_designation_support(text)
     contents = re.search(r"(?m)^[ \t【\[(]*목[ \t]*차[ \t】\])]*$", text)
     if contents:
         body = re.search(
@@ -145,7 +172,10 @@ def _notice_part(text: str) -> str:
 
 
 _ACTIVITY = {
-    "RND": r"R&D|연구개발(?!기업|인력|실적)|기술개발|공동연구",
+    "RND": (
+        r"(?:R&D|연구개발|기술개발|공동연구(?!개발))"
+        r"(?!(?:\([^)]{0,12}\))?\)?(?:기업|인력|실적|기관))"
+    ),
     "DEMONSTRATION": r"실증|테스트베드|PoC|시범(?:사업|운영|적용|적으로참여)|현장검증",
     "COMMERCIALIZATION": r"시제품|제품화|사업화|양산|제품고도화|제품디자인",
     "ADOPTION": (
@@ -228,6 +258,34 @@ def _filed_application_opinion(heading: str, sources: list[str]) -> bool:
     )
 
 
+def _planning_demand_survey(title: str, sources: list[str]) -> bool:
+    if "수요조사" not in title or re.search(
+        r"수요조사.{0,15}(?:용역|수행기관|조사기관|운영기관)", title,
+    ):
+        return False
+    # Keep actual recruitment or benefits even when a planning survey is also mentioned.
+    mixed = (
+        r"(?:지원대상|수혜|수행)(?:기업|기관|과제)(?:을|를)?(?:신규|추가)?모집"
+        r"|(?:이번|본)수요조사(?:참여|응답)(?:기업|기관).{0,80}(?:제공|지원)"
+    )
+    if any(re.search(mixed, re.sub(r"\s+", "", text)) for text in sources):
+        return False
+    proof = (
+        r"(?:본|금번|이번)?수요조사는.{0,100}선정(?:하는것이|이)?(?:아닌|아니라)"
+        r".{0,100}의견(?:을)?수렴"
+    )
+    for text in sources:
+        for sentence in re.split(r"[。!?]|(?<=\.)\s+|\n\s*\n", text[:6000]):
+            value = re.sub(r"\s+", "", sentence)
+            if re.search(r"전년도|지난해|과거|예시|견본", value):
+                continue
+            if re.search(proof, value) and not re.search(
+                r"의견(?:을)?수렴.{0,12}(?:아니|아님|아닙|않)", value,
+            ):
+                return True
+    return False
+
+
 def _contest_notice(title: str, sources: list[str]) -> bool:
     title_pattern = (
         r"(?:공모전|경진대회|챌린지)(?:참가자|참가팀|참여자|참여팀)?"
@@ -258,6 +316,8 @@ def _contest_notice(title: str, sources: list[str]) -> bool:
 
 def _notice_kind(title: str, sources: list[str]) -> str | None:
     heading = re.sub(r"\s+", "", title)
+    if _planning_demand_survey(heading, sources):
+        return "GENERAL"
     if _contest_notice(heading, sources):
         return "CONTEST"
     if _filed_application_opinion(heading, sources):

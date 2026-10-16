@@ -76,10 +76,32 @@ final class GeneralNoticeClassifier {
                 && CONTEST_PRIZE.matcher(compact(text)).find());
     }
 
+    private static final Pattern PLANNING_SURVEY_PROOF = Pattern.compile("(?:본|금번|이번)?수요조사는.{0,100}선정(?:하는것이|이)?(?:아닌|아니라).{0,100}의견(?:을)?수렴");
+    private static final Pattern SURVEY_OPERATOR_TITLE = Pattern.compile("수요조사.{0,15}(?:용역|수행기관|조사기관|운영기관)");
+    private static final Pattern SURVEY_MIXED_RECRUITMENT = Pattern.compile("(?:지원대상|수혜|수행)(?:기업|기관|과제)(?:을|를)?(?:신규|추가)?모집|(?:이번|본)수요조사(?:참여|응답)(?:기업|기관).{0,80}(?:제공|지원)");
+    private static final Pattern NEGATED_OPINION_ONLY = Pattern.compile("의견(?:을)?수렴.{0,12}(?:아니|아님|아닙|않)");
+
+    private static final Pattern HISTORICAL_SURVEY = Pattern.compile("전년도|지난해|과거|예시|견본");
+
+    private static boolean planningDemandSurvey(String title, List<String> sources) {
+        if (!title.contains("수요조사") || SURVEY_OPERATOR_TITLE.matcher(title).find()) return false;
+        if (sources.stream().anyMatch(text -> SURVEY_MIXED_RECRUITMENT.matcher(compact(text)).find())) return false;
+        for (String text : sources) {
+            String introduction = text.substring(0, Math.min(6000, text.length()));
+            for (String sentence : introduction.split("[。!?]|(?<=\\.)\\s+|\\n\\s*\\n")) {
+                String value = compact(sentence);
+                if (HISTORICAL_SURVEY.matcher(value).find()) continue;
+                if (PLANNING_SURVEY_PROOF.matcher(value).find() && !NEGATED_OPINION_ONLY.matcher(value).find()) return true;
+            }
+        }
+        return false;
+    }
+
     static Nature classify(String title, List<String> sources, String documentType, boolean hasBusinessType) {
         String heading = compact(title);
         var introductions = sources.stream().map(text -> text.substring(0, Math.min(6000, text.length()))).toList();
         boolean currentTitle = recruitmentTitle(heading);
+        if (planningDemandSurvey(heading, sources)) return Nature.GENERAL;
         if (contestNotice(heading, introductions)) return Nature.CONTEST;
         if (filedApplicationOpinion(heading, sources, introductions)) return Nature.GENERAL;
         if (AWARD_TITLE.matcher(heading).find() && !CLOSED_TITLE.matcher(heading).find()
