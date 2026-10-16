@@ -28,9 +28,61 @@ final class GeneralNoticeClassifier {
                     + "|(?:모집|접수|신청).{0,20}(?:종료되|마감되|완료되|마감하였|종료하였)");
     private static final Pattern OPINION = Pattern.compile("(?:의견|이의)(?:서)?(?:제출|신청|접수)");
 
+
+    enum Nature {
+        RESULT("일반 공고 · 선정 결과"), REGULATION("일반 공고 · 규정 고시"),
+        AWARD("포상·표창 모집"), DESIGNATION_RECRUITMENT("지정 모집"), GENERAL("일반 공고");
+        private final String label;
+        Nature(String label) { this.label = label; }
+        String label() { return label; }
+    }
+    private static final Pattern RESULT_ACTION = Pattern.compile(
+            "(?:선정|평가|심사|합격).{0,12}결과(?:를|을).{0,25}(?:공고|알립|안내|발표|통보)");
+    private static final Pattern REGULATION_TITLE = Pattern.compile("규정|규칙|지침|고시");
+    private static final Pattern REGULATION_ACTION = Pattern.compile(
+            "(?:규정|규칙|지침|고시).{0,40}(?:제정|개정)하여고시|(?:제정|개정)(?:하여)?고시합니다");
+    private static final Pattern AWARD_TITLE = Pattern.compile("(?:포상|표창)(?:후보자|대상자|유공자)?(?:모집|신청|추천|안내|공고|계획|추가|수정|연장)");
+    private static final Pattern AWARD_PROOF = Pattern.compile("장관표창|포상(?:대상|목적|계획|훈격|규모)|훈격");
+    private static final Pattern DESIGNATION_RECRUITMENT_TITLE = Pattern.compile("선정계획|지정.{0,20}(?:모집|공모|신청)");
+    private static final Pattern CONDITIONAL_DESIGNATION = Pattern.compile(
+            "지정되더라도.{0,25}지원.{0,25}(?:확정되는것은아님|확정되지않)|"
+                    + "지정신청(?:을)?(?:받습니다|접수합니다)|지정을희망하는.{0,20}(?:신청|제출)");
+
+    static Nature classify(String title, List<String> sources, String documentType, boolean hasBusinessType) {
+        String heading = compact(title);
+        var introductions = sources.stream().map(text -> text.substring(0, Math.min(6000, text.length()))).toList();
+        boolean currentTitle = recruitmentTitle(heading);
+        if (AWARD_TITLE.matcher(heading).find() && !CLOSED_TITLE.matcher(heading).find()
+                && introductions.stream().anyMatch(text -> AWARD_PROOF.matcher(compact(text)).find())) return Nature.AWARD;
+        if (DESIGNATION_RECRUITMENT_TITLE.matcher(heading).find()
+                && introductions.stream().anyMatch(text -> CONDITIONAL_DESIGNATION.matcher(compact(text)).find())) {
+            return Nature.DESIGNATION_RECRUITMENT;
+        }
+        // The publication act belongs to the notice introduction; application rules in its annex do not override it.
+        if (!currentTitle && !heading.contains("행정예고") && !heading.contains("입법예고")
+                && REGULATION_TITLE.matcher(heading).find()
+                && introductions.stream().anyMatch(text -> affirmative(text, REGULATION_ACTION))) return Nature.REGULATION;
+        boolean recruiting = sources.stream().anyMatch(GeneralNoticeClassifier::recruitmentBody);
+        if (!currentTitle && !recruiting && introductions.stream().anyMatch(text -> affirmative(text, RESULT_ACTION))) {
+            return Nature.RESULT;
+        }
+        if (matchesLegacy(title, sources, documentType, hasBusinessType)) {
+            return GENERAL_TITLE.matcher(heading).find() && heading.contains("결과") ? Nature.RESULT : Nature.GENERAL;
+        }
+        return null;
+    }
+
+    private static boolean affirmative(String text, Pattern action) {
+        for (String sentence : text.split("[。!?]|(?<=\\.)\\s+|\\n\\s*\\n")) {
+            String value = compact(sentence);
+            if (!NON_CURRENT.matcher(value).find() && action.matcher(value).find()) return true;
+        }
+        return false;
+    }
+
     private GeneralNoticeClassifier() {}
 
-    static boolean matches(String title, List<String> sources, String documentType, boolean hasBusinessType) {
+    private static boolean matchesLegacy(String title, List<String> sources, String documentType, boolean hasBusinessType) {
         String heading = compact(title);
         // Attendance and employee applications do not make these notices business support.
         if (!ADDITIONAL_RECRUITMENT.matcher(heading).find()

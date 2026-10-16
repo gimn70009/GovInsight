@@ -43,7 +43,9 @@ public record BusinessSummaryEmailView(
             try { return BusinessType.valueOf(type.code()).label(); }
             catch (IllegalArgumentException ignored) { /* Unknown codes stay unconfirmed like the web. */ }
         }
-        if (type != null && "NOT_APPLICABLE".equals(type.status())) return "해당 없음";
+        if (type != null && "NOT_APPLICABLE".equals(type.status())) {
+            return type.noticeNature() == null ? "해당 없음" : type.noticeNature().label();
+        }
         return detail.analysisPending() ? "분석 중" : "확인 필요";
     }
 

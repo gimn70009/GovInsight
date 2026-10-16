@@ -95,6 +95,35 @@ class AnalysisResultServiceTest {
     }
 
     @Test
+    void 검증에서_제외된_사업유형의_후보와_사유도_분석_JSON에_저장한다() {
+        given(analysisRepository.findByDocumentVersionIdForUpdate(40L)).willReturn(Optional.empty());
+        var mapper = new ObjectMapper();
+        var payload = mapper.valueToTree(request());
+        var summary = mapper.createObjectNode();
+        summary.put("purpose", "지원 활동을 확인했습니다.");
+        summary.put("supportScale", "지원규모는 원문을 확인합니다.");
+        summary.put("applicationDeadline", "접수기한은 원문을 확인합니다.");
+        summary.put("eligibility", "지원대상은 원문을 확인합니다.");
+        summary.put("requiredPartner", "협력기관은 원문을 확인합니다.");
+        var risks = summary.putArray("legalRisks");
+        for (String type : LegalReviewPolicy.TYPES) {
+            risks.addObject().put("type", type).put("status", "NOT_FOUND").put("summary", "확인된 위험 근거가 없습니다.");
+        }
+        summary.putNull("businessType");
+        summary.putObject("businessTypeReview").put("validatorVersion", "business-type-v2-notice-activity")
+                .put("candidateType", "ADOPTION").put("reason", "NOTICE_RESULT").put("noticeKind", "RESULT");
+        ((tools.jackson.databind.node.ObjectNode) payload.path("results").get(0)).set("comparisonSummary", summary);
+        service.receive(mapper.treeToValue(payload, AnalysisResultRequest.class));
+        var captor = ArgumentCaptor.forClass(DocumentAnalysis.class);
+        verify(analysisRepository).save(captor.capture());
+        var saved = mapper.readTree(captor.getValue().getComparisonSummary());
+        assertThat(saved.path("businessType").isNull()).isTrue();
+        assertThat(saved.path("businessTypeReview").path("reason").asString()).isEqualTo("NOTICE_RESULT");
+        assertThat(saved.path("businessTypeReview").path("candidateType").asString()).isEqualTo("ADOPTION");
+        assertThat(saved.path("legalRisks").size()).isEqualTo(5);
+    }
+
+    @Test
     void 분석_결과를_문서_버전에_저장한다() {
         given(analysisRepository.findByDocumentVersionIdForUpdate(40L)).willReturn(Optional.empty());
 

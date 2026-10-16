@@ -1274,7 +1274,14 @@ def test_retry_shrinks_sources_and_guides_complete_output_only_for_timeouts(
     assert generated.key_points == draft.key_points
     assert len(generated.proposal.sections) == 2
     assert len(generated.opportunity.dimensions) == 4
-    assert generated.comparison_summary == draft.comparison_summary
+    assert generated.comparison_summary.model_dump(exclude={"business_type_review"}) == (
+        draft.comparison_summary.model_dump(exclude={"business_type_review"})
+    )
+    review = generated.comparison_summary.business_type_review
+    assert review is not None
+    assert review.reason == "MODEL_UNCLASSIFIED"
+    assert review.candidate_type is None
+    assert review.validator_version == "business-type-v2-notice-activity"
     assert generated.proposal.sections[1].body == draft.proposal.sections[1].body
 
 

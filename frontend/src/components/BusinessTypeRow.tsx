@@ -16,7 +16,7 @@ export function BusinessTypeRow({ detail }: { detail: DocumentDetail }) {
     <th scope="row">사업 유형</th>
     <td>
       <strong className={label ? 'business-summary__type-label' : 'business-summary__type-status'}>
-        {label || (notApplicable ? '해당 없음' : pending ? '분석 중' : '확인 필요')}
+        {label || (notApplicable ? type?.noticeNature?.label || '해당 없음' : pending ? '분석 중' : '확인 필요')}
       </strong>
     </td>
   </tr>

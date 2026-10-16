@@ -1,9 +1,15 @@
 """Validate classification evidence without an additional model or external request."""
 
+import logging
 import re
+from dataclasses import dataclass
 
-from app.domains.analysis.schemas.business_type import BusinessTypeAssessment
+from app.domains.analysis.schemas.business_type import BusinessTypeAssessment, BusinessTypeReview
 from app.domains.analysis.schemas.request import AnalysisDocumentRequest
+
+logger = logging.getLogger(__name__)
+
+VALIDATOR_VERSION = "business-type-v2-notice-activity"
 
 BUSINESS_TYPE_INSTRUCTIONS = """
 comparison_summary.business_type은 현재 공고의 대표 사업 유형입니다. 확인되지 않으면 null입니다.
@@ -11,6 +17,16 @@ comparison_summary.business_type은 현재 공고의 대표 사업 유형입니�
 RND=연구개발(R&D), DEMONSTRATION=실증·시범, COMMERCIALIZATION=제품화·사업화,
 ADOPTION=설비·시스템 도입, CERTIFICATION=시험·인증, MARKET=판로·해외진출,
 FINANCE=자금·금융, WORKFORCE=인력·고용·교육, ADVISORY=조사·컨설팅·전문지원, SPACE=공간·입주.
+- 공고가 지금 무엇을 요청하는지 먼저 구분합니다. 선정 결과 발표, 규정 개정·고시,
+  포상·표창 후보 모집은 신규 지원사업 모집과 다릅니다.
+  규정 속 신청서와 예시를 현재 모집으로 읽지 않습니다.
+  지정·선정 모집도 현재 지원 활동과 구별하며
+  별도 심사나 향후 연계 혜택을 확정 지원으로 바꾸지 않습니다.
+- 개요·목적·지원 내용을 문단 단위로 함께 읽습니다.
+  제도에 시범적으로 참여하는 활동은 DEMONSTRATION입니다.
+  결과 안내의 사업명이나 설비 도입 가능성만으로 ADOPTION을 만들지 않습니다.
+  인용이 원문에 있다는 사실만으로 충분하지 않습니다.
+  선택 유형의 실제 지원 활동을 입증하는 근거가 필요합니다.
 - 제목·기관·업종·회사 프로필만으로 분류하지 않습니다.
   현재 모집의 사업 목적과 지원 내용·과업을 확인합니다.
 - 수출기업의 인증 비용 지원은 CERTIFICATION, 설비 도입 보조금은 ADOPTION입니다.
@@ -46,6 +62,13 @@ _UNSUPPORTED = re.compile(
 )
 
 
+def _is_notice_heading(line: str) -> bool:
+    # A numbered attachment can be the actual notice, not an application form.
+    return bool(re.search(r"공고|모집\s*안내|사업\s*안내", line)) and not bool(
+        _NON_NOTICE.search(line) or re.search(r"작성\s*예시", line)
+    )
+
+
 def _notice_part(text: str) -> str:
     text = text[:200_000]
     members = list(re.finditer(r"(?m)^\[파일: (.+?)\]\s*$", text))
@@ -58,34 +81,245 @@ def _notice_part(text: str) -> str:
             end = members[index + 1].start() if index + 1 < len(members) else len(text)
             selected.append(member.group(0) + "\n" + _notice_part(text[member.end() : end]))
         return "\n".join(selected)
-    marker = _FORM.search(text)
-    return text[: marker.start()] if marker else text
+    for marker in _FORM.finditer(text):
+        line_end = text.find("\n", marker.start())
+        line = text[marker.start() : line_end if line_end >= 0 else len(text)]
+        if not _is_notice_heading(line):
+            return text[: marker.start()]
+    return text
+
+
+_ACTIVITY = {
+    "RND": r"R&D|연구개발(?!기업|인력|실적)|기술개발|공동연구",
+    "DEMONSTRATION": r"실증|테스트베드|PoC|시범(?:사업|운영|적용|적으로참여)|현장검증",
+    "COMMERCIALIZATION": r"시제품|제품화|사업화|양산|제품고도화|제품디자인",
+    "ADOPTION": (
+        r"인프라구축|시스템(?:을)?구축|시스템(?:을)?도입|솔루션도입|설비(?:도입|구축|개선|교체|구매|설치|지원)"
+        r"|장비도입|장비구축|시설개선|환경개선|환경조성|스마트공장|공정개선"
+    ),
+    "CERTIFICATION": (
+        r"인증(?!기업|보유|실적)|시험평가|시험비"
+        r"|제3자검증|배출량검증|성능시험|규격시험"
+    ),
+    "MARKET": (
+        r"판로|마케팅|해외진출|수출(?:지원|마케팅|상담|바우처|판로|촉진)"
+        r"|전시회|박람회|구매상담|시장진출"
+    ),
+    "FINANCE": r"융자|이차보전|이자지원|신용보증|기술보증|보증지원|직접투자|투자유치|정책자금",
+    "WORKFORCE": (
+        r"채용지원|고용지원|고용장려|인건비지원"
+        r"|인력양성|인재양성|교육지원|직무교육|훈련지원"
+    ),
+    "ADVISORY": (
+        r"컨설팅|정책연구|조사용역|시장조사|기술지도"
+        r"|전문자문|법률지원|회계지원|특허(?!보유)|지식재산|출원"
+    ),
+    "SPACE": r"입주|사무공간|보육공간|공간지원|공간제공|연구공간",
+}
+
+
+def _supports_activity(code: str, text: str) -> bool:
+    value = re.sub(r"\s+", "", text)
+    if not re.search(_ACTIVITY[code], value, re.I) or _UNSUPPORTED.search(text):
+        return False
+    if re.search(
+        r"지원대상|신청자격|보유자격|접수마감|제출기한|접수기한|제출마감|신청마감", value
+    ) and not re.search(
+        r"(?:비용|취득비|제작비|개발비|구축비)(?:를|을)?지원|지원합니다|제공합니다|수행합니다",
+        value,
+    ):
+        return False
+    return bool(re.search(r"지원|제공|수행|구축|도입|모집|융자|입주|개발|실증|컨설팅", value)) or (
+        code == "DEMONSTRATION" and bool(re.search(r"시범.{0,80}(?:참여|적용|허용|유지)", value))
+    )
+
+
+def _notice_kind(title: str, sources: list[str]) -> str | None:
+    heading = re.sub(r"\s+", "", title)
+    introductions = [re.sub(r"\s+", "", text[:6000]) for text in sources]
+    current_title = bool(re.search(r"추가모집|재공모|신규모집", heading)) or (
+        bool(re.search(r"모집|공모|신청|접수|입찰", heading))
+        and not re.search(r"결과|종료|마감|취소|(?:의견|이의)(?:서)?(?:제출|신청|접수)", heading)
+    )
+    if (
+        re.search(
+            r"(?:포상|표창)(?:후보자|대상자|유공자)?(?:모집|신청|추천|안내|공고|계획|추가|수정|연장)",
+            heading,
+        )
+        and not re.search(
+            r"결과|종료|마감|취소",
+            heading,
+        )
+        and any(
+            re.search(r"장관표창|포상(?:대상|목적|계획|훈격|규모)|훈격", text)
+            for text in introductions
+        )
+    ):
+        return "AWARD"
+    if re.search(r"선정계획|지정.{0,20}(?:모집|공모|신청)", heading) and any(
+        re.search(
+            r"지정되더라도.{0,25}지원.{0,25}(?:확정되는것은아님|확정되지않)"
+            r"|지정신청(?:을)?(?:받습니다|접수합니다)|지정을희망하는.{0,20}(?:신청|제출)",
+            text,
+        )
+        for text in introductions
+    ):
+        return "DESIGNATION_RECRUITMENT"
+    affirmative = [
+        text for text in introductions if not re.search(r"전년도|지난해|과거|작성예시", text)
+    ]
+    if (
+        not current_title
+        and not re.search(r"행정예고|입법예고", heading)
+        and re.search(r"규정|규칙|지침|고시", heading)
+        and any(
+            re.search(
+                r"(?:규정|규칙|지침|고시).{0,40}(?:제정|개정)하여고시|(?:제정|개정)(?:하여)?고시합니다",
+                text,
+            )
+            for text in affirmative
+        )
+    ):
+        return "REGULATION"
+    recruiting = any(
+        re.search(
+            r"(?:모집|공모)(?:합니다|한다|하고자|하오니|대상|기간)|(?:신청|접수)(?:기간|기한|방법|대상|하세요|바랍니다)"
+            r"|신청(?:을)?받(?:습니다|고있)",
+            text,
+        )
+        for text in affirmative
+    )
+    if (
+        not current_title
+        and not recruiting
+        and (
+            re.search(r"(?:선정|평가|심사|합격|모집|공모).{0,10}결과", heading)
+            or any(
+                re.search(
+                    r"(?:선정|평가|심사|합격).{0,12}결과(?:를|을).{0,25}(?:공고|알립|안내|발표|통보)",
+                    text,
+                )
+                for text in affirmative
+            )
+        )
+    ):
+        return "RESULT"
+    return None
+
+
+@dataclass(frozen=True)
+class BusinessTypeValidation:
+    assessment: BusinessTypeAssessment | None
+    reason: str
+    source_index: int | None = None
+    notice_kind: str | None = None
+
+
+@dataclass(frozen=True)
+class _Source:
+    origin: str
+    name: str | None
+    raw: str
+    text: str
+    eligible: bool = True
+
+
+def _sources(document: AnalysisDocumentRequest) -> list[_Source]:
+    body = document.content_text or ""
+    result = [_Source("NOTICE_BODY", None, body, _notice_part(body))]
+    for file in document.attachments:
+        raw = file.extracted_text or ""
+        eligible = not _NON_NOTICE.search(file.file_name) or bool(
+            re.search(r"공고|모집|안내", file.file_name)
+        )
+        result.append(_Source("ATTACHMENT", file.file_name, raw, _notice_part(raw), eligible))
+    return result
+
+
+def diagnose_business_type(
+    assessment: BusinessTypeAssessment | None,
+    document: AnalysisDocumentRequest,
+) -> BusinessTypeValidation:
+    current = _sources(document)
+    nature = _notice_kind(document.title, [source.text for source in current if source.eligible])
+    if assessment is None and nature:
+        return BusinessTypeValidation(None, "NOTICE_" + nature, notice_kind=nature)
+    if assessment is None:
+        reason = (
+            "MODEL_UNCLASSIFIED"
+            if any(source.eligible and source.text.strip() for source in current)
+            else "NO_USABLE_SOURCE"
+        )
+        return BusinessTypeValidation(None, reason)
+    for index, source in enumerate(assessment.sources):
+        matches = [
+            item
+            for item in current
+            if item.origin == source.origin and item.name == source.attachment_name
+        ]
+        reason = None
+        excerpt = re.sub(r"\s+", "", source.excerpt)
+        if not matches:
+            reason = "SOURCE_NOT_FOUND"
+        elif len(matches) != 1:
+            reason = "AMBIGUOUS_SOURCE"
+        elif not matches[0].eligible:
+            reason = "EXCLUDED_SOURCE"
+        elif not matches[0].raw.strip():
+            reason = "SOURCE_TEXT_UNAVAILABLE"
+        elif len(excerpt) < 5:
+            reason = "QUOTE_TOO_SHORT"
+        elif _UNSUPPORTED.search(source.excerpt):
+            reason = "UNSUPPORTED_EVIDENCE"
+        elif excerpt not in re.sub(r"\s+", "", matches[0].text):
+            reason = (
+                "EXCLUDED_SOURCE_SECTION"
+                if excerpt in re.sub(r"\s+", "", matches[0].raw)
+                else "QUOTE_MISMATCH"
+            )
+        if reason:
+            return BusinessTypeValidation(None, reason, index)
+    if nature:
+        return BusinessTypeValidation(None, "NOTICE_" + nature, notice_kind=nature)
+    if re.search(
+        r"수반될가능성|가능성이있어|가능성을시사|유형으로추정",
+        re.sub(r"\s+", "", assessment.explanation),
+    ):
+        return BusinessTypeValidation(None, "SPECULATIVE_CLASSIFICATION")
+    if not any(
+        _supports_activity(assessment.primary_type, source.excerpt) for source in assessment.sources
+    ):
+        return BusinessTypeValidation(None, "TYPE_ACTIVITY_MISMATCH")
+    return BusinessTypeValidation(assessment, "VALIDATED")
+
+
+def reviewed_business_type(
+    assessment: BusinessTypeAssessment | None,
+    document: AnalysisDocumentRequest,
+) -> tuple[BusinessTypeAssessment | None, BusinessTypeReview]:
+    result = diagnose_business_type(assessment, document)
+    logger.info(
+        "Business type validation. detection_id=%s version_id=%s reason=%s "
+        "type_code=%s source_index=%s attachment_count=%s empty_attachment_count=%s",
+        document.detection_id,
+        document.version_id,
+        result.reason,
+        assessment.primary_type.value if assessment else None,
+        result.source_index,
+        len(document.attachments),
+        sum(not (file.extracted_text or "").strip() for file in document.attachments),
+    )
+    return result.assessment, BusinessTypeReview(
+        validator_version=VALIDATOR_VERSION,
+        candidate_type=assessment.primary_type if assessment else None,
+        reason=result.reason,
+        source_index=result.source_index,
+        notice_kind=result.notice_kind,
+    )
 
 
 def validated_business_type(
     assessment: BusinessTypeAssessment | None,
     document: AnalysisDocumentRequest,
 ) -> BusinessTypeAssessment | None:
-    if assessment is None:
-        return None
-    current = [("NOTICE_BODY", None, _notice_part(document.content_text or ""))]
-    current.extend(
-        ("ATTACHMENT", file.file_name, _notice_part(file.extracted_text or ""))
-        for file in document.attachments
-        if not _NON_NOTICE.search(file.file_name) or re.search(r"공고|모집|안내", file.file_name)
-    )
-    for source in assessment.sources:
-        matches = [
-            text
-            for origin, name, text in current
-            if origin == source.origin and name == source.attachment_name
-        ]
-        excerpt = re.sub(r"\s+", "", source.excerpt)
-        if (
-            len(matches) != 1
-            or len(excerpt) < 5
-            or _UNSUPPORTED.search(source.excerpt)
-            or excerpt not in re.sub(r"\s+", "", matches[0])
-        ):
-            return None
-    return assessment
+    return reviewed_business_type(assessment, document)[0]

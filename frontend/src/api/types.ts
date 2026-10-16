@@ -289,6 +289,7 @@ export type BusinessTypeCode = 'RND' | 'DEMONSTRATION' | 'COMMERCIALIZATION' | '
   | 'CERTIFICATION' | 'MARKET' | 'FINANCE' | 'WORKFORCE' | 'ADVISORY' | 'SPACE'
 
 export interface BusinessTypeSummary {
+  noticeNature?: { code: 'RESULT' | 'REGULATION' | 'AWARD' | 'DESIGNATION_RECRUITMENT' | 'GENERAL'; label: string } | null
   status: 'CLASSIFIED' | 'REVIEW_REQUIRED' | 'NOT_APPLICABLE'
   code: BusinessTypeCode | null
   label: string | null
