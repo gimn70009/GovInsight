@@ -38,6 +38,8 @@ final class GeneralNoticeClassifier {
     }
     private static final Pattern RESULT_ACTION = Pattern.compile(
             "(?:선정|평가|심사|합격).{0,12}결과(?:를|을).{0,25}(?:공고|알립|안내|발표|통보)|(?:입상작|입상자|수상작|수상자|당선작|당선자)(?:을|를|은|는)?(?:다음|아래|붙임)?(?:(?:과|와)같이)?(?:발표합니다|공고합니다|알립니다|발표하였습니다|선정하였습니다)");
+    private static final Pattern SELECTION_PUBLICATION_TITLE = Pattern.compile("(?:선정|선발|확정)(?:결과)?(?:공고|공개|알림|안내)$");
+    private static final Pattern SELECTION_PUBLICATION_ACTION = Pattern.compile("(?:선정|선발|확정)결과(?:를|을).{0,25}(?:공고합니다|공고하였습니다|공개합니다|발표합니다|알려드립니다)");
     private static final Pattern REGULATION_TITLE = Pattern.compile("규정|규칙|지침|고시");
     private static final Pattern REGULATION_ACTION = Pattern.compile(
             "(?:규정|규칙|지침|고시).{0,40}(?:제정|개정)하여고시|(?:제정|개정)(?:하여)?고시합니다");
@@ -80,7 +82,11 @@ final class GeneralNoticeClassifier {
                 && REGULATION_TITLE.matcher(heading).find()
                 && introductions.stream().anyMatch(text -> affirmative(text, REGULATION_ACTION))) return Nature.REGULATION;
         boolean recruiting = sources.stream().anyMatch(GeneralNoticeClassifier::recruitmentBody);
-        if (!currentTitle && !recruiting && introductions.stream().anyMatch(text -> affirmative(text, RESULT_ACTION))) {
+        boolean selected = SELECTION_PUBLICATION_TITLE.matcher(heading).find()
+                && !ADDITIONAL_RECRUITMENT.matcher(heading).find()
+                && introductions.stream().anyMatch(text -> affirmative(text, SELECTION_PUBLICATION_ACTION));
+        if ((!currentTitle || selected) && !recruiting
+                && introductions.stream().anyMatch(text -> affirmative(text, RESULT_ACTION))) {
             return Nature.RESULT;
         }
         if (matchesLegacy(title, sources, documentType, hasBusinessType)) {

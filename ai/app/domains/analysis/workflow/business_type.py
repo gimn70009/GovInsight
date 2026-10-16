@@ -9,7 +9,7 @@ from app.domains.analysis.schemas.request import AnalysisDocumentRequest
 
 logger = logging.getLogger(__name__)
 
-VALIDATOR_VERSION = "business-type-v4-opinion-notice"
+VALIDATOR_VERSION = "business-type-v5-service-notices"
 
 BUSINESS_TYPE_INSTRUCTIONS = """
 comparison_summary.business_type은 현재 공고의 대표 사업 유형입니다. 확인되지 않으면 null입니다.
@@ -25,6 +25,13 @@ FINANCE=자금·금융, WORKFORCE=인력·고용·교육, ADVISORY=조사·컨�
   규정 속 신청서와 예시를 현재 모집으로 읽지 않습니다.
   지정·선정 모집도 현재 지원 활동과 구별하며
   별도 심사나 향후 연계 혜택을 확정 지원으로 바꾸지 않습니다.
+- 공모·입찰이라는 단어가 있어도 우선협상 대상자 등의 선정 결과를 공고하는 글은 결과 안내입니다.
+  선정 공고라는 제목만으로 확정하지 않고 본문의 현재 결과 발표를 확인합니다.
+  실제 추가 모집·신청 요청이 함께 있으면 해당 모집을 보존합니다.
+- 제안요청서의 목차에 적힌 신청서·서식 목록은 실제 서식 본문과 구별합니다.
+  사업 예시 표와 작성 예시는 현재 확정된 과업·지원 항목의 근거로 쓰지 않습니다.
+  정부인증 서비스·인증기관이라는 수식어만으로 CERTIFICATION을 만들지 않습니다.
+  상담사의 역량 강화 코칭·교육훈련 운영은 WORKFORCE이며 홈페이지 운영은 부대 과업입니다.
 - 개요·목적·지원 내용을 문단 단위로 함께 읽습니다.
   제도에 시범적으로 참여하는 활동은 DEMONSTRATION입니다.
   결과 안내의 사업명이나 설비 도입 가능성만으로 ADOPTION을 만들지 않습니다.
@@ -78,6 +85,36 @@ def _is_notice_heading(line: str) -> bool:
     )
 
 
+def _without_reference_sections(text: str) -> str:
+    contents = re.search(r"(?m)^[ \t【\[(]*목[ \t]*차[ \t】\])]*$", text)
+    if contents:
+        body = re.search(
+            r"(?m)^[ \t]*(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+[. \t]+|[1-9]\d?(?:\.[ \t]*|[ \t]+))"
+            r"(?:사업|과업|연구|지원)[ \t]*(?:개요|목적|내용|범위|목표|안내)[ \t]*$",
+            text[contents.end():],
+        )
+        if body and body.start() <= 10_000 and len(re.findall(
+            r"(?m)^.{1,120}\d+[ \t]*$", text[contents.end():contents.end() + body.start()],
+        )) >= 3:
+            text = (
+                text[:contents.start()] + "\n[참고 구간 제외]\n"
+                + text[contents.end() + body.start():]
+            )
+    example = re.compile(
+        r"(?m)^(?:[^\r\n]{0,80}[（(]예시[）)]"
+        r"|[<〈《【\[][^\r\n]{0,80}예시[ \t]*[>〉》】\]])[ \t]*$",
+    )
+    boundary = re.compile(r"(?m)^[ \t]*(?:[□■]|[0-9]+[.)][ \t]*|\[파일:)")
+    parts, cursor = [], 0
+    for match in example.finditer(text):
+        if match.start() < cursor:
+            continue
+        end = boundary.search(text, match.end())
+        parts.extend((text[cursor:match.start()], "\n[참고 구간 제외]\n"))
+        cursor = end.start() if end else len(text)
+    return "".join(parts) + text[cursor:]
+
+
 def _notice_part(text: str) -> str:
     text = text[:200_000]
     members = list(re.finditer(r"(?m)^\[파일: (.+?)\]\s*$", text))
@@ -90,6 +127,7 @@ def _notice_part(text: str) -> str:
             end = members[index + 1].start() if index + 1 < len(members) else len(text)
             selected.append(member.group(0) + "\n" + _notice_part(text[member.end() : end]))
         return "\n".join(selected)
+    text = _without_reference_sections(text)
     for marker in _FORM.finditer(text):
         line_end = text.find("\n", marker.start())
         line = text[marker.start() : line_end if line_end >= 0 else len(text)]
@@ -107,7 +145,7 @@ _ACTIVITY = {
         r"|장비도입|장비구축|시설개선|환경개선|환경조성|스마트공장|공정개선"
     ),
     "CERTIFICATION": (
-        r"인증(?!기업|보유|실적)|시험평가|시험비"
+        r"인증(?:을|의)?(?:취득|획득|비용|수수료|시험|지원)|(?<!정부)인증(?!기업|기관|업체|보유|실적)|시험평가|시험비"
         r"|제3자검증|배출량검증|성능시험|규격시험"
     ),
     "MARKET": (
@@ -117,11 +155,11 @@ _ACTIVITY = {
     "FINANCE": r"융자|이차보전|이자지원|신용보증|기술보증|보증지원|직접투자|투자유치|정책자금",
     "WORKFORCE": (
         r"채용지원|고용지원|고용장려|인건비지원"
-        r"|인력양성|인재양성|교육지원|직무교육|훈련지원"
+        r"|인력양성|인재양성|교육지원|직무교육|훈련지원|교육훈련|훈련과정|역량강화코칭"
     ),
     "ADVISORY": (
         r"컨설팅|정책연구|조사용역|시장조사|기술지도|(?:기초자료|현황|실태|사례|타당성)조사|현황분석|(?:기본구상|기본계획|개선방안)(?:안)?(?:수립|검토)"
-        r"|전문자문|법률지원|회계지원|특허(?!보유)|지식재산|출원"
+        r"|전문자문|법률지원|회계지원|(?:법률|노무|회계)상담|고충상담|특허(?!보유)|지식재산|출원"
     ),
     "SPACE": r"입주|사무공간|보육공간|공간지원|공간제공|연구공간",
 }
@@ -142,6 +180,8 @@ def _supports_activity(code: str, text: str) -> bool:
         code == "DEMONSTRATION" and bool(re.search(r"시범.{0,80}(?:참여|적용|허용|유지)", value))
     ) or (
         code == "ADOPTION" and bool(re.search(r"설치|교체|개선|구매", value))
+    ) or (
+        code == "WORKFORCE" and bool(re.search(r"코칭|교육|훈련", value))
     ) or (
         code == "ADVISORY" and bool(re.search(r"조사|분석|검토|수립", value))
     )
@@ -239,8 +279,16 @@ def _notice_kind(title: str, sources: list[str]) -> str | None:
         )
         for text in affirmative
     )
+    selected = (
+        bool(re.search(r"(?:선정|선발|확정)(?:결과)?(?:공고|공개|알림|안내)$", heading))
+        and not re.search(r"추가모집|재공모|신규모집", heading)
+        and any(re.search(
+            r"(?:선정|선발|확정)결과(?:를|을).{0,25}"
+            r"(?:공고합니다|공고하였습니다|공개합니다|발표합니다|알려드립니다)", text,
+        ) for text in affirmative)
+    )
     if (
-        not current_title
+        (not current_title or selected)
         and not recruiting
         and (
             re.search(r"(?:선정|평가|심사|합격|모집|공모).{0,10}결과", heading)
@@ -328,6 +376,8 @@ def diagnose_business_type(
                 if excerpt in re.sub(r"\s+", "", matches[0].raw)
                 else "QUOTE_MISMATCH"
             )
+        if not reason and excerpt not in re.sub(r"\s+", "", matches[0].raw):
+            reason = "QUOTE_MISMATCH"
         if reason:
             return BusinessTypeValidation(None, reason, index)
     if nature:

@@ -15,8 +15,8 @@ import tools.jackson.databind.ObjectMapper;
 /** Uses current notice evidence; older analyses can be supplemented without a model call on reads. */
 final class BusinessTypeResolver {
     private static final Pattern HEADING = Pattern.compile(
-            "^[\\h□■○◦●ㅇ•*※\\d.()\\[\\]-]*(사업\\h*목적|지원\\h*내용|지원\\h*분야|사업\\h*내용|과업\\h*(?:의\\h*)?(?:주요\\h*)?내용|과업\\h*(?:의\\h*)?범위|주요\\h*과업|연구\\h*(?:목표|내용(?:\\h*및\\h*범위)?|범위)|모집\\h*내용|지원\\h*항목|지원\\h*설비|지원\\h*범위|지원\\h*규모|(?:시범\\h*)?사업\\h*개요|(?:시범\\h*)?사업\\h*목적|개\\h*념)\\h*(?:[)\\]]\\h*[:：]?|[:：]|$)");
-    private static final Pattern BOUNDARY = Pattern.compile("^[□■]|^\\[파일:|^RFP\\h*번호|^[\\h\\dⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ.()\\[\\]-]*(?:지원대상|지원\\h*자격|모집대상|참여자격|지원기간|연구\\h*추진\\h*방법|연구비|연구\\h*기간|신청|접수|제출|평가|선정|지원제외|유의|문의|추진일정|사업기간|과업\\h*수행\\h*일반사항|제안서\\h*작성)");
+            "^[\\h□■○◦●ㅇ•*※①②③④⑤⑥⑦⑧⑨⑩ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ\\d.()\\[\\]-]*(사업\\h*목적|지원\\h*내용|지원\\h*분야|(?:주요\\h*)?사업\\h*내용|(?:주요\\h*)?과업\\h*(?:의\\h*)?(?:(?:주요|세부)\\h*)?내용|과업\\h*(?:의\\h*)?범위|주요\\h*과업|연구\\h*(?:목표|내용(?:\\h*및\\h*범위)?|범위)|모집\\h*내용|지원\\h*항목|지원\\h*설비|지원\\h*범위|지원\\h*방식|지원\\h*규모|(?:시범\\h*)?사업\\h*개요|(?:시범\\h*)?사업\\h*목적|개\\h*념)\\h*(?:[)\\]]\\h*[:：]?|[:：]|$)");
+    private static final Pattern BOUNDARY = Pattern.compile("^[□■]|^\\[참고 구간 제외\\]|^\\[파일:|^RFP\\h*번호|^[\\h\\dⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ.()\\[\\]-]*(?:지원대상|지원\\h*자격|모집대상|참여자격|지원기간|연구\\h*추진\\h*방법|연구비|연구\\h*기간|신청|접수|제출|평가|선정|지원제외|유의|문의|추진일정|사업기간|과업\\h*수행\\h*일반사항|과업\\h*지시사항|사업\\h*예산|입찰\\h*개요|제안서\\h*작성)");
     private static final Pattern FORM = Pattern.compile("^[\\h\\[<(【]*(?:붙임|별첨|별지|서식)\\h*(?:제\\h*)?\\d|^[\\h\\[<(【]*(?:작성\\h*예시|사업계획서|신청서|동의서)");
     private static final Pattern NON_NOTICE = Pattern.compile("(?i)예시|견본|FAQ|참고자료|신청서|계획서|동의서|서식|양식|협약서");
     private static final Pattern UNSUPPORTED = Pattern.compile("전년도|지난해|타\\h*사업|다른\\h*사업|작성\\h*예시|지원\\h*(?:제외|없음|불가|하지)|미지원|후속|향후|추후|연계\\h*가능|참고용|일부 원문 생략");
@@ -26,6 +26,7 @@ final class BusinessTypeResolver {
     private static final Pattern EXPLICIT_SUPPORT = Pattern.compile("(?:비용|취득비|제작비|개발비|구축비)(?:를|을)?지원|지원합니다|제공합니다|수행합니다");
     private static final Pattern DEMONSTRATION_ACTION = Pattern.compile("시범.{0,80}(?:참여|적용|허용|유지)");
     private static final Pattern INSTALLATION_ACTION = Pattern.compile("설치|교체|개선|구매");
+    private static final Pattern TRAINING_ACTION = Pattern.compile("코칭|교육|훈련");
     private static final Pattern ADVISORY_ACTION = Pattern.compile("조사|분석|검토|수립");
     private static final int LIMIT = 200_000;
     private BusinessTypeResolver() {}
@@ -152,6 +153,7 @@ final class BusinessTypeResolver {
             }
             return String.join("\n", selected);
         }
+        text = withoutReferenceSections(text);
         var marker = Pattern.compile("(?m)^[\\h\\[<(【]*(?:붙임|별첨|별지|서식)\\h*(?:제\\h*)?\\d|^[\\h\\[<(【]*작성\\h*예시").matcher(text);
         while (marker.find()) {
             int end = text.indexOf('\n', marker.start());
@@ -159,6 +161,36 @@ final class BusinessTypeResolver {
             if (!noticeHeading(line)) return text.substring(0, marker.start());
         }
         return text;
+    }
+
+
+    private static final Pattern CONTENTS_TITLE = Pattern.compile("(?m)^[\\h【\\[(]*목\\h*차[\\h】\\])]*$");
+    private static final Pattern BODY_START = Pattern.compile("(?m)^\\h*(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+[.\\h]+|[1-9]\\d?(?:\\.\\h*|\\h+))(?:사업|과업|연구|지원)\\h*(?:개요|목적|내용|범위|목표|안내)\\h*$");
+    private static final Pattern PAGE_ENTRY = Pattern.compile("(?m)^.{1,120}\\d+\\h*$");
+    private static final Pattern EXAMPLE_TITLE = Pattern.compile("(?m)^(?:[^\\r\\n]{0,80}[（(]예시[）)]|[<〈《【\\[][^\\r\\n]{0,80}예시\\h*[>〉》】\\]])\\h*$");
+    private static final Pattern EXAMPLE_END = Pattern.compile("(?m)^\\h*(?:[□■]|[0-9]+[.)]\\h*|\\[파일:)");
+
+    private static String withoutReferenceSections(String text) {
+        var contents = CONTENTS_TITLE.matcher(text);
+        if (contents.find()) {
+            var body = BODY_START.matcher(text);
+            if (body.find(contents.end()) && body.start() - contents.end() <= 10_000
+                    && PAGE_ENTRY.matcher(text.substring(contents.end(), body.start())).results().count() >= 3) {
+                // A paginated contents list can mention forms before the actual notice starts.
+                text = text.substring(0, contents.start()) + "\n[참고 구간 제외]\n" + text.substring(body.start());
+            }
+        }
+        var example = EXAMPLE_TITLE.matcher(text);
+        var result = new StringBuilder();
+        int cursor = 0;
+        while (example.find()) {
+            if (example.start() < cursor) continue;
+            var next = EXAMPLE_END.matcher(text);
+            int end = next.find(example.end()) ? next.start() : text.length();
+            result.append(text, cursor, example.start()).append("\n[참고 구간 제외]\n");
+            cursor = end;
+        }
+        return result.append(text.substring(cursor)).toString();
     }
 
     private static Stored rejected(String reason, Integer sourceIndex) {
@@ -202,6 +234,7 @@ final class BusinessTypeResolver {
                     return rejected(compact(source.raw()).contains(compact(excerpt))
                             ? "EXCLUDED_SOURCE_SECTION" : "QUOTE_MISMATCH", index);
                 }
+                if (!compact(source.raw()).contains(compact(excerpt))) return rejected("QUOTE_MISMATCH", index);
                 evidence.add(source.quote(excerpt, null));
                 index++;
             }
@@ -235,6 +268,7 @@ final class BusinessTypeResolver {
                 && !EXPLICIT_SUPPORT.matcher(value).find()) return false;
         return ACTION.matcher(value).find()
                 || type == BusinessType.ADOPTION && INSTALLATION_ACTION.matcher(value).find()
+                || type == BusinessType.WORKFORCE && TRAINING_ACTION.matcher(value).find()
                 || type == BusinessType.ADVISORY && ADVISORY_ACTION.matcher(value).find()
                 || type == BusinessType.DEMONSTRATION && DEMONSTRATION_ACTION.matcher(value).find();
     }
@@ -253,7 +287,7 @@ final class BusinessTypeResolver {
             boolean headingLine = match.find();
             if (headingLine) {
                 heading = match.group(1).replaceAll("\\h+", "");
-                rank = heading.matches("지원내용|지원분야|지원항목|지원설비|지원범위|과업(?:의)?(?:주요)?내용|과업(?:의)?범위|주요과업|연구(?:내용(?:및범위)?|범위)|모집내용") ? 200 : 100;
+                rank = heading.matches("지원내용|지원분야|지원항목|지원설비|지원범위|지원방식|(?:주요)?사업내용|(?:주요)?과업(?:의)?(?:주요|세부)?내용|과업(?:의)?범위|주요과업|연구(?:내용(?:및범위)?|범위)|모집내용") ? 200 : 100;
                 count = 0;
             } else if (BOUNDARY.matcher(line).find()) heading = null;
             if (heading != null && ++count < 35 && line.length() <= 1000 && line.length() >= 8

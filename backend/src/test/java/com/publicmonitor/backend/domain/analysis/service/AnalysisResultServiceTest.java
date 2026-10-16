@@ -99,7 +99,8 @@ class AnalysisResultServiceTest {
     @ParameterizedTest
     @CsvSource({
             "business-type-v2-notice-activity, RESULT, ADOPTION",
-            "business-type-v4-opinion-notice, GENERAL, ADVISORY"
+            "business-type-v4-opinion-notice, GENERAL, ADVISORY",
+            "business-type-v5-service-notices, RESULT, WORKFORCE"
     })
     void 검증에서_제외된_사업유형의_후보와_사유도_분석_JSON에_저장한다(String version, String noticeKind, String candidateType) {
         given(analysisRepository.findByDocumentVersionIdForUpdate(40L)).willReturn(Optional.empty());

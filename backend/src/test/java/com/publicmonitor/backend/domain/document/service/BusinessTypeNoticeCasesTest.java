@@ -15,7 +15,7 @@ class BusinessTypeNoticeCasesTest {
     private final JsonMapper mapper = JsonMapper.builder().build();
 
     @ParameterizedTest
-    @ValueSource(strings = {"notice-cases.json", "climate-cases.json", "molit-cases.json", "msit-cases.json"})
+    @ValueSource(strings = {"notice-cases.json", "climate-cases.json", "molit-cases.json", "msit-cases.json", "moel-cases.json"})
     void 실제_공고의_성격과_지원_활동을_구별하고_정상_모집을_보존한다(String fileName) throws Exception {
         var cases = mapper.readTree(Files.readString(Path.of("src/test/resources/business-type", fileName)));
         for (var item : cases) {

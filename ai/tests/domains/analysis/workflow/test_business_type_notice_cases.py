@@ -17,7 +17,10 @@ from tests.domains.analysis.workflow.test_graph import analysis, document
 CASE_DIR = Path(__file__).resolve().parents[5] / "backend/src/test/resources/business-type"
 CASES = [
     case
-    for name in ("notice-cases.json", "climate-cases.json", "molit-cases.json", "msit-cases.json")
+    for name in (
+        "notice-cases.json", "climate-cases.json", "molit-cases.json",
+        "msit-cases.json", "moel-cases.json",
+    )
     for case in json.loads((CASE_DIR / name).read_text(encoding="utf-8"))
 ]
 
@@ -67,7 +70,7 @@ def test_final_result_keeps_validation_diagnostics_when_type_is_rejected():
     }))).draft.comparison_summary.model_dump(mode="json", by_alias=True)
     assert result["businessType"] is None
     assert result["businessTypeReview"] == {
-        "validatorVersion": "business-type-v4-opinion-notice", "candidateType": "ADOPTION",
+        "validatorVersion": "business-type-v5-service-notices", "candidateType": "ADOPTION",
         "reason": "NOTICE_RESULT", "sourceIndex": None, "noticeKind": "RESULT",
     }
     runner._analysis_model.ainvoke.assert_awaited_once()
