@@ -15,8 +15,8 @@ import tools.jackson.databind.ObjectMapper;
 /** Uses current notice evidence; older analyses can be supplemented without a model call on reads. */
 final class BusinessTypeResolver {
     private static final Pattern HEADING = Pattern.compile(
-            "^[\\h□■○◦●ㅇ•*※\\d.()\\[\\]-]*(사업\\h*목적|지원\\h*내용|지원\\h*분야|사업\\h*내용|과업\\h*(?:의\\h*)?(?:주요\\h*)?내용|과업\\h*(?:의\\h*)?범위|주요\\h*과업|모집\\h*내용|지원\\h*항목|지원\\h*설비|지원\\h*범위|지원\\h*규모|(?:시범\\h*)?사업\\h*개요|(?:시범\\h*)?사업\\h*목적|개\\h*념)\\h*(?:[)\\]]\\h*[:：]?|[:：]|$)");
-    private static final Pattern BOUNDARY = Pattern.compile("^[□■]|^[\\h\\dⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ.()\\[\\]-]*(?:지원대상|모집대상|참여자격|지원기간|신청|접수|제출|평가|선정|지원제외|유의|문의|추진일정|사업기간|과업\\h*수행\\h*일반사항|제안서\\h*작성)");
+            "^[\\h□■○◦●ㅇ•*※\\d.()\\[\\]-]*(사업\\h*목적|지원\\h*내용|지원\\h*분야|사업\\h*내용|과업\\h*(?:의\\h*)?(?:주요\\h*)?내용|과업\\h*(?:의\\h*)?범위|주요\\h*과업|연구\\h*(?:목표|내용(?:\\h*및\\h*범위)?|범위)|모집\\h*내용|지원\\h*항목|지원\\h*설비|지원\\h*범위|지원\\h*규모|(?:시범\\h*)?사업\\h*개요|(?:시범\\h*)?사업\\h*목적|개\\h*념)\\h*(?:[)\\]]\\h*[:：]?|[:：]|$)");
+    private static final Pattern BOUNDARY = Pattern.compile("^[□■]|^\\[파일:|^RFP\\h*번호|^[\\h\\dⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ.()\\[\\]-]*(?:지원대상|지원\\h*자격|모집대상|참여자격|지원기간|연구\\h*추진\\h*방법|연구비|연구\\h*기간|신청|접수|제출|평가|선정|지원제외|유의|문의|추진일정|사업기간|과업\\h*수행\\h*일반사항|제안서\\h*작성)");
     private static final Pattern FORM = Pattern.compile("^[\\h\\[<(【]*(?:붙임|별첨|별지|서식)\\h*(?:제\\h*)?\\d|^[\\h\\[<(【]*(?:작성\\h*예시|사업계획서|신청서|동의서)");
     private static final Pattern NON_NOTICE = Pattern.compile("(?i)예시|견본|FAQ|참고자료|신청서|계획서|동의서|서식|양식|협약서");
     private static final Pattern UNSUPPORTED = Pattern.compile("전년도|지난해|타\\h*사업|다른\\h*사업|작성\\h*예시|지원\\h*(?:제외|없음|불가|하지)|미지원|후속|향후|추후|연계\\h*가능|참고용|일부 원문 생략");
@@ -253,7 +253,7 @@ final class BusinessTypeResolver {
             boolean headingLine = match.find();
             if (headingLine) {
                 heading = match.group(1).replaceAll("\\h+", "");
-                rank = heading.matches("지원내용|지원분야|지원항목|지원설비|지원범위|과업(?:의)?(?:주요)?내용|과업(?:의)?범위|주요과업|모집내용") ? 200 : 100;
+                rank = heading.matches("지원내용|지원분야|지원항목|지원설비|지원범위|과업(?:의)?(?:주요)?내용|과업(?:의)?범위|주요과업|연구(?:내용(?:및범위)?|범위)|모집내용") ? 200 : 100;
                 count = 0;
             } else if (BOUNDARY.matcher(line).find()) heading = null;
             if (heading != null && ++count < 35 && line.length() <= 1000 && line.length() >= 8

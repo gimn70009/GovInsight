@@ -17,7 +17,7 @@ from tests.domains.analysis.workflow.test_graph import analysis, document
 CASE_DIR = Path(__file__).resolve().parents[5] / "backend/src/test/resources/business-type"
 CASES = [
     case
-    for name in ("notice-cases.json", "climate-cases.json", "molit-cases.json")
+    for name in ("notice-cases.json", "climate-cases.json", "molit-cases.json", "msit-cases.json")
     for case in json.loads((CASE_DIR / name).read_text(encoding="utf-8"))
 ]
 
@@ -25,7 +25,8 @@ CASES = [
 @pytest.mark.parametrize("case", CASES, ids=lambda case: case["id"])
 def test_notice_kind_and_support_activity_share_backend_cases(case):
     attachments = [AnalysisAttachmentRequest(
-        attachment_id=1, file_name="공고문.hwpx", extracted_text=case["attachmentText"],
+        attachment_id=1, file_name=case.get("attachmentName", "공고문.hwpx"),
+        extracted_text=case["attachmentText"],
     )] if "attachmentText" in case else []
     current = document().model_copy(update={
         "title": case["title"], "content_text": case["body"], "attachments": attachments,
@@ -33,7 +34,13 @@ def test_notice_kind_and_support_activity_share_backend_cases(case):
     candidate = BusinessTypeAssessment(
         primary_type=case["candidateType"],
         explanation=case.get("explanation", "현재 지원 활동을 확인했습니다."), details=[],
-        sources=[dict(origin="NOTICE_BODY", excerpt=case["quote"])],
+        sources=[dict(
+            origin=case.get("quoteOrigin", "NOTICE_BODY"), excerpt=case["quote"],
+            attachment_name=case.get(
+                "quoteAttachmentName", case.get("attachmentName", "공고문.hwpx"),
+            )
+            if case.get("quoteOrigin") == "ATTACHMENT" else None,
+        )],
     ) if case["candidateType"] else None
     value, review = reviewed_business_type(candidate, current)
     assert review.reason == case["expectedAiReason"]
