@@ -14,9 +14,12 @@ from app.domains.analysis.workflow.business_type import reviewed_business_type
 from tests.domains.analysis.evidence.fakes import collect_all_evidence
 from tests.domains.analysis.workflow.test_graph import analysis, document
 
-CASES = json.loads((Path(__file__).resolve().parents[5] / (
-    "backend/src/test/resources/business-type/notice-cases.json"
-)).read_text(encoding="utf-8"))
+CASE_DIR = Path(__file__).resolve().parents[5] / "backend/src/test/resources/business-type"
+CASES = [
+    case
+    for name in ("notice-cases.json", "climate-cases.json")
+    for case in json.loads((CASE_DIR / name).read_text(encoding="utf-8"))
+]
 
 
 @pytest.mark.parametrize("case", CASES, ids=lambda case: case["id"])
@@ -57,7 +60,7 @@ def test_final_result_keeps_validation_diagnostics_when_type_is_rejected():
     }))).draft.comparison_summary.model_dump(mode="json", by_alias=True)
     assert result["businessType"] is None
     assert result["businessTypeReview"] == {
-        "validatorVersion": "business-type-v2-notice-activity", "candidateType": "ADOPTION",
+        "validatorVersion": "business-type-v3-task-and-result", "candidateType": "ADOPTION",
         "reason": "NOTICE_RESULT", "sourceIndex": None, "noticeKind": "RESULT",
     }
     runner._analysis_model.ainvoke.assert_awaited_once()

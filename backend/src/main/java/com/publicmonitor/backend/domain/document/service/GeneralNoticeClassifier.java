@@ -16,7 +16,7 @@ final class GeneralNoticeClassifier {
                     + "|지정(?:하였음|되었음)을(?:알립니다|공고합니다)");
     private static final Pattern ADDITIONAL_RECRUITMENT = Pattern.compile("추가모집|재공모|신규모집");
     private static final Pattern RECRUITMENT_TITLE = Pattern.compile("모집|공모|신청|접수|입찰");
-    private static final Pattern CLOSED_TITLE = Pattern.compile("결과|종료|마감|취소");
+    private static final Pattern CLOSED_TITLE = Pattern.compile("결과|종료|마감|취소|(?:입상작|입상자|수상작|수상자|당선작|당선자)(?:발표|공고|명단)");
     private static final Pattern RECRUITMENT_ACTION = Pattern.compile(
             "(?:모집|공모)(?:합니다|한다|하고자|하오니|공고|안내|대상|기간)"
                     + "|(?:신청|접수)(?:기간|기한|방법|대상|마감|하세요|하시기|바랍니다)"
@@ -37,7 +37,7 @@ final class GeneralNoticeClassifier {
         String label() { return label; }
     }
     private static final Pattern RESULT_ACTION = Pattern.compile(
-            "(?:선정|평가|심사|합격).{0,12}결과(?:를|을).{0,25}(?:공고|알립|안내|발표|통보)");
+            "(?:선정|평가|심사|합격).{0,12}결과(?:를|을).{0,25}(?:공고|알립|안내|발표|통보)|(?:입상작|입상자|수상작|수상자|당선작|당선자)(?:을|를|은|는)?(?:다음|아래|붙임)?(?:(?:과|와)같이)?(?:발표합니다|공고합니다|알립니다|발표하였습니다|선정하였습니다)");
     private static final Pattern REGULATION_TITLE = Pattern.compile("규정|규칙|지침|고시");
     private static final Pattern REGULATION_ACTION = Pattern.compile(
             "(?:규정|규칙|지침|고시).{0,40}(?:제정|개정)하여고시|(?:제정|개정)(?:하여)?고시합니다");

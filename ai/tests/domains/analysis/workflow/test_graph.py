@@ -1281,7 +1281,7 @@ def test_retry_shrinks_sources_and_guides_complete_output_only_for_timeouts(
     assert review is not None
     assert review.reason == "MODEL_UNCLASSIFIED"
     assert review.candidate_type is None
-    assert review.validator_version == "business-type-v2-notice-activity"
+    assert review.validator_version == "business-type-v3-task-and-result"
     assert generated.proposal.sections[1].body == draft.proposal.sections[1].body
 
 

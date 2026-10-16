@@ -9,7 +9,7 @@ from app.domains.analysis.schemas.request import AnalysisDocumentRequest
 
 logger = logging.getLogger(__name__)
 
-VALIDATOR_VERSION = "business-type-v2-notice-activity"
+VALIDATOR_VERSION = "business-type-v3-task-and-result"
 
 BUSINESS_TYPE_INSTRUCTIONS = """
 comparison_summary.business_type은 현재 공고의 대표 사업 유형입니다. 확인되지 않으면 null입니다.
@@ -35,7 +35,11 @@ FINANCE=자금·금융, WORKFORCE=인력·고용·교육, ADVISORY=조사·컨�
 - 창업기업 대상이라는 사실은 유형이 아닙니다. 실증 과제를 지원하면 DEMONSTRATION입니다.
   인증 보유 자격, 연구개발 실적, 과거 지원, 향후 연계, 타 사업·작성 예시는 지원 내용이 아닙니다.
 - 수행·공급·운영기관 모집은 그 기관의 실제 과업을 기준으로 합니다.
-  explanation에 모집 역할을 밝힙니다.
+  제안요청서의 과업 범위·주요 내용을 확인하고 explanation에 모집 역할을 밝힙니다.
+  조사·현황 분석·적용방안 검토가 주된 연구용역은 ADVISORY이며,
+  제목에 연구가 있다는 이유만으로 기술개발을 뜻하는 RND로 정하지 않습니다.
+  생산설비의 설치·교체를 지원하는 사업은 ADOPTION입니다.
+  공모전 입상작·수상자·당선작 발표는 신규 공모가 아닌 결과 안내입니다.
 - 복합 사업은 공고가 명시한 주된 목적·대표 과업을 우선합니다.
   동등하면 지원 항목 순서로 하나를 택합니다.
   나머지 실제 지원 활동이나 유형1·유형2의 차이는 details에 최대 5개 짧은 문장으로 설명합니다.
@@ -44,6 +48,8 @@ FINANCE=자금·금융, WORKFORCE=인력·고용·교육, ADVISORY=조사·컨�
 - sources에는 그 설명을 뒷받침하는 현재 원문 발췌 1~4개를 그대로 넣습니다.
   본문은 origin=NOTICE_BODY, attachment_name=null로 씁니다.
   첨부는 origin=ATTACHMENT와 정확한 파일명을 씁니다.
+  서로 떨어진 문장을 하나의 발췌로 합치거나 요약·말바꾸기하지 않습니다.
+  활동이 확인되는 짧고 연속된 원문 구간을 고르고 문장부호도 그대로 보존합니다.
   이전 버전, 검색결과, 요약, 생략 표시, 신청 양식의 작성 예시는 근거로 쓰지 않습니다.
 - 선정 결과·일반 안내·직원 채용·설명회 공지만 있거나
   이 10개 유형에 해당하는 활동이 확인되지 않으면 null입니다.
@@ -94,7 +100,7 @@ _ACTIVITY = {
     "DEMONSTRATION": r"실증|테스트베드|PoC|시범(?:사업|운영|적용|적으로참여)|현장검증",
     "COMMERCIALIZATION": r"시제품|제품화|사업화|양산|제품고도화|제품디자인",
     "ADOPTION": (
-        r"인프라구축|시스템(?:을)?구축|시스템(?:을)?도입|솔루션도입|설비(?:도입|구축|개선|교체|구매|설치|지원)"
+        r"인프라구축|시스템(?:을)?구축|시스템(?:을)?도입|솔루션도입|(?:설비|시설)(?:를|을|의)?(?:도입|구축|개선|교체|구매|설치|지원)"
         r"|장비도입|장비구축|시설개선|환경개선|환경조성|스마트공장|공정개선"
     ),
     "CERTIFICATION": (
@@ -111,7 +117,7 @@ _ACTIVITY = {
         r"|인력양성|인재양성|교육지원|직무교육|훈련지원"
     ),
     "ADVISORY": (
-        r"컨설팅|정책연구|조사용역|시장조사|기술지도"
+        r"컨설팅|정책연구|조사용역|시장조사|기술지도|(?:기초자료|현황|실태|사례|타당성)조사|현황분석|(?:기본구상|기본계획|개선방안)(?:안)?(?:수립|검토)"
         r"|전문자문|법률지원|회계지원|특허(?!보유)|지식재산|출원"
     ),
     "SPACE": r"입주|사무공간|보육공간|공간지원|공간제공|연구공간",
@@ -131,6 +137,10 @@ def _supports_activity(code: str, text: str) -> bool:
         return False
     return bool(re.search(r"지원|제공|수행|구축|도입|모집|융자|입주|개발|실증|컨설팅", value)) or (
         code == "DEMONSTRATION" and bool(re.search(r"시범.{0,80}(?:참여|적용|허용|유지)", value))
+    ) or (
+        code == "ADOPTION" and bool(re.search(r"설치|교체|개선|구매", value))
+    ) or (
+        code == "ADVISORY" and bool(re.search(r"조사|분석|검토|수립", value))
     )
 
 
@@ -139,7 +149,11 @@ def _notice_kind(title: str, sources: list[str]) -> str | None:
     introductions = [re.sub(r"\s+", "", text[:6000]) for text in sources]
     current_title = bool(re.search(r"추가모집|재공모|신규모집", heading)) or (
         bool(re.search(r"모집|공모|신청|접수|입찰", heading))
-        and not re.search(r"결과|종료|마감|취소|(?:의견|이의)(?:서)?(?:제출|신청|접수)", heading)
+        and not re.search(
+            r"결과|종료|마감|취소|(?:입상작|입상자|수상작|수상자|당선작|당선자)(?:발표|공고|명단)"
+            r"|(?:의견|이의)(?:서)?(?:제출|신청|접수)",
+            heading,
+        )
     )
     if (
         re.search(
@@ -147,7 +161,7 @@ def _notice_kind(title: str, sources: list[str]) -> str | None:
             heading,
         )
         and not re.search(
-            r"결과|종료|마감|취소",
+            r"결과|종료|마감|취소|(?:입상작|입상자|수상작|수상자|당선작|당선자)(?:발표|공고|명단)",
             heading,
         )
         and any(
@@ -196,7 +210,8 @@ def _notice_kind(title: str, sources: list[str]) -> str | None:
             re.search(r"(?:선정|평가|심사|합격|모집|공모).{0,10}결과", heading)
             or any(
                 re.search(
-                    r"(?:선정|평가|심사|합격).{0,12}결과(?:를|을).{0,25}(?:공고|알립|안내|발표|통보)",
+                    r"(?:선정|평가|심사|합격).{0,12}결과(?:를|을).{0,25}(?:공고|알립|안내|발표|통보)"
+                    r"|(?:입상작|입상자|수상작|수상자|당선작|당선자)(?:을|를|은|는)?(?:다음|아래|붙임)?(?:(?:과|와)같이)?(?:발표합니다|공고합니다|알립니다|발표하였습니다|선정하였습니다)",
                     text,
                 )
                 for text in affirmative
