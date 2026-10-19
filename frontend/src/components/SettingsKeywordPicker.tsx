@@ -8,6 +8,7 @@ export default function SettingsKeywordPicker({ title, groups, selected, limit, 
   onClose: () => void; onApply: (values: string[]) => void
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
+  const searchInput = useRef<HTMLInputElement>(null)
   const optionsList = useRef<HTMLDivElement>(null)
   const selectionToggle = useRef<HTMLButtonElement>(null)
   const id = useId()
@@ -23,6 +24,7 @@ export default function SettingsKeywordPicker({ title, groups, selected, limit, 
   useEffect(() => {
     const element = dialog.current
     element?.showModal()
+    searchInput.current?.focus()
     return () => element?.close()
   }, [])
 
@@ -51,7 +53,7 @@ export default function SettingsKeywordPicker({ title, groups, selected, limit, 
     <div className="settings-picker__body">
       <label className="settings-search">
         <Search size={18} aria-hidden="true" />
-        <input autoFocus value={query} onChange={event => { setQuery(event.target.value); setShowSelected(false) }} aria-label={`${title} 검색`} placeholder="등록된 항목에서 검색" />
+        <input ref={searchInput} value={query} onChange={event => { setQuery(event.target.value); setShowSelected(false) }} aria-label={`${title} 검색`} placeholder="등록된 항목에서 검색" />
         {query && <button type="button" onClick={() => setQuery('')} aria-label="검색어 지우기"><X size={16} /></button>}
       </label>
       {groups.length > 1 && <div className="settings-categories" role="group" aria-label="키워드 분야">
