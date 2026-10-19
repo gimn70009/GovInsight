@@ -90,13 +90,26 @@ public record AnalysisResultRequest(
             @NotBlank @Size(max = 1000) String eligibility,
             @NotBlank @Size(max = 1000) String requiredPartner,
             @NotNull @Size(min = 5, max = 5) List<@Valid LegalRiskFinding> legalRisks,
-            @Valid BusinessTypeAssessment businessType
+            @Valid BusinessTypeAssessment businessType,
+            @Valid BusinessTypeReview businessTypeReview
     ) {
+        public ComparisonSummary(String purpose, String supportScale, String applicationDeadline, String eligibility,
+                                 String requiredPartner, List<LegalRiskFinding> legalRisks, BusinessTypeAssessment businessType) {
+            this(purpose, supportScale, applicationDeadline, eligibility, requiredPartner, legalRisks, businessType, null);
+        }
         public ComparisonSummary(String purpose, String supportScale, String applicationDeadline, String eligibility,
                                  String requiredPartner, List<LegalRiskFinding> legalRisks) {
             this(purpose, supportScale, applicationDeadline, eligibility, requiredPartner, legalRisks, null);
         }
     }
+
+    public record BusinessTypeReview(
+            @NotBlank @Size(max = 80) String validatorVersion,
+            BusinessType candidateType,
+            @NotBlank @Size(max = 40) @jakarta.validation.constraints.Pattern(regexp = "[A-Z_]+") String reason,
+            @jakarta.validation.constraints.Min(0) @jakarta.validation.constraints.Max(3) Integer sourceIndex,
+            @jakarta.validation.constraints.Pattern(regexp = "RESULT|REGULATION|AWARD|DESIGNATION_RECRUITMENT|GENERAL|CONTEST") String noticeKind
+    ) {}
 
     public record BusinessTypeAssessment(
             @NotNull BusinessType primaryType,

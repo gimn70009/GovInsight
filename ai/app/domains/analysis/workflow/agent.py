@@ -43,7 +43,7 @@ from app.domains.analysis.schemas.result import (
 )
 from app.domains.analysis.workflow.business_type import (
     BUSINESS_TYPE_INSTRUCTIONS,
-    validated_business_type,
+    reviewed_business_type,
 )
 from app.domains.analysis.workflow.opportunity_scoring import OPPORTUNITY_SCORING_RUBRIC
 from app.domains.analysis.workflow.retry_policy import (
@@ -260,10 +260,13 @@ class LangChainAnalysisRunner:
             else BaseAnalysisDraft.model_validate(response)
         )
         draft_payload = base_draft.model_dump()
-        business_type = validated_business_type(base_draft.comparison_summary.business_type, document)
+        business_type, business_type_review = reviewed_business_type(
+            base_draft.comparison_summary.business_type, document,
+        )
         draft_payload["comparison_summary"]["business_type"] = (
             business_type.model_dump() if business_type else None
         )
+        draft_payload["comparison_summary"]["business_type_review"] = business_type_review.model_dump()
         _normalize_base_proposal(draft_payload)
         draft_payload["proposal"].update(
             {

@@ -236,6 +236,47 @@ class DocumentDetectionDetailServiceTest {
         assertThat(summary.supportScale()).isEqualTo("총 9.03억 원 내외 (전체 연구기간 기준)");
     }
 
+    @Test
+    void 저장된_사업유형은_공고문_표제_뒤에서도_상세로_전달되고_로그는_원문을_노출하지_않는다() {
+        LocalDateTime now = LocalDateTime.of(2026, 10, 16, 10, 0);
+        MonitoringSource source = MonitoringSource.create("테스트기관", "사업공고", null, "https://example.com", null, 2, true);
+        MonitoringRun run = MonitoringRun.create(MonitoringTriggerType.MANUAL, 1, now);
+        MonitoringRunSource runSource = MonitoringRunSource.create(run, source);
+        Document document = Document.create(source, "https://example.com/notice/1", "1", now);
+        String quote = "기업의 생산 시스템 구축을 지원합니다.";
+        String body = "붙임 1 공고문\n□ 지원내용: " + quote;
+        DocumentVersion version = DocumentVersion.create(document, 1, "로그에남기지않을제목", body, "a".repeat(64), now, 0, now);
+        ReflectionTestUtils.setField(version, "id", 3L);
+        DocumentDetection detection = DocumentDetection.create(runSource, document, version, DocumentChangeType.NEW_DOCUMENT, now);
+        ReflectionTestUtils.setField(detection, "id", 4L);
+        DocumentAnalysis analysis = DocumentAnalysis.create(version, "시스템 구축을 지원합니다.", "[]", DocumentImportance.LOW,
+                "현재 지원 내용을 확인했습니다.", AnalysisEligibility.REVIEW_REQUIRED, AnalysisFavorability.NOT_APPLICABLE,
+                "{\"sections\":[],\"documentType\":\"BUSINESS_NOTICE\"}", 0, OpportunityPriority.LOW,
+                opportunityJson(), "[]", "mock-model", now);
+        analysis.updateComparisonSummary(new ObjectMapper().writeValueAsString(java.util.Map.of("businessType", java.util.Map.of(
+                "primaryType", "ADOPTION", "explanation", quote, "details", List.of(), "sources",
+                List.of(java.util.Map.of("origin", "NOTICE_BODY", "excerpt", quote))))));
+        given(detectionRepository.findById(4L)).willReturn(Optional.of(detection));
+        given(analysisRepository.findByDocumentVersionId(3L)).willReturn(Optional.of(analysis));
+        given(attachmentRepository.findAllByDocumentVersionId(3L)).willReturn(List.of());
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(DocumentDetectionDetailService.class);
+        var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            var response = service().findById(4L);
+            assertThat(response.businessType().code()).isEqualTo("ADOPTION");
+            assertThat(response.businessType().sources().getFirst().excerpt()).isEqualTo(quote);
+            assertThat(appender.list).hasSize(1);
+            assertThat(appender.list.getFirst().getFormattedMessage())
+                    .contains("detection_id=4 version_id=3", "decision_reason=SAVED_CLASSIFICATION", "stored_reason=VALIDATED")
+                    .doesNotContain(quote, body, "로그에남기지않을제목", "https://example.com");
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+    }
+
     private String opportunityJson() {
         return """
                 {"dimensions":[

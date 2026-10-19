@@ -41,8 +41,17 @@ public record DocumentDetectionDetailResponse(
             String name, String role, String sourceType, String attachmentName, String excerpt
     ) {}
 
+    public record NoticeNature(String code, String label) {}
+
     public record BusinessTypeSummary(String status, String code, String label, String description,
-                                      String explanation, List<String> details, List<RequirementSource> sources) {}
+                                      String explanation, List<String> details, List<RequirementSource> sources,
+                                      @Schema(description = "지원 유형과 별도로 확인한 공고 성격. 접수 가능 여부를 뜻하지 않음")
+                                      NoticeNature noticeNature) {
+        public BusinessTypeSummary(String status, String code, String label, String description,
+                                   String explanation, List<String> details, List<RequirementSource> sources) {
+            this(status, code, label, description, explanation, details, sources, null);
+        }
+    }
 
     public enum ParticipationKind { MANDATORY, FUNDING, PREFERENCE, DEDUCTION, EXCLUSION, REVIEW_REQUIRED }
 

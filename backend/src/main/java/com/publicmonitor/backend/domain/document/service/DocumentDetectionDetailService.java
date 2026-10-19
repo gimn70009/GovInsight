@@ -22,11 +22,13 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 
+@Slf4j
 @Service
 @Lazy
 @RequiredArgsConstructor
@@ -53,6 +55,13 @@ public class DocumentDetectionDetailService {
 
         var analysisResponse = toAnalysis(analysis);
         var preparation = analysisResponse == null ? null : analysisResponse.proposal().preparation();
+        var businessType = BusinessTypeResolver.diagnose(version.getTitle(), version.getContentText(), storedAttachments,
+                analysis == null ? null : analysis.getComparisonSummary(),
+                analysisResponse == null ? null : analysisResponse.proposal().documentType(), objectMapper);
+        log.info("Business type resolution. detection_id={} version_id={} analysis_pending={} status={} type_code={} decision_reason={} stored_reason={} source_index={} usable_source_count={} failed_attachment_count={} empty_attachment_count={}",
+                detectionId, version.getId(), analysisPending, businessType.summary().status(), businessType.summary().code(),
+                businessType.decisionReason(), businessType.storedReason(), businessType.rejectedSourceIndex(),
+                businessType.usableSourceCount(), businessType.failedAttachmentCount(), businessType.emptyAttachmentCount());
         return new DocumentDetectionDetailResponse(
                 detection.getId(),
                 detection.getMonitoringRunSource().getMonitoringSource().getOrganizationName(),
@@ -68,9 +77,7 @@ public class DocumentDetectionDetailService {
                 ResponsibleOrganizationExtractor.extract(version.getContentText(), storedAttachments),
                 SubmissionDocumentResolver.resolve(version.getContentText(), storedAttachments, preparation),
                 ParticipationConditionResolver.resolve(version.getContentText(), storedAttachments, preparation),
-                BusinessTypeResolver.resolve(version.getTitle(), version.getContentText(), storedAttachments,
-                        analysis == null ? null : analysis.getComparisonSummary(),
-                        analysisResponse == null ? null : analysisResponse.proposal().documentType(), objectMapper)
+                businessType.summary()
         );
     }
 

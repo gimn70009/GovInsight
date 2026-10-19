@@ -39,6 +39,8 @@ import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
@@ -92,6 +94,48 @@ class AnalysisResultServiceTest {
         ReflectionTestUtils.setField(detection, "id", 50L);
         given(runRepository.findForUpdate(10L)).willReturn(Optional.of(run));
         given(detectionRepository.findById(50L)).willReturn(Optional.of(detection));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "business-type-v2-notice-activity, RESULT, ADOPTION",
+            "business-type-v4-opinion-notice, GENERAL, ADVISORY",
+            "business-type-v5-service-notices, RESULT, WORKFORCE",
+            "business-type-v6-contest-support, CONTEST, RND",
+            "business-type-v7-planning-surveys, GENERAL, RND"
+    })
+    void 검증에서_제외된_사업유형의_후보와_사유도_분석_JSON에_저장한다(String version, String noticeKind, String candidateType) {
+        given(analysisRepository.findByDocumentVersionIdForUpdate(40L)).willReturn(Optional.empty());
+        var mapper = new ObjectMapper();
+        var payload = mapper.valueToTree(request());
+        var summary = mapper.createObjectNode();
+        summary.put("purpose", "지원 활동을 확인했습니다.");
+        summary.put("supportScale", "지원규모는 원문을 확인합니다.");
+        summary.put("applicationDeadline", "접수기한은 원문을 확인합니다.");
+        summary.put("eligibility", "지원대상은 원문을 확인합니다.");
+        summary.put("requiredPartner", "협력기관은 원문을 확인합니다.");
+        var risks = summary.putArray("legalRisks");
+        for (String type : LegalReviewPolicy.TYPES) {
+            risks.addObject().put("type", type).put("status", "NOT_FOUND").put("summary", "확인된 위험 근거가 없습니다.");
+        }
+        summary.putNull("businessType");
+        summary.putObject("businessTypeReview").put("validatorVersion", version)
+                .put("candidateType", candidateType).put("reason", "NOTICE_" + noticeKind).put("noticeKind", noticeKind);
+        try (var factory = jakarta.validation.Validation.buildDefaultValidatorFactory()) {
+            var review = mapper.treeToValue(summary.path("businessTypeReview"), AnalysisResultRequest.BusinessTypeReview.class);
+            assertThat(factory.getValidator().validate(review)).isEmpty();
+            assertThat(factory.getValidator().validateValue(AnalysisResultRequest.BusinessTypeReview.class,
+                    "noticeKind", "UNKNOWN")).isNotEmpty();
+        }
+        ((tools.jackson.databind.node.ObjectNode) payload.path("results").get(0)).set("comparisonSummary", summary);
+        service.receive(mapper.treeToValue(payload, AnalysisResultRequest.class));
+        var captor = ArgumentCaptor.forClass(DocumentAnalysis.class);
+        verify(analysisRepository).save(captor.capture());
+        var saved = mapper.readTree(captor.getValue().getComparisonSummary());
+        assertThat(saved.path("businessType").isNull()).isTrue();
+        assertThat(saved.path("businessTypeReview").path("reason").asString()).isEqualTo("NOTICE_" + noticeKind);
+        assertThat(saved.path("businessTypeReview").path("candidateType").asString()).isEqualTo(candidateType);
+        assertThat(saved.path("legalRisks").size()).isEqualTo(5);
     }
 
     @Test
