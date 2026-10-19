@@ -301,8 +301,17 @@ public record DocumentDetectionDetailResponse(
     public record Opportunity(
             Integer totalScore,
             OpportunityPriority priority,
-            List<OpportunityDimension> dimensions
+            List<OpportunityDimension> dimensions,
+            Long settingsRevision,
+            List<Integer> weights
     ) {
+        public Opportunity {
+            settingsRevision = settingsRevision == null ? 0L : settingsRevision;
+            weights = weights == null ? List.of(50, 20, 20, 10) : weights;
+        }
+        public Opportunity(Integer totalScore, OpportunityPriority priority, List<OpportunityDimension> dimensions) {
+            this(totalScore, priority, dimensions, 0L, List.of(50, 20, 20, 10));
+        }
     }
 
     @Schema(description = "기회 점수 평가 항목")

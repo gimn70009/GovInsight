@@ -117,6 +117,8 @@ export type OpportunityDimensionType =
   | 'URGENCY'
 
 export interface OpportunityAssessment {
+  settingsRevision?: number
+  weights?: number[]
   totalScore: number
   priority: OpportunityPriority
   dimensions: Array<{

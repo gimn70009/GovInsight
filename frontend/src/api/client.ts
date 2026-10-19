@@ -24,6 +24,8 @@ import type {
   OpportunityPriority,
 } from './types'
 
+import type { EvaluationSettings, EvaluationSettingsPayload } from './evaluationSettings'
+
 const TOKEN_KEY = 'govinsight.accessToken'
 
 export const authStore = {
@@ -57,6 +59,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  getEvaluationSettings: (signal?: AbortSignal) => request<EvaluationSettings>('/api/evaluation-settings', { signal }),
+  updateEvaluationSettings: (payload: EvaluationSettingsPayload) => request<EvaluationSettings>('/api/evaluation-settings', { method: 'PUT', body: JSON.stringify(payload) }),
   getEmailSettings: () => request<EmailSettings>('/api/email/settings'),
   updateEmailSettings: (payload: EmailSettingsPayload) => request<EmailSettings>('/api/email/settings', { method: 'PUT', body: JSON.stringify(payload) }),
   sendEmailTest: (expectedAddress: string) => request<{ sent: boolean; message: string }>('/api/email/test-message', { method: 'POST', body: JSON.stringify({ expectedAddress }) }),

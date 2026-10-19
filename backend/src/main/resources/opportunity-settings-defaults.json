@@ -1,0 +1,93 @@
+{
+  "company": {
+    "name": "비스텔리젼스",
+    "type": "SME",
+    "location": "서울특별시 서초구",
+    "establishedOn": "2021-07-27",
+    "description": "제조 현장의 데이터와 맥락을 연결해 산업 AI 솔루션과 에이전트를 설계·개발·구축합니다.",
+    "industries": [
+      "반도체",
+      "디스플레이",
+      "철강",
+      "조선",
+      "중공업"
+    ],
+    "technologies": [
+      "AI 에이전트",
+      "머신러닝",
+      "데이터 분석",
+      "공정 최적화",
+      "예지보전",
+      "시스템 통합"
+    ],
+    "projects": [
+      {
+        "title": "반도체 장비 OEE 시스템",
+        "description": "반도체 장비 OEE 시스템에서 로그 분석 자동화와 맞춤형 차트를 구축해 관리 효율 17% 증가",
+        "status": "COMPLETED"
+      },
+      {
+        "title": "Wafer 제조 공정 관리 시스템",
+        "description": "Wafer 제조 공정 관리 시스템을 웹 기반으로 전환해 데이터 조회 속도 5배 개선",
+        "status": "COMPLETED"
+      },
+      {
+        "title": "철강 AI 예측·제어",
+        "description": "철강 AI 예측·제어 모델 컨설팅과 분석 보고 시스템 구축",
+        "status": "COMPLETED"
+      },
+      {
+        "title": "이차전지 SPC 시스템",
+        "description": "이차전지 SPC 시스템에서 대용량 데이터 100만 건을 2초 내 시각화",
+        "status": "COMPLETED"
+      },
+      {
+        "title": "AI 기반 펌프 관제",
+        "description": "지자체 수도 사업소에 AI 기반 펌프 관제와 잔여 수명 예측 시스템 구축",
+        "status": "COMPLETED"
+      },
+      {
+        "title": "자동차 부품 생산 모니터링",
+        "description": "자동차 부품 생산 현장에 설비 상태 원격 모니터링과 생산량 관리 시스템 구축",
+        "status": "COMPLETED"
+      },
+      {
+        "title": "제조 핵심 설비 AI 개발",
+        "description": "2026년 7월 기준 국내 대형 제조 현장의 핵심 설비에서 진동·압력·운전 조건·외부 환경을 결합해 이상 징후와 유지보수 시점을 예측하는 AI 개발 중. 고객명·성과 수치는 미공개",
+        "status": "IN_PROGRESS"
+      }
+    ],
+    "certifications": []
+  },
+  "criteria": {
+    "industries": [
+      "반도체",
+      "디스플레이",
+      "철강",
+      "조선",
+      "중공업"
+    ],
+    "tasks": [
+      "AI 에이전트",
+      "공정 최적화",
+      "예지보전"
+    ],
+    "roles": [
+      "기술·서비스 공급기업"
+    ],
+    "businessTypes": [
+      "연구개발",
+      "실증·검증",
+      "사업화·제품화"
+    ],
+    "goals": [
+      "연구개발비 확보",
+      "실증 레퍼런스",
+      "후속 계약 확대"
+    ],
+    "preparationDays": 14,
+    "participationMode": "ANY",
+    "urgencyDays": 7,
+    "preset": "FIT"
+  }
+}

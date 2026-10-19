@@ -23,6 +23,7 @@ from app.domains.analysis.schemas.result import (
     ProposalSection,
 )
 from app.domains.analysis.workflow.agent import AgentAnalysis, AnalysisRunner
+from app.domains.analysis.workflow.configured_scoring import finalize_configured_score
 from app.domains.analysis.workflow.deadlines import (
     has_calendar_date,
     resolve_application_deadline,
@@ -306,7 +307,10 @@ class DocumentAnalysisWorkflow:
                 eligibility=draft.eligibility,
                 favorable_or_not=draft.favorable_or_not,
                 proposal=draft.proposal,
-                opportunity=draft.opportunity,
+                opportunity=finalize_configured_score(
+                    draft.opportunity, document.evaluation_settings,
+                    draft.comparison_summary.application_deadline, self._analysis_date,
+                ),
                 used_tools=candidate.used_tools,
                 model_name=candidate.model_name,
                 comparison_summary=draft.comparison_summary,

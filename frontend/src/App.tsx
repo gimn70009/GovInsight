@@ -5,6 +5,7 @@ import DocumentsPage from './pages/DocumentsPage'
 import LoginPage from './pages/LoginPage'
 import MonitoringPage from './pages/MonitoringPage'
 import ReportDeliveryPage from './pages/ReportDeliveryPage'
+import SettingsPage from './pages/SettingsPage'
 
 function ProtectedLayout() {
   return authStore.get() ? <AppShell /> : <Navigate to="/login" replace />
@@ -18,6 +19,7 @@ export default function App() {
         <Route path="/monitoring" element={<MonitoringPage />} />
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/reports" element={<ReportDeliveryPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
         <Route path="/telegram" element={<Navigate to="/reports" replace />} />
       </Route>
       <Route path="*" element={<Navigate to={authStore.get() ? '/monitoring' : '/login'} replace />} />

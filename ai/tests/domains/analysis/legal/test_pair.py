@@ -133,7 +133,9 @@ def test_pair_uses_actual_profile_and_invalidates_cache_when_company_context_cha
                 BISTELLIGENCE_PROFILE,
                 evidence_limitations=("추가 증빙 확인이 필요한 회사 정보입니다.",),
             )
-            with patch(f"{module}.BISTELLIGENCE_PROFILE", updated):
+            with patch(
+                "app.domains.analysis.context.evaluation_settings.BISTELLIGENCE_PROFILE", updated
+            ):
                 result = await reviewer.review(request())
                 assert result.uses_demo_profile is False
                 assert "추가 증빙 확인이 필요한 회사 정보입니다." in model.ainvoke.call_args.args[0]

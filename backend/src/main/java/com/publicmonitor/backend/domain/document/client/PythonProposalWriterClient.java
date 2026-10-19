@@ -17,8 +17,11 @@ import org.springframework.web.client.RestClientException;
 public class PythonProposalWriterClient {
     private static final Logger log = LoggerFactory.getLogger(PythonProposalWriterClient.class);
     private final RestClient client;
+    private final com.publicmonitor.backend.domain.settings.service.EvaluationSettingsService evaluationSettings;
 
-    public PythonProposalWriterClient(PythonMonitoringClientProperties properties) {
+    public PythonProposalWriterClient(PythonMonitoringClientProperties properties,
+            com.publicmonitor.backend.domain.settings.service.EvaluationSettingsService evaluationSettings) {
+        this.evaluationSettings = evaluationSettings;
         var factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(properties.connectTimeout());
         factory.setReadTimeout(Duration.ofSeconds(190));
@@ -46,7 +49,7 @@ public class PythonProposalWriterClient {
     public ProposalWriteResponse write(PythonProposalWriteRequest request) {
         try {
             var response = client.post().uri("/internal/monitoring/proposal-write")
-                    .body(request).retrieve().body(ProposalWriteResponse.class);
+                    .body(request.withEvaluationSettings(evaluationSettings.currentSnapshot())).retrieve().body(ProposalWriteResponse.class);
             return response == null || response.sections() == null
                     ? ProposalWriteResponse.unavailable() : response;
         } catch (RestClientException exception) {

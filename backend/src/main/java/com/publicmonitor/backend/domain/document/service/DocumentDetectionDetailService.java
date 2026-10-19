@@ -186,7 +186,9 @@ public class DocumentDetectionDetailService {
                         DocumentDetectionDetailResponse.OpportunityDimension::type,
                         DocumentDetectionDetailResponse.OpportunityDimension::score
                 ));
-        int totalScore = OpportunityScoreCalculator.calculate(scores);
+        var preset = com.publicmonitor.backend.domain.analysis.service.OpportunitySettingsMetadata.preset(
+                objectMapper.readTree(analysis.getOpportunityAssessment()));
+        int totalScore = OpportunityScoreCalculator.calculate(scores, preset);
         int companyFitScore = scores.getOrDefault(OpportunityDimensionType.COMPANY_FIT, 0);
         int feasibilityScore = scores.getOrDefault(OpportunityDimensionType.FEASIBILITY, 0);
         int urgencyScore = scores.getOrDefault(OpportunityDimensionType.URGENCY, 0);
@@ -198,7 +200,9 @@ public class DocumentDetectionDetailService {
                         feasibilityScore,
                         urgencyScore
                 ),
-                dimensions
+                dimensions,
+                stored.settingsRevision() == null ? 0 : stored.settingsRevision(),
+                preset.weights()
         );
     }
 
@@ -216,7 +220,7 @@ public class DocumentDetectionDetailService {
         }
     }
 
-    private record StoredOpportunity(List<StoredDimension> dimensions) {
+    private record StoredOpportunity(List<StoredDimension> dimensions, Long settingsRevision, String preset) {
     }
 
     private record StoredDimension(String type, Integer score, String reason) {

@@ -586,7 +586,7 @@ function OpportunityScore({ opportunity }: { opportunity: NonNullable<DocumentAn
         <div>
           <small>AI OPPORTUNITY SCORE</small>
           <h3>우리 회사의 기회 분석</h3>
-          <p>공고 내용과 공개된 회사 정보를 기준으로 평가했어요.</p>
+          <p>공고 내용과 분석에 사용한 회사 정보를 기준으로 평가했어요.{opportunity.settingsRevision ? ` (설정 버전 ${opportunity.settingsRevision})` : ''}</p>
         </div>
         <div className="opportunity-total">
           <strong>{opportunity.totalScore}</strong><span>/100</span>
@@ -607,10 +607,9 @@ function OpportunityScore({ opportunity }: { opportunity: NonNullable<DocumentAn
       {showScoreGuide && (
         <div className="score-guide">
           <dl>
-            <div><dt>회사 적합도</dt><dd>50%</dd></div>
-            <div><dt>사업 매력도</dt><dd>20%</dd></div>
-            <div><dt>실행 가능성</dt><dd>20%</dd></div>
-            <div><dt>긴급도</dt><dd>10%</dd></div>
+            {['회사 적합도', '사업 매력도', '실행 가능성', '긴급도'].map((label, index) => (
+              <div key={label}><dt>{label}</dt><dd>{opportunity.weights?.[index] ?? [50, 20, 20, 10][index]}%</dd></div>
+            ))}
           </dl>
           <p>화면에는 사업 기회 판단에 직접 사용하는 네 지표를 보여드려요. 회사 적합도가 40점 이하이면 종합 점수는 최대 49점이에요.</p>
         </div>

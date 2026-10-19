@@ -17,7 +17,12 @@ public class OpportunityRankingCalculator {
     public record Ranking(Integer score, OpportunityPriority priority, boolean malformed) {}
 
     public static Ranking calculate(Map<OpportunityDimensionType, Integer> scores) {
-        int score = OpportunityScoreCalculator.calculate(scores);
+        return calculate(scores, com.publicmonitor.backend.domain.settings.web.dto.EvaluationSettingsData.Preset.FIT);
+    }
+
+    public static Ranking calculate(Map<OpportunityDimensionType, Integer> scores,
+            com.publicmonitor.backend.domain.settings.web.dto.EvaluationSettingsData.Preset preset) {
+        int score = OpportunityScoreCalculator.calculate(scores, preset);
         return new Ranking(score, OpportunityScoreCalculator.priority(score,
                 scores.getOrDefault(OpportunityDimensionType.COMPANY_FIT, 0),
                 scores.getOrDefault(OpportunityDimensionType.FEASIBILITY, 0),
@@ -29,7 +34,8 @@ public class OpportunityRankingCalculator {
             return new Ranking(fallbackScore, null, false);
         }
         try {
-            JsonNode dimensions = objectMapper.readTree(assessment).path("dimensions");
+            JsonNode root = objectMapper.readTree(assessment);
+            JsonNode dimensions = root.path("dimensions");
             if (!dimensions.isArray()) return new Ranking(fallbackScore, null, true);
             Map<OpportunityDimensionType, Integer> scores = new EnumMap<>(OpportunityDimensionType.class);
             for (JsonNode dimension : dimensions) {
@@ -49,7 +55,7 @@ public class OpportunityRankingCalculator {
                 }
                 scores.put(type, score.intValue());
             }
-            return calculate(scores);
+            return calculate(scores, OpportunitySettingsMetadata.preset(root));
         } catch (RuntimeException exception) {
             return new Ranking(fallbackScore, null, true);
         }
