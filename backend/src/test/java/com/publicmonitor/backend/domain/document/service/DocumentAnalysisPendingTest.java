@@ -56,7 +56,8 @@ class DocumentAnalysisPendingTest {
 
         assertThat(response.analysis()).isNull();
         assertThat(response.analysisPending())
-                .isEqualTo(state != AnalysisTask.State.DONE && state != AnalysisTask.State.FAILED);
+                .isEqualTo(state == AnalysisTask.State.PENDING || state == AnalysisTask.State.RUNNING);
+        assertThat(response.analysisStatus().name()).isEqualTo(response.analysisPending() ? "PENDING" : "FAILED");
     }
 
     @ParameterizedTest

@@ -18,7 +18,8 @@ public interface DocumentDetectionRepository extends JpaRepository<DocumentDetec
                 runSource.monitoringRun.id, detection.id, document.id, version.id,
                 source.organizationName, source.boardName, version.title,
                 detection.changeType, version.attachmentCount, analysis.importance,
-                analysis.opportunityScore, analysis.opportunityPriority, detection.detectedAt
+                analysis.opportunityScore, analysis.opportunityPriority, detection.detectedAt,
+                latestDetection.monitoringRunSource.monitoringRun.status, analysisTask.state
             )
             from DocumentDetection detection
             join detection.document document
@@ -26,6 +27,12 @@ public interface DocumentDetectionRepository extends JpaRepository<DocumentDetec
             join detection.monitoringRunSource runSource
             join runSource.monitoringSource source
             left join DocumentAnalysis analysis on analysis.documentVersion = version
+            join DocumentDetection latestDetection on latestDetection.documentVersion = version
+                and not exists (select newer.id from DocumentDetection newer
+                    where newer.documentVersion = version
+                      and (newer.detectedAt > latestDetection.detectedAt
+                        or (newer.detectedAt = latestDetection.detectedAt and newer.id > latestDetection.id)))
+            left join AnalysisTask analysisTask on analysisTask.run = latestDetection.monitoringRunSource.monitoringRun
             where (:runId is null or runSource.monitoringRun.id = :runId)
               and (:fromDateTime is null or detection.detectedAt >= :fromDateTime)
               and (:toDateTime is null or detection.detectedAt <= :toDateTime)

@@ -44,7 +44,7 @@ class DocumentBookmarkServiceTest {
         var to = from.plusDays(1);
         var page = PageRequest.of(2, 1);
         var item = new DocumentDetectionSummaryRow(3L, 15L, 8L, 10L, "기관", "게시판",
-                "50%_AI!", DocumentChangeType.NEW_DOCUMENT, 0, null, 80, OpportunityPriority.HIGH, from);
+                "50%_AI!", DocumentChangeType.NEW_DOCUMENT, 0, null, 80, OpportunityPriority.HIGH, from, com.publicmonitor.backend.domain.monitoring.entity.MonitoringRunStatus.COMPLETED, null);
         when(detections.findFilteredBookmarkedSummaries(7L, null, from, to, "%50!%!_ai!!%",
                 OpportunityPriority.HIGH, true, page))
                 .thenReturn(new PageImpl<>(List.of(item), page, 8));

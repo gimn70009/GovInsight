@@ -94,7 +94,10 @@ export type Importance = 'HIGH' | 'NORMAL' | 'LOW'
 export type OpportunityPriority = 'HIGH' | 'NORMAL' | 'LOW'
 export type ChangeType = 'NEW_DOCUMENT' | 'UPDATED_DOCUMENT' | 'UNCHANGED_DOCUMENT'
 
+export type DocumentAnalysisStatus = 'PENDING' | 'COMPLETED' | 'FAILED'
+
 export interface DocumentDetection {
+  analysisStatus: DocumentAnalysisStatus
   runId: number
   detectionId: number
   documentId: number
@@ -302,6 +305,8 @@ export interface BusinessTypeSummary {
 }
 
 export interface DocumentDetail {
+  analysisStatus: DocumentAnalysisStatus
+  analysisFailureReason: string | null
   detectionId: number
   analysisPending: boolean
   organizationName: string

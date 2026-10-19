@@ -10,6 +10,7 @@ import {
   ExternalLink,
   File,
   FileSearch2,
+  FileWarning,
   Paperclip,
   RefreshCw,
   RotateCcw,
@@ -27,6 +28,7 @@ import { Badge, EmptyState, InlineError, Loading, Pagination } from '../componen
 
 import { isApplicationExpired, normalizeLegalNarrative } from '../utils/noticePresentation'
 import { companyCapabilities } from '../utils/companyCapabilities'
+import { analysisStatusPresentation, missingAnalysisNotice } from '../utils/analysisStatus'
 
 const opportunityLabels: Record<OpportunityDimensionType, string> = {
   COMPANY_FIT: '회사 적합도',
@@ -154,13 +156,13 @@ export default function DocumentsPage() {
     }
   }, [])
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (background = false) => {
     if (selectedRunId === null) return
     const sequence = ++loadSequence.current
     loadAbort.current?.abort()
     const controller = new AbortController()
     loadAbort.current = controller
-    setLoading(true)
+    if (!background) setLoading(true)
     setError('')
     try {
       const data = await api.getDocuments(
@@ -202,6 +204,19 @@ export default function DocumentsPage() {
     void load()
     return cancelLoad
   }, [load, cancelLoad])
+
+  useEffect(() => {
+    if (loading || selectedId || !documents.some(item => item.analysisStatus === 'PENDING')) return
+    let active = true
+    let timer: number
+    async function refresh() {
+      if (!active) return
+      if (!document.hidden) await load(true)
+      if (active) timer = window.setTimeout(refresh, 5000)
+    }
+    timer = window.setTimeout(refresh, 5000)
+    return () => { active = false; window.clearTimeout(timer) }
+  }, [documents, loading, selectedId, load])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -427,7 +442,9 @@ export default function DocumentsPage() {
                       </Badge>
                       {item.opportunityScore != null && <span className="document-row__score">{item.opportunityScore}점</span>}
                     </>
-                  ) : <Badge>분석 중</Badge>}
+                  ) : <Badge tone={analysisStatusPresentation(item.analysisStatus).tone}>
+                    {analysisStatusPresentation(item.analysisStatus).label}
+                  </Badge>}
                 </div>
                 <time>{formatDateTime(item.lastCheckedAt)}</time>
               </button>
@@ -446,7 +463,7 @@ export default function DocumentsPage() {
         <Pagination page={page} totalPages={pages} onChange={setPage} />
       </section>
 
-      {selectedId && selectedVersionId && <DocumentDrawer key={selectedId} detectionId={selectedId} onClose={() => setSelectedId(null)}
+      {selectedId && selectedVersionId && <DocumentDrawer key={selectedId} detectionId={selectedId} onClose={() => { setSelectedId(null); void load() }}
         bookmarked={bookmarkIds.includes(selectedVersionId)} bookmarkPending={!bookmarkReady || savingIds.includes(selectedVersionId)}
         bookmarkError={bookmarkError} onToggleBookmark={() => void toggleBookmark(selectedVersionId)} />}
     </div>
@@ -634,6 +651,7 @@ function OpportunityScore({ opportunity }: { opportunity: NonNullable<DocumentAn
 function DocumentContent({ detail, similarNotices, similarLoading }: { detail: DocumentDetail; similarNotices: SimilarNoticeResult | null; similarLoading: boolean }) {
   const [activeDetailTab, setActiveDetailTab] = useState<'SUMMARY' | 'ANALYSIS' | 'PROPOSAL' | 'SIMILAR'>('SUMMARY')
   const analysis = detail.analysis
+  const analysisNotice = missingAnalysisNotice(detail)
   const applicationExpired = isApplicationExpired(detail.analysis)
   const eligible = analysis
     ? applicationExpired ? ['지원 불가능', 'danger'] as const : eligibility[analysis.eligibility]
@@ -818,19 +836,22 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
           ) : null}
         </>
       ) : (
-        <EmptyState icon={<Sparkles />}
-          title={detail.analysisPending ? 'AI 분석을 준비하고 있어요' : 'AI 분석 결과가 없습니다'}
-          description={detail.analysisPending
-            ? '분석이 완료되면 이 화면이 자동으로 갱신됩니다.'
-            : '분석 처리가 끝났지만 저장된 결과가 없습니다. 원문을 확인하거나 다시 모니터링해 주세요.'} />
+        <div className={analysisNotice.pending ? undefined : 'analysis-failure'}>
+          <EmptyState icon={analysisNotice.pending ? <Sparkles /> : <FileWarning />}
+            title={analysisNotice.title}
+            description={analysisNotice.description} />
+        </div>
       )}
 
       {showProposalWriter && <ProposalWriter key={detail.detectionId} detectionId={detail.detectionId} active={activeDetailTab === 'PROPOSAL'} expired={applicationExpired} />}
 
       {activeDetailTab === 'ANALYSIS' && <section className="detail-section attachments">
-        <div className="section-title-row"><h3>첨부파일</h3><Badge>{detail.attachments.length}개</Badge></div>
+        {detail.attachments.length > 0 && <div className="section-title-row"><h3>첨부파일</h3><Badge>{detail.attachments.length}개</Badge></div>}
         {detail.attachments.length === 0 ? (
-          <p className="muted">첨부된 파일이 없습니다.</p>
+          <div className="attachments-empty">
+            <span className="attachments-empty__icon" aria-hidden="true"><Paperclip size={20} strokeWidth={1.7} /></span>
+            <div><h3>첨부파일</h3><p>등록된 첨부파일이 없어요.</p></div>
+          </div>
         ) : (
           detail.attachments.map((file) => (
             <a key={file.downloadUrl} href={file.downloadUrl} target="_blank" rel="noreferrer" className="attachment-row">

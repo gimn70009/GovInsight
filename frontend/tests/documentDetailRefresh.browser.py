@@ -12,8 +12,8 @@ from playwright.async_api import Error, async_playwright, expect
 BASE = os.environ.get("DOCUMENT_DETAIL_PREVIEW_URL", "http://127.0.0.1:4197")
 OUT = Path("frontend/dist/document-detail-refresh-checks")
 WAITING = "AI 분석을 준비하고 있어요"
-EMPTY = "AI 분석 결과가 없습니다"
-EMPTY_REASON = "분석 처리가 끝났지만 저장된 결과가 없습니다. 원문을 확인하거나 다시 모니터링해 주세요."
+EMPTY = "분석 실패"
+EMPTY_REASON = "분석을 완료하지 못했어요. 원문을 확인하거나 다시 모니터링해 주세요."
 PROPOSAL_ENDED = "사업 제안 준비가 종료되었지만 결과를 저장하지 못했습니다. 원문을 확인하거나 다시 모니터링해 주세요."
 ERROR_MESSAGE = "상세 조회 실패 검증"
 SUMMARY = "새로 도착한 분석 결과입니다. 제조 AI 실증 과업을 검토합니다."
@@ -68,6 +68,8 @@ class Harness:
         self.browser = browser
         self.page = None
         self.states = {1: detail(), 2: detail(2, False, analysis("READY", "두 번째 공고의 분석입니다."))}
+        self.list_rows = [row(1), row(2)]
+        self.list_requests = 0
         self.replies = defaultdict(deque)
         self.counts = Counter()
         self.started = defaultdict(asyncio.Event)
@@ -115,7 +117,8 @@ class Harness:
         elif path == "/api/bookmarks/versions":
             data = []
         elif path == "/api/document-detections":
-            data = paged([row(1), row(2)])
+            self.list_requests += 1
+            data = paged(self.list_rows)
         elif path in ("/api/document-detections/1", "/api/document-detections/2"):
             identifier = int(path.rsplit("/", 1)[1])
             self.counts[identifier] += 1
@@ -364,10 +367,87 @@ async def closing_or_switching_ignores_late_response(browser, switch):
         await h.close()
 
 
+async def failure_labels_and_readable_reason(browser, width):
+    h = Harness(browser)
+    h.list_rows = [dict(row(1), opportunityScore=None, opportunityPriority=None, analysisStatus="FAILED"),
+                   dict(row(2), opportunityScore=None, opportunityPriority=None, analysisStatus="PENDING")]
+    reason = "본문·첨부파일에서 읽을 텍스트를 찾지 못했어요. 이미지로 된 공고일 수 있으니 원문을 확인해 주세요."
+    h.states[1] = dict(detail(pending=False), analysisStatus="FAILED", analysisFailureReason=reason)
+    h.states[2] = dict(detail(2), analysisStatus="PENDING", analysisFailureReason=None)
+    await h.start()
+    try:
+        await h.page.set_viewport_size({"width": width, "height": 900})
+        rows = h.page.locator(".document-row")
+        await expect(rows.nth(0).locator(".badge--danger")).to_have_text("분석 실패")
+        await expect(rows.nth(1).locator(".document-row__importance")).to_have_text("분석 중")
+        await h.open(analysis_tab=False)
+        notice = h.page.locator(".business-summary__status--failed")
+        await expect(notice).to_contain_text(reason)
+        await expect(notice.get_by_role("link", name="원문 확인")).to_have_count(0)
+        await expect(h.page.get_by_role("link", name="원문 보기", exact=True)).to_have_attribute("href", h.states[1]["originalUrl"])
+        await h.page.get_by_role("button", name="공고 분석", exact=True).click()
+        panel = h.page.locator(".analysis-failure")
+        await expect(panel).to_contain_text(reason)
+        await expect(panel.get_by_role("link", name="원문 확인")).to_have_count(0)
+        await expect(h.page.locator(".attachments-empty")).to_contain_text("등록된 첨부파일이 없어요.")
+        await expect(h.page.locator(".attachments .badge")).to_have_count(0)
+        await h.stopped()
+        assert await h.page.locator(".drawer--detail").evaluate("e => e.scrollWidth <= e.clientWidth"), "detail overflow"
+        OUT.mkdir(parents=True, exist_ok=True)
+        await h.page.screenshot(path=str(OUT / f"analysis-failure-{width}.png"))
+        h.states[1]["attachments"] = [dict(fileName="공고문.pdf", fileExtension="pdf", fileSize=1024,
+                                          parseStatus="COMPLETED", downloadUrl="https://example.org/file.pdf")]
+        await h.page.get_by_role("button", name="목록으로", exact=True).click()
+        await expect(rows).to_have_count(2)
+        await h.open()
+        await expect(h.page.locator(".attachments-empty")).to_have_count(0)
+        await expect(h.page.locator(".attachments .badge")).to_have_text("1개")
+        await expect(h.page.locator(".attachment-row")).to_contain_text("공고문.pdf")
+        await expect(h.page.locator(".attachment-row")).to_have_attribute("href", "https://example.org/file.pdf")
+        await h.page.get_by_role("button", name="목록으로", exact=True).click()
+        await expect(rows).to_have_count(2)
+        await h.open(2)
+        await expect(h.page.get_by_text(WAITING, exact=True)).to_be_visible()
+        h.states[2] = dict(detail(2, pending=False), analysisStatus="FAILED", analysisFailureReason=EMPTY_REASON)
+        h.list_rows[1]["analysisStatus"] = "FAILED"
+        await h.tick(2)
+        await expect(h.page.locator(".analysis-failure")).to_contain_text(EMPTY_REASON)
+        await h.stopped(2)
+        await h.page.get_by_role("button", name="목록으로", exact=True).click()
+        await expect(rows.nth(1).locator(".badge--danger")).to_have_text("분석 실패")
+    finally:
+        await h.close()
+
+
+async def list_refreshes_until_analysis_finishes(browser):
+    h = Harness(browser)
+    h.list_rows[0].update(analysisStatus="PENDING", opportunityScore=None, opportunityPriority=None)
+    await h.start()
+    try:
+        row_badge = h.page.locator(".document-row").first.locator(".document-row__importance")
+        await expect(row_badge).to_have_text("분석 중")
+        before = h.list_requests
+        await h.page.evaluate("Object.defineProperty(document, 'hidden', { configurable: true, value: true })")
+        await h.page.clock.run_for(10001)
+        assert h.list_requests == before
+        await h.page.evaluate("Object.defineProperty(document, 'hidden', { configurable: true, value: false })")
+        h.list_rows[0]["analysisStatus"] = "FAILED"
+        await h.page.clock.run_for(5001)
+        await expect(row_badge).to_have_text("분석 실패")
+        before = h.list_requests
+        await h.page.clock.run_for(15001)
+        assert h.list_requests == before, "terminal list must stop polling"
+    finally:
+        await h.close()
+
+
 async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch(channel=os.environ.get("BROWSER_CHANNEL", "msedge"))
         try:
+            await list_refreshes_until_analysis_finishes(browser)
+            await failure_labels_and_readable_reason(browser, 1440)
+            await failure_labels_and_readable_reason(browser, 390)
             await waiting_to_ready(browser)
             await terminal_without_result(browser, False)
             await terminal_without_result(browser, True)
@@ -380,7 +460,7 @@ async def main():
             await closing_or_switching_ignores_late_response(browser, True)
         finally:
             await browser.close()
-    print("PASS: analysis/proposal refresh, terminal stop, error retries, timeout, singleflight, visibility, close/switch isolation")
+    print("PASS: desktop/mobile failure labels, original links, failure reasons, list refresh, analysis/proposal refresh, terminal stop, error retries, timeout, singleflight, visibility, close/switch isolation")
 
 
 if __name__ == "__main__":

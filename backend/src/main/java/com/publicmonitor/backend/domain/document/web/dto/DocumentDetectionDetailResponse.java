@@ -25,6 +25,10 @@ public record DocumentDetectionDetailResponse(
         Analysis analysis,
         @Schema(description = "같은 문서 버전의 최신 감지 실행에서 분석·제안 처리가 진행될 수 있으면 true")
         boolean analysisPending,
+        @Schema(description = "분석 상태: PENDING/COMPLETED/FAILED. 제안 준비 여부와 별개")
+        com.publicmonitor.backend.domain.document.entity.DocumentAnalysisStatus analysisStatus,
+        @Schema(description = "분석 실패 시 원문 확인 안내. 내부 오류 정보는 노출하지 않음", nullable = true)
+        String analysisFailureReason,
         List<Attachment> attachments,
         @Schema(description = "현재 본문·첨부에 역할과 이름이 명시된 사업 담당기관. 근거가 없으면 빈 목록")
         List<ResponsibleOrganization> responsibleOrganizations,

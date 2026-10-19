@@ -5,6 +5,7 @@ import { CalendarDays, ChevronDown, CircleHelp, FileText, Banknote, ExternalLink
 import type { DocumentAttachment, DocumentDetail, ProposalPreparationItem, ResponsibleOrganization, SubmissionDocument, SubmissionGuide } from '../api/types'
 import { documentPresentation, evidenceAttachment, formatSummaryText, formatSupportScale, organizationEvidenceAttachment, summaryDocuments, summaryValue } from '../utils/businessSummary'
 import './BusinessSummary.css'
+import { missingAnalysisNotice } from '../utils/analysisStatus'
 
 const requirementLabels = {
   MANDATORY: '필수', CONDITIONAL: '해당 시 제출', OPTIONAL: '선택', RECOMMENDED: '권장',
@@ -175,6 +176,7 @@ function ResponsibleOrganizations({ detail }: { detail: DocumentDetail }) {
 export function BusinessSummary({ detail }: { detail: DocumentDetail }) {
   const headingId = useId()
   const analysis = detail.analysis
+  const analysisNotice = missingAnalysisNotice(detail)
   const purpose = summaryValue(analysis?.businessSummary?.purpose) ?? summaryValue(analysis?.summary)
   const supportScale = summaryValue(analysis?.businessSummary?.supportScale)
   const deadline = summaryValue(analysis?.applicationDeadline)
@@ -190,9 +192,10 @@ export function BusinessSummary({ detail }: { detail: DocumentDetail }) {
         <div className="business-summary__heading-text"><h3 id={headingId}>사업 정보 한눈에 보기</h3><p>저장된 공고와 분석을 기준으로 정리한 정보입니다.</p></div>
       </header>
       <div className="business-summary__section-body">
-        {!analysis && <p className="business-summary__status" role="status">
-          {detail.analysisPending ? 'AI 분석을 준비하고 있어요. 완료되면 정보가 자동으로 갱신됩니다.' : 'AI 분석 결과가 없습니다. 확인되지 않은 정보는 공고 원문을 참고해 주세요.'}
-        </p>}
+        {!analysis && <div className={`business-summary__status${analysisNotice.pending ? '' : ' business-summary__status--failed'}`} role="status">
+          <strong>{analysisNotice.title}</strong>
+          <p>{analysisNotice.description}</p>
+        </div>}
         <div className="business-summary__table-wrap">
           <table className="business-summary__facts" aria-label="사업 핵심 정보">
             <tbody>
