@@ -64,6 +64,33 @@ class EvaluationSettingsIntegrationTest {
         assertThat(service.find().data().company().name()).isEqualTo("새 회사");
     }
 
+    @Test void customPreparationDaysSurviveSaveReloadAndSnapshot() {
+        var initial = service.find().data();
+        var c = initial.criteria();
+        var custom = new EvaluationSettingsData(initial.company(), new Criteria(c.industries(), c.tasks(),
+                c.roles(), c.businessTypes(), c.goals(), 18, c.participationMode(), c.urgencyDays(), c.preset()));
+        var saved = service.update(new UpdateEvaluationSettingsRequest(0L, custom));
+        assertThat(service.find().data().criteria().preparationDays()).isEqualTo(18);
+        assertThat(service.currentSnapshot().data().criteria().preparationDays()).isEqualTo(18);
+        var unset = new EvaluationSettingsData(initial.company(), new Criteria(c.industries(), c.tasks(),
+                c.roles(), c.businessTypes(), c.goals(), null, c.participationMode(), c.urgencyDays(), c.preset()));
+        service.update(new UpdateEvaluationSettingsRequest(saved.revision(), unset));
+        assertThat(service.find().data().criteria().preparationDays()).isNull();
+        assertThat(service.revision(saved.revision()).criteria().preparationDays()).isEqualTo(18);
+    }
+
+    @Test void customUrgencyDaysSurviveSaveReloadAndHistoricalSnapshot() {
+        var initial = service.find().data();
+        var c = initial.criteria();
+        var custom = new EvaluationSettingsData(initial.company(), new Criteria(c.industries(), c.tasks(),
+                c.roles(), c.businessTypes(), c.goals(), c.preparationDays(), c.participationMode(), 10, c.preset()));
+        var saved = service.update(new UpdateEvaluationSettingsRequest(0L, custom));
+        assertThat(service.find().data().criteria().urgencyDays()).isEqualTo(10);
+        assertThat(service.currentSnapshot().data().criteria().urgencyDays()).isEqualTo(10);
+        service.update(new UpdateEvaluationSettingsRequest(saved.revision(), initial));
+        assertThat(service.revision(saved.revision()).criteria().urgencyDays()).isEqualTo(10);
+    }
+
     @Test void staleEditorCannotOverwriteSavedConfiguration() {
         var initial = service.find().data();
         service.update(new UpdateEvaluationSettingsRequest(0L, initial));

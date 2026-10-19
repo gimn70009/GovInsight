@@ -22,6 +22,15 @@ export function filterSettingsOptions(groups: SelectionGroup[], category: string
     .filter(option => !needle || `${option}${aliases[option] ?? ''}`.toLocaleLowerCase().replace(/\s+/g, '').includes(needle))
 }
 
+export function parseUrgencyDays(value: string): number {
+  return /^[0-9]+$/.test(value) ? Number(value) : Number.NaN
+}
+
+export function parsePreparationDays(value: string): number | null {
+  if (value === '') return null
+  return /^[0-9]+$/.test(value) ? Number(value) : Number.NaN
+}
+
 export function validateEvaluationSettings(data: EvaluationSettingsData): string {
   if (!data.company.name.trim()) return '회사명을 입력해 주세요.'
   if (data.company.establishedOn) {
@@ -32,6 +41,10 @@ export function validateEvaluationSettings(data: EvaluationSettingsData): string
     data.criteria.tasks, data.criteria.roles, data.criteria.businessTypes, data.criteria.goals]
   if (selections.some(values => values.length === 0)) return '각 선택 항목을 1개 이상 등록해 주세요.'
   if (data.criteria.goals.length > 3) return '기대 성과는 최대 3개까지 선택해 주세요.'
+  const days = data.criteria.preparationDays
+  if (days !== null && (!Number.isInteger(days) || days < 1 || days > 365)) return '최소 신청 준비 기간은 1~365일 사이의 정수로 입력해 주세요.'
+  const urgency = data.criteria.urgencyDays
+  if (!Number.isInteger(urgency) || urgency < 1 || urgency > 365) return '우선 확인 기간은 1~365일 사이의 정수로 입력해 주세요.'
   if (data.company.projects.some(project => !project.title.trim())) return '추가한 수행 실적의 프로젝트명을 입력해 주세요.'
   if (data.company.certifications.some(cert => !cert.name.trim())) return '추가한 인증·자격의 이름을 입력해 주세요.'
   return ''

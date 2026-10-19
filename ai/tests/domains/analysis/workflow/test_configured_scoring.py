@@ -3,6 +3,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from app.domains.analysis.context.company_profile import BISTELLIGENCE_PROFILE
 from app.domains.analysis.context.evaluation_settings import (
@@ -33,6 +34,54 @@ def settings():
         )
     )
     return EvaluationSettingsSnapshot.model_validate({"revision": 3, "data": data})
+
+
+@pytest.mark.parametrize("days", [None, 1, 3, 10, 18, 21, 365])
+def test_custom_preparation_days_survive_job_roundtrip_and_model_context(settings, days):
+    payload = settings.model_dump(mode="json", by_alias=True)
+    payload["data"]["criteria"]["preparationDays"] = days
+    snapshot = EvaluationSettingsSnapshot.model_validate(payload)
+    job = AnalysisJobRequest(run_id=1, documents=[document()], evaluation_settings=snapshot)
+    restored = AnalysisJobRequest.model_validate_json(job.model_dump_json(by_alias=True))
+    applied = restored.documents[0].evaluation_settings
+    assert applied.data.criteria.preparation_days == days
+    context = json.loads(criteria_context(applied).split("\n", 1)[1])
+    assert context["preparationDays"] == days
+
+
+@pytest.mark.parametrize("days", [0, -1, 366, 1.5, True, "10", "abc"])
+def test_invalid_preparation_days_are_rejected_before_analysis(settings, days):
+    payload = settings.model_dump(mode="json", by_alias=True)
+    payload["data"]["criteria"]["preparationDays"] = days
+    with pytest.raises(ValidationError, match="preparationDays"):
+        EvaluationSettingsSnapshot.model_validate(payload)
+
+
+@pytest.mark.parametrize("window", [1, 3, 7, 10, 14, 18, 30, 365])
+def test_custom_urgency_windows_survive_job_and_score_every_boundary(settings, window):
+    payload = settings.model_dump(mode="json", by_alias=True)
+    payload["data"]["criteria"]["urgencyDays"] = window
+    snapshot = EvaluationSettingsSnapshot.model_validate(payload)
+    job = AnalysisJobRequest(run_id=1, documents=[document()], evaluation_settings=snapshot)
+    restored = AnalysisJobRequest.model_validate_json(job.model_dump_json(by_alias=True))
+    applied = restored.documents[0].evaluation_settings
+    assert json.loads(criteria_context(applied).split("\n", 1)[1])["urgencyDays"] == window
+    today = date(2026, 10, 19)
+    for remaining, expected in [
+        (-1, 0), (0, 100), (window, 100), (window + 1, 65),
+        (window * 2, 65), (window * 2 + 1, 35), (window * 4, 35), (window * 4 + 1, 10),
+    ]:
+        deadline = (today + timedelta(days=remaining)).isoformat()
+        result = finalize_configured_score(assessment(), applied, deadline, today)
+        assert result.dimensions[-1].score == expected
+
+
+@pytest.mark.parametrize("days", [None, 0, -1, 366, 1.5, True, "10", "abc"])
+def test_invalid_urgency_days_are_rejected_before_analysis(settings, days):
+    payload = settings.model_dump(mode="json", by_alias=True)
+    payload["data"]["criteria"]["urgencyDays"] = days
+    with pytest.raises(ValidationError, match="urgencyDays"):
+        EvaluationSettingsSnapshot.model_validate(payload)
 
 
 def assessment(reason="신청 마감일의 확인이 필요한 사업입니다.", score=10):
@@ -92,6 +141,21 @@ def test_custom_rubric_replaces_manufacturing_requirement_without_changing_legac
     assert "선택 항목의 개수" in prompt
     assert "사용자 평가 기준 데이터" in criteria_context(settings)
     assert configured_system_prompt(SYSTEM_PROMPT, None) == SYSTEM_PROMPT
+
+
+def test_business_value_prompt_has_two_components_without_specificity_adjustments(settings):
+    prompt = configured_system_prompt(SYSTEM_PROMPT, settings)
+    business_value = prompt.split("2. BUSINESS_VALUE", 1)[1].split("3. FEASIBILITY", 1)[0]
+
+    assert "선호 사업 유형과 직접 일치 30/인접 지원 방식\n15/무관 0" in business_value
+    assert "직접 수혜 근거 70/간접 기여 근거 30/없음 0" in business_value
+    assert "구체적 25" not in business_value
+    assert "직접 경제가치" not in business_value
+    assert "공고에 명시된 지원·계약·결과물을 근거로 판단" in business_value
+    assert "금액·범위의 명시 여부를 별도 점수로 가감하지 않습니다" in business_value
+    assert "미확인이어도 직접 수혜 근거가 있으면 직접 수혜 점수를 유지" in business_value
+    assert "행사·홍보·네트워킹 가능성만 있으면 최대 40점" in business_value
+    assert "지원 규모나 후속 계약을 추측하지" in business_value
 
 
 @pytest.mark.parametrize(

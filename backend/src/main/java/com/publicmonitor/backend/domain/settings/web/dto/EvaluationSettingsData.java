@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import java.time.LocalDate;
 import java.util.List;
+import tools.jackson.databind.annotation.JsonDeserialize;
 
 public record EvaluationSettingsData(@NotNull @Valid Company company, @NotNull @Valid Criteria criteria) {
     public record Company(
@@ -28,18 +29,11 @@ public record EvaluationSettingsData(@NotNull @Valid Company company, @NotNull @
             @NotNull @Size(min = 1, max = 6) List<@NotBlank @Size(max = 80) String> roles,
             @NotNull @Size(min = 1, max = 12) List<@NotBlank @Size(max = 80) String> businessTypes,
             @NotNull @Size(min = 1, max = 3) List<@NotBlank @Size(max = 80) String> goals,
-            Integer preparationDays, @NotNull ParticipationMode participationMode,
-            @NotNull Integer urgencyDays, @NotNull Preset preset
-    ) {
-        @AssertTrue(message = "신청 준비 기간은 7·14·21·30일 또는 미정이어야 합니다.")
-        public boolean isValidPreparationDays() {
-            return preparationDays == null || List.of(7, 14, 21, 30).contains(preparationDays);
-        }
-        @AssertTrue(message = "집중 대응 기한은 3·7·14·30일이어야 합니다.")
-        public boolean isValidUrgencyDays() {
-            return urgencyDays == null || List.of(3, 7, 14, 30).contains(urgencyDays);
-        }
-    }
+            @JsonDeserialize(using = SettingsDaysDeserializer.class)
+            @Min(1) @Max(365) Integer preparationDays, @NotNull ParticipationMode participationMode,
+            @JsonDeserialize(using = SettingsDaysDeserializer.class)
+            @NotNull @Min(1) @Max(365) Integer urgencyDays, @NotNull Preset preset
+    ) {}
     public enum CompanyType { UNKNOWN, SME, MID_SIZED, LARGE, SOLE_PROPRIETOR, RESEARCH, NONPROFIT }
     public enum ProjectStatus { COMPLETED, IN_PROGRESS, PLANNED }
     public enum CertificationStatus { HELD, NEEDS_VERIFICATION, EXPIRED }

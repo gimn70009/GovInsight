@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { filterSettingsOptions, validateEvaluationSettings } from '../src/utils/evaluationSettings.ts'
+import { filterSettingsOptions, parsePreparationDays, parseUrgencyDays, validateEvaluationSettings } from '../src/utils/evaluationSettings.ts'
 
 const fixture = () => JSON.parse(readFileSync(new URL('../../backend/src/main/resources/opportunity-settings-defaults.json', import.meta.url), 'utf8'))
 const catalog = JSON.parse(readFileSync(new URL('../../backend/src/main/resources/opportunity-settings-catalog.json', import.meta.url), 'utf8'))
@@ -12,6 +12,34 @@ test('산업은 두 분야로 제한하고 기술 검색은 다른 분야와 동
   assert.deepEqual(filterSettingsOptions(catalog.technologies, '제조·공정', '인공지능'), ['AI 에이전트', '생성형 AI'])
   assert.deepEqual(filterSettingsOptions(catalog.technologies, '제조·공정', ''), catalog.technologies[2].options)
   assert.deepEqual(filterSettingsOptions(catalog.industries, '전자·첨단제조', '없는 항목'), [])
+})
+
+test('신청 준비 기간은 미정 또는 1~365일의 정수로 입력하고 잘못된 값은 저장하지 않는다', () => {
+  for (const raw of ['', '1', '3', '10', '18', '21', '365']) {
+    const data = fixture()
+    data.criteria.preparationDays = parsePreparationDays(raw)
+    assert.equal(data.criteria.preparationDays, raw === '' ? null : Number(raw))
+    assert.equal(validateEvaluationSettings(data), '')
+  }
+  for (const raw of ['0', '366', '-1', '1.5', '1e2', 'abc', ' ', '999999999999999999999']) {
+    const data = fixture()
+    data.criteria.preparationDays = parsePreparationDays(raw)
+    assert.match(validateEvaluationSettings(data), /신청 준비 기간/)
+  }
+})
+
+test('긴급도 기준은 1~365일의 정수를 직접 입력하고 빈 값이나 소수는 저장하지 않는다', () => {
+  for (const raw of ['1', '3', '7', '10', '18', '365']) {
+    const data = fixture()
+    data.criteria.urgencyDays = parseUrgencyDays(raw)
+    assert.equal(data.criteria.urgencyDays, Number(raw))
+    assert.equal(validateEvaluationSettings(data), '')
+  }
+  for (const raw of ['', '0', '-1', '366', '1.5', '1e2', 'abc', ' ']) {
+    const data = fixture()
+    data.criteria.urgencyDays = parseUrgencyDays(raw)
+    assert.match(validateEvaluationSettings(data), /우선 확인 기간/)
+  }
 })
 
 test('정상 기본값은 저장 가능하고 회사명과 빈 선택은 거부한다', () => {

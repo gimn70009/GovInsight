@@ -39,9 +39,9 @@ class EvaluationCriteria(CamelCaseModel):
     roles: list[str] = Field(min_length=1, max_length=6)
     business_types: list[str] = Field(min_length=1, max_length=12)
     goals: list[str] = Field(min_length=1, max_length=3)
-    preparation_days: Literal[7, 14, 21, 30] | None = None
+    preparation_days: int | None = Field(default=None, ge=1, le=365, strict=True)
     participation_mode: Literal["ANY", "SOLO", "CONSORTIUM"]
-    urgency_days: Literal[3, 7, 14, 30]
+    urgency_days: int = Field(ge=1, le=365, strict=True)
     preset: Literal["FIT", "GROWTH", "FEASIBILITY"]
 
 
