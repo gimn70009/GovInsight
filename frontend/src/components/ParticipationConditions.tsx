@@ -119,22 +119,6 @@ function DetailClause({ text }: { text: string }) {
     {lines.slice(1).map((line, index) => <p key={index}>{line}</p>)}</div>
 }
 
-function Scope({ text }: { text: string }) {
-  const [expanded, setExpanded] = useState(false)
-  const id = useId()
-  const paragraphs = text.split(/\n+/u).map(line => line.trim()).filter(Boolean)
-  const long = text.length > 240 || paragraphs.length > 3
-  return <div className="participation-guide__scope">
-    <span>적용 대상·범위</span>
-    <div className="participation-guide__scope-content">
-      {long && <div className="participation-guide__scope-summary"><p>여러 대상과 공통 기준이 적용됩니다.</p>
-        <button type="button" className="business-summary__organization-toggle" aria-expanded={expanded}
-          aria-controls={id} onClick={() => setExpanded(value => !value)}>적용 범위 {expanded ? '접기' : '보기'}<ChevronDown size={13} aria-hidden="true" /></button></div>}
-      <div id={id} hidden={long && !expanded}>{paragraphs.map((line, index) => <p key={index}>{line}</p>)}</div>
-    </div>
-  </div>
-}
-
 function ReviewNotice({ section, detail }: { section: ReturnType<typeof groupParticipationRules>[number]; detail: DocumentDetail }) {
   const [open, setOpen] = useState(false)
   const id = useId()
@@ -151,7 +135,6 @@ function ReviewNotice({ section, detail }: { section: ReturnType<typeof groupPar
     <div id={id + '-content'} hidden={!open} className="participation-guide__review-content">
       <p className="participation-guide__review-note">{section.note}</p>
       {section.groups.map((group, index) => <div className="participation-guide__scope-group" key={group.scope ?? index}>
-        {group.scope && <Scope text={group.scope} />}
         <ul className="participation-guide__rules">{group.labels.flatMap(group => group.rules.map((item, index) =>
           <Rule key={group.label + item.text + index} item={item} detail={detail} showLabel />))}</ul>
       </div>)}
@@ -180,7 +163,6 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
           aria-labelledby={headingId + section.key}>
           <div className="participation-guide__section-title"><h4 id={headingId + section.key}>{section.title}</h4><span>{section.note}</span></div>
           {section.groups.map((group, index) => <div className="participation-guide__scope-group" key={group.scope ?? index}>
-            {group.scope && <Scope text={group.scope} />}
             <div className="participation-guide__table-wrap">
               <table className="participation-guide__table" aria-label={section.title + (group.scope ? ' · ' + group.scope : '')}>
                 <colgroup><col className="participation-guide__category-col" /><col /></colgroup>
@@ -201,30 +183,6 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
           <p>저장된 공고와 첨부에서 신청 자격을 확인하지 못했습니다. 조건이 없다는 뜻은 아니므로 공고 원문을 확인해 주세요.</p>
         </div>
       </div>}
-    </div>
-  </section>
-}
-
-export function EvaluationCriteria({ detail }: { detail: DocumentDetail }) {
-  const [open, setOpen] = useState(false)
-  const id = useId()
-  const sections = groupParticipationRules(detail.participationGuide, 'evaluation')
-  if (!sections.length) return null
-  return <section className="business-summary__card participation-guide participation-guide__evaluation" aria-labelledby={id + '-title'}>
-    <button type="button" className="participation-guide__evaluation-toggle" aria-expanded={open} aria-controls={id + '-content'} onClick={() => setOpen(value => !value)}>
-      <div><h3 id={id + '-title'}>평가 기준</h3><p>선정 평가에 반영되는 우대·가점과 감점을 확인하세요.</p></div>
-      <span>{open ? '접기' : '보기'}<ChevronDown size={16} aria-hidden="true" /></span>
-    </button>
-    <div className="business-summary__section-body" id={id + '-content'} hidden={!open}>
-      {sections.map(section => section.key === 'REVIEW' ? <ReviewNotice key={section.key} section={section} detail={detail} />
-        : <section key={section.key} className={'participation-guide__section is-' + section.key.toLowerCase()} aria-labelledby={id + section.key}>
-          <div className="participation-guide__section-title"><h4 id={id + section.key}>{section.title}</h4><span>{section.note}</span></div>
-          {section.groups.map((group, index) => <div className="participation-guide__scope-group" key={group.scope ?? index}>
-            {group.scope && <Scope text={group.scope} />}
-            <ul className="participation-guide__rules">{group.labels.flatMap(label => label.rules.map((item, index) =>
-              <Rule key={label.label + index} item={item} detail={detail} />))}</ul>
-          </div>)}
-        </section>)}
     </div>
   </section>
 }
