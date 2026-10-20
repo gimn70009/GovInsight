@@ -131,7 +131,7 @@ class AnalysisJobRequestServiceTest {
     }
 
     @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.CsvSource({"1,false,true", "21,false,true", "22,false,false", "22,true,true"})
+    @org.junit.jupiter.params.provider.CsvSource({"1,false,true", "21,false,true", "22,false,true", "23,false,false", "23,true,true"})
     void completedExclusionIsReusedWhileOldOrFailedPreparationIsRetried(
             int schemaVersion, boolean generationFailed, boolean requiresAnalysis
     ) {
@@ -143,7 +143,7 @@ class AnalysisJobRequestServiceTest {
                 {"sections":[],"documentType":"PROPOSAL_REQUEST","draftStatus":"REVIEW_REQUIRED",
                  "draftReason":"회사 적합도는 40점으로 생성 기준인 61점에 미달했습니다.",
                  "sourceAttachmentNames":[],"templateSections":[],"draftSections":[],
-                 "preparation":null,"preparationSchemaVersion":22}
+                 "preparation":null,"preparationSchemaVersion":23}
                 """, com.publicmonitor.backend.domain.analysis.web.dto.AnalysisResultRequest.Proposal.class);
         var stored = mapper.readTree(mapper.writeValueAsString(proposal));
         ((tools.jackson.databind.node.ObjectNode) stored).put("preparationSchemaVersion", schemaVersion);

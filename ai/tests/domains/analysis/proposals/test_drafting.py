@@ -867,8 +867,8 @@ def test_complete_long_eligibility_quote_retains_exception_and_requires_exact_so
     assert verified.detail != quote
     request.content_text = "사업과 관련된 일반 안내만 있습니다."
     request.attachments = []
-    with pytest.raises(ValueError, match="원문에서 확인되는 지원 조건이 없습니다"):
-        _retain_verified_source_references(proposal, request)
+    _retain_verified_source_references(proposal, request)
+    assert proposal.preparation.eligibility_checklist == []
     assert all(value.title != item.title for value in proposal.preparation.eligibility_checklist)
 
 
@@ -877,3 +877,57 @@ def test_requirement_source_rejects_excessive_quote_without_silently_truncating(
         RequirementSource(
             origin=EvidenceOrigin.NOTICE_BODY, section_title="신청 자격", excerpt="가" * 1201
         )
+
+
+@pytest.mark.parametrize("heading", ["지원조건", "지원내용", "사업비", "협약", "사후관리"])
+def test_excluded_sections_do_not_reenter_eligibility_via_source_supplement(heading: str) -> None:
+    from app.domains.analysis.proposals.drafting import _extract_high_confidence_requirements
+
+    request = document(with_attachment=False)
+    quote = "신청기관은 기업부설연구소 인정서를 보유해야 합니다."
+    request.content_text = f"1. {heading}\n가. 신청대상\n□ 신청자격\n{quote}"
+    draft = asyncio.run(ProposalRunner().generate(request, result()))
+    item = draft.preparation.eligibility_checklist[0]
+    item.source = RequirementSource(
+        origin=EvidenceOrigin.NOTICE_BODY, section_title="신청자격", excerpt=quote
+    )
+    draft.preparation.eligibility_checklist = [item]
+    _retain_verified_source_references(draft, request)
+    assert draft.preparation.eligibility_checklist == []
+    assert _extract_high_confidence_requirements(request) == []
+    # An empty, verified list is a valid analysis result, not an invented requirement or failure.
+    ProposalDraftOutput.model_validate(draft.model_dump())
+
+
+def test_nested_section_filter_preserves_next_application_section_and_zip_boundary() -> None:
+    from app.domains.analysis.proposals.drafting import _extract_high_confidence_requirements
+
+    request = document(with_attachment=False)
+    quote = "신청기관은 기업부설연구소 인정서를 보유해야 합니다."
+    request.content_text = (
+        "1.지원조건\n가. 신청대상\n창업 999년 이상 기업\n"
+        f"2.신청자격\n{quote}\n"
+        "3. 사후관리\n□ 신청대상\n창업 888년 이상 기업\n"
+        "[파일: 두 번째 공고.txt]\n□ 신청자격\n접수 마감일 기준 창업 3년 이상인 기업"
+    )
+    candidates = _extract_high_confidence_requirements(request)
+    excerpts = " ".join(candidate.excerpt for candidate in candidates)
+    assert quote in excerpts
+    assert "3년 이상" in excerpts
+    assert "999년" not in excerpts
+    assert "888년" not in excerpts
+
+
+def test_post_selection_item_is_not_an_application_requirement() -> None:
+    request = document(with_attachment=False)
+    quote = "선정 후 기업부설연구소 인정서를 보유해야 합니다."
+    request.content_text = quote
+    draft = asyncio.run(ProposalRunner().generate(request, result()))
+    item = draft.preparation.eligibility_checklist[0]
+    item.stage = RequirementStage.POST_SELECTION
+    item.source = RequirementSource(
+        origin=EvidenceOrigin.NOTICE_BODY, section_title="안내", excerpt=quote
+    )
+    draft.preparation.eligibility_checklist = [item]
+    _retain_verified_source_references(draft, request)
+    assert draft.preparation.eligibility_checklist == []

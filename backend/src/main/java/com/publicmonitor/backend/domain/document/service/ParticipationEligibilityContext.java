@@ -19,10 +19,6 @@ final class ParticipationEligibilityContext {
 
     private ParticipationEligibilityContext() {}
 
-    static boolean postAwardHeading(String line) {
-        return compact(line).matches("기술료.*(?:감면|납부유예).*");
-    }
-
     static boolean projectHeading(String line) {
         return PROJECT_HEADING.matcher(compact(line).replaceFirst("^[<\\[(（]", "")
                 .replaceFirst("^\\d+(?:-\\d+)?[.)]?", "")).matches();
@@ -61,6 +57,60 @@ final class ParticipationEligibilityContext {
                 || value.matches(".*(?:확보|조달|보유).*(?:기업|기관|사업자|자)(?:만|에한해|이어야|여야).*" )
                 || value.matches(".*(?:신청|접수)(?:시|전|마감일).*(?:확보|조달|증빙).*" );
         return money && terms && !applicantGate;
+    }
+
+    /** Source excerpts stay untouched; only independent non-application clauses are removed. */
+    static ParticipationCondition applicationOnly(ParticipationCondition row) {
+        if (row.reviewReason() == ParticipationReviewReason.PREFERENCE_NEGATED
+                || row.kind() == ParticipationKind.FUNDING || row.kind() == ParticipationKind.PREFERENCE
+                || row.kind() == ParticipationKind.DEDUCTION) return row;
+        var retained = new ArrayList<String>();
+        var input = new ArrayList<String>();
+        input.add(row.text());
+        input.addAll(row.details());
+        boolean removed = false;
+        for (String paragraph : input) {
+            var clauses = clauses(paragraph);
+            // Preserve standalone cost data for the existing hidden FUNDING section.
+            if (row.kind() != ParticipationKind.EXCLUSION && clauses.size() == 1 && fundingCondition(paragraph)) {
+                retained.add(paragraph);
+                removed = false;
+                continue;
+            }
+            for (String clause : clauses) {
+                if ((removed && dependentException(ParticipationConditionText.unmark(clause)))
+                        || nonApplicationClause(clause, row.kind() == ParticipationKind.EXCLUSION)) {
+                    removed = true;
+                } else {
+                    retained.add(clause);
+                    removed = false;
+                }
+            }
+        }
+        if (retained.isEmpty()) return null;
+        return new ParticipationCondition(row.kind(), row.category(), retained.getFirst(), row.scope(),
+                List.copyOf(retained.subList(1, retained.size())), row.source(), row.reviewReason());
+    }
+
+    private static List<String> clauses(String text) {
+        // Only split complete sentences or an explicit post-selection obligation, never AND/OR lists.
+        String separated = text.replaceAll("(?:이며|이고),?\\h*(?=선정\\h*후|선정된|협약\\h*체결\\h*후|사업\\h*수행\\h*중)", "입니다. ");
+        separated = separated.replaceAll("(집행(?:할\\h*수\\h*있|\\h*가능))으나\\h*(?=신청기업|신청기관)", "$1. ");
+        return List.of(separated.split("(?<=[.!?。])\\h+(?=[가-힣A-Za-z(*※])"));
+    }
+
+    private static boolean nonApplicationClause(String text, boolean exclusion) {
+        String value = compact(ParticipationConditionText.unmark(text));
+        boolean gate = exclusion || value.matches(".*(?:신청|참여)(?:할수없|불가|이제한|자격|대상|요건|가능|할수있).*" );
+        boolean possession = value.matches(".*(?:보유|등록(?:되어|된|한|을|이|해야)|인정받|인증받).*(?:기업|기관|사업자|해야|하여야|필수).*" );
+        if (value.matches(".*(?:선정후|선정된(?:기업|기관)|협약체결후|사업수행중|사업종료후|사후관리).*" )
+                && value.matches(".*(?:제출|보고|납부|부담|관리|협조|유지|이행|정산|사용|집행|의무).*" )) return true;
+        if (value.matches(".*(?:가점|우대점수|평가점수|평가배점).*(?:부여|적용|평가).*")) return true;
+        if (gate || possession) return false;
+        return fundingCondition(text)
+                || value.matches(".*(?:연구개발비|연구비|사업비|인건비|간접비|기술활용비).*(?:집행|지급|계상|편성|사용)(?:가능|불가|할수|해야|하여야).*" )
+                || value.matches("(?:정부지원금|지원금액|지원비율|지원기간|지원한도|지원규모|지원금|총사업비|정부지원연구개발비)(?:은|는|:|：|[0-9]).*(?:원|%|개월|년|지원|구성|부담).*" )
+                || value.matches(".*(?:사업계획서|신청서|확약서|등기부등본|사업자등록증|증명서|확인서|보고서|제출서류).*(?:제출|첨부|업로드|작성)(?:해야|하여야|이필수|가필수|필수|함|한다|합니다|할것|서류|[.]?$).*");
     }
 
     static List<ParticipationCondition> separateFunding(ParticipationCondition row) {

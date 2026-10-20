@@ -70,7 +70,9 @@ final class ParticipationConditionResolver {
         }
         var display = new LinkedHashMap<String, ParticipationCondition>();
         var sourcedConditions = new ArrayList<ParticipationCondition>();
-        for (var raw : result.values().stream().flatMap(row -> ParticipationEligibilityContext.separateFunding(row).stream()).toList()) {
+        for (var raw : result.values().stream()
+                .map(ParticipationEligibilityContext::applicationOnly).filter(java.util.Objects::nonNull)
+                .flatMap(row -> ParticipationEligibilityContext.separateFunding(row).stream()).toList()) {
             var row = ParticipationConditionText.prepare(raw);
             sourcedConditions.add(row);
             String identity = row.kind() + ":" + row.reviewReason() + ":" + key(row.text()) + ":" + key(row.scope()) + ":" + key(String.join(" ", row.details()));
@@ -93,12 +95,10 @@ final class ParticipationConditionResolver {
     private static String noticeText(String text) {
         StringBuilder result = new StringBuilder();
         boolean blocked = false;
-        boolean postAward = false;
-        for (String raw : text.substring(0, Math.min(MAX_TEXT, text.length())).split("\\R")) {
+        var sectionContext = new ParticipationSectionContext();
+        for (String raw : new ParticipationSourceLines(text.substring(0, Math.min(MAX_TEXT, text.length()))).lines()) {
             String line = raw.strip();
-            if (line.startsWith("[파일:")) postAward = false;
-            if (line.matches("^[□■▶▷].*")) postAward = ParticipationEligibilityContext.postAwardHeading(clean(line));
-            if (postAward) continue;
+            if (sectionContext.excludes(line)) continue;
             if (line.startsWith("[파일:")) {
                 int end = line.indexOf(']');
                 blocked = end < 0 || !allowedFile(line.substring(4, end).strip());
@@ -118,20 +118,18 @@ final class ParticipationConditionResolver {
         String[] lines = sourceLines.lines();
         Block block = null;
         boolean blocked = false;
-        boolean postAward = false;
+        var sectionContext = new ParticipationSectionContext();
         String program = "";
         String introduction = text.substring(0, Math.min(text.length(), 1800)).replaceAll("\\s+", " ");
         boolean separateBeneficiary = introduction.matches(".*주관기관.{0,40}모집.*")
                 && introduction.matches(".*창업기업.{0,40}별도.{0,10}공고.*");
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i].strip();
-            if (line.startsWith("[파일:")) postAward = false;
-            if (line.matches("^[□■▶▷].*")) {
-                boolean nextPostAward = ParticipationEligibilityContext.postAwardHeading(clean(line));
-                if (nextPostAward) { emit(block, fileName, result); block = null; }
-                postAward = nextPostAward;
+            if (sectionContext.excludes(line)) {
+                emit(block, fileName, result);
+                block = null;
+                continue;
             }
-            if (postAward) continue;
             String fundTitle = fundTitle(line, i > 0 ? lines[i - 1].strip() : "");
             if (fundTitle != null) {
                 emit(block, fileName, result);

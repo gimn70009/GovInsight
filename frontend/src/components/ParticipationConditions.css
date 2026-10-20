@@ -3,7 +3,7 @@
 .participation-guide__variants { display: flex; flex-wrap: wrap; gap: 10px 24px; margin-top: 0; padding: 13px 16px; border: 1px solid #dce5ef; background: #fff; border-radius: 8px; font-size: 12px; line-height: 1.7; }
 .participation-guide__variants strong { margin-right: 9px; }
 .participation-guide__section { margin-top: 27px; }
-.participation-guide__section:first-child, .participation-guide__review:first-child { margin-top: 0; }
+.participation-guide__section:first-child { margin-top: 0; }
 .participation-guide__section-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 12px; }
 .participation-guide__section-title::before { content: ''; width: 3px; height: 16px; border-radius: 2px; background: #3974c7; }
 .is-targeted > .participation-guide__section-title::before { background: #bd842e; }
@@ -27,21 +27,6 @@
 .participation-guide__clauses li { padding-left: 2px; white-space: pre-line; }
 .participation-guide__clauses li + li { margin-top: 5px; }
 .participation-guide__clauses li::marker { color: #91a6bd; }
-.participation-guide__review { margin-top: 24px; border: 1px solid #e6dcc9; border-radius: 10px; background: #fffcf6; overflow: hidden; }
-.participation-guide__review-toggle { display: flex; align-items: center; gap: 9px; width: 100%; padding: 15px 18px; border: 0; background: transparent; color: #756039; cursor: pointer; text-align: left; font: inherit; }
-.participation-guide__review-toggle:hover { background: #fbf5e9; }
-.participation-guide__review-toggle:focus-visible { outline: 2px solid #a77932; outline-offset: -3px; border-radius: 9px; }
-.participation-guide__review-toggle > svg { flex-shrink: 0; }
-.participation-guide__review-title { font-size: 13px; font-weight: 650; line-height: 1.6; word-break: keep-all; overflow-wrap: anywhere; }
-.participation-guide__review-count { flex-shrink: 0; padding: 2px 7px; border-radius: 5px; background: #f2e9d8; font-size: 11px; }
-.participation-guide__review-action { margin-left: auto; flex-shrink: 0; font-size: 12px; }
-.participation-guide__review-toggle > svg:last-child { transition: transform .15s; }
-.participation-guide__review-content { padding: 0 18px 18px; }
-.participation-guide__review-note { margin: 0 0 16px; padding: 14px 0 0; border-top: 1px solid #eee4d4; font-size: 12px; color: #7a6542; line-height: 1.8; }
-.participation-guide__review-label { display: block; margin-bottom: 5px; color: #7a6542; font-size: 11px; font-weight: 500; }
-.participation-guide__review .participation-guide__main { font-weight: 650; line-height: 1.85; overflow-wrap: anywhere; }
-.participation-guide__review-reason { margin: 5px 0 0; color: #6b6254; font-size: 12px; line-height: 1.85; word-break: keep-all; overflow-wrap: anywhere; }
-.participation-guide__review .participation-guide__rule + .participation-guide__rule { margin-top: 15px; padding-top: 15px; border-color: #eee4d4; }
 .participation-guide button[aria-expanded="true"] > svg:last-child { transform: rotate(180deg); }
 .participation-guide .participation-guide__source { margin-top: 13px; padding: 15px; }
 .participation-guide__source blockquote { max-height: 360px; overflow-y: auto; padding-right: 10px; }
@@ -60,10 +45,6 @@
   .participation-guide__table th, .participation-guide__table td { padding: 14px; }
 }
 @media (max-width: 520px) {
-  .participation-guide__review-toggle { padding: 13px 12px; gap: 7px; }
-  .participation-guide__review-action { display: none; }
-  .participation-guide__review-toggle > svg:last-child { margin-left: auto; }
-  .participation-guide__review-content { padding: 0 12px 14px; }
   .participation-guide__table colgroup { display: none; }
   .participation-guide__table tbody, .participation-guide__table tr, .participation-guide__table th, .participation-guide__table td { display: block; width: 100%; box-sizing: border-box; }
   .participation-guide__table th { padding: 9px 14px; border-bottom: 1px solid #e8edf3; }

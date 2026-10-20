@@ -53,6 +53,67 @@ class ParticipationDuplicateTest {
                 });
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void CBAM_예외_제목의_괄호_공백만_다른_첨부는_조건과_예외를_한번씩_표시한다(boolean reversed) throws Exception {
+        String original;
+        try (var stream = getClass().getResourceAsStream("/submission-documents/cbam-structured.txt")) {
+            original = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+        }
+        String spaced = original.replace("조건 예외 대상(", "조건 예외 대상 (");
+        var a = file("CBAM 공고.hwpx", original);
+        var b = file("CBAM 공고.pdf", spaced);
+        var guide = ParticipationConditionResolver.resolve(null, reversed ? List.of(b, a) : List.of(a, b), null);
+        var single = ParticipationConditionResolver.resolve(null, List.of(a), null);
+        for (String label : List.of("세금 체납", "채무불이행")) {
+            var expected = single.rules().stream().filter(rule -> rule.label().equals(label)).findFirst().orElseThrow();
+            assertThat(guide.rules().stream().filter(rule -> rule.label().equals(label)).toList())
+                    .singleElement().satisfies(rule -> {
+                        assertThat(rule.text()).isEqualTo(expected.text());
+                        assertThat(rule.exceptions()).isEqualTo(expected.exceptions());
+                        assertThat(rule.sources()).hasSize(2).allSatisfy(source ->
+                                assertThat(source.attachmentName().endsWith("hwpx") ? original : spaced).contains(source.excerpt()));
+                    });
+        }
+        Path output = Path.of("build/participation-guide-checks/cbam-combined-guide.json");
+        Files.createDirectories(output.getParent());
+        Files.writeString(output, new ObjectMapper().writeValueAsString(guide), StandardCharsets.UTF_8);
+    }
+
+    @Test
+    void 최종_안내체로_같아지는_세부조건은_정리한_뒤_중복을_합친다() {
+        var a = row("제조업 소상공인", List.of("인증 유효기간은 공고 기준에 따름"), "a");
+        var b = row("제조업 소상공인", List.of("인증 유효기간은 공고 기준에 따릅니다."), "b");
+        for (var inputs : List.of(List.of(a, b), List.of(b, a))) {
+            assertThat(ParticipationGuidePresentation.rules(inputs)).singleElement().satisfies(rule -> {
+                assertThat(rule.details()).containsExactly("인증 유효기간은 공고 기준에 따릅니다.");
+                assertThat(rule.sources()).containsExactlyInAnyOrder(a.source(), b.source());
+            });
+        }
+    }
+
+    @Test
+    void 같은_제외_문장도_예외_기준일이_다르면_합치지_않는다() {
+        var a = new ParticipationCondition(ParticipationKind.EXCLUSION, "세금 체납", "국세 또는 지방세 체납 중인 자(기업)",
+                null, List.of("< 조건 예외 대상(신청 마감일 기준) >", "완납한 기업"), row("원문 A", List.of(), "a").source());
+        var b = new ParticipationCondition(a.kind(), a.category(), a.text(), null,
+                List.of("< 조건 예외 대상 (협약일 기준) >", "완납한 기업"), row("원문 B", List.of(), "b").source());
+        assertThat(ParticipationGuidePresentation.rules(List.of(a, b))).hasSize(2).allSatisfy(rule -> {
+            assertThat(rule.exceptions()).hasSize(2);
+            assertThat(rule.sources()).hasSize(1);
+        });
+    }
+
+    @Test
+    void 문자가_손상된_서로_다른_원문을_공통_안내문으로_합치지_않는다() {
+        var a = row("제조업 소상공인", List.of("매출액 1.5억원 이\uFFFD상"), "a");
+        var b = row("제조업 소상공인", List.of("매출액 15억원 이\uFFFD상"), "b");
+        assertThat(ParticipationGuidePresentation.rules(List.of(a, b))).hasSize(2).allSatisfy(rule -> {
+            assertThat(rule.section()).isEqualTo("REVIEW");
+            assertThat(rule.sources()).hasSize(1);
+        });
+    }
+
     @Test
     void 번호_조건_앞의_분리된_표_라벨만_표시문에서_제외한다() {
         assertThat(ParticipationConditionText.paragraphs(List.of("- 신청조건 ①, ②를 모두 충족하여야 함",

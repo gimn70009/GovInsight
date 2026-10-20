@@ -275,7 +275,7 @@ class PreparationChecklistItem(CamelCaseModel):
         return self
 
 
-PREPARATION_SCHEMA_VERSION = 22
+PREPARATION_SCHEMA_VERSION = 23
 
 
 class StrategyCapabilityMatch(CamelCaseModel):
@@ -344,7 +344,7 @@ class ProposalPreparation(CamelCaseModel):
     submission_review_notes: list[Annotated[str, Field(min_length=1, max_length=500)]] = Field(
         default_factory=list, max_length=64,
     )
-    eligibility_checklist: list[PreparationChecklistItem] = Field(min_length=1, max_length=12)
+    eligibility_checklist: list[PreparationChecklistItem] = Field(max_length=12)
     # Preserve up to 12 document items reclassified from the eligibility checklist.
     submission_documents: list[PreparationChecklistItem] = Field(
         default_factory=list, max_length=27,

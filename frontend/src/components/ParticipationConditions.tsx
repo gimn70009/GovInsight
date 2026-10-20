@@ -1,8 +1,8 @@
 import { useId, useState } from 'react'
-import { ChevronDown, ClipboardCheck, ExternalLink, Info } from 'lucide-react'
+import { ChevronDown, ClipboardCheck, ExternalLink } from 'lucide-react'
 import type { DocumentDetail, ParticipationRule } from '../api/types'
 import { evidenceAttachment } from '../utils/businessSummary'
-import { applicationTypeSentence, groupParticipationRules, type PresentedParticipationRule } from '../utils/participationGuide'
+import { applicationTypeSentence, groupParticipationRules } from '../utils/participationGuide'
 import './ParticipationConditions.css'
 
 type RuleSource = ParticipationRule['sources'][number]
@@ -42,13 +42,13 @@ function RuleEvidence({ item, detail }: { item: ParticipationRule; detail: Docum
   </div>
 }
 
-function Rule({ item, detail, showLabel = false }: { item: PresentedParticipationRule; detail: DocumentDetail; showLabel?: boolean }) {
+function Rule({ item, detail }: { item: ParticipationRule; detail: DocumentDetail }) {
   const [openPanel, setOpenPanel] = useState<'details' | 'evidence' | null>(null)
   const id = useId()
   const hasDetails = item.details.length + item.exceptions.length + item.guidance.length > 0
   const toggle = (panel: 'details' | 'evidence') => setOpenPanel(current => current === panel ? null : panel)
   const typeSentence = applicationTypeSentence(item, detail.participationGuide?.variants)
-  const displayTitle = item.review?.title ?? typeSentence ?? item.text
+  const displayTitle = typeSentence ?? item.text
   const criteria = item.details.filter(text => !text.startsWith('법적 자격 기준: '))
   const legalCriteria = item.details.filter(text => text.startsWith('법적 자격 기준: ')).map(text => text.slice('법적 자격 기준: '.length))
   const detailsLabel = item.exceptions.length > 0 ? '세부 조건·예외' : '세부 조건'
@@ -56,10 +56,8 @@ function Rule({ item, detail, showLabel = false }: { item: PresentedParticipatio
   return <li className="participation-guide__rule">
     <div className="participation-guide__rule-heading">
       <div className="participation-guide__description">
-        {showLabel && !item.review && item.label !== '참여 자격' && <span className="participation-guide__review-label">{item.label}</span>}
         {item.audience && !typeSentence && <p className="participation-guide__audience"><span>적용 대상</span>{item.audience}</p>}
         <RuleSummary text={displayTitle} />
-        {item.review && <p className="participation-guide__review-reason">{item.review.reason}</p>}
       </div>
       <div className="participation-guide__actions">
         {hasDetails && <button type="button"
@@ -119,32 +117,9 @@ function DetailClause({ text }: { text: string }) {
     {lines.slice(1).map((line, index) => <p key={index}>{line}</p>)}</div>
 }
 
-function ReviewNotice({ section, detail }: { section: ReturnType<typeof groupParticipationRules>[number]; detail: DocumentDetail }) {
-  const [open, setOpen] = useState(false)
-  const id = useId()
-  const count = section.groups.reduce((total, group) => total + group.labels.reduce((sum, label) => sum + label.rules.length, 0), 0)
-  return <aside className="participation-guide__review" role="note" aria-labelledby={id + '-title'}>
-    <button type="button" className="participation-guide__review-toggle" aria-expanded={open} aria-controls={id + '-content'}
-      onClick={() => setOpen(value => !value)}>
-      <Info size={17} aria-hidden="true" />
-      <span id={id + '-title'} className="participation-guide__review-title">{section.title}</span>
-      <span className="participation-guide__review-count">{count}건</span>
-      <span className="participation-guide__review-action" aria-hidden="true">{open ? '접기' : '펼치기'}</span>
-      <ChevronDown size={16} aria-hidden="true" />
-    </button>
-    <div id={id + '-content'} hidden={!open} className="participation-guide__review-content">
-      <p className="participation-guide__review-note">{section.note}</p>
-      {section.groups.map((group, index) => <div className="participation-guide__scope-group" key={group.scope ?? index}>
-        <ul className="participation-guide__rules">{group.labels.flatMap(group => group.rules.map((item, index) =>
-          <Rule key={group.label + item.text + index} item={item} detail={detail} showLabel />))}</ul>
-      </div>)}
-    </div>
-  </aside>
-}
-
 export function ParticipationConditions({ detail }: { detail: DocumentDetail }) {
   const sections = groupParticipationRules(detail.participationGuide, 'eligibility')
-  const review = sections.find(section => section.key === 'REVIEW')
+    .filter(section => section.key !== 'REVIEW')
   const variants = detail.participationGuide?.variants ?? []
   const headingId = useId()
   return <section className="business-summary__card participation-guide" aria-labelledby={headingId}>
@@ -159,7 +134,7 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
         {variants.length > 0 && <div className="participation-guide__variants" aria-label="지원 유형의 의미">
           {variants.map(variant => <span key={variant.name}><strong>{variant.name}</strong>{variant.description}</span>)}
         </div>}
-        {sections.filter(section => section.key !== 'REVIEW').map(section => <section key={section.key} className={'participation-guide__section is-' + section.key.toLowerCase()}
+        {sections.map(section => <section key={section.key} className={'participation-guide__section is-' + section.key.toLowerCase()}
           aria-labelledby={headingId + section.key}>
           <div className="participation-guide__section-title"><h4 id={headingId + section.key}>{section.title}</h4><span>{section.note}</span></div>
           {section.groups.map((group, index) => <div className="participation-guide__scope-group" key={group.scope ?? index}>
@@ -175,7 +150,6 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
             </div>
           </div>)}
         </section>)}
-        {review && <ReviewNotice key={detail.detectionId} section={review} detail={detail} />}
         <p className="business-summary__footnote">공고에서 확인된 기준을 정리한 안내입니다. 우리 회사의 신청 가능 여부를 판정한 결과는 아닙니다.</p>
       </> : <div className="participation-guide__empty" role="status">
         <ClipboardCheck size={21} aria-hidden="true" />
