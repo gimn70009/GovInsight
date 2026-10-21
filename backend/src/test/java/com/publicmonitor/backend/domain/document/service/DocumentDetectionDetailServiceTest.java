@@ -277,6 +277,49 @@ class DocumentDetectionDetailServiceTest {
         }
     }
 
+
+    @Test
+    void 기존_일본_공고를_조회할_때_원문을_변경하지_않고_접수기관만_반환한다() throws Exception {
+        String text;
+        try (var stream = getClass().getResourceAsStream("/organizations/japan-globalstars.txt")) {
+            text = new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        LocalDateTime now = LocalDateTime.of(2026, 10, 12, 9, 0);
+        MonitoringSource source = MonitoringSource.create("한국산업기술진흥원", "사업공고", null,
+                "https://www.kiat.or.kr", null, 2, true);
+        MonitoringRun run = MonitoringRun.create(MonitoringTriggerType.MANUAL, 1, now);
+        MonitoringRunSource runSource = MonitoringRunSource.create(run, source);
+        Document document = Document.create(source, "https://www.kiat.or.kr/notice", "japan", now);
+        String body = "2026년도 일본 다자간 국제공동기술개발사업 공고";
+        DocumentVersion version = DocumentVersion.create(document, 1, body, body, "a".repeat(64), now, 1, now);
+        ReflectionTestUtils.setField(version, "id", 3L);
+        DocumentDetection detection = DocumentDetection.create(runSource, document, version,
+                DocumentChangeType.NEW_DOCUMENT, now);
+        ReflectionTestUtils.setField(detection, "id", 4L);
+        DocumentAttachment attachment = DocumentAttachment.create(version, "첨부 일체.zip",
+                "https://example.org/attachments.zip", "zip", "application/zip", 1L, "b".repeat(64),
+                text, AttachmentParseStatus.COMPLETED, null);
+        given(detectionRepository.findById(4L)).willReturn(Optional.of(detection));
+        given(analysisRepository.findByDocumentVersionId(3L)).willReturn(Optional.empty());
+        given(attachmentRepository.findAllByDocumentVersionId(3L)).willReturn(List.of(attachment));
+
+        var response = service().findById(4L);
+
+        assertThat(response.responsibleOrganizations()).extracting(item -> item.name())
+                .containsExactly("유레카 사무국", "한국산업기술진흥원");
+        assertThat(response.responsibleOrganizations()).allSatisfy(item -> {
+            assertThat(item.role()).isEqualTo("접수처");
+            assertThat(text).contains(item.excerpt());
+        });
+        assertThat(response.analysis()).isNull();
+        assertThat(version.getContentText()).isEqualTo(body);
+        assertThat(attachment.getExtractedText()).isEqualTo(text);
+        org.mockito.Mockito.verify(analysisRepository, org.mockito.Mockito.never())
+                .save(org.mockito.ArgumentMatchers.any());
+        org.mockito.Mockito.verify(attachmentRepository, org.mockito.Mockito.never())
+                .save(org.mockito.ArgumentMatchers.any());
+    }
+
     private String opportunityJson() {
         return """
                 {"dimensions":[

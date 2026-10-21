@@ -23,15 +23,25 @@ final class ResponsibleOrganizationExtractor {
             "^(?:" + SPACED_ROLES + ")(?=$|\\h|[:：|])");
     private static final Pattern NAME = Pattern.compile(
             "^((?:\\([재사]\\)\\h*)?[가-힣A-Za-z][가-힣A-Za-z0-9·ㆍ‧∙&.\\-\\h]{1,78}?"
-                    + "(?:공단|재단|협회|진흥원|진흥회|연구원|연구소|센터|대학교|대학|공사|기술원|개발원|평가원|지원단|사업단|조합|상공회의소|테크노파크|위원회|청|부|원|시|도))"
+                    + "(?:공단|재단|협회|진흥원|진흥회|연구원|연구소|센터|대학교|대학|공사|기술원|개발원|평가원|지원단|사업단|사무국|조합|상공회의소|테크노파크|위원회|청|부|원|시|도))"
                     + "(?=$|[\\h,;/|()])");
     private static final Pattern PLACEHOLDER = Pattern.compile(
             "(?i)예시|견본|가칭|미정|추후|모집|선정|기재|작성|입력|해당|각\\s*기관|전문기업|중소기업$|(?:^|[가-힣])(?:OO|XX)|[○□ㅇ]{2}");
     private static final Pattern FORM_HEADING = Pattern.compile(
-            "^[\\h\\[<(【]*(?:붙임|별첨|별지|서식)\\h*(?:제\\h*)?\\d|^[\\h\\[<(【]*(?:사업계획서|신청서|공적조서|동의서)");
+            "^[\\h\\[<(【]*(?:붙임|별첨|별지|서식)\\h*(?:제\\h*)?\\d|^[\\h\\[<(【]*(?:(?:사업|연구개발)계획서|신청서|공적조서|동의서)");
     private static final Pattern EXAMPLE_HEADING = Pattern.compile("^.{0,12}(?:작성\\h*예시|작성\\h*예제|작성\\h*견본)");
-    private static final Pattern NON_NOTICE_FILE = Pattern.compile("(?i)예시|견본|FAQ|참고자료|신청서|계획서|동의서|서식|양식|협약서");
+    private static final Pattern NON_NOTICE_FILE = Pattern.compile("(?i)예시|견본|FAQ|참고자료|신청서|계획서|동의서|서식|양식|협약서|확인서|증명서|인정서|서약서");
     private static final Pattern NOTICE_FILE = Pattern.compile("공고|모집|안내");
+    private static final Pattern ARCHIVE_ENTRY = Pattern.compile("(?m)^\\[파일: ([^\\r\\n]+)]\\h*$");
+    private static final Pattern NON_NAME_PREFIX = Pattern.compile(
+            "^(?:및|또는|와|과)(?=$|\\h)|^(?:(?:주관|공동|참여|국내|국외)\\h*)?(?:연구개발기관|연구기관)(?=$|\\h)");
+    private static final Pattern GENERIC_NAME = Pattern.compile(
+            "(?:(?:참여|책임|공동|소속|담당|실습|학생|신규|선임|수석)?연구원|연구책임자|담당자|직원|"
+                    + "(?:국내|국외|공공|민간|영리|비영리)?(?:연구기관|연구소|기업부설연구소|대학|대학교|의료기관|사무국|기업))");
+    private static final Pattern DOCUMENT_AFTER_NAME = Pattern.compile(
+            "^\\h*(?:인정서|확인서|증명서|재직증명서|등록증|신청서|동의서|서약서|계획서|보고서)(?=$|[\\h,;/|()])");
+    private static final Pattern NAME_SEPARATOR = Pattern.compile("^(?:[,/;]\\h*|및\\h+)");
+
     private static final Pattern OTHER_CONTEXT = Pattern.compile("전년도|지난해|타\\h*사업|다른\\h*사업|참고\\h*사업|작성\\h*예시|예\\h*[:：]");
 
     private ResponsibleOrganizationExtractor() {}
@@ -42,7 +52,7 @@ final class ResponsibleOrganizationExtractor {
         for (var attachment : attachments) {
             String fileName = attachment.getFileName();
             if (attachment.getParseStatus() != AttachmentParseStatus.COMPLETED
-                    || (NON_NOTICE_FILE.matcher(fileName).find() && !NOTICE_FILE.matcher(fileName).find())) continue;
+                    || isNonNoticeFile(fileName)) continue;
             collect(attachment.getExtractedText(), attachment, found);
         }
         // A contact entry need not repeat an institution already identified with its operating role.
@@ -58,7 +68,32 @@ final class ResponsibleOrganizationExtractor {
                                 LinkedHashMap<String, ResponsibleOrganization> found) {
         if (text == null || text.isBlank()) return;
         String bounded = text.substring(0, Math.min(text.length(), MAX_TEXT_LENGTH));
-        String[] lines = bounded.replace('\u00a0', ' ').replace("\u200b", "").split("\\R+");
+        var entry = ARCHIVE_ENTRY.matcher(bounded);
+        if (!entry.find()) {
+            collectDocument(bounded, attachment, found);
+            return;
+        }
+        // ZIP members retain their own filename and context: a form is not a notice,
+        // and a role at one file's end must never use a name from the next file.
+        String fileName = entry.group(1);
+        int start = entry.end();
+        while (true) {
+            boolean hasNext = entry.find();
+            int end = hasNext ? entry.start() : bounded.length();
+            if (!isNonNoticeFile(fileName)) collectDocument(bounded.substring(start, end), attachment, found);
+            if (!hasNext) break;
+            fileName = entry.group(1);
+            start = entry.end();
+        }
+    }
+
+    private static boolean isNonNoticeFile(String fileName) {
+        return NON_NOTICE_FILE.matcher(fileName).find() && !NOTICE_FILE.matcher(fileName).find();
+    }
+
+    private static void collectDocument(String text, DocumentAttachment attachment,
+                                        LinkedHashMap<String, ResponsibleOrganization> found) {
+        String[] lines = text.replace('\u00a0', ' ').replace("\u200b", "").split("\\R+");
         int tableEnd = -1;
         boolean form = false;
         boolean example = false;
@@ -189,16 +224,20 @@ final class ResponsibleOrganizationExtractor {
         var names = new ArrayList<String>();
         String remaining = value;
         while (!remaining.isBlank() && names.size() < 8) {
-            if (ROLE_PREFIX.matcher(remaining).find()) break;
+            if (ROLE_PREFIX.matcher(remaining).find() || NON_NAME_PREFIX.matcher(remaining).find()) break;
             var name = NAME.matcher(remaining);
             if (!name.find()) break;
             String candidate = name.group(1).replaceAll("\\h+", " ").strip();
-            if (PLACEHOLDER.matcher(candidate).find()) break;
+            String tail = remaining.substring(name.end());
+            if (PLACEHOLDER.matcher(candidate).find()
+                    || GENERIC_NAME.matcher(candidate.replaceAll("\\h", "")).matches()
+                    || DOCUMENT_AFTER_NAME.matcher(tail).find()) break;
             names.add(candidate);
-            remaining = remaining.substring(name.end()).strip();
-            // Only explicit list separators join multiple institutions; departments/phones are not names.
-            if (!remaining.matches("^[,/;].*")) break;
-            remaining = remaining.substring(1).strip();
+            remaining = tail.strip();
+            // A conjunction can join complete names, but cannot start an institution name.
+            var separator = NAME_SEPARATOR.matcher(remaining);
+            if (!separator.find()) break;
+            remaining = remaining.substring(separator.end()).strip();
         }
         return names;
     }
