@@ -12,6 +12,9 @@ final class ParticipationSectionContext {
             + "|제출서류|신청서류|구비서류|선정절차|평가방법|평가기준|평가및선정|선정평가";
     private static final Pattern EXCLUDED_TITLE = Pattern.compile(
             "^(?:" + EXCLUDED + ")(?:[)）]?[:：].*|[)）]?|[（(].*[)）])$");
+    private final boolean categorized;
+    ParticipationSectionContext() { this(false); }
+    ParticipationSectionContext(boolean categorized) { this.categorized = categorized; }
     private Integer excludedLevel;
     private boolean pendingNumber;
     private final Set<Integer> establishedLevels = new HashSet<>();
@@ -37,6 +40,8 @@ final class ParticipationSectionContext {
                 .replaceFirst("[>〉]$", "");
         boolean excluded = EXCLUDED_TITLE.matcher(title).matches()
                 || title.matches("기술료.*(?:감면|납부유예).*");
+        if (categorized && title.matches("(?:평가방법|평가기준|평가및선정|선정평가|선정절차|제출서류|신청서류|구비서류|지원조건|지원내용|정부지원연구개발비지원기준|사업비(?:구성|부담)|연구개발비(?:구성|부담|지원기준))(?:[:：].*)?"))
+            excluded = false;
         boolean numbered = splitNumber || line.matches("^(?:\\d+(?:-\\d+)*[.)]\\h*|\\d+(?:-\\d+)*\\h+|[Ⅰ-ⅩIVX]+[.)]?\\h+).*");
         boolean letter = line.matches("^[가-하][.)]\\h*.*");
         boolean square = line.matches("^[□■▶▷].*");

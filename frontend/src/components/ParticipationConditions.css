@@ -85,3 +85,25 @@
 .participation-guide__detail-clause > strong { display: block; margin-bottom: 7px; color: #294c72; font-size: 13px; }
 .participation-guide__detail-clause > p { margin: 5px 0 0; line-height: 1.85; }
 .is-deduction > .participation-guide__section-title::before { background: #ab6674; }
+
+.participation-guide__intro { margin: 0 0 22px; color: #61758c; font-size: 12px; line-height: 1.8; }
+.participation-guide__table thead th { padding-top: 10px; padding-bottom: 10px; background: #eef3fa; color: #526b88; font-size: 12px; border-bottom: 1px solid #dfe7f1; }
+.participation-guide__category-col { width: 190px; }
+.participation-guide__missing { color: #8290a1; font-size: 12px; }
+.participation-guide__missing.is-unread { color: #8a6d3b; }
+.participation-guide__scope { margin: 0 0 8px; font-size: 12px; line-height: 1.7; color: #536b83; white-space: pre-line; }
+.participation-guide__badges { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+.participation-guide__badges:empty { display: none; }
+.participation-guide__badges span { padding: 2px 7px; color: #62758c; background: #f0f4f9; border-radius: 4px; font-size: 11px; font-weight: 500; }
+.participation-guide__badges .is-exclusion { color: #9a4c50; background: #fff1f1; }
+.participation-guide__badges .is-preference { color: #347965; background: #edf7f1; }
+.participation-guide__context { margin: 8px 0 0; white-space: pre-line; font-size: 12px; line-height: 1.85; color: #536b83; }
+@media (max-width: 720px) { .participation-guide__category-col { width: 140px; } }
+@media (max-width: 520px) {
+  .participation-guide__table thead { display: none; }
+  .participation-guide__table td { padding: 13px 14px; }
+}
+
+.participation-guide__progress { margin: 0 0 24px; padding: 16px 18px; border: 1px solid #d8e5f5; border-radius: 8px; background: #f7faff; color: #45627f; font-size: 13px; line-height: 1.8; }
+.participation-guide__progress p { margin: 5px 0 0; color: #61758c; }
+.participation-guide__pending-row { flex: 1; margin: 0; color: #61758c; font-size: 13px; line-height: 1.8; }

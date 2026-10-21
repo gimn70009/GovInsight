@@ -65,7 +65,32 @@ public record DocumentDetectionDetailResponse(
     }
 
     public record ParticipationGuide(List<ParticipationCondition> conditions, List<ParticipationRule> rules,
-                                     List<ParticipationVariant> variants) {}
+                                     List<ParticipationVariant> variants, List<ParticipationCategory> categories,
+                                     String rewriteStatus) {
+        public ParticipationGuide(List<ParticipationCondition> conditions, List<ParticipationRule> rules,
+                                  List<ParticipationVariant> variants, List<ParticipationCategory> categories) {
+            this(conditions, rules, variants, categories, null);
+        }
+        public ParticipationGuide(List<ParticipationCondition> conditions, List<ParticipationRule> rules,
+                                  List<ParticipationVariant> variants) {
+            this(conditions, rules, variants, List.of());
+        }
+    }
+
+    @Schema(description = "8개 고정 분류. 각 분류의 세부 항목은 명시 여부와 관계없이 반환")
+    public record ParticipationCategory(String code, String label, List<ParticipationCriterionRow> rows) {}
+    public record ParticipationCriterionRow(String code, String label,
+            @Schema(description = "STATED / NOT_STATED / REVIEW_REQUIRED") String status,
+            List<ParticipationCriterionEntry> entries) {}
+    public record ParticipationCriterionEntry(ParticipationRule rule,
+            @Schema(description = "분리 전 연결 문장. 조건의 대상·기준일·논리관계 보존") String context,
+            @Schema(description = "ALTERNATIVE: 선택 관계, LINKED: 같은 문장에서 분리, null: 독립 항목") String relation,
+            List<String> relatedCriteria, String displayStatus) {
+        public ParticipationCriterionEntry(ParticipationRule rule, String context, String relation,
+                                           List<String> relatedCriteria) {
+            this(rule, context, relation, relatedCriteria, null);
+        }
+    }
 
     public record ParticipationRule(String section, String label, String text, String scope, String audience,
                                     List<String> details, List<String> exceptions, List<String> guidance,

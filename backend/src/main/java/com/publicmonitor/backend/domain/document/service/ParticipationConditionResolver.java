@@ -33,6 +33,16 @@ final class ParticipationConditionResolver {
     private ParticipationConditionResolver() {}
 
     static ParticipationGuide resolve(String body, List<DocumentAttachment> attachments, Preparation preparation) {
+        return resolve(body, attachments, preparation, true);
+    }
+
+    static ParticipationGuide candidates(String body, List<DocumentAttachment> attachments, Preparation preparation) {
+        var raw = resolve(body, attachments, preparation, false);
+        return new ParticipationGuide(raw.conditions(), ParticipationRawSources.collect(body, attachments), raw.variants(), List.of());
+    }
+
+    private static ParticipationGuide resolve(String body, List<DocumentAttachment> attachments,
+                                               Preparation preparation, boolean project) {
         var result = new LinkedHashMap<String, ParticipationCondition>();
         collect(body, null, result);
         for (var file : attachments) {
@@ -84,8 +94,28 @@ final class ParticipationConditionResolver {
         attachments.stream().filter(file -> file.getParseStatus() == AttachmentParseStatus.COMPLETED
                 && allowedFile(file.getFileName()) && file.getExtractedText() != null)
                 .forEach(file -> texts.add(noticeText(file.getExtractedText())));
-        return new ParticipationGuide(conditions, ParticipationGuidePresentation.rules(sourcedConditions),
-                ParticipationGuidePresentation.variants(texts));
+        var rules = ParticipationGuidePresentation.rules(sourcedConditions);
+        var expanded = new LinkedHashMap<String, ParticipationCondition>();
+        collectCategories(body, null, expanded);
+        attachments.stream().filter(file -> file.getParseStatus() == AttachmentParseStatus.COMPLETED && allowedFile(file.getFileName()))
+                .forEach(file -> collectCategories(file.getExtractedText(), file.getFileName(), expanded));
+        var categorizedConditions = new ArrayList<>(sourcedConditions);
+        expanded.values().stream().map(ParticipationEligibilityContext::applicationOnly).filter(java.util.Objects::nonNull)
+                .flatMap(row -> ParticipationEligibilityContext.separateFunding(row).stream())
+                .map(ParticipationConditionText::prepare).filter(row -> !categorizedConditions.contains(row))
+                .forEach(categorizedConditions::add);
+        var categoryRules = new ArrayList<>(ParticipationGuidePresentation.rules(categorizedConditions));
+        categoryRules.addAll(ParticipationCategorySources.supplement(body, attachments, categoryRules));
+        return new ParticipationGuide(conditions, project ? rules : categoryRules, ParticipationGuidePresentation.variants(texts),
+                project ? ParticipationCategoryProjector.project(categoryRules, ParticipationCategorySources.incomplete(body, attachments)) : List.of());
+    }
+
+    private static void collectCategories(String text, String name, LinkedHashMap<String, ParticipationCondition> result) {
+        for (String document : ParticipationCategorySources.documents(text)) {
+            var partial = new LinkedHashMap<String, ParticipationCondition>();
+            collect(document, name, partial, true);
+            result.putAll(partial);
+        }
     }
 
     private static boolean allowedFile(String name) {
@@ -113,12 +143,16 @@ final class ParticipationConditionResolver {
     }
 
     private static void collect(String text, String fileName, LinkedHashMap<String, ParticipationCondition> result) {
+        collect(text, fileName, result, false);
+    }
+
+    private static void collect(String text, String fileName, LinkedHashMap<String, ParticipationCondition> result, boolean categorized) {
         if (text == null || text.isBlank()) return;
         var sourceLines = new ParticipationSourceLines(text.substring(0, Math.min(MAX_TEXT, text.length())));
         String[] lines = sourceLines.lines();
         Block block = null;
         boolean blocked = false;
-        var sectionContext = new ParticipationSectionContext();
+        var sectionContext = new ParticipationSectionContext(categorized);
         String program = "";
         String introduction = text.substring(0, Math.min(text.length(), 1800)).replaceAll("\\s+", " ");
         boolean separateBeneficiary = introduction.matches(".*주관기관.{0,40}모집.*")

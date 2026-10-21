@@ -8,7 +8,7 @@ import java.util.regex.Pattern;
 
 /** Presentation only: reconnect wrapped prose and preserve the official qualifiers in visible clauses. */
 final class ParticipationConditionText {
-    private static final Pattern MARKER = Pattern.compile("^(?:[□■○◦●ㅇ•⦁▪∘※*→▶▷▸►-]|[①-⑳➀-➉]|\\d+[.)])\\h*");
+    private static final Pattern MARKER = Pattern.compile("^(?:[□■○◦●ㅇ•⦁▪∘※*→▶▷▸►-]|[①-⑳➀-➉]|\\d+[.)](?!\\d))\\h*");
     private ParticipationConditionText() {}
 
     static List<String> paragraphs(List<String> physicalLines) {
@@ -79,7 +79,8 @@ final class ParticipationConditionText {
     }
 
     static String unmark(String value) {
-        return spacing(value).replaceFirst("^(?:[□■○◦●ㅇ•⦁▪∘※*→▶▷▸►-]+|[①-⑳➀-➉]|\\d+[.)])\\h*", "").strip();
+        if (spacing(value).matches("^-\\d.*")) return spacing(value);
+        return spacing(value).replaceFirst("^(?:[□■○◦●ㅇ•⦁▪∘※*→▶▷▸►-]+|[①-⑳➀-➉]|\\d+[.)](?!\\d))\\h*", "").strip();
     }
 
     static String sentence(String raw, ParticipationKind kind) {

@@ -506,8 +506,8 @@ function DocumentDrawer({ detectionId, onClose, bookmarked, bookmarkPending, boo
         if (!active) return
         setDetail(value)
         setError('')
-        refreshAllowed = value.analysisPending
-          && (!value.analysis || value.analysis.proposal.draftStatus === 'GENERATING')
+        refreshAllowed = value.participationGuide?.rewriteStatus === 'PENDING'
+          || (value.analysisPending && (!value.analysis || value.analysis.proposal.draftStatus === 'GENERATING'))
       } catch (cause) {
         if (!active) return
         setError(timedOut

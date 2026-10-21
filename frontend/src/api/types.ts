@@ -272,7 +272,7 @@ export interface ParticipationCondition {
 
 export interface ParticipationRule {
   reviewReason?: ParticipationReviewReason | null
-  section: 'BASIC' | 'FUNDING' | 'TARGETED' | 'EXCLUSION' | 'PREFERENCE' | 'DEDUCTION' | 'REVIEW'
+  section: 'BASIC' | 'ELIGIBILITY' | 'EVIDENCE' | 'FUNDING' | 'TARGETED' | 'EXCLUSION' | 'PREFERENCE' | 'DEDUCTION' | 'REVIEW'
   label: string
   text: string
   scope: string | null
@@ -284,7 +284,27 @@ export interface ParticipationRule {
   sources: NonNullable<ProposalPreparationItem['source']>[]
 }
 
+export interface ParticipationCriterionEntry {
+  displayStatus?: 'VERIFIED' | 'EVIDENCE_ONLY'
+  rule: ParticipationRule
+  context: string | null
+  relation: 'LINKED' | 'ALTERNATIVE' | null
+  relatedCriteria: string[]
+}
+export interface ParticipationCriterionRow {
+  code: string
+  label: string
+  status: 'STATED' | 'NOT_STATED' | 'REVIEW_REQUIRED'
+  entries: ParticipationCriterionEntry[]
+}
+export interface ParticipationCategory {
+  code: string
+  label: string
+  rows: ParticipationCriterionRow[]
+}
 export interface ParticipationGuide {
+  rewriteStatus?: 'PENDING' | 'READY' | 'UNAVAILABLE'
+  categories?: ParticipationCategory[]
   conditions: ParticipationCondition[]
   rules?: ParticipationRule[]
   variants?: { name: string; description: string }[]

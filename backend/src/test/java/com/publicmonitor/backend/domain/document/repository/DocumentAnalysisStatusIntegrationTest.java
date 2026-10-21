@@ -39,6 +39,7 @@ class DocumentAnalysisStatusIntegrationTest {
     @Autowired DocumentAnalysisRepository analyses;
     @Autowired AnalysisTaskRepository tasks;
     @Autowired DocumentAttachmentRepository attachments;
+    @Autowired DocumentVersionRepository versions;
 
     @ParameterizedTest
     @CsvSource({
@@ -131,6 +132,21 @@ class DocumentAnalysisStatusIntegrationTest {
         assertThat(detailService().findById(old.getId()).analysisStatus()).isEqualTo(DocumentAnalysisStatus.FAILED);
     }
 
+    @Test
+    void participationCachePersistsWithoutOverwritingANewerRequest() {
+        var version = fixture("참여 자격", MonitoringRunStatus.COMPLETED, "NONE").getDocumentVersion();
+        em.flush();
+        versions.beginParticipationRewrite(version.getId(), "old");
+        versions.beginParticipationRewrite(version.getId(), "new");
+        assertThat(versions.finishParticipationRewrite(version.getId(), "old", "wrong")).isZero();
+        assertThat(versions.finishParticipationRewrite(version.getId(), "new", "{\"status\":\"READY\"}")).isOne();
+        em.clear();
+        var stored = versions.findById(version.getId()).orElseThrow();
+        assertThat(stored.getParticipationRewriteKey()).isEqualTo("new");
+        assertThat(stored.getParticipationRewriteJson()).isEqualTo("{\"status\":\"READY\"}");
+        assertThat(stored.getContentText()).isEqualTo("참여 자격");
+    }
+
     private DocumentDetection fixture(String body, MonitoringRunStatus runStatus, String taskState) {
         var source = MonitoringSource.create("검증 기관", "공고", null, "https://example.org", null, 2, true);
         em.persist(source);
@@ -158,6 +174,12 @@ class DocumentAnalysisStatusIntegrationTest {
     }
 
     private DocumentDetectionDetailService detailService() {
-        return new DocumentDetectionDetailService(detections, analyses, tasks, attachments, new ObjectMapper());
+        return new DocumentDetectionDetailService(detections, analyses, tasks, attachments, new ObjectMapper(), rewriteService());
+    }
+    private com.publicmonitor.backend.domain.document.service.ParticipationRewriteService rewriteService() {
+        var service = org.mockito.Mockito.mock(com.publicmonitor.backend.domain.document.service.ParticipationRewriteService.class);
+        org.mockito.Mockito.lenient().when(service.resolve(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyBoolean()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+        return service;
     }
 }

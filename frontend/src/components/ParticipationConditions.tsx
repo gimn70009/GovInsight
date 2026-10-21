@@ -1,8 +1,9 @@
 import { useId, useState } from 'react'
 import { ChevronDown, ClipboardCheck, ExternalLink } from 'lucide-react'
-import type { DocumentDetail, ParticipationRule } from '../api/types'
+import type { DocumentDetail, ParticipationRule, ParticipationCriterionEntry } from '../api/types'
 import { evidenceAttachment } from '../utils/businessSummary'
-import { applicationTypeSentence, groupParticipationRules } from '../utils/participationGuide'
+import { participationStatement } from '../utils/participationStatement'
+import { categoryTables } from '../utils/participationCategoryTables'
 import './ParticipationConditions.css'
 
 type RuleSource = ParticipationRule['sources'][number]
@@ -42,121 +43,79 @@ function RuleEvidence({ item, detail }: { item: ParticipationRule; detail: Docum
   </div>
 }
 
-function Rule({ item, detail }: { item: ParticipationRule; detail: DocumentDetail }) {
-  const [openPanel, setOpenPanel] = useState<'details' | 'evidence' | null>(null)
+function Rule({ entry, detail }: { entry: ParticipationCriterionEntry; detail: DocumentDetail }) {
+  const item = entry.rule
+  const [open, setOpen] = useState(false)
   const id = useId()
-  const hasDetails = item.details.length + item.exceptions.length + item.guidance.length > 0
-  const toggle = (panel: 'details' | 'evidence') => setOpenPanel(current => current === panel ? null : panel)
-  const typeSentence = applicationTypeSentence(item, detail.participationGuide?.variants)
-  const displayTitle = typeSentence ?? item.text
-  const criteria = item.details.filter(text => !text.startsWith('법적 자격 기준: '))
-  const legalCriteria = item.details.filter(text => text.startsWith('법적 자격 기준: ')).map(text => text.slice('법적 자격 기준: '.length))
-  const detailsLabel = item.exceptions.length > 0 ? '세부 조건·예외' : '세부 조건'
-  const criteriaLabel = ['PREFERENCE', 'DEDUCTION'].includes(item.section) ? '세부 기준' : '세부 자격·추가 요건'
+  const pending = detail.participationGuide?.rewriteStatus === 'PENDING'
+  const verified = entry.displayStatus === 'VERIFIED'
   return <li className="participation-guide__rule">
     <div className="participation-guide__rule-heading">
-      <div className="participation-guide__description">
-        {item.audience && !typeSentence && <p className="participation-guide__audience"><span>적용 대상</span>{item.audience}</p>}
-        <RuleSummary text={displayTitle} />
-      </div>
+      {verified && <div className="participation-guide__description">
+        <div className="participation-guide__badges">
+          {item.section === 'EXCLUSION' && <span className="is-exclusion">해당 시 제외</span>}
+          {item.section === 'PREFERENCE' && <span className="is-preference">우대·가점</span>}
+          {item.section === 'DEDUCTION' && <span className="is-exclusion">감점</span>}
+        </div>
+        <div className="participation-guide__main"><p>{participationStatement(entry)}</p></div>
+      </div>}
+      {!verified && pending && <p className="participation-guide__pending-row">조건을 정리하고 있습니다.</p>}
       <div className="participation-guide__actions">
-        {hasDetails && <button type="button"
-          className={'business-summary__organization-toggle participation-guide__details-toggle' + (item.exceptions.length > 0 ? ' has-exceptions' : '')}
-          aria-label={item.label + ' ' + detailsLabel} aria-expanded={openPanel === 'details'} aria-controls={id + '-details'}
-          onClick={() => toggle('details')}>
-          {detailsLabel}<ChevronDown size={13} aria-hidden="true" />
-        </button>}
         <button type="button" className="business-summary__organization-toggle"
-          aria-label={(item.audience || displayTitle) + ' 근거 보기'} aria-expanded={openPanel === 'evidence'} aria-controls={id + '-evidence'}
-          onClick={() => toggle('evidence')}>
+          aria-label={item.label + ' 근거 보기'} aria-expanded={open} aria-controls={id}
+          onClick={() => setOpen(value => !value)}>
           근거 보기<ChevronDown size={13} aria-hidden="true" />
         </button>
       </div>
     </div>
-    {hasDetails && <div id={id + '-details'} hidden={openPanel !== 'details'} className="participation-guide__detail-panel">
-      {criteria.length > 0 && <div className="participation-guide__detail-section">
-        <strong>{criteriaLabel}</strong>
-        <ul className="participation-guide__clauses" aria-label={criteriaLabel}>{criteria.map((text, index) => <li key={index}><DetailClause text={text} /></li>)}</ul>
-      </div>}
-      {legalCriteria.length > 0 && <div className="participation-guide__detail-section">
-        <strong>적용 법령</strong>
-        <ul className="participation-guide__clauses" aria-label="적용 법령">{legalCriteria.map((text, index) => <li key={index}>{text}</li>)}</ul>
-      </div>}
-      {item.exceptions.length > 0 && <div className="participation-guide__detail-section is-exception">
-        <strong>예외·유예 조건</strong>
-        <ul className="participation-guide__clauses" aria-label="예외·유예 조건">{item.exceptions.map((text, index) => <li key={index}>{text}</li>)}</ul>
-      </div>}
-      {item.guidance.length > 0 && <div className="participation-guide__detail-section">
-        <strong>확인 방법</strong>
-        <ul className="participation-guide__clauses" aria-label="확인 방법">{item.guidance.map((text, index) => <li key={index}>{text}</li>)}</ul>
-      </div>}
-    </div>}
-    <div id={id + '-evidence'} hidden={openPanel !== 'evidence'} className="participation-guide__sources">
-      {openPanel === 'evidence' && <RuleEvidence item={item} detail={detail} />}
+    <div id={id} hidden={!open} className="participation-guide__sources">
+      {open && <RuleEvidence item={item} detail={detail} />}
     </div>
   </li>
 }
 
-function RuleSummary({ text }: { text: string }) {
-  const blocks: { list: boolean; lines: string[] }[] = []
-  for (const line of text.split(/\n+/u).filter(value => value.trim())) {
-    const list = line.startsWith('• ')
-    const last = blocks.at(-1)
-    if (list && last?.list) last.lines.push(line.slice(2))
-    else blocks.push({ list, lines: [list ? line.slice(2) : line] })
-  }
-  return <div className="participation-guide__main">{blocks.map((block, index) => block.list
-    ? <ul className="participation-guide__summary-options" key={index}>{block.lines.map((line, i) => <li key={i}>{line}</li>)}</ul>
-    : <p key={index}>{block.lines[0]}</p>)}</div>
-}
-
-function DetailClause({ text }: { text: string }) {
-  const lines = text.split(/\n+/u).filter(Boolean)
-  if (lines.length === 1) return <>{text}</>
-  return <div className="participation-guide__detail-clause"><strong>{lines[0]}</strong>
-    {lines.slice(1).map((line, index) => <p key={index}>{line}</p>)}</div>
-}
-
 export function ParticipationConditions({ detail }: { detail: DocumentDetail }) {
-  const sections = groupParticipationRules(detail.participationGuide, 'eligibility')
-    .filter(section => section.key !== 'REVIEW')
-  const variants = detail.participationGuide?.variants ?? []
+  const categories = categoryTables(detail.participationGuide)
   const headingId = useId()
+  const pending = detail.participationGuide?.rewriteStatus === 'PENDING'
+  const unavailable = detail.participationGuide?.rewriteStatus === 'UNAVAILABLE'
+  const verifiedCount = categories.flatMap(category => category.rows).flatMap(row => row.entries)
+    .filter(entry => entry.displayStatus === 'VERIFIED').length
   return <section className="business-summary__card participation-guide" aria-labelledby={headingId}>
     <header className="business-summary__heading">
       <span className="business-summary__heading-icon" aria-hidden="true"><ClipboardCheck size={22} /></span>
       <div className="business-summary__heading-text"><h3 id={headingId}>신청 자격과 제한</h3>
-        <p>신청할 수 있는 기업·기관의 요건과 신청 제외 조건을 확인하세요.</p>
+        <p>공고의 참여 조건을 8개 분류와 세부 항목별로 확인하세요.</p>
       </div>
     </header>
     <div className="business-summary__section-body">
-      {sections.length > 0 ? <>
-        {variants.length > 0 && <div className="participation-guide__variants" aria-label="지원 유형의 의미">
-          {variants.map(variant => <span key={variant.name}><strong>{variant.name}</strong>{variant.description}</span>)}
-        </div>}
-        {sections.map(section => <section key={section.key} className={'participation-guide__section is-' + section.key.toLowerCase()}
-          aria-labelledby={headingId + section.key}>
-          <div className="participation-guide__section-title"><h4 id={headingId + section.key}>{section.title}</h4><span>{section.note}</span></div>
-          {section.groups.map((group, index) => <div className="participation-guide__scope-group" key={group.scope ?? index}>
-            <div className="participation-guide__table-wrap">
-              <table className="participation-guide__table" aria-label={section.title + (group.scope ? ' · ' + group.scope : '')}>
-                <colgroup><col className="participation-guide__category-col" /><col /></colgroup>
-                <tbody>{group.labels.map(group => <tr key={group.label}>
-                  <th scope="row">{group.label}</th>
-                  <td><ul className="participation-guide__rules">{group.rules.map((item, index) =>
-                    <Rule key={item.text + index} item={item} detail={detail} />)}</ul></td>
-                </tr>)}</tbody>
-              </table>
-            </div>
-          </div>)}
-        </section>)}
-        <p className="business-summary__footnote">공고에서 확인된 기준을 정리한 안내입니다. 우리 회사의 신청 가능 여부를 판정한 결과는 아닙니다.</p>
-      </> : <div className="participation-guide__empty" role="status">
-        <ClipboardCheck size={21} aria-hidden="true" />
-        <div><strong>신청 자격 확인 필요</strong>
-          <p>저장된 공고와 첨부에서 신청 자격을 확인하지 못했습니다. 조건이 없다는 뜻은 아니므로 공고 원문을 확인해 주세요.</p>
-        </div>
+      <p className="participation-guide__intro">공고에 명시된 참여 조건을 항목별로 확인하세요. 각 조건의 원문은 근거 보기에서 확인할 수 있습니다.</p>
+      {pending && <div role="status" className="participation-guide__progress">
+        <strong>{verifiedCount > 0 ? `${verifiedCount}개 조건을 정리했습니다. 나머지 조건을 확인하고 있습니다.` : '공고의 신청 자격과 제한을 정리하고 있습니다.'}</strong>
+        <p>처음 정리하는 공고는 몇 분이 걸릴 수 있습니다. 확인이 끝난 조건부터 자동으로 표시됩니다.</p>
       </div>}
+      {unavailable && <p className="participation-guide__progress">조건 정리를 완료하지 못했습니다. 지금은 근거 보기에서 원문을 확인할 수 있습니다. 잠시 후 공고를 다시 열면 재시도합니다.</p>}
+      {categories.map((category, index) => <section key={category.code}
+        className={'participation-guide__section is-' + category.code.toLowerCase()} aria-labelledby={headingId + category.code}>
+        <div className="participation-guide__section-title"><h4 id={headingId + category.code}>{index + 1}. {category.label}</h4></div>
+        <div className="participation-guide__table-wrap">
+          <table className="participation-guide__table" aria-label={category.label}>
+            <colgroup><col className="participation-guide__category-col" /><col /></colgroup>
+            <thead><tr><th scope="col">세부 항목</th><th scope="col">공고에 명시된 조건</th></tr></thead>
+            <tbody>{category.rows.map(row => <tr key={row.code} data-criterion={row.code}>
+              <th scope="row">{row.label}</th>
+              <td>{row.entries.length > 0
+                ? <ul className="participation-guide__rules">{row.entries.map((entry, entryIndex) =>
+                    <Rule key={detail.detectionId + ':' + entry.rule.text + entryIndex} entry={entry} detail={detail} />)}</ul>
+                : <span className={'participation-guide__missing' + (row.status === 'NOT_STATED' ? '' : ' is-unread')}>
+                    {pending ? '조건을 확인하고 있습니다.' : row.status === 'NOT_STATED' ? '공고에 명시 없음' : '—'}
+                  </span>}
+              </td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+      </section>)}
+      <p className="business-summary__footnote">‘명시 없음’은 조건이 없다는 판정이 아니라 확인한 공고에서 해당 기준을 찾지 못했다는 뜻입니다. 확인하지 못한 항목은 —로 표시합니다.</p>
     </div>
   </section>
 }

@@ -41,6 +41,7 @@ public class DocumentDetectionDetailService {
     private final AnalysisTaskRepository analysisTaskRepository;
     private final DocumentAttachmentRepository attachmentRepository;
     private final ObjectMapper objectMapper;
+    private final ParticipationRewriteService participationRewriteService;
 
     @Transactional(readOnly = true)
     public DocumentDetectionDetailResponse findById(Long detectionId) {
@@ -84,7 +85,9 @@ public class DocumentDetectionDetailService {
                 attachments,
                 ResponsibleOrganizationExtractor.extract(version.getContentText(), storedAttachments),
                 SubmissionDocumentResolver.resolve(version.getContentText(), storedAttachments, preparation),
-                ParticipationConditionResolver.resolve(version.getContentText(), storedAttachments, preparation),
+                participationRewriteService.resolve(version,
+                        ParticipationConditionResolver.candidates(version.getContentText(), storedAttachments, preparation),
+                        ParticipationCategorySources.incomplete(version.getContentText(), storedAttachments)),
                 businessType.summary()
         );
     }

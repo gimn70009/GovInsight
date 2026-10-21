@@ -193,3 +193,27 @@ if (!(Test-Path src/main/resources/application.properties)) {
 문의 안내는 담당별로 이름을 굵게 표시하고 전화·이메일·추가 안내를 별도 행으로 나눕니다. 담당 수를 두 곳으로 제한하지 않으며, 같은 담당 안의 중복 연락처만 정리합니다. 줄이 나뉜 기관명과 후속 번호·이메일의 관계, 내선·상담 시간·제출 조건, 문의 게시판 링크를 유지합니다. 390px에서도 일반 길이의 이메일이 불필요하게 두 줄로 갈리지 않도록 연락처 칸을 확보합니다. 기존 저장 본문의 문서 글머리표는 의미가 있는 조건을 보존하며 정리하고, 참여 역할에 반복된 예산 문장은 금액 영역에 동일한 내용이 확인될 때만 제외합니다.
 
 - 이메일은 모든 공고에서 유형·방식 행을 표시하며 일반 공지의 해당 없음, 사업 공고의 원문 확인 필요, 기존 보고서의 분류 정보 없음을 구분합니다. 문의처의 사업명 표제·중복 담당·전화 전체 괄호·내용 없는 문의 문구를 정리하고 담당별 채널과 제한 조건을 보존합니다. 핵심 요약은 별도 항목에 확인된 금액·일정·방법의 반복을 줄이고 공고 내용과 정책 변경의 핵심 수치를 유지합니다.
+
+## 공고 상세의 참여 조건 분류
+
+GET /api/document-detections/{id} 응답의 participationGuide.categories는 8개 분류를 고정 순서로 제공합니다. 기존 conditions, rules, variants는 유지합니다.
+
+- 분류: { code, label, rows }
+- 세부 항목: { code, label, status, entries }. 기본 40개 항목을 항상 반환하며 대응하지 않는 명시 조건은 분류 내부의 OTHER 행에 보존합니다.
+- 상태: STATED(근거가 있는 조건), NOT_STATED(확인한 원문에서 기준을 찾지 못함), REVIEW_REQUIRED(원문 미확보·파싱 실패·손상·분류 불확실).
+- 조건: { rule, context, relation, relatedCriteria }. rule은 기존 ParticipationRule 구조입니다. context는 분리 전 문장, relation은 LINKED/ALTERNATIVE/null, relatedCriteria는 연결된 세부 항목명입니다. 분리된 수치뿐 아니라 적용 범위·예외·연결 관계를 함께 읽어야 합니다.
+- 기업 규모·형태는 업력·매출 등 대상 구분 조건을 유지합니다. 화면은 실제 유형·범위를 첫 문장에 통합하고 표 안내 문구를 숨깁니다. 명사·수치 조각은 완결된 context 문장으로 표시합니다. 수행 요건은 본문의 불릿·절·표 경계를 복원해 의무 문장만 표시하며 같은 조건의 복수 근거는 보존하여 합칩니다.
+- 화면은 LINKED 배지와 REVIEW 진단 항목을 숨기고, 미확인 빈 항목을 ‘—’로 표시합니다. ALTERNATIVE 선택 관계와 원문·예외는 유지합니다. 조건은 문법상 안전한 경계에서 분리하며 일정·접수처·제출 목록 전체를 자격으로 사용하지 않습니다.
+- 저장 원문 조회 시 계산하므로 DB 마이그레이션·AI 재분석은 필요하지 않습니다. 변경된 백엔드와 프런트엔드를 함께 반영해야 합니다.
+
+참여 조건 분류 응답의 표시문은 조회 시 공통 정제를 거칩니다. 번호·참조 표기와 법령 정의의 혼입을 제거하고 확인된 소제목·유형·수치를 포함한 완결 문장으로 표시합니다. 구조와 단위가 확인된 지원금/자부담 표만 유형별 문장으로 복원하며 불확실한 표는 근거에 유지합니다. 정제 후 동일 조건은 출처를 합치고, 저장 원문·기존 응답 구조·DB 스키마는 바꾸지 않습니다.
+
+## 신청 자격과 제한의 LLM 재작성 (2026-10-21)
+
+앞선 규칙 기반 참여 조건 표시 정책을 대체합니다. 상세 조회는 원문 구역을 보존해 비동기 재작성하고 `participationGuide.rewriteStatus=PENDING/READY/UNAVAILABLE`, `entry.displayStatus=VERIFIED/EVIDENCE_ONLY`를 반환합니다. `conditions/rules`는 호환 자료이며 화면 표시문으로 사용하지 않습니다. 다른 상세 영역의 생성 방식은 그대로입니다.
+
+- Python `POST /internal/monitoring/participation-rewrite`: sources(id, excerpt, group_label, criteria), criteria(code, label, category), business_types. 반환은 statements(source_ids, criterion, text, group_label, supporting_quotes, kind), evidence_only_ids, irrelevant_source_ids, status입니다. 검증 후 조건이 아닌 구역만 irrelevant로 제외합니다.
+- 원문 지문과 파이프라인 버전으로 결과를 재사용합니다. 작업자 2개·대기 32개, HTTP 읽기 제한 620초이며 같은 문서 버전의 동시 요청은 합칩니다. 실패 결과도 보관해 상세 조회마다 모델을 반복 호출하지 않습니다. 원문 변경은 새 지문으로 재처리합니다.
+- 기존 DB의 `ddl-auto=none/validate` 환경에서는 `schema/participation-rewrite.sql`을 먼저 적용합니다. 로컬 `update` 설정은 백엔드 시작 시 두 nullable 캐시 컬럼을 추가합니다. 기존 문서·분석 데이터 초기화는 필요하지 않습니다. Python·백엔드·프런트엔드를 함께 반영해야 합니다.
+
+참여 조건 재작성은 AI의 `/internal/monitoring/participation-rewrite/stream`에서 검증된 중간 결과를 받습니다. `PENDING`에도 `VERIFIED` 문장이 포함될 수 있고 상세 화면은 처리 완료까지 자동 갱신합니다. HWP/PDF의 같은 원문은 한 번 처리하되 모든 근거를 유지합니다. 후속 장애가 먼저 검증된 문장을 지우지 않으며 최종 결과만 영속 캐시에 기록합니다. 일시적인 `UNAVAILABLE`은 5분 후 재조회나 서버 재시작 시 재시도할 수 있습니다.
