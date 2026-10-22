@@ -45,6 +45,15 @@ public class DocumentDetectionDetailService {
 
     @Transactional(readOnly = true)
     public DocumentDetectionDetailResponse findById(Long detectionId) {
+        return findById(detectionId, true);
+    }
+
+    @Transactional(readOnly = true)
+    public DocumentDetectionDetailResponse findSummaryById(Long detectionId) {
+        return findById(detectionId, false);
+    }
+
+    private DocumentDetectionDetailResponse findById(Long detectionId, boolean includeParticipationGuide) {
         DocumentDetection detection = detectionRepository.findById(detectionId)
                 .orElseThrow(() -> new DocumentDetectionException(DocumentDetectionResponseCode.NOT_FOUND));
         DocumentVersion version = detection.getDocumentVersion();
@@ -69,6 +78,8 @@ public class DocumentDetectionDetailService {
                 detectionId, version.getId(), analysisPending, businessType.summary().status(), businessType.summary().code(),
                 businessType.decisionReason(), businessType.storedReason(), businessType.rejectedSourceIndex(),
                 businessType.usableSourceCount(), businessType.failedAttachmentCount(), businessType.emptyAttachmentCount());
+        var participation = includeParticipationGuide
+                ? ParticipationConditionResolver.candidatesWithScopes(version.getContentText(), storedAttachments, preparation) : null;
         return new DocumentDetectionDetailResponse(
                 detection.getId(),
                 detection.getMonitoringRunSource().getMonitoringSource().getOrganizationName(),
@@ -85,9 +96,9 @@ public class DocumentDetectionDetailService {
                 attachments,
                 ResponsibleOrganizationExtractor.extract(version.getContentText(), storedAttachments),
                 SubmissionDocumentResolver.resolve(version.getContentText(), storedAttachments, preparation),
-                participationRewriteService.resolve(version,
-                        ParticipationConditionResolver.candidates(version.getContentText(), storedAttachments, preparation),
-                        ParticipationCategorySources.incomplete(version.getContentText(), storedAttachments)),
+                includeParticipationGuide ? participationRewriteService.resolve(version,
+                        participation.guide(),
+                        ParticipationCategorySources.incomplete(version.getContentText(), storedAttachments), participation.scopes()) : null,
                 businessType.summary()
         );
     }

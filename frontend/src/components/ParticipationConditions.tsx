@@ -2,8 +2,7 @@ import { useId, useState } from 'react'
 import { ChevronDown, ClipboardCheck, ExternalLink } from 'lucide-react'
 import type { DocumentDetail, ParticipationRule, ParticipationCriterionEntry } from '../api/types'
 import { evidenceAttachment } from '../utils/businessSummary'
-import { participationStatement } from '../utils/participationStatement'
-import { categoryTables } from '../utils/participationCategoryTables'
+import { companyParticipationRows, companyConditionEmptyText, companyConditionScope, formatCompanyCondition, companyConditionSentence } from '../utils/companyParticipation'
 import './ParticipationConditions.css'
 
 type RuleSource = ParticipationRule['sources'][number]
@@ -43,31 +42,30 @@ function RuleEvidence({ item, detail }: { item: ParticipationRule; detail: Docum
   </div>
 }
 
-function Rule({ entry, detail }: { entry: ParticipationCriterionEntry; detail: DocumentDetail }) {
+function Rule({ entry, detail, label, code }: {
+  entry: ParticipationCriterionEntry; detail: DocumentDetail; label: string; code: string
+}) {
   const item = entry.rule
   const [open, setOpen] = useState(false)
   const id = useId()
-  const pending = detail.participationGuide?.rewriteStatus === 'PENDING'
-  const verified = entry.displayStatus === 'VERIFIED'
+  const scope = companyConditionScope(entry)
+  const condition = companyConditionSentence(item.text, item.section === 'PREFERENCE', code)
+  const scopeText = scope ? formatCompanyCondition(scope) : null
+  const hasEvidence = item.sources.some(source => source.excerpt?.trim())
   return <li className="participation-guide__rule">
-    <div className="participation-guide__rule-heading">
-      {verified && <div className="participation-guide__description">
-        <div className="participation-guide__badges">
-          {item.section === 'EXCLUSION' && <span className="is-exclusion">해당 시 제외</span>}
-          {item.section === 'PREFERENCE' && <span className="is-preference">우대·가점</span>}
-          {item.section === 'DEDUCTION' && <span className="is-exclusion">감점</span>}
-        </div>
-        <div className="participation-guide__main"><p>{participationStatement(entry)}</p></div>
-      </div>}
-      {!verified && pending && <p className="participation-guide__pending-row">조건을 정리하고 있습니다.</p>}
-      <div className="participation-guide__actions">
-        <button type="button" className="business-summary__organization-toggle"
-          aria-label={item.label + ' 근거 보기'} aria-expanded={open} aria-controls={id}
-          onClick={() => setOpen(value => !value)}>
-          근거 보기<ChevronDown size={13} aria-hidden="true" />
-        </button>
-      </div>
+    <div className="participation-guide__description">
+      {scopeText && <p className="participation-guide__scope">
+        <span className="participation-guide__scope-label">적용 유형</span>
+        <strong>{[scopeText.lead, ...scopeText.notes].join(' ')}</strong>
+      </p>}
+      {item.section === 'EXCLUSION' && <span className="participation-guide__exclusion">해당 시 신청 제외</span>}
+      <p className="participation-guide__main">{condition}</p>
     </div>
+    {hasEvidence && <button type="button" className="business-summary__organization-toggle participation-guide__evidence-button"
+      aria-label={label + ' 근거 보기'} aria-expanded={open} aria-controls={id}
+      onClick={() => setOpen(value => !value)}>
+      근거 보기<ChevronDown size={13} aria-hidden="true" />
+    </button>}
     <div id={id} hidden={!open} className="participation-guide__sources">
       {open && <RuleEvidence item={item} detail={detail} />}
     </div>
@@ -75,47 +73,48 @@ function Rule({ entry, detail }: { entry: ParticipationCriterionEntry; detail: D
 }
 
 export function ParticipationConditions({ detail }: { detail: DocumentDetail }) {
-  const categories = categoryTables(detail.participationGuide)
+  const rows = companyParticipationRows(detail.participationGuide)
+  const visibleRows = [...rows.filter(row => row.code === 'BUSINESS_FORM'), ...rows.filter(row => row.code !== 'BUSINESS_FORM')]
+    .filter(row => row.mandatory.length || row.preference.length)
+  const unresolved = rows.some(row => row.evidence.length)
   const headingId = useId()
-  const pending = detail.participationGuide?.rewriteStatus === 'PENDING'
-  const unavailable = detail.participationGuide?.rewriteStatus === 'UNAVAILABLE'
-  const verifiedCount = categories.flatMap(category => category.rows).flatMap(row => row.entries)
-    .filter(entry => entry.displayStatus === 'VERIFIED').length
+  const status = detail.participationGuide?.rewriteStatus
+  const pending = status === 'PENDING'
+  const unavailable = status === 'UNAVAILABLE'
   return <section className="business-summary__card participation-guide" aria-labelledby={headingId}>
     <header className="business-summary__heading">
       <span className="business-summary__heading-icon" aria-hidden="true"><ClipboardCheck size={22} /></span>
-      <div className="business-summary__heading-text"><h3 id={headingId}>신청 자격과 제한</h3>
-        <p>공고의 참여 조건을 8개 분류와 세부 항목별로 확인하세요.</p>
+      <div className="business-summary__heading-text"><h3 id={headingId}>신청 자격</h3>
+        <p>신청 주체와 업력·매출·수출·인증·업종·실적·신용 요건을 확인하세요.</p>
       </div>
     </header>
     <div className="business-summary__section-body">
-      <p className="participation-guide__intro">공고에 명시된 참여 조건을 항목별로 확인하세요. 각 조건의 원문은 근거 보기에서 확인할 수 있습니다.</p>
       {pending && <div role="status" className="participation-guide__progress">
-        <strong>{verifiedCount > 0 ? `${verifiedCount}개 조건을 정리했습니다. 나머지 조건을 확인하고 있습니다.` : '공고의 신청 자격과 제한을 정리하고 있습니다.'}</strong>
-        <p>처음 정리하는 공고는 몇 분이 걸릴 수 있습니다. 확인이 끝난 조건부터 자동으로 표시됩니다.</p>
+        <strong>공고의 신청 자격과 우대사항을 확인하고 있습니다.</strong>
+        <p>확인이 끝나면 이 표에 자동으로 표시됩니다.</p>
       </div>}
-      {unavailable && <p className="participation-guide__progress">조건 정리를 완료하지 못했습니다. 지금은 근거 보기에서 원문을 확인할 수 있습니다. 잠시 후 공고를 다시 열면 재시도합니다.</p>}
-      {categories.map((category, index) => <section key={category.code}
-        className={'participation-guide__section is-' + category.code.toLowerCase()} aria-labelledby={headingId + category.code}>
-        <div className="participation-guide__section-title"><h4 id={headingId + category.code}>{index + 1}. {category.label}</h4></div>
-        <div className="participation-guide__table-wrap">
-          <table className="participation-guide__table" aria-label={category.label}>
-            <colgroup><col className="participation-guide__category-col" /><col /></colgroup>
-            <thead><tr><th scope="col">세부 항목</th><th scope="col">공고에 명시된 조건</th></tr></thead>
-            <tbody>{category.rows.map(row => <tr key={row.code} data-criterion={row.code}>
-              <th scope="row">{row.label}</th>
-              <td>{row.entries.length > 0
-                ? <ul className="participation-guide__rules">{row.entries.map((entry, entryIndex) =>
-                    <Rule key={detail.detectionId + ':' + entry.rule.text + entryIndex} entry={entry} detail={detail} />)}</ul>
-                : <span className={'participation-guide__missing' + (row.status === 'NOT_STATED' ? '' : ' is-unread')}>
-                    {pending ? '조건을 확인하고 있습니다.' : row.status === 'NOT_STATED' ? '공고에 명시 없음' : '—'}
-                  </span>}
-              </td>
-            </tr>)}</tbody>
-          </table>
-        </div>
-      </section>)}
-      <p className="business-summary__footnote">‘명시 없음’은 조건이 없다는 판정이 아니라 확인한 공고에서 해당 기준을 찾지 못했다는 뜻입니다. 확인하지 못한 항목은 —로 표시합니다.</p>
+      {unavailable && <p className="participation-guide__progress">참여기업 조건 확인을 완료하지 못했습니다. 확인되지 않은 항목은 공고 원문을 참고해 주세요.</p>}
+      {visibleRows.length > 0 ? <div className="participation-guide__table-wrap">
+        <table className="participation-guide__table" aria-label="참여기업 필수 조건과 우대사항">
+          <colgroup><col className="participation-guide__category-col" /><col /><col /></colgroup>
+          <thead><tr><th scope="col">분야</th><th scope="col">필수 조건</th><th scope="col">우대사항</th></tr></thead>
+          <tbody>{visibleRows.map(row => <tr key={row.code} data-criterion={row.code}>
+            <th scope="row">
+              <span>{row.label}</span>
+            </th>
+            {(['mandatory', 'preference'] as const).map(kind => <td key={kind} data-label={kind === 'mandatory' ? '필수 조건' : '우대사항'}>
+              <span className="participation-guide__mobile-label" aria-hidden="true">{kind === 'mandatory' ? '필수 조건' : '우대사항'}</span>
+              {row[kind].length > 0
+                ? <ul className="participation-guide__rules">{row[kind].map((entry, index) =>
+                    <Rule key={detail.detectionId + ':' + entry.rule.text + index} entry={entry} detail={detail} code={row.code}
+                      label={row.label + (kind === 'mandatory' ? ' 필수 조건' : ' 우대사항')} />)}</ul>
+                : <span className="participation-guide__missing">{companyConditionEmptyText(status, row.evidence.length > 0)}</span>}
+            </td>)}
+          </tr>)}</tbody>
+        </table>
+      </div> : !pending && <p className="participation-guide__missing">표시할 신청 조건을 확인하지 못했습니다. 공고 원문을 확인해 주세요.</p>}
+      {!pending && unresolved && visibleRows.length > 0 && <p className="participation-guide__missing">일부 조건은 확인하지 못했습니다. 공고 원문도 함께 확인해 주세요.</p>}
+      <p className="business-summary__footnote">본문 조건을 표시합니다. 세부 예외와 각주는 각 조건의 근거 보기에서 확인할 수 있습니다. ‘확인된 조건 없음’은 해당 조건이 없다는 뜻이 아니며, 이 표만으로 신청 가능 여부를 판단할 수 없습니다.</p>
     </div>
   </section>
 }

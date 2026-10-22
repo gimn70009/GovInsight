@@ -28,7 +28,7 @@ public class EmailReportContentService {
         var versions = new HashSet<Long>();
         for (var detection : detections.findAllByMonitoringRunSourceMonitoringRunIdOrderByIdAsc(run.getId())) {
             if (!versions.add(detection.getDocumentVersion().getId())) continue;
-            notices.add(BusinessSummaryEmailView.from(details.findById(detection.getId())));
+            notices.add(BusinessSummaryEmailView.from(details.findSummaryById(detection.getId())));
         }
         // Keep useful opportunities first, with the original detection order for tied scores.
         notices.sort(Comparator.comparing(BusinessSummaryEmailView::score,

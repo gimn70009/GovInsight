@@ -285,6 +285,7 @@ export interface ParticipationRule {
 }
 
 export interface ParticipationCriterionEntry {
+  supportingQuotes?: string[]
   displayStatus?: 'VERIFIED' | 'EVIDENCE_ONLY'
   rule: ParticipationRule
   context: string | null

@@ -36,9 +36,16 @@ final class ParticipationConditionResolver {
         return resolve(body, attachments, preparation, true);
     }
 
+    record Candidates(ParticipationGuide guide, ParticipationScopeIndex scopes) {}
+
     static ParticipationGuide candidates(String body, List<DocumentAttachment> attachments, Preparation preparation) {
+        return candidatesWithScopes(body, attachments, preparation).guide();
+    }
+
+    static Candidates candidatesWithScopes(String body, List<DocumentAttachment> attachments, Preparation preparation) {
         var raw = resolve(body, attachments, preparation, false);
-        return new ParticipationGuide(raw.conditions(), ParticipationRawSources.collect(body, attachments), raw.variants(), List.of());
+        var sources = ParticipationRawSources.collectWithScopes(body, attachments);
+        return new Candidates(new ParticipationGuide(raw.conditions(), sources.rules(), raw.variants(), List.of()), sources.scopes());
     }
 
     private static ParticipationGuide resolve(String body, List<DocumentAttachment> attachments,

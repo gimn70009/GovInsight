@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pytest
 
-from app.domains.participation.consolidation import Consolidation
 from app.domains.participation.preprocess import clean, preprocess
 from app.domains.participation.schemas import Draft, Review, RewriteRequest, Source, Statement
 from app.domains.participation.service import rewrite
@@ -45,16 +44,9 @@ class Model:
         owner = self
 
         class Runnable:
-            async def ainvoke(self, messages):
+            async def ainvoke(self, messages, config=None, **kwargs):
                 owner.calls.append((schema, messages))
-                if schema is Consolidation:
-                    payload = json.loads(messages[-1].content)
-                    return Consolidation(
-                        choices=[
-                            dict(pair=p["pair"], keep=[p["left"], p["right"]])
-                            for p in payload["pairs"]
-                        ]
-                    )
+                assert schema in {Draft, Review}, "No additional paid consolidation is allowed"
                 if schema is Draft:
                     result = owner.drafts[min(owner.index, len(owner.drafts) - 1)]
                     owner.index += 1
@@ -97,7 +89,7 @@ def test_requested_examples_use_model_and_fail_closed(case):
     else:
         assert result.statements == []
         assert result.evidence_only_ids == [case["id"]]
-        assert model.index == 2
+        assert model.index == 1
 
 
 def test_preprocess_preserves_tracks_headers_and_evidence():
@@ -136,25 +128,27 @@ def test_invalid_output_is_never_suffix_repaired(text):
     result = asyncio.run(rewrite(request(case), model))
     assert result.statements == []
     assert result.evidence_only_ids == [case["id"]]
-    assert model.index == 2
-    assert len(model.calls) == 4
+    assert model.index == 1
+    assert len(model.calls) <= 2
 
 
-def test_semantic_rejection_retries_then_hides():
+def test_semantic_rejection_hides_without_another_paid_attempt():
     case = next(c for c in FIXTURE["cases"] if c["id"] == "matching")
     model = Model([Draft(statements=[statement(case)], unrecoverable_ids=[])], reject=True)
     assert asyncio.run(rewrite(request(case), model)).statements == []
-    assert model.index == 2
+    assert model.index == 1
 
 
-def test_retry_receives_errors_and_replaces_bad_statement():
+def test_invalid_statement_keeps_evidence_without_paid_repair():
     case = next(c for c in FIXTURE["cases"] if c["id"] == "closure")
     bad = Draft(statements=[statement(case, text="기업이 대상입니다")], unrecoverable_ids=[])
     good = Draft(statements=[statement(case)], unrecoverable_ids=[])
     model = Model([bad, good])
-    assert asyncio.run(rewrite(request(case), model)).statements == good.statements
-    payload = json.loads(model.calls[2][1][1].content)
-    assert payload["errors"] and payload["previous_draft"]
+    result = asyncio.run(rewrite(request(case), model))
+    assert result.statements == []
+    assert result.evidence_only_ids == [case["id"]]
+    assert model.index == 1
+    assert len(model.calls) <= 2
 
 
 def test_duplicate_across_criteria_and_wrong_classification():
@@ -208,7 +202,7 @@ def test_non_conditions_require_independent_review_before_being_omitted(approved
                 return super().with_structured_output(schema, **kwargs)
 
             class Run:
-                async def ainvoke(self, messages):
+                async def ainvoke(self, messages, config=None, **kwargs):
                     return Review(
                         verdicts=[], uncovered_source_ids=[] if approved else ["schedule"]
                     )
@@ -221,7 +215,7 @@ def test_non_conditions_require_independent_review_before_being_omitted(approved
     result = asyncio.run(rewrite(request(case), model))
     assert result.irrelevant_source_ids == (["schedule"] if approved else [])
     assert result.evidence_only_ids == ([] if approved else ["schedule"])
-    assert model.index == (1 if approved else 2)
+    assert model.index == 1
 
 
 def test_real_track_header_survives_enterprise_subheading():
@@ -298,7 +292,7 @@ def test_timeout_does_not_mark_unread_rows_as_absent(monkeypatch):
     class Slow:
         def with_structured_output(self, *args, **kwargs):
             class Run:
-                async def ainvoke(self, messages):
+                async def ainvoke(self, messages, config=None, **kwargs):
                     await asyncio.sleep(0.1)
 
             return Run()
@@ -337,7 +331,7 @@ def test_api_route_uses_the_typed_pipeline_without_other_analysis(monkeypatch):
     assert client.post("/internal/monitoring/participation-rewrite", json={}).status_code == 422
 
 
-def test_batches_preserve_sources_merge_duplicate_facts_and_keep_partial_failures(monkeypatch):
+def test_one_document_call_merges_duplicate_facts_and_preserves_omitted_evidence(monkeypatch):
     from app.domains.participation import service
     from app.domains.participation.schemas import RewriteResponse
 
@@ -345,21 +339,17 @@ def test_batches_preserve_sources_merge_duplicate_facts_and_keep_partial_failure
 
     async def batch(req, model, on_progress=None):
         calls.append(req)
-        if req.sources[0].id == "s12":
-            return RewriteResponse(
-                statements=[], evidence_only_ids=[s.id for s in req.sources], status="UNAVAILABLE"
-            )
         return RewriteResponse(
             statements=[
                 Statement(
-                    source_ids=[s.id],
+                    source_ids=[source.id],
                     criterion="COMPANY_SIZE",
                     text="신청기업은 중소기업이어야 합니다.",
                     group_label="",
-                    supporting_quotes=[s.excerpt],
+                    supporting_quotes=[source.excerpt],
                     kind="ELIGIBILITY",
                 )
-                for s in req.sources
+                for source in req.sources
             ],
             evidence_only_ids=[],
             status="READY",
@@ -376,20 +366,20 @@ def test_batches_preserve_sources_merge_duplicate_facts_and_keep_partial_failure
         criteria=FIXTURE["catalog"],
     )
     result = asyncio.run(service.rewrite(req))
-    assert [len(call.sources) for call in calls] == [4, 8, 8, 5]
+    assert len(calls) == 1
+    selected_ids = {source.id for source in calls[0].sources}
+    assert len(selected_ids) == 12
     assert len(result.statements) == 1
-    assert set(result.statements[0].source_ids) == {f"s{i}" for i in range(12)} | {
-        f"s{i}" for i in range(20, 25)
-    }
-    assert set(result.evidence_only_ids) == {f"s{i}" for i in range(12, 20)}
+    assert set(result.statements[0].source_ids) == selected_ids
+    assert set(result.evidence_only_ids) == {source.id for source in req.sources} - selected_ids
+    assert not result.irrelevant_source_ids
     assert result.status == "READY"
 
 
-def test_batch_limit_retains_unprocessed_evidence_without_calls_or_text_truncation(monkeypatch):
+def test_source_budget_preserves_whole_excerpts_and_unprocessed_evidence(monkeypatch):
     from app.domains.participation import service
     from app.domains.participation.schemas import RewriteResponse
 
-    monkeypatch.setattr(service, "MAX_BATCHES", 12)
     calls = []
 
     async def batch(req, model, on_progress=None):
@@ -398,17 +388,25 @@ def test_batch_limit_retains_unprocessed_evidence_without_calls_or_text_truncati
             statements=[],
             evidence_only_ids=[],
             status="READY",
-            irrelevant_source_ids=[s.id for s in req.sources],
+            irrelevant_source_ids=[source.id for source in req.sources],
         )
 
     monkeypatch.setattr(service, "_rewrite_batch", batch)
     req = RewriteRequest(
-        sources=[Source(id=f"s{i}", excerpt="문의처 안내 " * 450) for i in range(20)],
+        sources=[
+            Source(id=f"s{i}", excerpt="문의처 안내 " * 150)
+            for i in range(20)
+        ],
         criteria=FIXTURE["catalog"],
     )
     result = asyncio.run(service.rewrite(req))
-    assert len(calls) == 12
-    assert result.evidence_only_ids == [f"s{i}" for i in range(12, 20)]
+    assert len(calls) == 1
+    selected_ids = {source.id for source in calls[0].sources}
+    assert 0 < len(selected_ids) < len(req.sources)
+    assert sum(len(source.excerpt.encode("utf-8")) for source in calls[0].sources) <= 10000
+    assert all(source.excerpt == "문의처 안내 " * 150 for source in calls[0].sources)
+    assert set(result.evidence_only_ids) == {source.id for source in req.sources} - selected_ids
+    assert set(result.irrelevant_source_ids) == selected_ids
 
 
 def test_percentage_subheaders_and_separate_tables_keep_their_own_columns():
@@ -460,14 +458,17 @@ def test_list_cleanup_preserves_a_real_parenthetical_word_and_cleaned_scope():
 
 
 def test_participation_model_settings_do_not_inherit_other_sections(monkeypatch):
-    from app.domains.participation.config import RewriteSettings
+    from app.domains.participation import config
+
+    monkeypatch.setattr(config, "load_dotenv", lambda *args, **kwargs: None)
+    RewriteSettings = config.RewriteSettings
 
     monkeypatch.delenv("PARTICIPATION_REWRITE_MODEL", raising=False)
     monkeypatch.delenv("PARTICIPATION_REWRITE_REASONING_EFFORT", raising=False)
     monkeypatch.setenv("REPORT_BRIEF_MODEL", "unrelated-model")
     settings = RewriteSettings.from_env()
-    assert settings.model == "gpt-5.4"
-    assert settings.reasoning_effort == "low"
+    assert settings.model == "gpt-5-nano"
+    assert settings.reasoning_effort == "minimal"
 
 
 def test_group_list_must_contain_only_real_source_tracks():
@@ -534,38 +535,28 @@ def test_empty_table_cells_do_not_shift_the_meaning_of_amount_columns():
     assert preprocess(req)[0][0].cells == ["일반", "630만원 이내", ""]
 
 
-def test_verified_progress_arrives_before_slow_batch_and_survives_deadline(monkeypatch):
-    from app.domains.participation import service
-    from app.domains.participation.schemas import RewriteResponse
+def test_verified_progress_keeps_omitted_sources_visible_as_evidence():
+    case = next(c for c in FIXTURE["cases"] if c["id"] == "closure")
+    req = request(case)
+    req.sources = [req.sources[0].model_copy(update={"id": f"s{i}"}) for i in range(13)]
+    item = statement(case, source_ids=["s0"])
+    model = Model([Draft(statements=[item], unrecoverable_ids=[])])
+    emitted = []
 
     async def scenario():
-        case = next(c for c in FIXTURE["cases"] if c["id"] == "closure")
-        req = request(case)
-        req.sources = [req.sources[0].model_copy(update={"id": f"s{i}"}) for i in range(13)]
-        item = statement(case, source_ids=["s0"])
-        emitted = []
-
-        async def batch(partial, model, on_progress=None):
-            if partial.sources[0].id != "s0":
-                await asyncio.sleep(10)
-            return RewriteResponse(statements=[item], evidence_only_ids=[], status="READY")
-
-        async def checked(result, *args):
-            return result
-
         async def progress(result):
-            assert result.statements == [item]
-            assert "s12" in result.evidence_only_ids
             emitted.append(result)
 
-        monkeypatch.setattr(service, "_rewrite_batch", batch)
-        monkeypatch.setattr(service, "_consolidate_response", checked)
-        monkeypatch.setattr(service, "DOCUMENT_TIMEOUT", 0.05)
-        result = await service.rewrite(req, on_progress=progress)
-        assert emitted and result.statements == [item]
-        assert result.status == "READY"
+        return await rewrite(req, model, on_progress=progress)
 
-    asyncio.run(scenario())
+    result = asyncio.run(scenario())
+    assert result.statements == [item]
+    assert result.status == "READY"
+    assert emitted
+    for snapshot in emitted:
+        assert snapshot.statements == [item]
+        assert set(snapshot.evidence_only_ids) == {f"s{i}" for i in range(1, 13)}
+    assert len(model.calls) == 2
 
 
 def test_stream_endpoint_emits_progress_and_terminal_snapshot(monkeypatch):
@@ -593,83 +584,45 @@ def test_stream_endpoint_emits_progress_and_terminal_snapshot(monkeypatch):
     assert all(event["result"]["statements"][0]["text"] == case["expected"] for event in events)
 
 
-def test_retry_outage_retains_sentences_that_already_passed_independent_review():
+def test_unrecoverable_sources_do_not_trigger_retries_after_verified_success():
     case = next(c for c in FIXTURE["cases"] if c["id"] == "closure")
     req = request(case)
     req.sources.append(Source(id="other", excerpt="깨진 표 원문"))
-
-    class RetryOutage:
-        attempts = 0
-
-        def with_structured_output(self, schema, **kwargs):
-            owner = self
-
-            class Run:
-                async def ainvoke(self, messages):
-                    if schema is Draft:
-                        owner.attempts += 1
-                        if owner.attempts == 2:
-                            raise TimeoutError()
-                        return Draft(statements=[statement(case)], unrecoverable_ids=["other"])
-                    return Review(
-                        verdicts=[dict(index=0, approved=True, errors=[])], uncovered_source_ids=[]
-                    )
-
-            return Run()
-
-    result = asyncio.run(rewrite(req, RetryOutage()))
+    model = Model([
+        Draft(statements=[statement(case)], unrecoverable_ids=["other"]),
+        Draft(statements=[], unrecoverable_ids=[]),
+    ])
+    result = asyncio.run(rewrite(req, model))
     assert result.statements == [statement(case)]
     assert result.status == "READY"
-    assert "other" in result.evidence_only_ids
+    assert result.evidence_only_ids == ["other"]
+    assert model.index == 1
+    assert len(model.calls) == 2
 
 
-def test_first_verified_conditions_publish_before_retry_and_only_failed_source_is_rewritten():
-    from app.domains.participation import service
-
+def test_single_verified_result_is_published_without_rewriting_failed_sources():
     good = next(c for c in FIXTURE["cases"] if c["id"] == "closure")
-    retry = next(c for c in FIXTURE["cases"] if c["id"] == "matching")
+    failed = next(c for c in FIXTURE["cases"] if c["id"] == "matching")
     req = request(good)
-    req.sources += request(retry).sources
+    req.sources += request(failed).sources
     published = []
-    payloads = []
-
-    class Targeted:
-        def with_structured_output(self, schema, **kwargs):
-            class Run:
-                async def ainvoke(self, messages):
-                    data = json.loads(messages[-1].content)
-                    if schema is Draft:
-                        payloads.append(data)
-                        if len(payloads) == 1:
-                            return Draft(
-                                statements=[statement(good)], unrecoverable_ids=[retry["id"]]
-                            )
-                        # This runs while the document consumer can publish the first review.
-                        await asyncio.sleep(0.01)
-                        assert published and published[0].statements == [statement(good)]
-                        return Draft(statements=[statement(retry)], unrecoverable_ids=[])
-                    if schema is Consolidation:
-                        return Consolidation(choices=[])
-                    assert schema is Review
-                    return Review(
-                        verdicts=[dict(index=0, approved=True, errors=[])], uncovered_source_ids=[]
-                    )
-
-            return Run()
+    model = Model([
+        Draft(statements=[statement(good)], unrecoverable_ids=[failed["id"]]),
+        Draft(statements=[statement(failed)], unrecoverable_ids=[]),
+    ])
 
     async def scenario():
         async def progress(result):
             published.append(result)
 
-        return await service.rewrite(req, Targeted(), progress)
+        return await rewrite(req, model, progress)
 
     result = asyncio.run(scenario())
-    assert len(payloads) == 2
-    assert [s["id"] for s in payloads[1]["sources"]] == [retry["id"]]
-    assert [r["source_id"] for r in payloads[1]["rows"]] == [retry["id"]]
-    assert payloads[1]["accepted_statements"][0]["text"] == good["expected"]
-    assert {s.text for s in result.statements} == {good["expected"], retry["expected"]}
-    assert result.evidence_only_ids == []
+    assert result.statements == [statement(good)]
+    assert result.evidence_only_ids == [failed["id"]]
+    assert published and all(snapshot == result for snapshot in published)
+    assert [schema for schema, _ in model.calls] == [Draft, Review]
+    assert model.index == 1
 
 
 def test_scope_rejection_in_independent_review_never_reaches_display():
@@ -681,7 +634,7 @@ def test_scope_rejection_in_independent_review_never_reaches_display():
                 return super().with_structured_output(schema, **kwargs)
 
             class Run:
-                async def ainvoke(self, messages):
+                async def ainvoke(self, messages, config=None, **kwargs):
                     return Review(
                         verdicts=[dict(index=0, approved=False, errors=["out_of_scope"])],
                         uncovered_source_ids=[],
@@ -691,10 +644,10 @@ def test_scope_rejection_in_independent_review_never_reaches_display():
 
     model = Scope([Draft(statements=[statement(case)], unrecoverable_ids=[])])
     assert not asyncio.run(rewrite(request(case), model)).statements
-    assert model.index == 2
+    assert model.index == 1
 
 
-def test_empty_retry_does_not_claim_remaining_conditions_of_partial_source_are_complete():
+def test_partial_source_remains_unresolved_even_with_a_verified_statement():
     case = next(c for c in FIXTURE["cases"] if c["id"] == "closure")
     model = Model(
         [
@@ -705,3 +658,49 @@ def test_empty_retry_does_not_claim_remaining_conditions_of_partial_source_are_c
     result = asyncio.run(rewrite(request(case), model))
     assert result.statements == [statement(case)]
     assert result.evidence_only_ids == [case["id"]]
+
+
+@pytest.mark.parametrize("verdicts", [[], [
+    dict(index=0, approved=True, errors=[]), dict(index=0, approved=True, errors=[]),
+], [dict(index=0, approved=True, errors=["missing_qualification"])]])
+def test_missing_duplicate_or_contradictory_verdicts_never_approve_output(verdicts):
+    case = next(c for c in FIXTURE["cases"] if c["id"] == "closure")
+
+    class InvalidReview(Model):
+        def with_structured_output(self, schema, **kwargs):
+            if schema is not Review:
+                return super().with_structured_output(schema, **kwargs)
+
+            class Run:
+                async def ainvoke(self, messages, config=None, **kwargs):
+                    return Review(verdicts=verdicts, uncovered_source_ids=[])
+
+            return Run()
+
+    model = InvalidReview([Draft(statements=[statement(case)], unrecoverable_ids=[])])
+    result = asyncio.run(rewrite(request(case), model))
+    assert not result.statements
+    assert result.evidence_only_ids == [case["id"]]
+    assert model.index == 1
+
+
+def test_verifier_outage_preserves_source_without_exposing_draft_or_retrying():
+    case = next(c for c in FIXTURE["cases"] if c["id"] == "closure")
+
+    class BrokenReview(Model):
+        def with_structured_output(self, schema, **kwargs):
+            if schema is not Review:
+                return super().with_structured_output(schema, **kwargs)
+
+            class Run:
+                async def ainvoke(self, messages, config=None, **kwargs):
+                    raise TimeoutError("private provider message")
+
+            return Run()
+
+    model = BrokenReview([Draft(statements=[statement(case)], unrecoverable_ids=[])])
+    result = asyncio.run(rewrite(request(case), model))
+    assert result.status == "UNAVAILABLE"
+    assert not result.statements
+    assert result.evidence_only_ids == [case["id"]]
+    assert model.index == 1

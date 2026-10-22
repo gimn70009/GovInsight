@@ -34,7 +34,7 @@ public record DocumentDetectionDetailResponse(
         List<ResponsibleOrganization> responsibleOrganizations,
         @Schema(description = "원문의 명시된 제출서류와 기존 준비서류를 통합한 안내. 분석 완료 여부와 독립적")
         SubmissionGuide submissionGuide,
-        @Schema(description = "현재 원문 근거로 분류한 참여 조건. 회사의 충족 여부를 판정하지 않음")
+        @Schema(description = "업력·매출·특허·유관산업의 필수/우대 조건과 원문 근거. 회사의 충족 여부를 판정하지 않음")
         ParticipationGuide participationGuide,
         @Schema(description = "대표 사업 유형 1개와 설명·원문 근거. 미확인 또는 일반 공지는 유형을 추정하지 않음")
         BusinessTypeSummary businessType
@@ -77,7 +77,7 @@ public record DocumentDetectionDetailResponse(
         }
     }
 
-    @Schema(description = "8개 고정 분류. 각 분류의 세부 항목은 명시 여부와 관계없이 반환")
+    @Schema(description = "상세 응답은 참여기업 조건 그룹의 업력·매출·특허·유관산업 4행을 반환")
     public record ParticipationCategory(String code, String label, List<ParticipationCriterionRow> rows) {}
     public record ParticipationCriterionRow(String code, String label,
             @Schema(description = "STATED / NOT_STATED / REVIEW_REQUIRED") String status,
@@ -85,7 +85,11 @@ public record DocumentDetectionDetailResponse(
     public record ParticipationCriterionEntry(ParticipationRule rule,
             @Schema(description = "분리 전 연결 문장. 조건의 대상·기준일·논리관계 보존") String context,
             @Schema(description = "ALTERNATIVE: 선택 관계, LINKED: 같은 문장에서 분리, null: 독립 항목") String relation,
-            List<String> relatedCriteria, String displayStatus) {
+            List<String> relatedCriteria, String displayStatus, List<String> supportingQuotes) {
+        public ParticipationCriterionEntry(ParticipationRule rule, String context, String relation,
+                                           List<String> relatedCriteria, String displayStatus) {
+            this(rule, context, relation, relatedCriteria, displayStatus, List.of());
+        }
         public ParticipationCriterionEntry(ParticipationRule rule, String context, String relation,
                                            List<String> relatedCriteria) {
             this(rule, context, relation, relatedCriteria, null);
