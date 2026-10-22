@@ -10,9 +10,6 @@
 .participation-guide__table thead th { padding-top: 11px; padding-bottom: 11px; background: #eef3fa; color: #526b88; font-size: 12px; border-bottom: 1px solid #dfe7f1; }
 .participation-guide__rules { list-style: none; padding: 0; margin: 0; }
 .participation-guide__rule + .participation-guide__rule { margin-top: 18px; padding-top: 18px; border-top: 1px solid #e8edf3; }
-.participation-guide__scope { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 7px; margin: 0 0 9px; font-size: 12px; line-height: 1.7; }
-.participation-guide__scope-label { color: #647c96; font-size: 11px; font-weight: 400; }
-.participation-guide__scope strong { display: inline-block; max-width: 100%; padding: 2px 8px; border: 1px solid #dbe6f5; border-radius: 5px; background: #eef4fc; color: #294f7d; font-size: 12px; font-weight: 600; white-space: pre-line; }
 .participation-guide__main { margin: 0; color: #213c5b; font-size: 13px; line-height: 1.85; font-weight: 500; white-space: pre-line; }
 .participation-guide__exclusion { display: inline-block; margin-bottom: 6px; padding: 2px 7px; color: #9a4c50; background: #fff1f1; border-radius: 4px; font-size: 11px; font-weight: 500; }
 .participation-guide__evidence-button { margin-top: 9px; }

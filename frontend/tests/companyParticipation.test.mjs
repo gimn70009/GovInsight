@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { companyParticipationRows, companyConditionEmptyText, companyConditionScope, formatCompanyCondition, isSpecificIndustryCondition, companyConditionSentence } from '../src/utils/companyParticipation.ts'
+import { companyParticipationRows, companyConditionEmptyText, companyConditionScope, formatCompanyCondition, isSpecificIndustryCondition, companyConditionSentence, scopedCompanyConditionSentence } from '../src/utils/companyParticipation.ts'
 
 const entry = (text, section = 'BASIC', extra = {}) => ({
   displayStatus: 'VERIFIED', context: null, relation: null, relatedCriteria: [],
@@ -334,4 +334,15 @@ test('distinct exceptions and multi-quote evidence are not collapsed into one co
   a.rule.sources = [{origin: 'NOTICE_BODY', excerpt: a.supportingQuotes.join('\n')}]
   b.rule.sources = [{origin: 'NOTICE_BODY', excerpt: b.supportingQuotes.join('\n')}]
   assert.equal(companyParticipationRows(guide([row('REVENUE', [a, b])]))[1].mandatory.length, 2)
+})
+
+
+test('program name is part of the sentence and a purpose paragraph never becomes its label', () => {
+  const value = entry('업력 7년 이상의 매출액 100억원 달성 중소기업이 지원 대상입니다.', 'BASIC',
+    { scope: '성장형 · (사업목적) 기업의 성장을 지원하여 육성' })
+  assert.equal(scopedCompanyConditionSentence(value, 'REVENUE'),
+    '성장형 유형은 업력 7년 이상의 매출액 100억원 달성 중소기업이 지원 대상입니다.')
+  assert.equal(scopedCompanyConditionSentence(entry('업력 6년 이상', 'BASIC', { scope: '공통' }), 'BUSINESS_AGE'),
+    '공통으로 업력 6년 이상이어야 합니다.')
+  assert.equal(scopedCompanyConditionSentence(entry('업력 6년 이상'), 'BUSINESS_AGE'), '업력 6년 이상이어야 합니다.')
 })

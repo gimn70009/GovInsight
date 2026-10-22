@@ -317,4 +317,52 @@ class ParticipationRewriteServiceTest {
             }
         }
     }
+
+    @Test void previousSevenFieldPaidResultsAreReusedWithoutAnyNewCall() throws Exception {
+        for (String status : List.of("READY", "UNAVAILABLE", "EMPTY")) {
+            var client = mock(PythonParticipationRewriteClient.class);
+            var store = mock(ParticipationRewriteStore.class);
+            var service = new ParticipationRewriteService(client, store, mapper);
+            try {
+                String body = "1. 성장형\n□ 신청자격\n" + quote + "\n2. 시장형\n□ 지원대상\n전통시장 및 상점가";
+                var candidates = ParticipationConditionResolver.candidatesWithScopes(body, List.of(), null);
+                var old = ParticipationRewriteProjection.previousInput(candidates.guide(), false, candidates.scopes());
+                var current = ParticipationRewriteProjection.input(candidates.guide(), false, candidates.scopes());
+                assertThat(current.request()).isNotEqualTo(old.request());
+                var response = status.equals("UNAVAILABLE") ? Response.unavailable(old.request())
+                        : new Response(List.of(), List.of(), "READY");
+                if (status.equals("READY")) {
+                    String id = old.request().sources().stream().filter(src -> src.excerpt().contains(quote)).findFirst().orElseThrow().id();
+                    response = new Response(List.of(new Statement(List.of(id), "BUSINESS_AGE", quote, "", List.of(quote), "ELIGIBILITY")), List.of(), "READY");
+                }
+                var version = version();
+                String key = ReflectionTestUtils.invokeMethod(service, "fingerprint", old.request(), "participation-seven-fields-v1");
+                ReflectionTestUtils.setField(version, "participationRewriteKey", key);
+                ReflectionTestUtils.setField(version, "participationRewriteJson", mapper.writeValueAsString(response));
+                var result = service.resolve(version, candidates.guide(), false, candidates.scopes());
+                assertThat(result.rewriteStatus()).isEqualTo(response.status());
+                if (status.equals("READY")) assertThat(result.rules()).hasSize(1);
+                else assertThat(result.rules()).isEmpty();
+                verifyNoInteractions(client, store);
+            } finally { service.close(); }
+        }
+    }
+
+    @Test void terminalEmptyCacheGetsLocalTargetSentencesWithoutPayingAgain() throws Exception {
+        var client = mock(PythonParticipationRewriteClient.class);
+        var store = mock(ParticipationRewriteStore.class);
+        var service = new ParticipationRewriteService(client, store, mapper);
+        try {
+            var c = ParticipationConditionResolver.candidatesWithScopes("1. 성장형\n□ 지원대상\n매출액 20억원 이상인 중소기업", List.of(), null);
+            var request = ParticipationRewriteProjection.input(c.guide(), false, c.scopes()).request();
+            var version = version();
+            ReflectionTestUtils.setField(version, "participationRewriteKey", service.fingerprint(request));
+            for (String status : List.of("READY", "UNAVAILABLE")) {
+                ReflectionTestUtils.setField(version, "participationRewriteJson", mapper.writeValueAsString(new Response(List.of(), List.of(), status)));
+                var result = service.resolve(version, c.guide(), false, c.scopes());
+                assertThat(result.rules()).singleElement().satisfies(rule -> assertThat(rule.text()).contains("20억원 이상"));
+            }
+            verifyNoInteractions(client, store);
+        } finally { service.close(); }
+    }
 }

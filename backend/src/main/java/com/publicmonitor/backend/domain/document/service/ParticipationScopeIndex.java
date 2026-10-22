@@ -4,7 +4,7 @@ import com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionDetail
 import java.util.*;
 import java.util.regex.Pattern;
 
-/** Display-only source positions; never included in an AI request or its cache key. */
+/** Source positions for display and structural context in new extraction requests. */
 final class ParticipationScopeIndex {
     private static final Pattern NUMBERED = Pattern.compile("^(\\d{1,2}(?:[-.]\\d{1,2})*)[.)]?\\s+(.+)$");
     private static final Pattern PUNCTUATED = Pattern.compile("^(\\d{1,2}(?:[-.]\\d{1,2})*)[.)]\\s*(.+)$");
@@ -15,6 +15,8 @@ final class ParticipationScopeIndex {
     private static final Pattern CONTENT = Pattern.compile("^(?:[□■○◦●•ㅇ]|\\[표\\]).*");
     private static final Pattern TOC_ENTRY = Pattern.compile(".*(?:\\.{2,}|…|·{2,}|\\t\\s*\\d+\\s*$|\\s{2,}\\d+\\s*$).*");
     private final Map<RequirementSource, List<Span>> sources = new LinkedHashMap<>();
+
+    private final Map<RequirementSource, String> contexts = new LinkedHashMap<>();
 
     record Line(String text, int from, int to) {}
     record Span(int from, int to, List<String> labels) {}
@@ -49,8 +51,10 @@ final class ParticipationScopeIndex {
                 if (contents && heading != null && !contentsPage && !TOC_ENTRY.matcher(text).matches() && hasContent(lines, i + 1))
                     contents = false;
                 if (!contents && heading != null && !TOC_ENTRY.matcher(text).matches()) {
-                    stack.tailMap(heading.level(), true).clear();
-                    stack.put(heading.level(), generic(heading.title()) ? "" : heading.title());
+                    // Documents often restart section numbering inside each program.
+                    int level = generic(heading.title()) ? 1000 : heading.level();
+                    stack.tailMap(level, true).clear();
+                    stack.put(level, generic(heading.title()) ? "" : heading.title());
                 }
                 if (!contents && heading == null && common(text)) stack.put(100, "공통");
                 else if (!contents && heading == null && !TOC_ENTRY.matcher(text).matches() && standaloneTitle(text) && !generic(text)
@@ -68,12 +72,46 @@ final class ParticipationScopeIndex {
             String excerpt = source.excerpt();
             int start = document.indexOf(excerpt, cursor);
             if (start < 0) continue;
+            String parent = parentSection(document.substring(0, start));
+            if (secondaryBuyer(document, parent)) parent += "\n[별도 참여 역할] 구매기관";
+            contexts.put(source, parent);
             int end = start + excerpt.length();
             var local = sources.computeIfAbsent(source, ignored -> new ArrayList<>());
             for (var span : spans) if (span.to() > start && span.from() < end)
                 local.add(new Span(Math.max(0, span.from() - start), Math.min(excerpt.length(), span.to() - start), span.labels()));
             cursor = end;
         }
+    }
+
+    String context(List<RequirementSource> evidence) {
+        return evidence.stream().map(contexts::get).filter(Objects::nonNull).filter(s -> !s.isBlank())
+                .distinct().collect(java.util.stream.Collectors.joining(" / "));
+    }
+
+    private static boolean secondaryBuyer(String document, String parent) {
+        if (!Pattern.compile("구매\\s*기관.*(?:현황|신청|참여)").matcher(parent).find()) return false;
+        String introduction = document.substring(0, Math.min(document.length(), 600)).replaceAll("\\s+", "");
+        if (introduction.matches(".*구매기관.{0,20}모집.*")) return false;
+        return introduction.matches(".*(?:기업|제품).{0,60}(?:판로|납품).{0,30}지원.*");
+    }
+
+    private static String parentSection(String prefix) {
+        String[] lines = prefix.split("\\R");
+        String current = "";
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i].strip();
+            if (line.startsWith("[파일:")) current = "";
+            String title = null;
+            if (line.matches("[0-9]{1,2}") && i + 1 < lines.length) title = lines[i + 1].strip();
+            else {
+                var match = Pattern.compile("^[0-9]{1,2}[.)]?\\s+([가-힣].*)$").matcher(line);
+                if (match.matches()) title = match.group(1).strip();
+            }
+            if (title != null && title.length() <= 60 && !title.matches(".*[0-9%:：].*")
+                    && title.matches(".*(?:개요|자격|대상|안내|신청|요건|절차|내용|과제|프로그램|제외대상)$"))
+                current = title.replaceAll("\\s+", " ");
+        }
+        return current;
     }
 
     String scope(List<RequirementSource> evidence, String quote) {
@@ -152,7 +190,8 @@ final class ParticipationScopeIndex {
         if (!title(value)) return false;
         String title = cleanTitle(value);
         return generic(title) || common(title)
-                || title.matches(".*(?:자금|사업|프로그램|프로젝트|패키지|트랙|유형|부문|과정|형)$")
+                || title.matches(".*(?:자금|사업|프로그램|프로젝트|패키지|트랙|유형|부문|과정|형|지원|육성|조성)$")
+                || title.matches(".*(?:형|트랙|유형)\\)$")
                 || title.matches(".*[가-힣A-Za-z]\\s*\\d+\\+?$");
     }
 
@@ -162,7 +201,10 @@ final class ParticipationScopeIndex {
             if (CONTENT.matcher(next).matches()) return true;
             var numbered = NUMBERED.matcher(next);
             if (numbered.matches() && !numbered.group(1).contains("-") && !numbered.group(1).contains(".")) return false;
-            if (NUMBER_ONLY.matcher(next).matches() && !next.contains("-")) return false;
+            if (NUMBER_ONLY.matcher(next).matches() && !next.contains("-")) {
+                if (i + 1 < lines.size() && generic(lines.get(i + 1).text().strip())) continue;
+                return false;
+            }
             if (next.matches(".*(?:신청|지원|참여).*(?:기업|대상|요건|자격).*")) return true;
         }
         return false;

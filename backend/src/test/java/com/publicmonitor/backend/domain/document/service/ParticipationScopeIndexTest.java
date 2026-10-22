@@ -83,11 +83,13 @@ class ParticipationScopeIndexTest {
         }
     }
 
-    @Test void displayIndexDoesNotChangeSerializedRequestOrSavedCacheKey() {
+    @Test void previousRequestRemainsFrozenWhileNewRequestIncludesProgramContext() {
         String body = "3 점프업1000\n3-1. 사업개요\n□ 지원대상\n" + quote;
         var candidates = ParticipationConditionResolver.candidatesWithScopes(body, List.of(), null);
         var oldInput = ParticipationRewriteProjection.input(candidates.guide(), false);
-        var newInput = ParticipationRewriteProjection.input(candidates.guide(), false, candidates.scopes());
+        var newInput = ParticipationRewriteProjection.previousInput(candidates.guide(), false, candidates.scopes());
+        assertThat(ParticipationRewriteProjection.input(candidates.guide(), false, candidates.scopes()).request().sources())
+                .anyMatch(source -> source.groupLabel().contains("[적용 유형] 점프업1000"));
         var mapper = new ObjectMapper();
         assertThat(mapper.writeValueAsString(newInput.request())).isEqualTo(mapper.writeValueAsString(oldInput.request()));
         var client = mock(PythonParticipationRewriteClient.class);
@@ -98,7 +100,8 @@ class ParticipationScopeIndexTest {
             var saved = new Response(List.of(new Statement(List.of(id), "BUSINESS_AGE", quote, "", List.of(quote), "ELIGIBILITY")), List.of(), "READY");
             var version = DocumentVersion.create(null, 1, "공고", body, "a".repeat(64), null, 0, null);
             ReflectionTestUtils.setField(version, "id", 3L);
-            ReflectionTestUtils.setField(version, "participationRewriteKey", service.fingerprint(oldInput.request()));
+            String key = ReflectionTestUtils.invokeMethod(service, "fingerprint", oldInput.request(), "participation-seven-fields-v1");
+            ReflectionTestUtils.setField(version, "participationRewriteKey", key);
             ReflectionTestUtils.setField(version, "participationRewriteJson", mapper.writeValueAsString(saved));
             var guide = service.resolve(version, candidates.guide(), false, candidates.scopes());
             assertThat(guide.rewriteStatus()).isEqualTo("READY");
@@ -147,7 +150,48 @@ class ParticipationScopeIndexTest {
                     return new Statement(List.of(source.id()), "REVENUE", text, "", List.of(text), "ELIGIBILITY");
                 }).toList();
         var guide = ParticipationRewriteProjection.guide(candidates.guide(), input, new Response(statements, List.of(), "READY"), "READY");
-        assertThat(guide.rules()).singleElement().satisfies(rule -> assertThat(rule.scope()).isEqualTo("점프업100 / 점프업500"));
+        assertThat(guide.rules()).allMatch(rule -> rule.scope().contains("점프업"));
+        assertThat(guide.rules().stream().map(rule -> rule.scope()).toList().toString()).contains("점프업100", "점프업500");
     }
 
+
+    @Test void restartedSubsectionNumberingKeepsTheProgramTitle() {
+        for (String title : List.of("지역기업 육성(성장형)", "기업역량지원", "산업 전환패키지")) {
+            assertThat(scope("2\n" + title + "\n1\n사업개요\n□ 지원대상\n" + quote, quote)).isEqualTo(title);
+        }
+    }
+
+    @Test void sameConditionInDifferentProgramsKeepsBothProgramLabelsInTheNewRequest() {
+        String body = "1. 성장형\n□ 지원대상\n" + quote + "\n2. 확장형\n□ 지원대상\n" + quote + "\n";
+        var c = ParticipationConditionResolver.candidatesWithScopes(body, List.of(), null);
+        var current = ParticipationRewriteProjection.input(c.guide(), false, c.scopes());
+        assertThat(current.request().sources().stream().filter(s -> s.excerpt().contains(quote)))
+                .extracting(Source::groupLabel).anyMatch(s -> s.contains("성장형") && s.contains("확장형"));
+    }
+
+    @Test void recipientRolesRequireDocumentContextAndDoNotHideBuyerRecruitment() {
+        String clause = "□ 신청자격\n공공기관만 신청 가능";
+        for (boolean buyerNotice : List.of(false, true)) {
+            String intro = buyerNotice ? "구매기관 모집 공고\n기업 제품의 판로 지원" : "중소기업 제품의 공공판로 개척을 지원하는 공고";
+            String body = intro + "\n4\n구매기관 현황 및 신청\n" + clause;
+            var c = ParticipationConditionResolver.candidatesWithScopes(body, List.of(), null);
+            var evidence = c.guide().rules().stream().flatMap(r -> r.sources().stream())
+                    .filter(src -> src.excerpt().contains("공공기관만")).toList();
+            assertThat(evidence).isNotEmpty();
+            assertThat(ParticipationAudience.recipient(evidence, c.scopes().context(evidence))).isEqualTo(!buyerNotice);
+        }
+    }
+
+    @Test void operatorBeneficiaryIsHiddenFromOldCachedResponseWithoutAnotherModelCall() {
+        String body = "본 모집 공고는 창업기업을 지원할 주관기관을 모집하는 공고문이며, 창업기업 모집은 별도 공고 예정\n"
+                + "2\n신청자격 및 제외대상\n□ 신청 자격\n전문 기관\n3\n사업 개요\n□ 지원대상 : 업력 10년 이내 기업";
+        var c = ParticipationConditionResolver.candidatesWithScopes(body, List.of(), null);
+        var old = ParticipationRewriteProjection.previousInput(c.guide(), false, c.scopes());
+        String id = old.request().sources().stream().filter(src -> src.excerpt().contains("업력 10년")).findFirst().orElseThrow().id();
+        var saved = new Response(List.of(new Statement(List.of(id), "BUSINESS_AGE", "업력이 10년 이내인 기업이 지원 대상입니다.", "",
+                List.of("업력 10년 이내 기업"), "ELIGIBILITY")), List.of(), "READY");
+        var result = ParticipationRewriteProjection.guide(c.guide(), old, saved, "READY");
+        assertThat(result.rules()).noneMatch(rule -> rule.text().contains("업력 10년"));
+        assertThat(result.rules()).anyMatch(rule -> rule.text().contains("전문 기관"));
+    }
 }

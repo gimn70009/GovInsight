@@ -28,6 +28,7 @@ REVENUE_500_LEAD = REVENUE_LEAD.replace("100억원", "500억원")
 REVENUE_1000_LEAD = REVENUE_LEAD.replace("100억원", "1,000억원")
 SCOPES = ["공통", "점프업100", "점프업500", "점프업1000"]
 LEADS = ["공고일 기준 업력이 7년 이상이어야 합니다."] + [lead + "이어야 합니다." for lead in (REVENUE_LEAD, REVENUE_500_LEAD, REVENUE_1000_LEAD)] + [f"{PATENT}을 부여합니다.", f"{SECTOR}이어야 합니다."]
+LEADS = ["공통으로 " + LEADS[0]] + [f"{scope} 유형은 {text}" for scope, text in zip(SCOPES[1:], LEADS[1:4])] + LEADS[4:]
 UNCLEAR = "매출액 기준은 별표의 기업 유형별 적용 기준을 참고"
 
 
@@ -74,7 +75,7 @@ async def check(browser):
         await h.wait_request(1, before + 1)
         await expect(region.locator(".participation-guide__main")).to_have_text(LEADS)
         await expect(region.get_by_role("status")).to_have_count(0)
-        await expect(region.locator(".participation-guide__scope strong")).to_have_text(SCOPES)
+        await expect(region.locator(".participation-guide__scope")).to_have_count(0)
         await expect(region.locator('[data-criterion="IP"] td').first).to_contain_text("확인된 조건 없음")
         await expect(region.locator('[data-criterion="IP"] td').last).to_contain_text(PATENT)
         await expect(region.locator('[data-criterion="REVENUE"] td').last).to_contain_text("확인 필요")
@@ -119,7 +120,7 @@ async def check(browser):
                 drawer.scrollTop += element.getBoundingClientRect().top - drawer.getBoundingClientRect().top - toolbar.offsetHeight - 12;
             }""")
             await expect(region.locator(".participation-guide__main")).to_have_text(LEADS)
-            await expect(region.locator(".participation-guide__scope strong")).to_have_text(SCOPES)
+            await expect(region.locator(".participation-guide__scope")).to_have_count(0)
             assert await region.evaluate("e => e.scrollWidth <= e.clientWidth + 1"), width
             assert await region.locator("table").evaluate("e => e.scrollWidth <= e.clientWidth + 1"), width
             if width <= 390:
@@ -171,8 +172,8 @@ async def identical_conditions_keep_scopes(browser):
         await expect(age.locator(".participation-guide__main")).to_have_count(0)
         await expect(age).to_have_count(0)
         revenue = region.locator('[data-criterion="REVENUE"]')
-        await expect(revenue.locator(".participation-guide__scope strong")).to_have_text(["점프업100", "점프업500"])
-        await expect(revenue.locator(".participation-guide__main")).to_have_text(["매출액 100억원 이상이어야 합니다.", "매출액 100억원 이상이어야 합니다.", "매출액 1,000억원 이상이어야 합니다."])
+        await expect(revenue.locator(".participation-guide__scope")).to_have_count(0)
+        await expect(revenue.locator(".participation-guide__main")).to_have_text(["점프업100 유형은 매출액 100억원 이상이어야 합니다.", "점프업500 유형은 매출액 100억원 이상이어야 합니다.", "매출액 1,000억원 이상이어야 합니다."])
         await expect(revenue).not_to_contain_text("점프업1000")
         assert not h.errors and not h.unexpected, (h.errors, h.unexpected)
     finally:
@@ -284,9 +285,9 @@ async def reported_raw_blocks_and_duplicates(browser):
         h.states[1] = data
         await h.open(analysis_tab=False)
         region = h.page.get_by_role("region", name="신청 자격", exact=True)
-        expected = ["중소기업이어야 하며, 세부 프로그램별 신청 요건을 충족해야 합니다.",
+        expected = ["공통으로 중소기업이어야 하며, 세부 프로그램별 신청 요건을 충족해야 합니다.",
                     "판로지원법 제 2조 제 2호에 따른 공공기관이어야 합니다.",
-                    "공고일 기준 업력이 7년 이상이어야 합니다."]
+                    "공통으로 공고일 기준 업력이 7년 이상이어야 합니다."]
         for width in (1440, 390):
             await h.page.set_viewport_size(dict(width=width, height=1000))
             await expect(region.locator(".participation-guide__main")).to_have_text(expected)
@@ -309,10 +310,54 @@ async def reported_raw_blocks_and_duplicates(browser):
         await h.close()
 
 
+async def stored_notice_results(browser):
+    """Replay real stored responses plus local projection; all browser APIs remain mocked."""
+    import json
+    import os
+    replay = os.environ.get("PARTICIPATION_REPLAY_FILE")
+    if not replay:
+        return
+    for sample in json.loads(Path(replay).read_text(encoding="utf-8")):
+        h = await summary.refresh.Harness(browser).start()
+        try:
+            data = summary.ready()
+            data["participationGuide"] = sample["guide"]
+            h.states[1] = data
+            await h.open(analysis_tab=False)
+            region = h.page.get_by_role("region", name="신청 자격", exact=True)
+            for width in (1440, 390):
+                await h.page.set_viewport_size(dict(width=width, height=1000))
+                await expect(region.get_by_role("table")).to_be_visible()
+                await expect(region.locator(".participation-guide__scope")).to_have_count(0)
+                texts = await region.locator(".participation-guide__main").all_text_contents()
+                assert texts, sample["id"]
+                assert all(text.endswith("다.") and "□" not in text and "사업목적" not in text for text in texts), texts
+                if sample["id"] == 5:
+                    for name, amount in [("점프업100", "100억원"), ("점프업500", "500억원"), ("점프업1000", "1,000억원")]:
+                        assert any(text.startswith(name + " 유형은 ") and amount in text for text in texts), texts
+                if sample["id"] == 1:
+                    for name in ("창업과제", "일반과제", "소액과제", "딥테크과제"):
+                        assert any(text.startswith(name + " 유형은 ") for text in texts), texts
+                if sample["id"] == 7:
+                    assert any("전문 기관" in text for text in texts) and not any("업력 10년" in text for text in texts)
+                assert await region.evaluate("e => e.scrollWidth <= e.clientWidth + 1"), (sample["id"], width)
+                await region.scroll_into_view_if_needed()
+                await region.screenshot(path=str(OUT / f"stored-{sample['id']}-{width}.png"))
+            evidence = region.get_by_role("button").first
+            await evidence.click()
+            await expect(region.locator("blockquote")).to_be_visible()
+            assert (await region.locator("blockquote").inner_text()).strip()
+            await evidence.click()
+        finally:
+            await h.close()
+    print("PASS actual stored notice projection: 7 notices, 2 widths, all program sentences, original evidence, no paid API")
+
+
 async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch(channel="msedge", headless=True)
         try:
+            await stored_notice_results(browser)
             await reported_raw_blocks_and_duplicates(browser)
             await check(browser)
             await readable_clean_condition(browser)

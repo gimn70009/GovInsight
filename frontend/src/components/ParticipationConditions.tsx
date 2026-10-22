@@ -2,7 +2,7 @@ import { useId, useState } from 'react'
 import { ChevronDown, ClipboardCheck, ExternalLink } from 'lucide-react'
 import type { DocumentDetail, ParticipationRule, ParticipationCriterionEntry } from '../api/types'
 import { evidenceAttachment } from '../utils/businessSummary'
-import { companyParticipationRows, companyConditionEmptyText, companyConditionScope, formatCompanyCondition, companyConditionSentence } from '../utils/companyParticipation'
+import { companyParticipationRows, companyConditionEmptyText, scopedCompanyConditionSentence } from '../utils/companyParticipation'
 import './ParticipationConditions.css'
 
 type RuleSource = ParticipationRule['sources'][number]
@@ -48,16 +48,10 @@ function Rule({ entry, detail, label, code }: {
   const item = entry.rule
   const [open, setOpen] = useState(false)
   const id = useId()
-  const scope = companyConditionScope(entry)
-  const condition = companyConditionSentence(item.text, item.section === 'PREFERENCE', code)
-  const scopeText = scope ? formatCompanyCondition(scope) : null
+  const condition = scopedCompanyConditionSentence(entry, code)
   const hasEvidence = item.sources.some(source => source.excerpt?.trim())
   return <li className="participation-guide__rule">
     <div className="participation-guide__description">
-      {scopeText && <p className="participation-guide__scope">
-        <span className="participation-guide__scope-label">적용 유형</span>
-        <strong>{[scopeText.lead, ...scopeText.notes].join(' ')}</strong>
-      </p>}
       {item.section === 'EXCLUSION' && <span className="participation-guide__exclusion">해당 시 신청 제외</span>}
       <p className="participation-guide__main">{condition}</p>
     </div>
@@ -93,7 +87,7 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
         <strong>공고의 신청 자격과 우대사항을 확인하고 있습니다.</strong>
         <p>확인이 끝나면 이 표에 자동으로 표시됩니다.</p>
       </div>}
-      {unavailable && <p className="participation-guide__progress">참여기업 조건 확인을 완료하지 못했습니다. 확인되지 않은 항목은 공고 원문을 참고해 주세요.</p>}
+      {unavailable && visibleRows.length === 0 && <p className="participation-guide__progress">참여기업 조건 확인을 완료하지 못했습니다. 확인되지 않은 항목은 공고 원문을 참고해 주세요.</p>}
       {visibleRows.length > 0 ? <div className="participation-guide__table-wrap">
         <table className="participation-guide__table" aria-label="참여기업 필수 조건과 우대사항">
           <colgroup><col className="participation-guide__category-col" /><col /><col /></colgroup>

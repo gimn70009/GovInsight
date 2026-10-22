@@ -4,7 +4,7 @@ import com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionDetail
 import java.util.*;
 import static com.publicmonitor.backend.domain.document.client.ParticipationRewriteContract.*;
 
-/** Only source quotations classified into the four requested business fields reach the table. */
+/** Only source quotations classified into the supported eligibility fields reach the table. */
 final class ParticipationRewriteProjection {
     record Input(Request request, Map<String, List<RequirementSource>> evidence, boolean incomplete, ParticipationScopeIndex scopes) {}
 
@@ -13,29 +13,43 @@ final class ParticipationRewriteProjection {
     }
 
     static Input input(ParticipationGuide raw, boolean incomplete, ParticipationScopeIndex scopes) {
-        return input(raw, incomplete, scopes, false);
+        return input(raw, incomplete, scopes, false, false);
     }
 
     static Input legacyInput(ParticipationGuide raw, boolean incomplete, ParticipationScopeIndex scopes) {
-        return input(raw, incomplete, scopes, true);
+        return input(raw, incomplete, scopes, true, true);
     }
 
-    private static Input input(ParticipationGuide raw, boolean incomplete, ParticipationScopeIndex scopes, boolean legacy) {
+    static Input previousInput(ParticipationGuide raw, boolean incomplete, ParticipationScopeIndex scopes) {
+        return input(raw, incomplete, scopes, false, true);
+    }
+
+    private static Input input(ParticipationGuide raw, boolean incomplete, ParticipationScopeIndex scopes, boolean legacy, boolean previous) {
         var evidence = new LinkedHashMap<String, List<RequirementSource>>();
         var identities = new LinkedHashMap<String, String>();
         for (var rule : raw.rules()) for (var source : rule.sources()) {
             if (source.excerpt() == null || source.excerpt().isBlank()
-                    || matching(source, legacy).isEmpty()) continue;
+                    || matching(source, legacy, previous).isEmpty()) continue;
             // The same paragraph often exists in both HWP and PDF. Classify once, retain both citations.
             String identity = compact(Objects.toString(source.sectionTitle(), "")) + ":" + compact(source.excerpt());
+            if (!previous && scopes != null)
+                identity += ":" + Objects.toString(scopes.scope(List.of(source), source.excerpt()), "")
+                        + ":" + scopes.context(List.of(source));
             String id = identities.computeIfAbsent(identity, ignored -> "s" + identities.size());
             var originals = evidence.computeIfAbsent(id, ignored -> new ArrayList<>());
             if (!originals.contains(source)) originals.add(source);
         }
         var sources = evidence.entrySet().stream().map(item -> {
             var source = item.getValue().getFirst();
-            return new Source(item.getKey(), source.excerpt(), Objects.toString(source.sectionTitle(), ""),
-                    matching(source, legacy));
+            String heading = Objects.toString(source.sectionTitle(), "");
+            if (!previous && scopes != null) {
+                String parent = scopes.context(List.of(source));
+                String scope = scopes.scope(List.of(source), source.excerpt().lines().findFirst().orElse(""));
+                heading = (parent.isBlank() ? "" : "[상위 구역] " + parent + "\n")
+                        + (scope == null ? "" : "[적용 유형] " + scope + "\n") + heading;
+            }
+            return new Source(item.getKey(), source.excerpt(), heading,
+                    matching(source, legacy, previous));
         }).toList();
         var catalog = legacy
                 ? Arrays.stream(ParticipationLegacyCriteria.values()).map(c -> new Criterion(c.name(), c.label, "참여기업 조건")).toList()
@@ -44,6 +58,7 @@ final class ParticipationRewriteProjection {
     }
 
     static ParticipationGuide guide(ParticipationGuide raw, Input input, Response result, String status) {
+        var localConditions = ParticipationLocalConditions.extract(input);
         var entries = new LinkedHashMap<String, List<ParticipationCriterionEntry>>();
         var covered = new HashSet<String>();
         var irrelevant = new HashSet<String>();
@@ -67,10 +82,11 @@ final class ParticipationRewriteProjection {
             }
             String quote = item.supportingQuotes().getFirst();
             var directSources = sources.stream().filter(source -> source.excerpt().contains(quote)).toList();
+            if (localConditions.stream().anyMatch(local -> ParticipationLocalConditions.covers(local, directSources, quote))) continue;
             var display = directSources.stream()
                     .map(source -> ParticipationFocusedText.prepare(item.criterion(), item.text(), quote, source.sectionTitle(), item.kind()))
                     .filter(Objects::nonNull).findFirst().orElse(null);
-            if (display == null) {
+            if (display == null || (input.scopes() != null && ParticipationAudience.recipient(directSources, input.scopes().context(directSources)))) {
                 unresolved.addAll(item.sourceIds());
                 continue;
             }
@@ -84,6 +100,7 @@ final class ParticipationRewriteProjection {
             var c = ParticipationFocusCriterion.valueOf(item.criterion());
             String section = "PREFERENCE".equals(item.kind()) ? "PREFERENCE" : "BASIC";
             String scope = input.scopes() == null ? displayScope(sources, display.quote()) : input.scopes().scope(sources, display.quote());
+            scope = ParticipationLocalConditions.cleanScope(scope);
             var rule = new ParticipationRule(section, c.label, display.text(), scope, null,
                     List.of(), List.of(), List.of(), List.of(), sources);
             verifiedRules.put(identity, new Verified(c, rule, display.quote()));
@@ -93,6 +110,11 @@ final class ParticipationRewriteProjection {
             entries.computeIfAbsent(item.criterion().name(), ignored -> new ArrayList<>()).add(
                     new ParticipationCriterionEntry(item.rule(), null, null, List.of(), "VERIFIED", List.of(item.quote())));
             displayedRules.add(item.rule());
+        }
+        for (var local : localConditions) {
+            entries.computeIfAbsent(local.code(), ignored -> new ArrayList<>()).add(
+                    new ParticipationCriterionEntry(local.rule(), null, null, List.of(), "VERIFIED", List.of(local.quote())));
+            displayedRules.add(local.rule());
         }
         for (var source : input.request().sources()) {
             for (String code : source.criteria()) {
@@ -114,9 +136,9 @@ final class ParticipationRewriteProjection {
         var category = new ParticipationCategory("COMPANY_REQUIREMENTS", "참여기업 조건", rows);
         return new ParticipationGuide(List.of(), displayedRules, raw.variants(), List.of(category), status);
     }
-    private static List<String> matching(RequirementSource source, boolean legacy) {
+    private static List<String> matching(RequirementSource source, boolean legacy, boolean previous) {
         return legacy ? ParticipationLegacyCriteria.matching(source.excerpt(), source.sectionTitle())
-                : ParticipationFocusCriterion.matching(source.excerpt(), source.sectionTitle());
+                : ParticipationFocusCriterion.matching(source.excerpt(), source.sectionTitle(), previous);
     }
     private record Verified(ParticipationFocusCriterion criterion, ParticipationRule rule, String quote) {}
 

@@ -55,8 +55,19 @@ export function companyConditionEmptyText(status: ParticipationGuide['rewriteSta
 
 /** Show supplied scope labels explicitly; never infer a track from a numeric condition. */
 export function companyConditionScope(entry: ParticipationCriterionEntry): string | null {
-  const scope = entry.rule.scope?.trim()
+  const scope = entry.rule.scope?.split(/ \/ /u).map(part => part.split(/ · /u)
+    .filter(label => !/^(?:[（(□■◦○ㅇ*※-]|20[0-9]{2}년)/u.test(label.trim()) && label.trim().length <= 60).join(' · ')).filter(Boolean).join(' / ').trim()
   return scope || null
+}
+
+
+export function scopedCompanyConditionSentence(entry: ParticipationCriterionEntry, code: string): string {
+  const text = companyConditionSentence(entry.rule.text, entry.rule.section === 'PREFERENCE', code)
+  const scope = companyConditionScope(entry)
+  if (!text || !scope || text.startsWith(scope)) return text
+  if (scope === '공통') return `공통으로 ${text}`
+  const label = scope.replace(/ · 공통$/u, '')
+  return `${label} 유형${entry.rule.section === 'PREFERENCE' ? '에서는' : '은'} ${text}`
 }
 
 

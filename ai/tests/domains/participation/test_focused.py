@@ -733,3 +733,164 @@ def test_mixed_source_can_yield_a_single_qualification_sentence_in_one_call():
     assert [s.text for s in result.statements] == [text]
     assert result.statements[0].supporting_quotes == [quote]
     assert len(model.calls) == 1
+
+
+@pytest.mark.parametrize("labels", [("성장형", "도약형", "확장형"), ("A트랙", "B트랙", "C트랙")])
+def test_all_qualification_scopes_precede_large_other_sections(labels):
+    noise = source("noise", "중소기업의 선정 후 의무 " * 130, "선정 후 의무")
+    sources = [noise] + [
+        source(str(i), f"□ 지원대상\n업력 6년 이상이며 매출액 {i + 2}억원 이상인 기업",
+               f"[적용 유형] {label}\n□ 지원대상")
+        for i, label in enumerate(labels)
+    ]
+    selected = focused.select_sources(request(*sources))
+    assert {s.id for s in selected} == {"0", "1", "2"}
+    assert sum(len(s.excerpt.encode()) for s in selected) <= 8000
+
+
+def test_nested_qualification_retains_wrapped_sentence_table_and_exception():
+    condition = "□ 신청자격\n가공업을 주된 사업으로 영위하는\n상시근로자 10인 미만 소공인\n"
+    condition += ("[표]\n유형\t조건\n가. 유형\t특허 등록 기업 또는 인증 기업\n"
+                  "[/표]\n※ 단, 예외기업 포함\n")
+    raw = "□ 사업목적\n중소기업 지원\n" + condition + "□ 제출서류\n매출액 증명서 제출"
+    selected = focused.select_sources(request(source("nested", raw, "사업개요")))
+    assert len(selected) == 1
+    assert selected[0].excerpt == condition
+
+
+def test_astral_pdf_section_bullets_do_not_force_sending_the_entire_document():
+    raw = "공고 안내\n" + "지원 절차 설명 " * 800
+    condition = ("\U000f02b1 선정 대상 및 방법\n"
+                 "ㅇ (대상) 경제안보품목을 생산하는 사업자 또는 사업자단체\n")
+    raw += "\n" + condition + "\U000f02b2 신청 절차\n신청서 제출"
+    selected = focused.select_sources(request(source("pdf", raw, "")))
+    assert len(selected) == 1
+    assert selected[0].excerpt == condition
+
+
+def test_same_condition_for_distinct_named_tracks_is_not_dropped():
+    raw = "□ 지원대상\n업력 6년 이상인 기업"
+    selected = focused.select_sources(request(*[
+        source(str(i), raw, f"[적용 유형] {name}\n□ 지원대상")
+        for i, name in enumerate(["성장형", "확장형"])
+    ]))
+    assert len(selected) == 2
+
+
+def test_explicit_secondary_buyer_is_excluded_but_buyer_recruitment_is_allowed():
+    raw = "□ 신청자격\n공공기관만 신청 가능"
+    primary = source("primary", raw, "[상위 구역] 구매기관 현황 및 신청\n□ 신청자격")
+    secondary = source("secondary", raw,
+                       "[별도 참여 역할] 구매기관\n[상위 구역] 구매기관 현황 및 신청\n□ 신청자격")
+    assert [s.id for s in focused.select_sources(request(primary, secondary))] == ["primary"]
+
+
+def test_operator_recruitment_does_not_include_separate_beneficiary_age():
+    context = "[공고 대상] 주관기관 모집, 창업기업 모집은 별도 공고 예정\n"
+    operator = source("operator", "□ 신청 자격\n전문 기관 또는 법인이 신청 가능",
+                      "[상위 구역] 신청자격 및 제외대상\n" + context + "[원문 구역] □ 신청 자격")
+    beneficiary = source("beneficiary", "□ 지원대상 : 업력 10년 이내 기업",
+                         "[상위 구역] 사업 개요\n" + context + "[원문 구역] □ 지원대상")
+    assert [s.id for s in focused.select_sources(request(operator, beneficiary))] == ["operator"]
+
+
+def test_large_attachment_collection_still_uses_one_bounded_call_for_short_qualification():
+    noise = [source(str(i), "인증 목록 " * 1500, "첨부 목록") for i in range(8)]
+    key = source("key", "□ 신청자격\n전년도 직접수출액 4,000만불 미만인 중소기업")
+    req = request(*noise, key)
+    assert sum(len(s.excerpt) for s in req.sources) > 64000
+    fake = Fake([item("key", "REVENUE", "전년도 직접수출액 4,000만불 미만인 중소기업")])
+    result = asyncio.run(service.rewrite(req, fake))
+    assert result.status == "READY"
+    assert len(result.statements) == 1
+    assert len(fake.calls) == 1
+    schema, messages = fake.calls[0]
+    assert focused.CallBudget().reserve(messages, schema) <= focused.MAX_INPUT_BYTES
+    assert len(json.loads(messages[1].content)["sources"]) == 1
+
+
+def test_markets_and_associations_are_applicant_types_not_industries():
+    for raw in ["전통시장 및 상점가", "상인회 또는 협동조합", "소공인"]:
+        assert "BUSINESS_FORM" in focused.source_fields(source("x", "지원대상 " + raw))
+
+
+@pytest.mark.parametrize("notice_id", range(1, 8))
+def test_real_public_notice_sections_fit_one_request_and_keep_expected_eligibility(notice_id):
+    from pathlib import Path
+
+    corpus = json.loads((Path(__file__).parent / "fixtures/notices.json").read_text("utf-8"))
+    notice = next(row for row in corpus if row["id"] == notice_id)
+    req = request(*[Source.model_validate(row) for row in notice["sources"]])
+    selected = focused.select_sources(req)
+    combined = "\n".join(s.excerpt for s in selected)
+    expected = {
+        1: ["창업과제", "일반과제", "소액과제", "딥테크과제"],
+        2: ["C10~C34", "10인 미만"],
+        3: ["전통시장", "상점가", "상권활성화구역"],
+        4: ["경제안보품목", "사업자 또는 사업자단체"],
+        5: ["100억원", "500억원", "1,000억원"],
+        6: ["직접수출액 5,000만불 미만", "글로벌 강소기업"],
+        7: ["전문 기관", "공공기관", "민간기관"],
+    }
+    for clause in expected[notice_id]:
+        assert "".join(clause.split()) in "".join(combined.split())
+    if notice_id == 1:
+        assert "s14" not in {s.id for s in selected}
+    if notice_id == 7:
+        assert "업력 10년" not in combined
+    if notice_id == 5:
+        headings = "\n".join(s.group_label for s in selected)
+        assert all(label in headings for label in ["점프업100", "점프업500", "점프업1000"])
+    fake = Fake()
+    result = asyncio.run(service.rewrite(req, fake))
+    assert result.status == "READY"
+    assert len(fake.calls) == 1
+    schema, messages = fake.calls[0]
+    assert focused.CallBudget().reserve(messages, schema) <= 20000
+    assert sum(len(s.excerpt.encode()) for s in selected) <= 8000
+    assert len(selected) <= 12
+
+
+def test_synthetic_join_between_qualification_sections_cannot_ground_a_quote():
+    raw = ("□ 신청자격\n업력 6년 이상 기업\n□ 제출서류\n신청서 제출\n"
+           "□ 지원대상\n매출액 2억원 이상 기업")
+    req = request(source("x", raw))
+    selected = focused.select_sources(req)
+    forged = selected[0].excerpt
+    assert "[다음 원문 구간]" in forged
+    extraction = Extraction(items=[item("x", "BUSINESS_AGE", forged)], unresolved_source_ids=[])
+    assert focused.project(extraction, selected, req).statements == []
+
+
+@pytest.mark.parametrize("code", ["BUSINESS_AGE", "REVENUE"])
+def test_decorated_compound_clause_recovers_a_valid_field_sentence_without_a_retry(code):
+    quote = "□ (지원대상) 업력 7년 이상의 매출액 500억원 달성* 중소기업"
+    text = focused.source_sentence(quote, code, "ELIGIBILITY")
+    assert text
+    assert focused.valid_sentence(text, quote, code)
+    assert "□" not in text and "*" not in text
+    if code == "BUSINESS_AGE":
+        assert "500" not in text
+    else:
+        assert "7년" not in text
+
+
+def test_nested_actual_heading_can_ground_a_mandatory_sector_condition():
+    quote = "경제안보품목의 도입·생산에 기여하는 사업자단체"
+    req = request(source("x", "\U000f02b1 선정 대상 및 방법\nㅇ (대상) " + quote, ""))
+    extraction = Extraction(items=[item("x", "SECTOR", quote, basis="지원 자격")],
+                            unresolved_source_ids=[])
+    result = focused.project(extraction, focused.select_sources(req), req)
+    assert len(result.statements) == 1
+
+
+
+def test_clause_cleanup_preserves_multiplication_and_only_removes_footnote_stars():
+    assert focused.clean_clause("매출액* 2 ≥ 30인 기업") == "매출액* 2 ≥ 30인 기업"
+    assert focused.clean_clause("□ (지원대상) 매출액 20억원 달성* 중소기업") == (
+        "매출액 20억원 달성 중소기업"
+    )
+
+
+def test_clause_cleanup_removes_footnote_before_korean_particle():
+    assert focused.clean_clause("매출액 30억원 미만*의 기업") == "매출액 30억원 미만의 기업"

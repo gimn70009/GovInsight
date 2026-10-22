@@ -17,7 +17,7 @@ import static com.publicmonitor.backend.domain.document.client.ParticipationRewr
 @Service
 @org.springframework.context.annotation.Lazy
 public class ParticipationRewriteService {
-    private static final String VERSION = "participation-seven-fields-v1";
+    private static final String VERSION = "participation-seven-fields-v2";
     private final PythonParticipationRewriteClient client;
     private final ParticipationRewriteStore store;
     private final ObjectMapper mapper;
@@ -51,6 +51,16 @@ public class ParticipationRewriteService {
                     return ParticipationRewriteProjection.guide(raw, legacyInput, legacy, legacy.status());
             } catch (RuntimeException ignored) { /* Invalid stored JSON cannot be reused. */ }
         }
+        var previousInput = ParticipationRewriteProjection.previousInput(raw, incomplete, scopes);
+        if (fingerprint(previousInput.request(), "participation-seven-fields-v1").equals(version.getParticipationRewriteKey())
+                && version.getParticipationRewriteJson() != null) {
+            try {
+                var previous = mapper.readValue(version.getParticipationRewriteJson(), Response.class);
+                if (previous.statements() != null && previous.evidenceOnlyIds() != null
+                        && ("READY".equals(previous.status()) || "UNAVAILABLE".equals(previous.status())))
+                    return ParticipationRewriteProjection.guide(raw, previousInput, previous, previous.status());
+            } catch (RuntimeException ignored) { /* Invalid stored JSON cannot be reused. */ }
+        }
         String key = fingerprint(request);
         String cacheId = version.getId() + ":" + key;
         if (version.getId() != null && key.equals(running.get(version.getId()))) {
@@ -68,7 +78,7 @@ public class ParticipationRewriteService {
                 && ("READY".equals(cached.status()) || "UNAVAILABLE".equals(cached.status())))
             return ParticipationRewriteProjection.guide(raw, input, cached, cached.status());
         String status = "PENDING";
-        if (request.sources().size() > 160 || request.sources().stream().mapToInt(s -> s.excerpt().length()).sum() > 64000
+        if (request.sources().size() > 160
                 || version.getId() == null) status = "UNAVAILABLE";
         else synchronized (completed) {
             // Check again under the admission lock: a job may have completed since the first cache lookup.

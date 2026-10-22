@@ -13,6 +13,7 @@ from pydantic import Field
 from app.core.openai_models import ChatOpenAI
 from app.observability.model_calls import ModelCallTrace
 
+from . import selection
 from .budget import BudgetExceeded, CallBudget
 from .config import RewriteSettings
 from .schemas import RewriteRequest, RewriteResponse, Statement, StrictModel
@@ -30,7 +31,7 @@ _semaphore = asyncio.Semaphore(2)
 
 FIELD_TERMS = {
     "BUSINESS_FORM": re.compile(
-        r"중소기업|소상공인|중견기업|사업자단체|공공기관|민간기관|전문\s*기관|법인|단체|산학연협력기술지주회사|신기술창업전문회사|벤처투자회사|창업기획자"
+        r"전통시장|상점가|상인회|상인연합회|협동조합|소공인|중소기업|소상공인|중견기업|사업자단체|공공기관|민간기관|전문\s*기관|법인|단체|산학연협력기술지주회사|신기술창업전문회사|벤처투자회사|창업기획자"
     ),
     "EXPERIENCE": re.compile(
         r"계약\s*실적|납품|수행\s*(?:경험|실적|역량)|지원\s*기능|조달\s*역량|실증"
@@ -79,12 +80,12 @@ text는 해당 분야만 쉽게 이해할 완전한 한국어 한 문장(최대 
 quote는 문장을 입증하는 연속 원문(최대 600자), basis는 필수/우대의 실제 제목·구절입니다.
 수치·단위·비교·기준일·신용등급·업종코드·등록/출원·AND/OR·부정·자격 예외를 보존하세요.
 복합조건은 분야별로 분리하고 quote도 각 분야에 맞게 좁히세요. 불가분 OR/예외는 함께 보존하세요.
-공통과 각 사업유형을 구분하고 유형별 다른 기준을 중복으로 지우지 마세요.
+상위 구역·적용 유형별 자격을 빠짐없이 구분하고, 금액으로 유형을 추측하지 마세요.
 주관기관 모집과 추후 수혜기업 모집을 혼동하지 마세요. 기관 형태를 업종으로 만들지 마세요.
 서류·신청기간·방법·사업목적·지원금·선정 후 의무와 추측성 설명은 제외하세요.
 필수서류의 필수, 사업명 속 제조, 검토목록의 부적절 업종은 자격이 아닙니다.
 표는 행·열 제목과 대안 관계를 함께 읽고, 반복 셀·기호·표 머리글은 문장에 복사하지 마세요.
-각 신청유형의 핵심 자격을 우선해 최대 12개만 출력하세요. 없는 분야는 채우지 마세요.
+유형마다 핵심 자격을 우선해 최대 12개만 출력하세요. 없는 분야는 채우지 마세요.
 불명확하거나 정확히 설명할 수 없는 구역은 unresolved_source_ids에 남기세요.
 """
 
@@ -135,7 +136,7 @@ NUMBER = re.compile(
 
 
 QUALIFICATION = re.compile(
-    r"신청\s*(?:자격|대상|요건|조건)|지원\s*(?:대상|자격|요건)|선정\s*대상|우대사항|가점"
+    r"신청\s*(?:자격|대상|요건|조건)|지원\s*(?:대상|자격|요건)|선정\s*(?:대상|기준)|우대사항|가점"
 )
 
 
@@ -171,10 +172,19 @@ def allowed_condition(text, code=None):
     )
 
 
+def clean_clause(quote):
+    value = re.sub(r"^[□■◦○]\s*", "", quote.strip())
+    value = re.sub(r"^\((?:신청자격|지원대상|신청대상)\)\s*", "", value)
+    return re.sub(
+        r"(달성|충족|대상|기준|기업|이상|이하|초과|미만|보유|해당|가능)[＊*]{1,2}(?=\s|$|[.,]|의(?:\s|$))",
+        r"\1", value,
+    )
+
+
 def field_quote(quote, code):
     match = re.fullmatch(
         r"(?P<age>업력\s*\d+년\s*이상)의?\s*(?P<revenue>매출액\s*[\d,]+억원\s*달성)\s*중소기업",
-        quote.strip(),
+        clean_clause(quote),
     )
     if match and code in {"BUSINESS_AGE", "REVENUE"}:
         return match["age" if code == "BUSINESS_AGE" else "revenue"]
@@ -221,16 +231,16 @@ def source_sentence(quote, code, kind):
     """Only known standalone clauses; never label an arbitrary block as a sentence."""
     if re.search(r"신청\s*(?:기간|방법)|접수\s*(?:기간|방법)|\[/?표\]|\t", quote):
         return None
-    lead = re.sub(r"\s+", " ", field_quote(quote, code)).strip()
+    lead = re.sub(r"\s+", " ", clean_clause(field_quote(quote, code))).strip()
     if len(lead) > 200 or re.search(r"[□■※*]", lead):
         return None
-    if re.search(r"(?:기업|기관|단체)$", lead):
+    if re.search(r"(?:기업|기업자|기관|단체|상점가|소공인)$", lead):
         text = lead + ("을 우대합니다." if kind == "PREFERENCE" else "이어야 합니다.")
     elif re.search(r"(?:이상|미만)$", lead):
         text = lead + "이어야 합니다."
     elif re.search(r"(?:이하|초과|이내)$", lead):
         text = lead + "여야 합니다."
-    elif re.search(r"(?:영위|보유)$", lead):
+    elif re.search(r"(?:영위|보유|달성)$", lead):
         text = lead + (" 시 우대합니다." if kind == "PREFERENCE" else "해야 합니다.")
     else:
         return None
@@ -252,31 +262,7 @@ def source_fields(source):
 
 
 def select_sources(request: RewriteRequest):
-    # Qualifications first, balanced by category, without increasing the byte or call budget.
-    candidates = {code: [] for code in CODES}
-    for index, source in sorted(
-        enumerate(request.sources),
-        key=lambda pair: (
-            not bool(QUALIFICATION.search(pair[1].group_label + "\n" + pair[1].excerpt)),
-            pair[0],
-        ),
-    ):
-        size = len(source.excerpt.encode("utf-8"))
-        if not source.excerpt.strip() or size > MAX_SOURCE_BYTES:
-            continue
-        for code in source_fields(source):
-            candidates[code].append((index, source, size))
-    selected = {}
-    used = 0
-    while any(candidates.values()) and len(selected) < MAX_SOURCES:
-        for code in CODES:
-            if not candidates[code] or len(selected) >= MAX_SOURCES:
-                continue
-            index, source, size = candidates[code].pop(0)
-            if index not in selected and used + size <= MAX_SOURCE_BYTES:
-                selected[index] = source
-                used += size
-    return [source for _, source in sorted(selected.items())]
+    return selection.select(request, source_fields, CODES, MAX_SOURCE_BYTES, MAX_SOURCES)
 
 
 def original_quote(quote, text):
@@ -324,6 +310,10 @@ def project(extraction, selected, request):
         source = sources.get(item.source_id)
         reason = None
         quote = original_quote(item.quote, source.excerpt) if source else None
+        original = next((s for s in request.sources if s.id == item.source_id), None)
+        if quote and original:
+            # Disjoint excerpts must never authorize a fabricated cross-section quotation.
+            quote = original_quote(quote, original.excerpt)
         basis = (
             (
                 original_quote(item.basis, source.excerpt)
@@ -336,6 +326,9 @@ def project(extraction, selected, request):
         heading = source.group_label.split("[원문 구역]")[-1] if source else ""
         if not basis and QUALIFICATION.search(heading):
             basis = heading
+        if not basis and source:
+            basis = next((line.strip() for line in source.excerpt.splitlines()
+                          if selection.qualification_heading(line.strip())), None)
         context = (quote or "") + "\n" + (basis or "")
         clause = surrounding_clause(quote, source.excerpt) if quote and source else ""
         classification_context = clause + "\n" + (basis or "")
@@ -344,6 +337,8 @@ def project(extraction, selected, request):
             reason = "SOURCE_NOT_SELECTED"
         elif not quote:
             reason = "QUOTE_NOT_IN_SOURCE"
+        elif selection.recipient(source):
+            reason = "WRONG_AUDIENCE"
         elif len(quote) > 600:
             reason = "QUOTE_TOO_LONG"
         elif not basis:
@@ -436,8 +431,7 @@ async def extract(request: RewriteRequest, model=None, on_progress=None):
     unavailable = RewriteResponse(
         statements=[], evidence_only_ids=[s.id for s in request.sources], status="UNAVAILABLE"
     )
-    if sum(len(source.excerpt) for source in request.sources) > 64000:
-        return unavailable
+    # Bound the paid input after local selection, not the full attachment collection.
     selected = select_sources(request)
     if not selected:
         return RewriteResponse(
