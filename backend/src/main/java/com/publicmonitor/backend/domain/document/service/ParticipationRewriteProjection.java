@@ -58,9 +58,14 @@ final class ParticipationRewriteProjection {
     }
 
     static ParticipationGuide guide(ParticipationGuide raw, Input input, Response result, String status) {
-        var localConditions = ParticipationLocalConditions.extract(input);
+        return guide(raw, input, result, status, input);
+    }
+
+    static ParticipationGuide guide(ParticipationGuide raw, Input input, Response result, String status, Input currentInput) {
+        var localConditions = ParticipationLocalConditions.extract(currentInput);
         var entries = new LinkedHashMap<String, List<ParticipationCriterionEntry>>();
         var covered = new HashSet<String>();
+        var replacedLocal = new HashSet<ParticipationLocalConditions.Condition>();
         var irrelevant = new HashSet<String>();
         if ("READY".equals(result.status()) && result.irrelevantSourceIds() != null)
             irrelevant.addAll(result.irrelevantSourceIds());
@@ -82,13 +87,20 @@ final class ParticipationRewriteProjection {
             }
             String quote = item.supportingQuotes().getFirst();
             var directSources = sources.stream().filter(source -> source.excerpt().contains(quote)).toList();
-            if (localConditions.stream().anyMatch(local -> ParticipationLocalConditions.covers(local, directSources, quote))) continue;
+            var matchingLocal = localConditions.stream().filter(local ->
+                    ParticipationLocalConditions.covers(local, directSources, quote)).toList();
             var display = directSources.stream()
                     .map(source -> ParticipationFocusedText.prepare(item.criterion(), item.text(), quote, source.sectionTitle(), item.kind()))
                     .filter(Objects::nonNull).findFirst().orElse(null);
             if (display == null || (input.scopes() != null && ParticipationAudience.recipient(directSources, input.scopes().context(directSources)))) {
                 unresolved.addAll(item.sourceIds());
                 continue;
+            }
+            if (!matchingLocal.isEmpty()) {
+                if (!display.text().matches("(?s).*(?:다|요)\\.$")
+                        || matchingLocal.stream().anyMatch(local -> !local.code().equals(item.criterion()))
+                        || !ParticipationFacts.equivalent(display.text(), quote)) continue;
+                replacedLocal.addAll(matchingLocal);
             }
             String identity = item.criterion() + ":" + item.kind() + ":" + compact(display.text());
             var previous = verifiedRules.get(identity);
@@ -112,6 +124,7 @@ final class ParticipationRewriteProjection {
             displayedRules.add(item.rule());
         }
         for (var local : localConditions) {
+            if (replacedLocal.contains(local)) continue;
             entries.computeIfAbsent(local.code(), ignored -> new ArrayList<>()).add(
                     new ParticipationCriterionEntry(local.rule(), null, null, List.of(), "VERIFIED", List.of(local.quote())));
             displayedRules.add(local.rule());

@@ -17,7 +17,7 @@ import static com.publicmonitor.backend.domain.document.client.ParticipationRewr
 @Service
 @org.springframework.context.annotation.Lazy
 public class ParticipationRewriteService {
-    private static final String VERSION = "participation-seven-fields-v2";
+    private static final String VERSION = "participation-seven-fields-v3";
     private final PythonParticipationRewriteClient client;
     private final ParticipationRewriteStore store;
     private final ObjectMapper mapper;
@@ -38,6 +38,8 @@ public class ParticipationRewriteService {
     public ParticipationGuide resolve(DocumentVersion version, ParticipationGuide raw, boolean incomplete, ParticipationScopeIndex scopes) {
         var input = ParticipationRewriteProjection.input(raw, incomplete, scopes);
         var request = input.request();
+        var retained = retainedResult(version, raw, input, incomplete, scopes);
+        if (retained != null) return retained;
         if (request.sources().isEmpty()) return ParticipationRewriteProjection.guide(raw, input,
                 new Response(java.util.List.of(), java.util.List.of(), "READY"), "READY");
         // Old source ids belong to the frozen request, not the expanded seven-field request.
@@ -92,6 +94,29 @@ public class ParticipationRewriteService {
             }
         }
         return ParticipationRewriteProjection.guide(raw, input, Response.unavailable(request), status);
+    }
+
+    private ParticipationGuide retainedResult(DocumentVersion version, ParticipationGuide raw,
+            ParticipationRewriteProjection.Input current, boolean incomplete, ParticipationScopeIndex scopes) {
+        if (scopes == null || scopes.compatibility() == null || version.getParticipationRewriteJson() == null) return null;
+        var old = scopes.compatibility();
+        var oldRaw = new ParticipationGuide(raw.conditions(), old.rules(), raw.variants(), java.util.List.of());
+        var inputs = java.util.List.of(
+                ParticipationRewriteProjection.input(oldRaw, incomplete, old.scopes()),
+                ParticipationRewriteProjection.previousInput(oldRaw, incomplete, old.scopes()),
+                ParticipationRewriteProjection.legacyInput(oldRaw, incomplete, old.scopes()));
+        var policies = java.util.List.of("participation-seven-fields-v2", "participation-seven-fields-v1", "participation-four-fields-v1");
+        for (int i = 0; i < inputs.size(); i++) {
+            var oldInput = inputs.get(i);
+            if (!fingerprint(oldInput.request(), policies.get(i)).equals(version.getParticipationRewriteKey())) continue;
+            try {
+                var response = mapper.readValue(version.getParticipationRewriteJson(), Response.class);
+                if (response.statements() != null && response.evidenceOnlyIds() != null
+                        && ("READY".equals(response.status()) || "UNAVAILABLE".equals(response.status())))
+                    return ParticipationRewriteProjection.guide(raw, oldInput, response, response.status(), current);
+            } catch (RuntimeException ignored) { /* Invalid cache cannot establish a paid terminal result. */ }
+        }
+        return null;
     }
 
     private void run(Long id, String key, Request request) {

@@ -17,6 +17,7 @@ final class ParticipationLocalConditions {
         for (var evidence : input.evidence().values()) for (var source : evidence) {
             if (ParticipationAudience.recipient(List.of(source), input.scopes().context(List.of(source)))) continue;
             String raw = source.excerpt();
+            addResearchCondition(source, input, result);
             String[] lines = raw.split("\\R", -1);
             int[] lineStarts = new int[lines.length];
             var breaks = Pattern.compile("\\R").matcher(raw);
@@ -98,9 +99,33 @@ final class ParticipationLocalConditions {
         return List.copyOf(result.values());
     }
 
+    private static void addResearchCondition(RequirementSource source, ParticipationRewriteProjection.Input input,
+            Map<String, Condition> result) {
+        if (!Objects.toString(source.sectionTitle(), "").replaceAll("\\s+", "").contains("신청자격")) return;
+        // Transform only a complete, explicit obligation, keeping the applicant role and the exception.
+        var clauses = Pattern.compile("(?m)^[◦○ㅇ-]?\\h*((?:주관|공동)연구개발기관이\\h*기업인\\h*경우는[^\\r\\n]{1,280})$").matcher(source.excerpt());
+        while (clauses.find() && result.size() < 48) {
+            String quote = clauses.group(1).strip();
+            String value = clean(quote);
+            var condition = Pattern.compile("((?:주관|공동)연구개발기관이 기업인 경우)는 (.+법인사업자)이어야 하며, (.+기업부설연구소\\([^()]+\\)를) 보유하고 있어야 함\\(연구개발전담부서는 불인정\\)").matcher(value);
+            if (!condition.matches()) continue;
+            String sentence = condition.group(1) + ", " + condition.group(2) + "여야 하며, "
+                    + condition.group(3) + " 보유해야 합니다. 연구개발전담부서는 인정되지 않습니다.";
+            String scope = cleanScope(input.scopes().scope(List.of(source), quote));
+            String key = "BUSINESS_FORM:" + Objects.toString(scope, "") + ":" + value.replaceAll("\\s+", "");
+            var previous = result.get(key);
+            var sources = new ArrayList<RequirementSource>();
+            if (previous != null) sources.addAll(previous.rule().sources());
+            if (!sources.contains(source)) sources.add(source);
+            var rule = new ParticipationRule("BASIC", ParticipationFocusCriterion.BUSINESS_FORM.label, sentence, scope, null,
+                    List.of(), List.of(), List.of(), List.of(), sources);
+            result.put(key, new Condition("BUSINESS_FORM", rule, quote));
+        }
+    }
+
     static boolean covers(Condition local, List<RequirementSource> sources, String quote) {
         return local.rule().sources().stream().anyMatch(sources::contains)
-                && clean(quote).replaceAll("\\s+", "").equals(clean(local.quote()).replaceAll("\\s+", ""));
+                && clean(LABEL.matcher(quote).replaceFirst("")).replaceAll("\\s+", "").equals(clean(local.quote()).replaceAll("\\s+", ""));
     }
 
     private static boolean entity(String text) { return ENTITY.matcher(text).matches(); }

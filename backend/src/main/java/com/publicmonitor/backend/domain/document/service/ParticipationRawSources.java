@@ -17,38 +17,55 @@ final class ParticipationRawSources {
     }
 
     static ScopedSources collectWithScopes(String body, List<DocumentAttachment> attachments) {
+        var current = collectWithScopes(body, attachments, false);
+        current.scopes().compatibility(collectWithScopes(body, attachments, true));
+        return current;
+    }
+
+    private static ScopedSources collectWithScopes(String body, List<DocumentAttachment> attachments, boolean frozen) {
         var result = new ArrayList<ParticipationRule>();
-        var scopes = new ParticipationScopeIndex();
+        var scopes = new ParticipationScopeIndex(frozen);
         for (String document : ParticipationCategorySources.documents(body))
-            collectDocument(document, null, result, scopes);
+            collectDocument(document, null, result, scopes, frozen);
         for (var file : attachments) if (file.getParseStatus() == AttachmentParseStatus.COMPLETED
                 && ParticipationCategorySources.allowed(file.getFileName()))
             for (String document : ParticipationCategorySources.documents(file.getExtractedText()))
-                collectDocument(document, file.getFileName(), result, scopes);
+                collectDocument(document, file.getFileName(), result, scopes, frozen);
         return new ScopedSources(result, scopes);
     }
 
-    private static void collectDocument(String document, String file, List<ParticipationRule> result, ParticipationScopeIndex scopes) {
+    private static void collectDocument(String document, String file, List<ParticipationRule> result, ParticipationScopeIndex scopes, boolean frozen) {
         int start = result.size();
-        collect(document, file, result);
+        collect(document, file, result, frozen);
         scopes.addDocument(document, result.subList(start, result.size()));
     }
 
-    private static void collect(String document, String file, List<ParticipationRule> result) {
+    private static void collect(String document, String file, List<ParticipationRule> result, boolean frozen) {
         String context = recruitmentContext(document);
         String heading = "";
+        String numberedSection = "";
         int start = 0, offset = 0;
         boolean table = false;
         for (String line : document.split("(?<=\\n)", -1)) {
             String stripped = line.strip();
-            if (FORM.matcher(stripped).matches() && !stripped.contains("공고")) {
+            if ((frozen ? FORM.matcher(stripped).matches() && !stripped.contains("공고")
+                    : !table && formBoundary(stripped))) {
                 add(document.substring(start, offset), file, heading, context, result);
                 return;
             }
-            boolean boundary = !table && stripped.length() <= 90 && HEADING.matcher(stripped).matches();
+            boolean numbered = stripped.matches("^\\d{1,2}(?:-\\d{1,2})+[.]?\\h*[가-힣A-Za-z].*");
+            boolean boundary = !table && stripped.length() <= 90
+                    && (HEADING.matcher(stripped).matches() || (!frozen && numbered));
             if (boundary && offset > start) {
                 add(document.substring(start, offset), file, heading, context, result);
                 start = offset;
+                if (!frozen && numbered) numberedSection = stripped;
+                else if (!frozen && stripped.matches("^\\d+[.)].*")) numberedSection = "";
+                heading = !frozen && stripped.matches("^[□■].*") && !numberedSection.isBlank()
+                        ? numberedSection + " / " + stripped : stripped;
+            }
+            if (!frozen && boundary && offset == 0) {
+                if (numbered) numberedSection = stripped;
                 heading = stripped;
             }
             if (stripped.equals("[표]")) table = true;
@@ -56,6 +73,13 @@ final class ParticipationRawSources {
             offset += line.length();
         }
         add(document.substring(start), file, heading, context, result);
+    }
+
+    private static boolean formBoundary(String line) {
+        // "양식교부 및 접수처" is a field in the notice, not a separate application form.
+        if (line.contains("공고") || line.matches("^양식\\h*(?:교부|배부|제공|다운로드|및).*")) return false;
+        return line.matches("^(?:[<\\[]\\h*)?(?:붙임|별첨|별지|서식|양식|작성예시|작성견본|참고자료|참고\\h*\\d+)"
+                + "(?:$|[\\h\\d\\]>）):：.].*)");
     }
 
     private static String recruitmentContext(String document) {

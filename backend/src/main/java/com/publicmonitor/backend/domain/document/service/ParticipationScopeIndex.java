@@ -14,6 +14,13 @@ final class ParticipationScopeIndex {
     private static final Pattern BULLET = Pattern.compile("^[□■]\\s*(.+)$");
     private static final Pattern CONTENT = Pattern.compile("^(?:[□■○◦●•ㅇ]|\\[표\\]).*");
     private static final Pattern TOC_ENTRY = Pattern.compile(".*(?:\\.{2,}|…|·{2,}|\\t\\s*\\d+\\s*$|\\s{2,}\\d+\\s*$).*");
+    // Frozen parsing is used only to identify already-paid cache entries.
+    private final boolean frozen;
+    ParticipationScopeIndex() { this(false); }
+    ParticipationScopeIndex(boolean frozen) { this.frozen = frozen; }
+    private ParticipationRawSources.ScopedSources compatibility;
+    void compatibility(ParticipationRawSources.ScopedSources value) { compatibility = value; }
+    ParticipationRawSources.ScopedSources compatibility() { return compatibility; }
     private final Map<RequirementSource, List<Span>> sources = new LinkedHashMap<>();
 
     private final Map<RequirementSource, String> contexts = new LinkedHashMap<>();
@@ -52,6 +59,9 @@ final class ParticipationScopeIndex {
                     contents = false;
                 if (!contents && heading != null && !TOC_ENTRY.matcher(text).matches()) {
                     // Documents often restart section numbering inside each program.
+                    // A numbered subsection ends a preceding inline track, but keeps its enclosing program.
+                    if (!frozen && generic(heading.title()) && heading.level() > 1 && heading.level() < 100)
+                        stack.tailMap(heading.level(), true).clear();
                     int level = generic(heading.title()) ? 1000 : heading.level();
                     stack.tailMap(level, true).clear();
                     stack.put(level, generic(heading.title()) ? "" : heading.title());
@@ -95,13 +105,20 @@ final class ParticipationScopeIndex {
         return introduction.matches(".*(?:기업|제품).{0,60}(?:판로|납품).{0,30}지원.*");
     }
 
-    private static String parentSection(String prefix) {
+    private String parentSection(String prefix) {
         String[] lines = prefix.split("\\R");
         String current = "";
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i].strip();
             if (line.startsWith("[파일:")) current = "";
             String title = null;
+            if (!frozen) {
+                var subsection = JOINED_SUBSECTION.matcher(line);
+                if (subsection.matches() && generic(subsection.group(2))) {
+                    current = subsection.group(2).replaceAll("\\s+", " ").strip();
+                    continue;
+                }
+            }
             if (line.matches("[0-9]{1,2}") && i + 1 < lines.length) title = lines[i + 1].strip();
             else {
                 var match = Pattern.compile("^[0-9]{1,2}[.)]?\\s+([가-힣].*)$").matcher(line);

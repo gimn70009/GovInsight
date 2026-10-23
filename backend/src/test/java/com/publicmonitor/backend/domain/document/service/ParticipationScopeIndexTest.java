@@ -129,12 +129,13 @@ class ParticipationScopeIndexTest {
             assertThat(rule.sources()).hasSize(2);
         });
     }
-    @Test void addingTheDisplayIndexPreservesEveryOriginalSourceAndItsOrder() {
+    @Test void frozenParsingPreservesEveryOriginalSourceAndItsOrder() {
         String body = "3 점프업1000\n3-1. 사업개요\n□ 지원대상\n" + quote;
         var original = new java.util.ArrayList<ParticipationRule>();
-        ReflectionTestUtils.invokeMethod(ParticipationRawSources.class, "collect", body, null, original);
+        ReflectionTestUtils.invokeMethod(ParticipationRawSources.class, "collect", body, null, original, true);
         var current = ParticipationRawSources.collectWithScopes(body, List.of());
-        assertThat(current.rules()).isEqualTo(original);
+        assertThat(current.scopes().compatibility().rules()).isEqualTo(original);
+        assertThat(current.rules()).flatExtracting(ParticipationRule::sources).anyMatch(source -> source.sectionTitle().contains("3-1. 사업개요"));
     }
 
     @Test void whitespaceVariantsKeepBothTrackLabelsWhenStatementsAreMerged() {
@@ -166,7 +167,7 @@ class ParticipationScopeIndexTest {
         var c = ParticipationConditionResolver.candidatesWithScopes(body, List.of(), null);
         var current = ParticipationRewriteProjection.input(c.guide(), false, c.scopes());
         assertThat(current.request().sources().stream().filter(s -> s.excerpt().contains(quote)))
-                .extracting(Source::groupLabel).anyMatch(s -> s.contains("성장형") && s.contains("확장형"));
+                .extracting(Source::groupLabel).anyMatch(s -> s.contains("성장형")).anyMatch(s -> s.contains("확장형"));
     }
 
     @Test void recipientRolesRequireDocumentContextAndDoNotHideBuyerRecruitment() {

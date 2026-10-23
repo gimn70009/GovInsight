@@ -114,4 +114,18 @@ class ParticipationSourceBoundaryTest {
         Files.writeString(Path.of("build/participation-guide-checks/certification-combined-guide.json"), new ObjectMapper().writeValueAsString(guide), StandardCharsets.UTF_8);
     }
 
+
+    @ParameterizedTest
+    @ValueSource(strings = {"양식교부 및 접수처", "양식교부\t및", "양식 제공 및 접수"})
+    void formDistributionDoesNotTruncateEligibility(String field) {
+        String body = "1. 공고안내\n[표]\n" + field + "\t온라인 홈페이지\n[/표]\n"
+                + "4-2. 신청자격\n□ 주관연구개발기관\n◦ 법인사업자인 중소기업\n"
+                + "별지 1 신청서\n신청기업명: 임의 기업";
+        var sources = ParticipationRawSources.collectWithScopes(body, List.of());
+        assertThat(sources.rules()).flatExtracting(ParticipationRule::sources).anySatisfy(source -> {
+            assertThat(source.sectionTitle()).contains("4-2. 신청자격", "주관연구개발기관");
+            assertThat(source.excerpt()).contains("법인사업자").doesNotContain("임의 기업");
+        });
+        assertThat(sources.scopes().compatibility().rules()).flatExtracting(ParticipationRule::sources).noneMatch(source -> source.excerpt().contains("법인사업자"));
+    }
 }

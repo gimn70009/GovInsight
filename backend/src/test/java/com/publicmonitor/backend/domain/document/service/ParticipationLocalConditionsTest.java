@@ -79,4 +79,74 @@ class ParticipationLocalConditionsTest {
     @Test void mathematicalMultiplicationIsNeverRemovedAsDecoration() {
         assertThat(ParticipationLocalConditions.clean("매출액* 2 ≥ 30인 기업")).contains("매출액* 2 ≥ 30");
     }
+
+    @Test void researchObligationKeepsRoleDeadlinesRecognitionAndExcludedDepartment() {
+        String quote = "주관연구개발기관이 기업인 경우는 접수마감일 현재 법인사업자이어야 하며, 선정평가 개최일 이전에 기업부설연구소(한국산업기술진흥협회 인정서 기준)를 보유하고 있어야 함(연구개발전담부서는 불인정)";
+        String body = "4-1. 지원분야\nR&D자율성트랙\n◦ 연구 지원\n4-2. 신청자격\n□ 주관연구개발기관 및 공동연구개발기관\n◦" + quote;
+        var guide = project(body);
+        assertThat(guide.rules()).singleElement().satisfies(rule -> {
+            assertThat(rule.scope()).isNull();
+            assertThat(rule.text()).isEqualTo("주관연구개발기관이 기업인 경우, 접수마감일 현재 법인사업자여야 하며, 선정평가 개최일 이전에 기업부설연구소(한국산업기술진흥협회 인정서 기준)를 보유해야 합니다. 연구개발전담부서는 인정되지 않습니다.");
+            assertThat(rule.sources().getFirst().excerpt()).contains(quote);
+        });
+        assertThat(project(body.replace("신청자격", "제출서류")).rules()).isEmpty();
+        assertThat(project(body.replace("불인정", "인정")).rules()).isEmpty();
+    }
+
+    @Test void procurementScreenshotSentencesAndScopesStayExactlyTheSame() throws Exception {
+        String body;
+        try (var stream = getClass().getResourceAsStream("/participation-conditions/procurement-quality.txt")) {
+            body = new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        var c = ParticipationConditionResolver.candidatesWithScopes(body, List.of(), null);
+        var input = ParticipationRewriteProjection.input(c.guide(), false, c.scopes());
+        String quote = "최근 10년간 공공기관 계약실적이 매년 연속적으로 10억원을 초과하지 않는 기업";
+        String sid = input.request().sources().stream().filter(source -> source.excerpt().contains(quote)).findFirst().orElseThrow().id();
+        var response = new Response(List.of(new Statement(List.of(sid), "EXPERIENCE", quote + "이어야 합니다.", "", List.of(quote), "ELIGIBILITY")), List.of(), "READY");
+        var rules = ParticipationRewriteProjection.guide(c.guide(), input, response, "READY").rules();
+        assertThat(rules).extracting(ParticipationRule::text).containsExactly(
+                quote + "이어야 합니다.",
+                "설립 7년 이하 판로지원법 시행령 제13조의2제1항제1호에 따른 중소기업자가 지원 대상입니다.",
+                "설립 7년 초과 판로지원법 시행령 제13조의2제1항제1호에 따른 중소기업자이며, 최근 10년간 공공기관 계약실적이 매년 연속적으로 10억원을 초과하지 않는 기업이 지원 대상입니다.",
+                "판로지원법 시행령 제13조의2제1항제1호에 따른 중소기업자 중 설립 7년 이하 창업기업 또는 기업의 기술개발제품 공공조달 계약실적이 5억원 이하 첫걸음 기업이 지원 대상입니다.",
+                "판로지원법 시행령 제13조의2 제 1항1호에 따른 중소기업자가 지원 대상입니다.");
+        assertThat(rules).extracting(ParticipationRule::scope).containsExactly(null, "창업과제", "일반과제", "소액과제", "딥테크과제");
+    }
+
+    @Test void completeValidatedSummaryTakesPrecedenceOverLongerLocalSentence() {
+        String quote = "□ 지원대상 : 「중소기업기본법」 제2조에 따른 중소기업";
+        var c = ParticipationConditionResolver.candidatesWithScopes(quote, List.of(), null);
+        var input = ParticipationRewriteProjection.input(c.guide(), false, c.scopes());
+        String sid = input.request().sources().stream().filter(source -> source.excerpt().contains(quote))
+                .findFirst().orElseThrow().id();
+        var response = new Response(List.of(new Statement(List.of(sid), "BUSINESS_FORM",
+                "중소기업이 지원 대상입니다.", "", List.of(quote), "ELIGIBILITY")), List.of(), "READY");
+        var guide = ParticipationRewriteProjection.guide(c.guide(), input, response, "READY");
+        assertThat(guide.rules()).singleElement().satisfies(rule -> {
+            assertThat(rule.text()).isEqualTo("중소기업이 지원 대상입니다.");
+            assertThat(rule.sources().getFirst().excerpt()).contains(quote);
+        });
+        var invalid = new Response(List.of(new Statement(List.of(sid), "BUSINESS_FORM",
+                "중견기업이 지원 대상입니다.", "", List.of(quote), "ELIGIBILITY")), List.of(), "READY");
+        assertThat(ParticipationRewriteProjection.guide(c.guide(), input, invalid, "READY").rules())
+                .singleElement().satisfies(rule ->
+                        assertThat(rule.text()).contains("중소기업").doesNotContain("중견기업"));
+    }
+
+    @Test void sameValidatedSentenceKeepsBothProgramScopes() {
+        String quote = "□ 지원대상 : 「중소기업기본법」 제2조에 따른 중소기업";
+        var c = ParticipationConditionResolver.candidatesWithScopes(
+                "1. 성장형\n" + quote + "\n2. 도약형\n" + quote, List.of(), null);
+        var input = ParticipationRewriteProjection.input(c.guide(), false, c.scopes());
+        var statements = input.request().sources().stream().filter(source -> source.excerpt().contains(quote))
+                .map(source -> new Statement(List.of(source.id()), "BUSINESS_FORM",
+                        "중소기업이 지원 대상입니다.", "", List.of(quote), "ELIGIBILITY")).toList();
+        var guide = ParticipationRewriteProjection.guide(c.guide(), input,
+                new Response(statements, List.of(), "READY"), "READY");
+        assertThat(guide.rules()).singleElement().satisfies(rule -> {
+            assertThat(rule.scope()).isEqualTo("성장형 / 도약형");
+            assertThat(rule.sources()).hasSize(2);
+            assertThat(rule.text()).isEqualTo("중소기업이 지원 대상입니다.");
+        });
+    }
 }

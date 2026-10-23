@@ -3,12 +3,13 @@
 import re
 
 QUALIFICATION = re.compile(
-    r"(?:신청|참여|지원|모집|기업)\s*(?:자격|대상|요건|조건)|선정\s*(?:대상|기준)|자격\s*요건"
+    r"(?:신청|참여|지원|모집|기업)\s*(?:자격|대상|요건|조건)|선정\s*(?:대상|기준)|자격\s*요건|입찰\s*참가\s*자격"
 )
 PREFERENCE = re.compile(r"우대|가점|가산점")
 IRRELEVANT = re.compile(
     r"(?:선정|협약)\s*후|유의\s*사항|문의|주요\s*용어|정의|향후\s*절차|평가\s*(?:절차|내용|방법)"
     r"|제출\s*서류|신청\s*방법|접수\s*방법|지원\s*내용|지원\s*규모|사업\s*목적"
+    r"|입찰\s*보증금|과업\s*수행\s*계획|주요\s*과업|평가\s*항목|성과\s*보고|계약\s*체결\s*후"
 )
 
 
@@ -39,24 +40,28 @@ def boundary(line):
     if value in {"[표]", "[/표]"} or not value or len(value) > 180:
         return False
     # Body lines, numbered alternatives and table rows are not section boundaries.
-    return bool(re.match(r"^(?:[□■]|[가-하][.)])\s*", value)) or bool(
-        re.match(r"^[\ue000-\uf8ff\U000f0000-\U000ffffd]\s*", value)
-        and len(value) < 60
-    ) or bool(
-        len(value) < 60
-        and re.match(r"^(?:선정|신청|지원|참여)\s*(?:대상|자격|기준|방법|절차)", value)
+    return (
+        bool(re.match(r"^(?:[□■]|[가-하][.)])\s*", value))
+        or bool(
+            re.match(r"^(?:[0-9]+(?:-[0-9]+)+[.]?|[\ue000-\uf8ff\U000f0000-\U000ffffd])\s*", value)
+            and len(value) < 60
+        )
+        or bool(
+            len(value) < 60
+            and re.match(r"^(?:선정|신청|지원|참여)\s*(?:대상|자격|기준|방법|절차)", value)
+        )
     )
 
 
 def qualification_heading(line):
     title = re.sub(r"^[□■\ue000-\uf8ff\U000f0000-\U000ffffd]\s*", "", line)
-    title = re.sub(r"^(?:[가-하][.)]|[0-9]+[.)])\s*", "", title)
+    title = re.sub(r"^(?:[가-하][.)]|[0-9]+(?:[-.][0-9]+)*[.)]?)\s*", "", title)
     title = re.sub(r"^\(?과제별\s*", "", title).lstrip("(")
     return bool(QUALIFICATION.match(title)) and not IRRELEVANT.search(title)
 
 
 def prepare(source, source_fields):
-    if recipient(source):
+    if recipient(source) or not source.excerpt.strip():
         return None
     # Find real nested qualification sections in a coarse parsed block; do not cut inside tables.
     lines = source.excerpt.splitlines(keepends=True)
@@ -70,26 +75,37 @@ def prepare(source, source_fields):
             table = False
         offset += len(line)
     starts = sorted({0, *starts, len(source.excerpt)})
-    chunks = [source.excerpt[a:b] for a, b in zip(starts, starts[1:]) if a < b]
     qualified = []
-    for chunk in chunks:
+    for start, end in zip(starts, starts[1:]):
+        chunk = source.excerpt[start:end]
         first = chunk.strip().splitlines()[0] if chunk.strip() else ""
         if qualification_heading(first):
-            qualified.append(chunk)
+            # Adjacent original sections stay adjacent; never insert a fake gap into an exact quote.
+            if qualified and qualified[-1][1] == start:
+                qualified[-1] = (qualified[-1][0], end)
+            else:
+                qualified.append((start, end))
     if qualified:
-        excerpt = "\n[다음 원문 구간]\n".join(qualified)
+        excerpt = "\n[다음 원문 구간]\n".join(source.excerpt[a:b] for a, b in qualified)
         source = source.model_copy(update={"excerpt": excerpt})
-        priority = 0
-    elif qualification_heading(heading(source)):
-        priority = 0
+        priority = 1
     elif IRRELEVANT.search(heading(source)):
         return None
+    elif qualification_heading(heading(source)) or (
+        (parent := re.search(r"\[상위 구역\]([^\n]*)", source.group_label))
+        and qualification_heading(parent[1].strip())
+    ):
+        priority = 1
     elif PREFERENCE.search(heading(source)) or re.search(
         r"제외\s*대상|신청\s*제외", heading(source)
     ):
-        priority = 1
-    else:
         priority = 2
+    else:
+        priority = 3
+    # Direct applicant qualifications come before broad target tables and exclusion checks.
+    direct = heading(source) + "\n" + source.excerpt.splitlines()[0]
+    if priority <= 1 and re.search(r"신청\s*자격|입찰\s*참가\s*자격|자격\s*요건", direct):
+        priority = 0
     if not source_fields(source):
         return None
     return source, priority
@@ -118,7 +134,7 @@ def select(request, source_fields, codes, max_bytes, max_sources):
         candidates.append((priority, index, source, size))
     selected, used = {}, 0
     # Exhaust actual qualification sections before filling capacity with any other topic.
-    priorities = (0, 1) if any(rank == 0 for rank, *_ in candidates) else (1, 2)
+    priorities = (0, 1, 2) if any(rank <= 1 for rank, *_ in candidates) else (2, 3)
     for priority in priorities:
         queues = {code: [] for code in codes}
         for rank, index, source, size in candidates:

@@ -739,8 +739,11 @@ def test_mixed_source_can_yield_a_single_qualification_sentence_in_one_call():
 def test_all_qualification_scopes_precede_large_other_sections(labels):
     noise = source("noise", "중소기업의 선정 후 의무 " * 130, "선정 후 의무")
     sources = [noise] + [
-        source(str(i), f"□ 지원대상\n업력 6년 이상이며 매출액 {i + 2}억원 이상인 기업",
-               f"[적용 유형] {label}\n□ 지원대상")
+        source(
+            str(i),
+            f"□ 지원대상\n업력 6년 이상이며 매출액 {i + 2}억원 이상인 기업",
+            f"[적용 유형] {label}\n□ 지원대상",
+        )
         for i, label in enumerate(labels)
     ]
     selected = focused.select_sources(request(*sources))
@@ -750,8 +753,9 @@ def test_all_qualification_scopes_precede_large_other_sections(labels):
 
 def test_nested_qualification_retains_wrapped_sentence_table_and_exception():
     condition = "□ 신청자격\n가공업을 주된 사업으로 영위하는\n상시근로자 10인 미만 소공인\n"
-    condition += ("[표]\n유형\t조건\n가. 유형\t특허 등록 기업 또는 인증 기업\n"
-                  "[/표]\n※ 단, 예외기업 포함\n")
+    condition += (
+        "[표]\n유형\t조건\n가. 유형\t특허 등록 기업 또는 인증 기업\n[/표]\n※ 단, 예외기업 포함\n"
+    )
     raw = "□ 사업목적\n중소기업 지원\n" + condition + "□ 제출서류\n매출액 증명서 제출"
     selected = focused.select_sources(request(source("nested", raw, "사업개요")))
     assert len(selected) == 1
@@ -760,8 +764,9 @@ def test_nested_qualification_retains_wrapped_sentence_table_and_exception():
 
 def test_astral_pdf_section_bullets_do_not_force_sending_the_entire_document():
     raw = "공고 안내\n" + "지원 절차 설명 " * 800
-    condition = ("\U000f02b1 선정 대상 및 방법\n"
-                 "ㅇ (대상) 경제안보품목을 생산하는 사업자 또는 사업자단체\n")
+    condition = (
+        "\U000f02b1 선정 대상 및 방법\nㅇ (대상) 경제안보품목을 생산하는 사업자 또는 사업자단체\n"
+    )
     raw += "\n" + condition + "\U000f02b2 신청 절차\n신청서 제출"
     selected = focused.select_sources(request(source("pdf", raw, "")))
     assert len(selected) == 1
@@ -770,27 +775,38 @@ def test_astral_pdf_section_bullets_do_not_force_sending_the_entire_document():
 
 def test_same_condition_for_distinct_named_tracks_is_not_dropped():
     raw = "□ 지원대상\n업력 6년 이상인 기업"
-    selected = focused.select_sources(request(*[
-        source(str(i), raw, f"[적용 유형] {name}\n□ 지원대상")
-        for i, name in enumerate(["성장형", "확장형"])
-    ]))
+    selected = focused.select_sources(
+        request(
+            *[
+                source(str(i), raw, f"[적용 유형] {name}\n□ 지원대상")
+                for i, name in enumerate(["성장형", "확장형"])
+            ]
+        )
+    )
     assert len(selected) == 2
 
 
 def test_explicit_secondary_buyer_is_excluded_but_buyer_recruitment_is_allowed():
     raw = "□ 신청자격\n공공기관만 신청 가능"
     primary = source("primary", raw, "[상위 구역] 구매기관 현황 및 신청\n□ 신청자격")
-    secondary = source("secondary", raw,
-                       "[별도 참여 역할] 구매기관\n[상위 구역] 구매기관 현황 및 신청\n□ 신청자격")
+    secondary = source(
+        "secondary", raw, "[별도 참여 역할] 구매기관\n[상위 구역] 구매기관 현황 및 신청\n□ 신청자격"
+    )
     assert [s.id for s in focused.select_sources(request(primary, secondary))] == ["primary"]
 
 
 def test_operator_recruitment_does_not_include_separate_beneficiary_age():
     context = "[공고 대상] 주관기관 모집, 창업기업 모집은 별도 공고 예정\n"
-    operator = source("operator", "□ 신청 자격\n전문 기관 또는 법인이 신청 가능",
-                      "[상위 구역] 신청자격 및 제외대상\n" + context + "[원문 구역] □ 신청 자격")
-    beneficiary = source("beneficiary", "□ 지원대상 : 업력 10년 이내 기업",
-                         "[상위 구역] 사업 개요\n" + context + "[원문 구역] □ 지원대상")
+    operator = source(
+        "operator",
+        "□ 신청 자격\n전문 기관 또는 법인이 신청 가능",
+        "[상위 구역] 신청자격 및 제외대상\n" + context + "[원문 구역] □ 신청 자격",
+    )
+    beneficiary = source(
+        "beneficiary",
+        "□ 지원대상 : 업력 10년 이내 기업",
+        "[상위 구역] 사업 개요\n" + context + "[원문 구역] □ 지원대상",
+    )
     assert [s.id for s in focused.select_sources(request(operator, beneficiary))] == ["operator"]
 
 
@@ -852,8 +868,10 @@ def test_real_public_notice_sections_fit_one_request_and_keep_expected_eligibili
 
 
 def test_synthetic_join_between_qualification_sections_cannot_ground_a_quote():
-    raw = ("□ 신청자격\n업력 6년 이상 기업\n□ 제출서류\n신청서 제출\n"
-           "□ 지원대상\n매출액 2억원 이상 기업")
+    raw = (
+        "□ 신청자격\n업력 6년 이상 기업\n□ 제출서류\n신청서 제출\n"
+        "□ 지원대상\n매출액 2억원 이상 기업"
+    )
     req = request(source("x", raw))
     selected = focused.select_sources(req)
     forged = selected[0].excerpt
@@ -878,11 +896,11 @@ def test_decorated_compound_clause_recovers_a_valid_field_sentence_without_a_ret
 def test_nested_actual_heading_can_ground_a_mandatory_sector_condition():
     quote = "경제안보품목의 도입·생산에 기여하는 사업자단체"
     req = request(source("x", "\U000f02b1 선정 대상 및 방법\nㅇ (대상) " + quote, ""))
-    extraction = Extraction(items=[item("x", "SECTOR", quote, basis="지원 자격")],
-                            unresolved_source_ids=[])
+    extraction = Extraction(
+        items=[item("x", "SECTOR", quote, basis="지원 자격")], unresolved_source_ids=[]
+    )
     result = focused.project(extraction, focused.select_sources(req), req)
     assert len(result.statements) == 1
-
 
 
 def test_clause_cleanup_preserves_multiplication_and_only_removes_footnote_stars():
@@ -894,3 +912,164 @@ def test_clause_cleanup_preserves_multiplication_and_only_removes_footnote_stars
 
 def test_clause_cleanup_removes_footnote_before_korean_particle():
     assert focused.clean_clause("매출액 30억원 미만*의 기업") == "매출액 30억원 미만의 기업"
+
+
+def test_adjacent_qualification_chunks_keep_the_original_contiguous_quote():
+    text = "□ 신청자격\n중소기업\n□ 지원대상\n업력 7년 이내 창업기업"
+    selected = focused.select_sources(request(source("a", text, "공고")))
+    assert len(selected) == 1
+    assert selected[0].excerpt == text
+    assert "[다음 원문 구간]" not in selected[0].excerpt
+
+
+@pytest.mark.parametrize("heading", ["입찰보증금", "과업수행계획", "평가항목", "계약 체결 후"])
+def test_post_contract_and_bid_deposit_sections_never_consume_a_model_call(heading):
+    model = Fake()
+    result = asyncio.run(
+        service.rewrite(request(source("a", "중소기업의 매출액과 수행실적 제출", heading)), model)
+    )
+    assert not model.calls
+    assert not result.statements
+
+
+def test_numbered_qualification_parent_reaches_selection_without_form_lists():
+    req = request(
+        source(
+            "a",
+            "접수마감일 현재 법인사업자이어야 함",
+            "[상위 구역] 신청자격\n4-2. 신청자격 / □ 주관연구개발기관",
+        ),
+        source("b", "기업부설연구소 및 중소기업 확인서 제출", "8. 제출서류"),
+    )
+    assert [s.id for s in focused.select_sources(req)] == ["a"]
+
+
+def test_rewritten_law_alias_in_quote_is_still_rejected():
+    original = "「전통시장 및 상점가 육성을 위한 특별법」(이하 전통시장법) 제2조에 따른 전통시장"
+    changed = "「전통시장 및 상점가 육성을 위한 특별법」 제2조에 따른 전통시장"
+    model = Fake([item("a", "BUSINESS_FORM", changed)])
+    result = asyncio.run(service.rewrite(request(source("a", original)), model))
+    assert not result.statements
+
+
+def test_line_references_restore_exact_original_without_retyping_law_or_exception():
+    text = "□ 신청자격\r\n중소기업기본법 제2조에 따른 중소기업\r\n※ 단, 대기업은 제외"
+    src = source("a", text)
+    candidate = item("a", "BUSINESS_FORM", "L2-L3", basis="L1")
+    result = focused.project(
+        Extraction(items=[candidate], unresolved_source_ids=[]), [src], request(src)
+    )
+    assert result.statements[0].supporting_quotes == [text.split("\r\n", 1)[1]]
+    messages = focused.model_messages([src])
+    numbered = json.loads(messages[1].content)["sources"][0]["excerpt"]
+    assert (
+        numbered
+        == "L1: □ 신청자격\nL2: 중소기업기본법 제2조에 따른 중소기업\nL3: ※ 단, 대기업은 제외"
+    )
+
+
+@pytest.mark.parametrize("reference", ["L0", "L9", "L3-L2", "L2,L3", "L2-L99"])
+def test_invalid_line_reference_is_never_accepted(reference):
+    src = source("a", "□ 신청자격\n중소기업")
+    result = focused.project(
+        Extraction(
+            items=[item("a", "BUSINESS_FORM", reference, basis="H0")], unresolved_source_ids=[]
+        ),
+        [src],
+        request(src),
+    )
+    assert not result.statements
+
+
+def test_references_cannot_cross_synthetic_source_gap():
+    raw = "□ 신청자격\n중소기업\n□ 지원기간\n2026년\n□ 지원대상\n업력 7년 이내 기업"
+    req = request(source("a", raw, "공고"))
+    selected = focused.select_sources(req)
+    result = focused.project(
+        Extraction(
+            items=[item("a", "BUSINESS_FORM", "L2-L5", basis="L1")], unresolved_source_ids=[]
+        ),
+        selected,
+        req,
+    )
+    assert not result.statements
+
+
+def test_direct_eligibility_is_not_starved_by_large_target_and_financial_sections():
+    req = request(
+        source("targets", "□ 지원대상 목록\n중소기업 제조업 " + "대상 품목 " * 180, "지원대상"),
+        source(
+            "credit", "업력 기업 부채비율 매출액 " * 110, "[상위 구역] 신청자격\n1. 기업의 부도"
+        ),
+        source(
+            "core",
+            "◦ 주관연구개발기관이 기업인 경우 법인사업자이어야 함",
+            "4-2. 신청자격 / □ 주관연구개발기관",
+        ),
+    )
+    selected = focused.select_sources(req)
+    assert focused.selection.prepare(req.sources[-1], focused.source_fields)[1] == 0
+    assert focused.selection.prepare(req.sources[0], focused.source_fields)[1] == 1
+    assert "core" in [s.id for s in selected]
+    assert sum(len(s.excerpt.encode()) for s in selected) <= 8000
+
+
+def test_line_prefix_with_model_comment_only_uses_the_referenced_original():
+    src = source("a", "□ 신청자격\n중소기업")
+    candidate = item("a", "BUSINESS_FORM", "L2: 다른 대기업이라고 잘못 재출력한 설명", basis="H0")
+    result = focused.project(
+        Extraction(items=[candidate], unresolved_source_ids=[]), [src], request(src)
+    )
+    assert result.statements[0].supporting_quotes == ["중소기업"]
+    assert "대기업" not in result.statements[0].text
+
+
+def test_research_sentence_recovery_preserves_all_deadlines_and_exception():
+    quote = (
+        "◦주관연구개발기관이 기업인 경우는 접수마감일 현재 법인사업자이어야 하며, "
+        "선정평가 개최일 이전에 기업부설연구소(한국산업기술진흥협회 인정서 기준)를 "
+        "보유하고 있어야 함(연구개발전담부서는 불인정)"
+    )
+    result = focused.source_sentence(quote, "BUSINESS_FORM", "ELIGIBILITY")
+    assert result == (
+        "주관연구개발기관이 기업인 경우, 접수마감일 현재 법인사업자여야 하며, "
+        "선정평가 개최일 이전에 기업부설연구소(한국산업기술진흥협회 인정서 기준)를 "
+        "보유해야 합니다. 연구개발전담부서는 인정되지 않습니다."
+    )
+    assert (
+        focused.source_sentence(quote.replace("불인정", "인정"), "BUSINESS_FORM", "ELIGIBILITY")
+        is None
+    )
+
+
+def test_nested_eligibility_survives_a_coarse_business_purpose_heading():
+    src = source("a", "□ 사업목적\n기업 성장 지원\n□ 신청자격\n중소기업", "사업목적")
+    chosen = focused.select_sources(request(src))
+    assert len(chosen) == 1
+    assert chosen[0].excerpt == "□ 신청자격\n중소기업"
+
+
+def test_whitespace_only_evidence_never_reaches_model():
+    model = Fake()
+    result = asyncio.run(service.rewrite(request(source("a", "\n  ")), model))
+    assert not model.calls
+    assert not result.statements
+
+
+def test_bad_model_prose_can_recover_a_complete_obligation_without_an_extra_call():
+    quote = "주관기관이 기업인 경우 법인사업자이어야 함"
+    model = Fake(
+        [item("a", "BUSINESS_FORM", quote).model_copy(update={"text": "법인 조건 확인 필요"})]
+    )
+    result = asyncio.run(service.rewrite(request(source("a", quote)), model))
+    assert len(model.calls) == 1
+    assert result.statements[0].text == "주관기관이 기업인 경우 법인사업자이어야 합니다."
+    assert result.statements[0].supporting_quotes == [quote]
+
+
+def test_law_summary_does_not_drop_an_actual_age_limit():
+    quote = "「중소기업기본법」 제2조에 따른 업력 7년 이하 중소기업"
+    sentence = focused.source_sentence(quote, "BUSINESS_AGE", "ELIGIBILITY")
+    assert sentence == "업력 7년 이하 중소기업이어야 합니다."
+    assert focused.valid_sentence(sentence, quote, "BUSINESS_AGE")
+    assert not focused.valid_sentence("중소기업이어야 합니다.", quote, "BUSINESS_FORM")

@@ -326,7 +326,9 @@ class ParticipationRewriteServiceTest {
             try {
                 String body = "1. 성장형\n□ 신청자격\n" + quote + "\n2. 시장형\n□ 지원대상\n전통시장 및 상점가";
                 var candidates = ParticipationConditionResolver.candidatesWithScopes(body, List.of(), null);
-                var old = ParticipationRewriteProjection.previousInput(candidates.guide(), false, candidates.scopes());
+                var frozen = candidates.scopes().compatibility();
+                var oldRaw = new ParticipationGuide(List.of(), frozen.rules(), List.of(), List.of());
+                var old = ParticipationRewriteProjection.previousInput(oldRaw, false, frozen.scopes());
                 var current = ParticipationRewriteProjection.input(candidates.guide(), false, candidates.scopes());
                 assertThat(current.request()).isNotEqualTo(old.request());
                 var response = status.equals("UNAVAILABLE") ? Response.unavailable(old.request())
@@ -341,8 +343,9 @@ class ParticipationRewriteServiceTest {
                 ReflectionTestUtils.setField(version, "participationRewriteJson", mapper.writeValueAsString(response));
                 var result = service.resolve(version, candidates.guide(), false, candidates.scopes());
                 assertThat(result.rewriteStatus()).isEqualTo(response.status());
-                if (status.equals("READY")) assertThat(result.rules()).hasSize(1);
-                else assertThat(result.rules()).isEmpty();
+                assertThat(result.rules()).anyMatch(rule -> rule.text().equals("전통시장 및 상점가가 지원 대상입니다."));
+                if (status.equals("READY")) assertThat(result.rules()).anyMatch(rule -> rule.text().equals(quote));
+                else assertThat(result.rules()).noneMatch(rule -> rule.text().equals(quote));
                 verifyNoInteractions(client, store);
             } finally { service.close(); }
         }
@@ -364,5 +367,31 @@ class ParticipationRewriteServiceTest {
             }
             verifyNoInteractions(client, store);
         } finally { service.close(); }
+    }
+
+    @Test void oldTerminalCacheKeepsOldSourceIdsAndUsesRecoveredLocalEvidenceWithoutPayment() {
+        for (String status : List.of("READY", "UNAVAILABLE")) {
+            var client = mock(PythonParticipationRewriteClient.class);
+            var store = mock(ParticipationRewriteStore.class);
+            var service = new ParticipationRewriteService(client, store, mapper);
+            try {
+                String body = "□ 신청자격\n업력 7년 이내 창업기업만 신청 가능\n[표]\n양식교부 및 접수처\t홈페이지\n[/표]\n"
+                        + "4-2. 신청자격\n□ 지원대상 : 중견기업";
+                var candidates = ParticipationConditionResolver.candidatesWithScopes(body, List.of(), null);
+                var frozen = candidates.scopes().compatibility();
+                var oldRaw = new ParticipationGuide(List.of(), frozen.rules(), List.of(), List.of());
+                var oldInput = ParticipationRewriteProjection.input(oldRaw, false, frozen.scopes());
+                String oldKey = ReflectionTestUtils.invokeMethod(service, "fingerprint", oldInput.request(), "participation-seven-fields-v2");
+                var version = version();
+                ReflectionTestUtils.setField(version, "participationRewriteKey", oldKey);
+                var response = new Response(status.equals("READY") ? valid().statements() : List.of(), List.of(), status);
+                ReflectionTestUtils.setField(version, "participationRewriteJson", mapper.writeValueAsString(response));
+                var guide = service.resolve(version, candidates.guide(), false, candidates.scopes());
+                assertThat(guide.rewriteStatus()).isEqualTo(status);
+                assertThat(guide.rules()).anyMatch(rule -> rule.text().equals("중견기업이 지원 대상입니다."));
+                if (status.equals("READY")) assertThat(guide.rules()).anyMatch(rule -> rule.text().equals(quote));
+                verifyNoInteractions(client, store);
+            } finally { service.close(); }
+        }
     }
 }

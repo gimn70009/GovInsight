@@ -7,8 +7,6 @@ import java.util.regex.Pattern;
 final class ParticipationFocusedText {
     private static final Pattern DOCUMENT = Pattern.compile("(?:신청|제출|구비)\\s*서류|체크\\s*리스트|확약서|납세증명|재무제표증명[^\\n]*제출|사업\\s*신청서|사업계획서|견적서");
     private static final Pattern OUTSIDE = Pattern.compile("소재지|대표자|국세|지방세|체납|휴[·ㆍ‧.]?폐업");
-    private static final Pattern NUMBER = Pattern.compile("[A-Za-z]?\\d+(?:,\\d{3})*(?:\\.\\d+)?\\s*(?:억\\s*원|만\\s*원|천\\s*원|원|만불|불|달러|년|개월|%|점|건|명)?");
-    private static final Pattern CRITICAL = Pattern.compile("이상|이하|미만|초과|이내|이전|이후|또는|혹은|모두|하나|제외|불가|미인정|무관|등록|출원|실시권|주된|공고일|접수일|마감일|직전년도|최근|않|없는|없어|거나");
     record Display(String text, String quote) {}
 
     static boolean documentSection(String heading) {
@@ -63,23 +61,9 @@ final class ParticipationFocusedText {
     }
 
     static boolean facts(String text, String quote, String kind) {
-        if (!numbers(text).equals(numbers(quote))) return false;
-        for (String expression : List.of("[A-D]{1,3}[+-]?(?![A-Za-z])", "글로벌\\s*강소기업")) {
-            var pattern = Pattern.compile(expression);
-            if (!pattern.matcher(text).results().map(m -> m.group()).toList()
-                    .equals(pattern.matcher(quote).results().map(m -> m.group()).toList())) return false;
-        }
         var preference = Pattern.compile("우대|가점|가산점|우선\\s*(?:선정|지원)");
         if (preference.matcher(text).find() != "PREFERENCE".equals(kind)) return false;
-        var terms = new HashSet<String>();
-        CRITICAL.matcher(text + "\n" + quote).results().forEach(m -> terms.add(m.group()));
-        for (String term : terms) if (text.contains(term) != quote.contains(term)) return false;
-        for (String term : List.of("≥", "≤", ">", "<", "%", "±"))
-            if (text.contains(term) != quote.contains(term)) return false;
-        return true;
-    }
-    private static List<String> numbers(String text) {
-        return NUMBER.matcher(text).results().map(m -> compact(m.group()).replace(",", "").toLowerCase()).toList();
+        return ParticipationFacts.equivalent(text, quote);
     }
     private static String compact(String value) { return value.replaceAll("\\s+", ""); }
 }
