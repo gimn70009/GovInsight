@@ -29,6 +29,35 @@ _OTHER_DATE_ROLE = re.compile(
 _NON_APPLICATION_LABEL = re.compile(r"(?:평가|발표|심사|행사|공고|게시|작성|사업)\s*$")
 _OPEN_END = re.compile(r"시작|개시|이후|미정|미확정|상시|예산\s*소진|별도\s*공지")
 
+# Only unconditional, single-date deadline fields are made time-neutral. Early
+# closure, cancellations, changed schedules and multiple dates must stay intact.
+_FIXED_DEADLINE = re.compile(
+    r"^(?P<schedule>(?:(?:신청|접수|제출)[ \t]*(?:마감(?:일시?|시각)?|기한)?[ \t]*[:：]?[ \t]*)?"
+    r"(?P<year>20\d{2})[ \t]*(?:[-./]|년)[ \t]*(?P<month>\d{1,2})[ \t]*(?:[-./]|월)[ \t]*"
+    r"(?P<day>\d{1,2})(?!\d)(?:[ \t]*일|\.)?"
+    r"(?:[ \t]*\([월화수목금토일](?:요일)?\))?"
+    r"(?:[ T]+(?:[01]?\d|2[0-3])(?::[0-5]\d(?::[0-5]\d)?|시(?:[ \t]*[0-5]?\d[ \t]*분)?))?"
+    r"(?:[ \t]*\((?:한국시간|KST)\))?(?:[ \t]*까지)?"
+    r"(?:[ \t]*[,;]?[ \t]*(?:시스템|온라인|전자|이메일|방문|우편)"
+    r"(?:[ \t]*(?:접수|제출|신청))?[ \t]*기준으로)?)[ \t]*"
+    r"(?:마감(?:되었습니다|됐습니다|하였습니다|했습니다)|종료(?:되었습니다|됐습니다))[.!]?$"
+)
+
+
+def normalize_deadline_presentation(text: str) -> str:
+    """Keep the exact calendar/receipt facts without freezing a closure claim."""
+    match = _FIXED_DEADLINE.fullmatch(text.strip())
+    if match is None:
+        return text
+    try:
+        date(*(int(match.group(part)) for part in ("year", "month", "day")))
+    except ValueError:
+        return text
+    schedule = match.group("schedule").rstrip()
+    if schedule.endswith("기준으로"):
+        schedule = schedule[:-2]
+    return schedule + ("입니다." if schedule.endswith("까지") else " 마감입니다.")
+
 
 def has_calendar_date(text: str) -> bool:
     """Include incomplete dates, which must not fall back to a closure claim."""

@@ -26,6 +26,7 @@ from app.domains.analysis.workflow.agent import AgentAnalysis, AnalysisRunner
 from app.domains.analysis.workflow.configured_scoring import finalize_configured_score
 from app.domains.analysis.workflow.deadlines import (
     has_calendar_date,
+    normalize_deadline_presentation,
     resolve_application_deadline,
     single_event_date,
 )
@@ -756,6 +757,9 @@ def _normalize_urgency_score(
     candidate: AgentAnalysis,
     analysis_date: date | None = None,
 ) -> None:
+    candidate.draft.comparison_summary.application_deadline = normalize_deadline_presentation(
+        candidate.draft.comparison_summary.application_deadline,
+    )
     urgency = next(
         (
             dimension

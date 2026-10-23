@@ -212,6 +212,14 @@ class DocumentDetectionDetailServiceTest {
     }
 
     @Test
+    void 기존_상세와_메일용_마감일에서_날짜와_접수조건을_보존하고_종료단정을_제거한다() {
+        String stored = "{\"applicationDeadline\":\"2026-10-29 (목) 23:59:00, 시스템 접수 기준으로 마감되었습니다.\"}";
+        String deadline = ReflectionTestUtils.invokeMethod(service(), "parseApplicationDeadline", stored);
+        assertThat(deadline).isEqualTo("2026-10-29 (목) 23:59:00, 시스템 접수 기준 마감입니다.");
+        assertThat(stored).contains("마감되었습니다");
+    }
+
+    @Test
     void 사업요약이_없거나_손상되어도_기존_상세를_조회한다() {
         for (String json : new String[] {null, "", "{broken"}) {
             Object summary = ReflectionTestUtils.invokeMethod(service(), "parseBusinessSummary", json);

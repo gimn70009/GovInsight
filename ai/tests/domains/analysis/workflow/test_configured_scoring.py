@@ -219,3 +219,30 @@ def test_urgency_explanation_stays_within_callback_length_limit(settings):
     )
     assert len(result.dimensions[-1].reason) <= 500
     assert result.dimensions[-1].score == 100
+
+
+def test_future_technology_transfer_deadline_does_not_keep_completed_wording(settings):
+    import asyncio
+
+    from app.domains.analysis.schemas.result import Eligibility, Favorability
+    from app.domains.analysis.workflow.graph import DocumentAnalysisWorkflow
+    from tests.domains.analysis.workflow.test_graph import SequencedRunner, analysis
+
+    settings.data.criteria.urgency_days = 21
+    candidate = analysis(Favorability.NOT_APPLICABLE)
+    candidate.draft.comparison_summary.application_deadline = (
+        "2026-10-29 (목) 23:59:00, 시스템 접수 기준으로 마감되었습니다."
+    )
+    runner = SequencedRunner([candidate])
+    result = asyncio.run(DocumentAnalysisWorkflow(
+        runner=runner, max_attempts=1, analysis_date=date(2026, 10, 23),
+    ).analyze(document().model_copy(update={"evaluation_settings": settings})))
+
+    assert runner.call_count == 1
+    assert result.comparison_summary.application_deadline == (
+        "2026-10-29 (목) 23:59:00, 시스템 접수 기준 마감입니다."
+    )
+    urgency = next(d for d in result.opportunity.dimensions if d.type == "URGENCY")
+    assert urgency.score == 100
+    assert "남은 6일" in urgency.reason
+    assert result.eligibility == Eligibility.REVIEW_REQUIRED

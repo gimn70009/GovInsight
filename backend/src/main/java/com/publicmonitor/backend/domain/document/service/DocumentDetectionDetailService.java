@@ -165,7 +165,7 @@ public class DocumentDetectionDetailService {
         if (comparisonSummary == null || comparisonSummary.isBlank()) return null;
         try {
             var value = objectMapper.readTree(comparisonSummary).path("applicationDeadline");
-            return value.isString() ? value.asString().strip() : null;
+            return value.isString() ? ApplicationDeadlinePresentation.normalize(value.asString().strip()) : null;
         } catch (RuntimeException exception) {
             return null;
         }
