@@ -49,7 +49,9 @@ final class SubmissionDocumentResolver {
             for (var item : preparation.submissionDocuments()) {
                 if (!grounded(item, body, attachments)) continue;
                 // Explicit current-source rows keep their type/period/recipient conditions over a generic saved title.
-                if (result.stream().anyMatch(raw -> sameDocument(raw, item))) continue;
+                var savedNames = NumberedSubmissionList.items(item.title());
+                if (savedNames.isEmpty() ? result.stream().anyMatch(raw -> sameDocument(raw, item.title(), item.stage()))
+                        : savedNames.stream().allMatch(name -> result.stream().anyMatch(raw -> sameDocument(raw, name, item.stage())))) continue;
                 result.add(new SubmissionDocument(item.title(), item.detail(), item.requirementLevel(),
                         item.stage(), item.appliesTo(), item.source()));
             }
@@ -74,9 +76,9 @@ final class SubmissionDocumentResolver {
         return original != null && original.replaceAll("\\s+", "").contains(item.source().excerpt().replaceAll("\\s+", ""));
     }
 
-    private static boolean sameDocument(SubmissionDocument raw, PreparationItem saved) {
-        boolean stage = raw.stage() == null || saved.stage() == null || raw.stage().equals(saved.stage());
-        String a = titleKey(raw.title()), b = titleKey(saved.title());
+    private static boolean sameDocument(SubmissionDocument raw, String savedTitle, String savedStage) {
+        boolean stage = raw.stage() == null || savedStage == null || raw.stage().equals(savedStage);
+        String a = titleKey(raw.title()), b = titleKey(savedTitle);
         return stage && (a.equals(b) || (b.length() >= 4 && a.contains(b))
                 || (!raw.documentNames().isEmpty() && b.length() >= 4 && key(raw.source().excerpt()).contains(b)));
     }
@@ -116,7 +118,8 @@ final class SubmissionDocumentResolver {
                 continue;
             }
             var heading = HEADING.matcher(line);
-            boolean submissionHeading = heading.matches() && (heading.group(2).isBlank() || isDocument(heading.group(2)));
+            boolean submissionHeading = heading.matches() && (heading.group(2).isBlank() || isDocument(heading.group(2))
+                    || !NumberedSubmissionList.items(heading.group(2)).isEmpty());
             if (submissionHeading && !blocked) {
                 if (block == null || block.hasRows()) {
                     if (block != null) emit(block, fileName, documents, notes);
@@ -127,7 +130,8 @@ final class SubmissionDocumentResolver {
                 if (!heading.group(2).isBlank()) block.lines.add(heading.group(2));
                 continue;
             }
-            if (!isDocument(line) && (OUTLINE.matcher(line).find() || BOUNDARY.matcher(line).find())) {
+            if (!isDocument(line) && NumberedSubmissionList.items(line).isEmpty()
+                    && (OUTLINE.matcher(line).find() || BOUNDARY.matcher(line).find())) {
                 if (block != null) emit(block, fileName, documents, notes);
                 block = null;
                 context = line;
@@ -159,17 +163,23 @@ final class SubmissionDocumentResolver {
         int size;
         boolean invalid;
         Block(String heading, String stage) { this.heading = heading; this.stage = stage; }
-        boolean hasRows() { return lines.stream().anyMatch(SubmissionDocumentResolver::isDocument); }
+        boolean hasRows() { return lines.stream().anyMatch(line -> isDocument(line) || !NumberedSubmissionList.items(line).isEmpty()); }
     }
 
     private static final class Row {
         final String original;
         final String title;
+        final String listEvidence;
         final List<String> cells = new ArrayList<>();
         SubmissionDocument resolved;
         String scope;
         String noteContext;
-        Row(String original) { this.original = original; this.title = cleanTitle(original); }
+        Row(String original) { this(original, null); }
+        Row(String original, String listEvidence) {
+            this.original = original;
+            this.title = cleanTitle(original);
+            this.listEvidence = listEvidence;
+        }
     }
 
     private record NoteCandidate(String text, Row owner) {}
@@ -194,9 +204,17 @@ final class SubmissionDocumentResolver {
         Row row = null;
         Row noteOwner = null;
         for (String line : block.lines) {
-            if (line.matches("^[*※].*") || line.matches("^(?:모든|공통)\\h*서류.*") || (rows.isEmpty() && line.contains("서류") && line.contains("제출") && !isDocument(line))) {
+            var numbered = NumberedSubmissionList.items(line);
+            if (line.matches("^[*※].*") || line.matches("^(?:모든|공통)\\h*서류.*") || (rows.isEmpty() && numbered.isEmpty() && line.contains("서류") && line.contains("제출") && !isDocument(line))) {
                 shared.add(line);
                 candidates.add(new NoteCandidate(line, noteOwner));
+            } else if (!numbered.isEmpty()) {
+                String evidence = block.heading.endsWith(line) ? block.heading : block.heading + "\n" + line;
+                for (String name : numbered) {
+                    row = new Row(name, evidence);
+                    rows.add(row);
+                }
+                noteOwner = row;
             } else if (isDocument(line)) {
                 row = new Row(line);
                 rows.add(row);
@@ -248,8 +266,9 @@ final class SubmissionDocumentResolver {
             String appliesTo = matrix ? String.join(" · ", included) : conditional ? instruction : null;
             String detail = instruction + (rowNotes.isEmpty() ? "" : "\n" + String.join("\n", rowNotes));
             if (!excluded.isEmpty()) detail += "\n" + String.join(" · ", excluded) + ": 제출 대상 아님";
-            String quote = block.heading + "\n" + (columns.isEmpty() ? "" : String.join(" | ", columns) + "\n")
-                    + entry.original + (value.isBlank() ? "" : "\n" + value)
+            String quote = (entry.listEvidence != null ? entry.listEvidence : block.heading + "\n"
+                    + (columns.isEmpty() ? "" : String.join(" | ", columns) + "\n") + entry.original)
+                    + (value.isBlank() ? "" : "\n" + value)
                     + (rowNotes.isEmpty() ? "" : "\n" + String.join("\n", rowNotes));
             var document = new SubmissionDocument(entry.title, detail, level, block.stage, appliesTo,
                     source(fileName, block.heading, quote));
