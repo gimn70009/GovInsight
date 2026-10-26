@@ -17,8 +17,11 @@ import org.springframework.web.client.RestClientException;
 public class LegalPairService {
     private final SimilarNoticeService similarNoticeService;
     private final RestClient client;
+    private final com.publicmonitor.backend.domain.settings.service.EvaluationSettingsService evaluationSettings;
 
-    public LegalPairService(SimilarNoticeService similarNoticeService, PythonMonitoringClientProperties properties) {
+    public LegalPairService(SimilarNoticeService similarNoticeService, PythonMonitoringClientProperties properties,
+            com.publicmonitor.backend.domain.settings.service.EvaluationSettingsService evaluationSettings) {
+        this.evaluationSettings = evaluationSettings;
         this.similarNoticeService = similarNoticeService;
         var factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(properties.connectTimeout());
@@ -33,7 +36,7 @@ public class LegalPairService {
                 .findFirst().orElseThrow(() -> new DocumentDetectionException(DocumentDetectionResponseCode.NOT_FOUND));
         try {
             var response = client.post().uri("/internal/monitoring/legal-pair-review")
-                    .body(new PairRequest(comparison.currentNotice(), candidate.comparison(), candidate.legalReview().checks()))
+                    .body(new PairRequest(comparison.currentNotice(), candidate.comparison(), candidate.legalReview().checks(), evaluationSettings.currentSnapshot()))
                     .retrieve().body(LegalPairResponse.class);
             return response == null || response.insights() == null ? LegalPairResponse.unavailable() : response;
         } catch (RestClientException exception) {
@@ -42,5 +45,6 @@ public class LegalPairService {
     }
 
     private record PairRequest(SimilarNoticeResponse.ComparisonSide current,
-            SimilarNoticeResponse.ComparisonSide similar, List<SimilarNoticeResponse.LegalRiskCheck> checks) {}
+            SimilarNoticeResponse.ComparisonSide similar, List<SimilarNoticeResponse.LegalRiskCheck> checks,
+            com.publicmonitor.backend.domain.settings.web.dto.EvaluationSettingsSnapshot evaluationSettings) {}
 }

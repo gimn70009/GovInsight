@@ -21,7 +21,9 @@ public record DocumentDetectionSummaryResponse(
         @Schema(description = "회사 기회 종합 점수", example = "64", nullable = true) Integer opportunityScore,
         @Schema(description = "회사 대응 우선순위", example = "NORMAL", nullable = true)
         OpportunityPriority opportunityPriority,
-        @Schema(description = "마지막 확인 시각") LocalDateTime lastCheckedAt
+        @Schema(description = "마지막 확인 시각") LocalDateTime lastCheckedAt,
+        @Schema(description = "분석 상태. 같은 버전의 저장 결과와 최신 실행 기준: PENDING/COMPLETED/FAILED")
+        com.publicmonitor.backend.domain.document.entity.DocumentAnalysisStatus analysisStatus
 ) {
     public DocumentDetectionSummaryResponse(
             Long detectionId,
@@ -37,7 +39,9 @@ public record DocumentDetectionSummaryResponse(
     ) {
         this(
                 null, detectionId, documentId, versionId, organizationName, boardName, title,
-                changeType, attachmentCount, importance, null, null, lastCheckedAt
+                changeType, attachmentCount, importance, null, null, lastCheckedAt,
+                importance == null ? com.publicmonitor.backend.domain.document.entity.DocumentAnalysisStatus.PENDING
+                        : com.publicmonitor.backend.domain.document.entity.DocumentAnalysisStatus.COMPLETED
         );
     }
 }

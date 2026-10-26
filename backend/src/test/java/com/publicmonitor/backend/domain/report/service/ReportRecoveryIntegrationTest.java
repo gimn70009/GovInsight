@@ -40,7 +40,11 @@ import tools.jackson.databind.ObjectMapper;
 })
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({JpaAuditingConfig.class, ReportTaskService.class, ReportTaskRunner.class, ReportResultService.class,
-    ReportPreparationService.class, ReportJobEventListener.class, ReportDeliveryAttemptService.class, ReportRecoveryIntegrationTest.Config.class})
+    ReportPreparationService.class, ReportJobEventListener.class, ReportDeliveryAttemptService.class,
+    com.publicmonitor.backend.domain.analysis.service.AnalysisTaskService.class,
+    com.publicmonitor.backend.domain.analysis.service.AnalysisTaskRunner.class,
+    com.publicmonitor.backend.domain.analysis.event.AnalysisJobEventListener.class,
+    ReportRecoveryIntegrationTest.Config.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class ReportRecoveryIntegrationTest {
     @Autowired EntityManager em;
@@ -54,6 +58,8 @@ class ReportRecoveryIntegrationTest {
     @Autowired ApplicationEventPublisher events;
     @Autowired PlatformTransactionManager transactions;
     @Autowired MutableClock clock;
+    @Autowired com.publicmonitor.backend.domain.analysis.repository.AnalysisTaskRepository analysisTasks;
+    @MockitoBean com.publicmonitor.backend.domain.analysis.client.PythonAnalysisClient analysisClient;
     @MockitoBean PythonReportClient client;
     @MockitoBean EmailReportDeliveryService email;
     @MockitoBean TelegramReportDeliveryService telegram;
@@ -76,7 +82,7 @@ class ReportRecoveryIntegrationTest {
     @BeforeEach void clean() {
         clock.step = Duration.ZERO;
         new TransactionTemplate(transactions).executeWithoutResult(tx -> {
-            tasks.deleteAllInBatch(); reports.deleteAllInBatch(); runs.deleteAllInBatch();
+            analysisTasks.deleteAllInBatch(); tasks.deleteAllInBatch(); reports.deleteAllInBatch(); runs.deleteAllInBatch();
         });
         reset(client, email, telegram, analysis, requests);
     }
@@ -198,8 +204,8 @@ class ReportRecoveryIntegrationTest {
         assertThat(reports.findByMonitoringRunId(id).orElseThrow().getSummary()).contains("게시글이 없습니다");
         verify(requests).request(id);
     }
-    @Test void reusedAnalysisPathAlsoPersistsTaskBeforeCommit() {
-        Long id = runOnly(); when(analysis.prepare(id)).thenReturn(Optional.empty());
+    @Test void reusedAnalysisPathQueuesReportThroughDurableAnalysisTask() {
+        Long id = runOnly(); when(analysis.prepareForRecovery(id)).thenReturn(Optional.empty());
         new TransactionTemplate(transactions).executeWithoutResult(tx -> events.publishEvent(new CollectionStoredEvent(id)));
         assertThat(task(id).getState()).isEqualTo(ReportTaskState.DELIVERY_PENDING);
     }

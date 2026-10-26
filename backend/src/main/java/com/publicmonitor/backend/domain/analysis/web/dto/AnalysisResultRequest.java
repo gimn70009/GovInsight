@@ -1,6 +1,7 @@
 package com.publicmonitor.backend.domain.analysis.web.dto;
 
 import com.publicmonitor.backend.domain.analysis.entity.AnalysisEligibility;
+import com.publicmonitor.backend.domain.document.service.BusinessType;
 import com.publicmonitor.backend.domain.analysis.entity.AnalysisFavorability;
 import com.publicmonitor.backend.domain.analysis.entity.DocumentImportance;
 import com.publicmonitor.backend.domain.analysis.entity.OpportunityDimensionType;
@@ -88,9 +89,40 @@ public record AnalysisResultRequest(
             @NotBlank @Size(max = 300) String applicationDeadline,
             @NotBlank @Size(max = 1000) String eligibility,
             @NotBlank @Size(max = 1000) String requiredPartner,
-            @NotNull @Size(min = 5, max = 5) List<@Valid LegalRiskFinding> legalRisks
+            @NotNull @Size(min = 5, max = 5) List<@Valid LegalRiskFinding> legalRisks,
+            @Valid BusinessTypeAssessment businessType,
+            @Valid BusinessTypeReview businessTypeReview
     ) {
+        public ComparisonSummary(String purpose, String supportScale, String applicationDeadline, String eligibility,
+                                 String requiredPartner, List<LegalRiskFinding> legalRisks, BusinessTypeAssessment businessType) {
+            this(purpose, supportScale, applicationDeadline, eligibility, requiredPartner, legalRisks, businessType, null);
+        }
+        public ComparisonSummary(String purpose, String supportScale, String applicationDeadline, String eligibility,
+                                 String requiredPartner, List<LegalRiskFinding> legalRisks) {
+            this(purpose, supportScale, applicationDeadline, eligibility, requiredPartner, legalRisks, null);
+        }
     }
+
+    public record BusinessTypeReview(
+            @NotBlank @Size(max = 80) String validatorVersion,
+            BusinessType candidateType,
+            @NotBlank @Size(max = 40) @jakarta.validation.constraints.Pattern(regexp = "[A-Z_]+") String reason,
+            @jakarta.validation.constraints.Min(0) @jakarta.validation.constraints.Max(3) Integer sourceIndex,
+            @jakarta.validation.constraints.Pattern(regexp = "RESULT|REGULATION|AWARD|DESIGNATION_RECRUITMENT|GENERAL|CONTEST") String noticeKind
+    ) {}
+
+    public record BusinessTypeAssessment(
+            @NotNull BusinessType primaryType,
+            @NotBlank @Size(max = 500) String explanation,
+            @NotNull @Size(max = 5) List<@NotBlank @Size(max = 300) String> details,
+            @NotNull @Size(min = 1, max = 4) List<@Valid BusinessTypeEvidence> sources
+    ) {}
+
+    public record BusinessTypeEvidence(
+            @NotBlank @jakarta.validation.constraints.Pattern(regexp = "NOTICE_BODY|ATTACHMENT") String origin,
+            @Size(max = 500) String attachmentName,
+            @NotBlank @Size(min = 5, max = 1000) String excerpt
+    ) {}
 
     public record LegalRiskFinding(
             @NotBlank @Size(max = 40) String type,
@@ -150,8 +182,9 @@ public record AnalysisResultRequest(
 
     public record Preparation(
             @NotNull @Size(max = 20) List<@NotBlank @Size(max = 500) String> meetingAgenda,
-            @NotNull @Size(min = 1, max = 12) List<@Valid PreparationItem> eligibilityChecklist,
-            @NotNull @Size(min = 1, max = 27) List<@Valid PreparationItem> submissionDocuments,
+            @Size(max = 64) List<@NotBlank @Size(max = 500) String> submissionReviewNotes,
+            @NotNull @Size(max = 12) List<@Valid PreparationItem> eligibilityChecklist,
+            @NotNull @Size(max = 27) List<@Valid PreparationItem> submissionDocuments,
             @Size(max = 10) String applicationDeadline,
             @NotNull @Valid StrategyOnePage strategy
     ) {
@@ -181,7 +214,7 @@ public record AnalysisResultRequest(
             @Size(max = 500) String attachmentName,
             @Size(max = 200) String sectionTitle,
             @Size(max = 200) String location,
-            @Size(max = 300) String excerpt
+            @Size(max = 1200) String excerpt
     ) {
     }
 
@@ -191,13 +224,14 @@ public record AnalysisResultRequest(
             @NotBlank @Size(max = 120) String recommendedProject,
             @NotBlank @Size(max = 500) String recommendedParticipation,
             @NotBlank @Size(max = 500) String alternativeParticipation,
-            @NotNull @Size(min = 1, max = 4) List<@Valid StrategyCapabilityMatch> capabilityMatches,
+            @NotNull @Size(max = 4) List<@Valid StrategyCapabilityMatch> capabilityMatches,
             @NotNull @Size(min = 1, max = 4) List<@Valid StrategyGap> criticalGaps,
             @NotNull @Size(min = 1, max = 4) List<@Valid StrategyStopCriterion> stopCriteria
     ) {
     }
 
     public record StrategyCapabilityMatch(
+            @Size(max = 80) String companyEvidenceId,
             @NotBlank @Size(max = 500) String confirmedFact,
             @NotBlank @Size(max = 500) String strategicInterpretation
     ) {
@@ -229,8 +263,11 @@ public record AnalysisResultRequest(
     }
 
     public record Opportunity(
-            @NotNull @Size(min = 4, max = 4) List<@Valid OpportunityDimension> dimensions
+            @NotNull @Size(min = 4, max = 4) List<@Valid OpportunityDimension> dimensions,
+            @jakarta.validation.constraints.Min(0) Long settingsRevision
     ) {
+        public Opportunity { settingsRevision = settingsRevision == null ? 0L : settingsRevision; }
+        public Opportunity(List<OpportunityDimension> dimensions) { this(dimensions, 0L); }
         @AssertTrue(message = "기회 점수의 네 평가 항목이 각각 한 번씩 필요합니다.")
         public boolean hasAllDimensions() {
             return dimensions == null || dimensions.stream()

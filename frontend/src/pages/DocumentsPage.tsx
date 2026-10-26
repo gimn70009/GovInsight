@@ -1,5 +1,5 @@
 import { useSearchParams } from 'react-router-dom'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ArrowLeft,
   Bookmark,
@@ -10,6 +10,7 @@ import {
   ExternalLink,
   File,
   FileSearch2,
+  FileWarning,
   Paperclip,
   RefreshCw,
   RotateCcw,
@@ -18,12 +19,16 @@ import {
   ShieldCheck,
   X,
 } from 'lucide-react'
-import { api } from '../api/client'
+import { api, ApiError } from '../api/client'
 import { ProposalWriter } from '../components/ProposalWriter'
-import type { ChangeType, DocumentAnalysis, DocumentDetail, DocumentDetection, MonitoringRun, OpportunityDimensionType, OpportunityPriority, ProposalPreparationItem, SimilarNoticeResult } from '../api/types'
+import { BusinessSummary } from '../components/BusinessSummary'
+import { visibleMeetingAgenda } from '../utils/meetingAgenda'
+import type { ChangeType, DocumentAnalysis, DocumentDetail, DocumentDetection, MonitoringRun, OpportunityDimensionType, OpportunityPriority, SimilarNoticeResult } from '../api/types'
 import { Badge, EmptyState, InlineError, Loading, Pagination } from '../components/ui'
 
 import { isApplicationExpired, normalizeLegalNarrative } from '../utils/noticePresentation'
+import { companyCapabilities } from '../utils/companyCapabilities'
+import { analysisStatusPresentation, missingAnalysisNotice } from '../utils/analysisStatus'
 
 const opportunityLabels: Record<OpportunityDimensionType, string> = {
   COMPANY_FIT: '회사 적합도',
@@ -100,93 +105,6 @@ const strategyProjectHeading = {
   NO_GO: '재검토 조건',
 } as const
 
-const requirementLevelLabel = {
-  MANDATORY: '필수',
-  CONDITIONAL: '해당 시',
-  OPTIONAL: '선택',
-  RECOMMENDED: '내부 권장',
-} as const
-
-const requirementStageLabel = {
-  APPLICATION: '신청 단계',
-  EVALUATION: '평가 단계',
-  POST_SELECTION: '선정 이후',
-  AGREEMENT: '협약 단계',
-  EXECUTION: '수행 단계',
-  REPORTING: '결과보고',
-} as const
-
-const formReferencePattern = /\s*[（(]\s*((?:양식|서식)\s*\d+)\s*[)）]\s*/gu
-const readableSentence = (value: string) => value.replace(/\s+·\s+/gu, ', ')
-const genericAppliesTo = new Set(['신청기관', '모든 신청기관', '전체 신청기관', '해당 기관', '참여기관'])
-const formatEvidenceSource = (parts: Array<string | null | undefined>) => {
-  const values = parts.filter((value): value is string => Boolean(value))
-  if (values.length === 0) return null
-  if (values.length === 1) return `출처는 ${values[0]}입니다.`
-  return `출처는 ${values.slice(0, -1).join(', ')}이며 위치는 ${values.at(-1)}입니다.`
-}
-
-function PreparationChecklist({
-  items,
-  sourceAttachmentNames = [],
-}: {
-  items: ProposalPreparationItem[]
-  sourceAttachmentNames?: string[]
-}) {
-  return (
-    <div className="preparation-checklist">
-      {items.map((item) => {
-        const formReference = item.title.match(formReferencePattern)?.[0]?.replace(/[（）()]/gu, '').trim()
-        const title = item.title.replace(formReferencePattern, ' ').replace(/\s+/gu, ' ').trim()
-        const source = formReference && sourceAttachmentNames.length === 1
-          ? `출처는 ${sourceAttachmentNames[0]}이며 해당 문서의 ${formReference}입니다.`
-          : null
-        const requirementLevel = item.requirementLevel ? requirementLevelLabel[item.requirementLevel] : null
-        const stage = item.stage ? requirementStageLabel[item.stage] : null
-        const appliesTo = item.appliesTo && !genericAppliesTo.has(item.appliesTo)
-          ? item.appliesTo
-          : null
-        const evidenceSource = item.source
-          ? formatEvidenceSource([item.source.attachmentName, item.source.sectionTitle, item.source.location])
-          : source
-        return (
-          <article key={item.title}>
-            <div className="preparation-checklist__title">
-              <strong>{title}</strong>
-            </div>
-            {(requirementLevel || stage || appliesTo) && (
-              <div className="preparation-checklist__meta">
-                {requirementLevel && <span>{requirementLevel}</span>}
-                {stage && <span>{stage}</span>}
-                {appliesTo && <span>{appliesTo}</span>}
-              </div>
-            )}
-            <div className="preparation-checklist__action">
-              <span>담당자 할 일</span>
-              <p>{readableSentence(item.nextAction)}</p>
-            </div>
-            <details className="preparation-checklist__details">
-              <summary>판단 및 근거 보기</summary>
-              <div className="preparation-checklist__judgement">
-                <span>현재 판단</span>
-                <p>{readableSentence(item.detail)}</p>
-              </div>
-              {(evidenceSource || item.source?.excerpt) && (
-                <div className="preparation-checklist__evidence">
-                <div>
-                  {evidenceSource && <span className="preparation-checklist__source">{evidenceSource}</span>}
-                  {item.source?.excerpt && <blockquote>{item.source.excerpt}</blockquote>}
-                </div>
-                </div>
-              )}
-            </details>
-          </article>
-        )
-      })}
-    </div>
-  )
-}
-
 const isProposalSummary = (title: string) =>
   /(?:^|[>·\s])(?:요약문|요약서|사업\s*요약|제안\s*요약)(?:$|[>·\s])/u.test(title)
 
@@ -205,6 +123,7 @@ export default function DocumentsPage() {
   const [savingIds, setSavingIds] = useState<number[]>([])
   const savingRef = useRef(new Set<number>())
   const loadSequence = useRef(0)
+  const loadAbort = useRef<AbortController | null>(null)
   const [documents, setDocuments] = useState<DocumentDetection[]>([])
   const [runs, setRuns] = useState<MonitoringRun[]>([])
   const [selectedRunId, setSelectedRunId] = useState<number | 'ALL' | null>(() => Number.isSafeInteger(linkedRunId) && linkedRunId > 0 ? linkedRunId : null)
@@ -214,6 +133,7 @@ export default function DocumentsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
+  const [appliedQuery, setAppliedQuery] = useState('')
   const [priorityFilter, setPriorityFilter] = useState<'ALL' | OpportunityPriority>('ALL')
   const [orderByOpportunityScore, setOrderByOpportunityScore] = useState(false)
   const [from, setFrom] = useState('')
@@ -236,10 +156,13 @@ export default function DocumentsPage() {
     }
   }, [])
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (background = false) => {
     if (selectedRunId === null) return
     const sequence = ++loadSequence.current
-    setLoading(true)
+    loadAbort.current?.abort()
+    const controller = new AbortController()
+    loadAbort.current = controller
+    if (!background) setLoading(true)
     setError('')
     try {
       const data = await api.getDocuments(
@@ -250,6 +173,9 @@ export default function DocumentsPage() {
         savedOnly || selectedRunId === 'ALL' ? undefined : selectedRunId,
         orderByOpportunityScore ? 'OPPORTUNITY_SCORE' : 'LATEST',
         savedOnly,
+        appliedQuery,
+        priorityFilter === 'ALL' ? undefined : priorityFilter,
+        controller.signal,
       )
       if (sequence !== loadSequence.current) return
       setDocuments(data.content)
@@ -260,7 +186,7 @@ export default function DocumentsPage() {
     } finally {
       if (sequence === loadSequence.current) setLoading(false)
     }
-  }, [page, appliedFrom, appliedTo, selectedRunId, orderByOpportunityScore, savedOnly])
+  }, [page, appliedFrom, appliedTo, selectedRunId, orderByOpportunityScore, savedOnly, appliedQuery, priorityFilter])
 
   const currentLoad = useRef(load)
   useEffect(() => { currentLoad.current = load }, [load])
@@ -269,9 +195,36 @@ export default function DocumentsPage() {
     void loadRuns()
   }, [loadRuns])
 
+  const cancelLoad = useCallback(() => {
+    loadSequence.current++
+    loadAbort.current?.abort()
+  }, [])
+
   useEffect(() => {
     void load()
-  }, [load])
+    return cancelLoad
+  }, [load, cancelLoad])
+
+  useEffect(() => {
+    if (loading || selectedId || !documents.some(item => item.analysisStatus === 'PENDING')) return
+    let active = true
+    let timer: number
+    async function refresh() {
+      if (!active) return
+      if (!document.hidden) await load(true)
+      if (active) timer = window.setTimeout(refresh, 5000)
+    }
+    timer = window.setTimeout(refresh, 5000)
+    return () => { active = false; window.clearTimeout(timer) }
+  }, [documents, loading, selectedId, load])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setPage(0)
+      setAppliedQuery(query.trim())
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [query])
 
   useEffect(() => {
     let active = true
@@ -305,17 +258,6 @@ export default function DocumentsPage() {
       setSavingIds([...savingRef.current])
     }
   }
-
-  const filtered = useMemo(
-    () =>
-      documents.filter((item) => {
-        const matchesQuery = `${item.organizationName} ${item.boardName} ${item.title}`
-          .toLowerCase()
-          .includes(query.toLowerCase())
-        return matchesQuery && (priorityFilter === 'ALL' || item.opportunityPriority === priorityFilter)
-      }),
-    [documents, query, priorityFilter],
-  )
 
   const applyDateRange = () => {
     if (from && to && from > to) {
@@ -395,7 +337,7 @@ export default function DocumentsPage() {
         <div className="panel-header document-filter-header">
           <div className="document-filter-header__filters">
             <button className={`saved-filter${savedOnly ? ' active' : ''}`} aria-pressed={savedOnly}
-              onClick={() => { setSavedOnly(!savedOnly); setPage(0); setQuery(''); setPriorityFilter('ALL'); resetDateRange() }}>
+              onClick={() => { setSavedOnly(!savedOnly); setPage(0); setQuery(''); setAppliedQuery(''); setPriorityFilter('ALL'); resetDateRange() }}>
               <Bookmark size={15} fill={savedOnly ? 'currentColor' : 'none'} />저장한 게시글
               {bookmarkReady && <span>{bookmarkIds.length}</span>}
             </button>
@@ -404,7 +346,7 @@ export default function DocumentsPage() {
                 <button
                   key={value}
                   className={priorityFilter === value ? 'active' : ''}
-                  onClick={() => setPriorityFilter(value)}
+                  onClick={() => { setPage(0); setPriorityFilter(value) }}
                 >
                   {value === 'ALL' ? '전체' : opportunityPriority[value][0]}
                 </button>
@@ -458,7 +400,7 @@ export default function DocumentsPage() {
             </div>
             <label className="search-box">
               <Search size={17} />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="기관, 게시판, 제목 검색" />
+              <input maxLength={500} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="기관, 게시판, 제목 검색" />
             </label>
             <button className="icon-button" onClick={() => void load()} title="새로고침">
               <RefreshCw size={17} />
@@ -468,7 +410,7 @@ export default function DocumentsPage() {
 
         {loading ? (
           <Loading />
-        ) : filtered.length === 0 ? (
+        ) : documents.length === 0 ? (
           <EmptyState
             icon={<FileSearch2 />}
             title={savedOnly && bookmarkIds.length === 0 ? "아직 저장한 게시글이 없어요" : "조건에 맞는 게시글이 없어요"}
@@ -476,7 +418,7 @@ export default function DocumentsPage() {
           />
         ) : (
           <div className="document-list">
-            {filtered.map((item) => (
+            {documents.map((item) => (
               <div className="document-row-shell" key={item.detectionId}>
               <button className="document-row" onClick={() => { setSelectedId(item.detectionId); setSelectedVersionId(item.versionId); setBookmarkError('') }}>
                 <div className="document-row__org">
@@ -500,7 +442,9 @@ export default function DocumentsPage() {
                       </Badge>
                       {item.opportunityScore != null && <span className="document-row__score">{item.opportunityScore}점</span>}
                     </>
-                  ) : <Badge>분석 중</Badge>}
+                  ) : <Badge tone={analysisStatusPresentation(item.analysisStatus).tone}>
+                    {analysisStatusPresentation(item.analysisStatus).label}
+                  </Badge>}
                 </div>
                 <time>{formatDateTime(item.lastCheckedAt)}</time>
               </button>
@@ -519,7 +463,7 @@ export default function DocumentsPage() {
         <Pagination page={page} totalPages={pages} onChange={setPage} />
       </section>
 
-      {selectedId && selectedVersionId && <DocumentDrawer detectionId={selectedId} onClose={() => setSelectedId(null)}
+      {selectedId && selectedVersionId && <DocumentDrawer key={selectedId} detectionId={selectedId} onClose={() => { setSelectedId(null); void load() }}
         bookmarked={bookmarkIds.includes(selectedVersionId)} bookmarkPending={!bookmarkReady || savingIds.includes(selectedVersionId)}
         bookmarkError={bookmarkError} onToggleBookmark={() => void toggleBookmark(selectedVersionId)} />}
     </div>
@@ -537,44 +481,85 @@ function DocumentDrawer({ detectionId, onClose, bookmarked, bookmarkPending, boo
   const [detail, setDetail] = useState<DocumentDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [reload, setReload] = useState(0)
   const [similarNotices, setSimilarNotices] = useState<SimilarNoticeResult | null>(null)
   const [similarLoading, setSimilarLoading] = useState(true)
+  const hasAnalysis = Boolean(detail?.analysis)
 
   useEffect(() => {
     let active = true
-    setLoading(true)
+    let refreshAllowed = true
+    let timer: number | undefined
+    let controller: AbortController | null = null
+
+    async function loadDetail() {
+      if (!active || document.hidden || controller || !refreshAllowed) return
+      const requestController = new AbortController()
+      controller = requestController
+      let timedOut = false
+      const deadline = window.setTimeout(() => {
+        timedOut = true
+        requestController.abort()
+      }, 10000)
+      try {
+        const value = await api.getDocument(detectionId, requestController.signal)
+        if (!active) return
+        setDetail(value)
+        setError('')
+        refreshAllowed = value.participationGuide?.rewriteStatus === 'PENDING'
+          || (value.analysisPending && (!value.analysis || value.analysis.proposal.draftStatus === 'GENERATING'))
+      } catch (cause) {
+        if (!active) return
+        setError(timedOut
+          ? '상태 확인이 지연되고 있습니다. 잠시 후 다시 확인합니다.'
+          : cause instanceof Error ? cause.message : '상세 내용을 불러오지 못했습니다.')
+        if (cause instanceof ApiError && cause.status >= 400 && cause.status < 500) {
+          refreshAllowed = false
+        }
+      } finally {
+        window.clearTimeout(deadline)
+        controller = null
+        if (active) {
+          setLoading(false)
+          if (refreshAllowed && !document.hidden) timer = window.setTimeout(loadDetail, 3000)
+        }
+      }
+    }
+
+    function handleVisibility() {
+      window.clearTimeout(timer)
+      if (!document.hidden) void loadDetail()
+    }
+
     setError('')
-    setDetail(null)
-    setSimilarNotices(null)
-    api.getDocument(detectionId)
-      .then((value) => { if (active) setDetail(value) })
-      .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : '상세 내용을 불러오지 못했습니다.') })
-      .finally(() => { if (active) setLoading(false) })
-    return () => { active = false }
-  }, [detectionId])
+    void loadDetail()
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+      controller?.abort()
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [detectionId, reload])
 
   useEffect(() => {
     let active = true
+    const controller = new AbortController()
     setSimilarNotices(null)
-    if (!detail?.analysis) {
+    if (!hasAnalysis) {
       setSimilarLoading(false)
       return
     }
     setSimilarLoading(true)
-    api.getSimilarNotices(detectionId)
+    api.getSimilarNotices(detectionId, controller.signal)
       .then((value) => { if (active) setSimilarNotices(value) })
       .catch(() => { if (active) setSimilarNotices(null) })
       .finally(() => { if (active) setSimilarLoading(false) })
-    return () => { active = false }
-  }, [detectionId, Boolean(detail?.analysis)])
-
-  useEffect(() => {
-    if (detail?.analysis?.proposal.draftStatus !== 'GENERATING') return
-    const timer = window.setInterval(() => {
-      api.getDocument(detectionId).then(setDetail).catch(() => undefined)
-    }, 3000)
-    return () => window.clearInterval(timer)
-  }, [detectionId, detail?.analysis?.proposal.draftStatus])
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [detectionId, hasAnalysis])
 
   return (
     <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
@@ -592,7 +577,14 @@ function DocumentDrawer({ detectionId, onClose, bookmarked, bookmarkPending, boo
           </div>
         </div>
         {bookmarkError && <InlineError message={bookmarkError} />}
-        {loading ? <Loading label="문서 내용을 정리하고 있어요" /> : error ? <InlineError message={error} /> : detail && <DocumentContent detail={detail} similarNotices={similarNotices} similarLoading={similarLoading} />}
+        {error && <>
+          <InlineError message={error} />
+          <button className="button button--subtle" onClick={() => {
+            if (!detail) setLoading(true)
+            setReload((current) => current + 1)
+          }}><RefreshCw size={16} />다시 불러오기</button>
+        </>}
+        {loading ? <Loading label="문서 내용을 정리하고 있어요" /> : detail && <DocumentContent detail={detail} similarNotices={similarNotices} similarLoading={similarLoading} />}
       </aside>
     </div>
   )
@@ -611,7 +603,7 @@ function OpportunityScore({ opportunity }: { opportunity: NonNullable<DocumentAn
         <div>
           <small>AI OPPORTUNITY SCORE</small>
           <h3>우리 회사의 기회 분석</h3>
-          <p>공고 내용과 공개된 회사 정보를 기준으로 평가했어요.</p>
+          <p>공고 내용과 분석에 사용한 회사 정보를 기준으로 평가했어요.{opportunity.settingsRevision ? ` (설정 버전 ${opportunity.settingsRevision})` : ''}</p>
         </div>
         <div className="opportunity-total">
           <strong>{opportunity.totalScore}</strong><span>/100</span>
@@ -632,10 +624,9 @@ function OpportunityScore({ opportunity }: { opportunity: NonNullable<DocumentAn
       {showScoreGuide && (
         <div className="score-guide">
           <dl>
-            <div><dt>회사 적합도</dt><dd>50%</dd></div>
-            <div><dt>사업 매력도</dt><dd>20%</dd></div>
-            <div><dt>실행 가능성</dt><dd>20%</dd></div>
-            <div><dt>긴급도</dt><dd>10%</dd></div>
+            {['회사 적합도', '사업 매력도', '실행 가능성', '긴급도'].map((label, index) => (
+              <div key={label}><dt>{label}</dt><dd>{opportunity.weights?.[index] ?? [50, 20, 20, 10][index]}%</dd></div>
+            ))}
           </dl>
           <p>화면에는 사업 기회 판단에 직접 사용하는 네 지표를 보여드려요. 회사 적합도가 40점 이하이면 종합 점수는 최대 49점이에요.</p>
         </div>
@@ -658,8 +649,9 @@ function OpportunityScore({ opportunity }: { opportunity: NonNullable<DocumentAn
 }
 
 function DocumentContent({ detail, similarNotices, similarLoading }: { detail: DocumentDetail; similarNotices: SimilarNoticeResult | null; similarLoading: boolean }) {
-  const [activeDetailTab, setActiveDetailTab] = useState<'ANALYSIS' | 'PROPOSAL' | 'SIMILAR'>('ANALYSIS')
+  const [activeDetailTab, setActiveDetailTab] = useState<'SUMMARY' | 'ANALYSIS' | 'PROPOSAL' | 'SIMILAR'>('SUMMARY')
   const analysis = detail.analysis
+  const analysisNotice = missingAnalysisNotice(detail)
   const applicationExpired = isApplicationExpired(detail.analysis)
   const eligible = analysis
     ? applicationExpired ? ['지원 불가능', 'danger'] as const : eligibility[analysis.eligibility]
@@ -679,18 +671,12 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
   const proposalUnavailableReason = analysis && proposalDraft
     ? getProposalUnavailableReason(detail, analysis)
     : ''
-  const applicationDocuments = proposalDraft?.preparation?.submissionDocuments.filter((item) => !item.stage || item.stage === 'APPLICATION') ?? []
-  const laterDocuments = proposalDraft?.preparation?.submissionDocuments.filter((item) => item.stage && item.stage !== 'APPLICATION') ?? []
+  const meetingAgenda = visibleMeetingAgenda(proposalDraft?.preparation?.meetingAgenda)
   const preparation = proposalDraft?.preparation
-  const highlights = selectPreparationHighlights(preparation)
-  const proposalSectionsOverview = preparation ? [
-    { id: 'proposal-agenda', label: '회의 안건', count: preparation.meetingAgenda.length, suffix: '건' },
-    { id: 'proposal-eligibility', label: '확인할 지원 조건', count: preparation.eligibilityChecklist.length, suffix: '건' },
-    { id: 'proposal-documents', label: '준비할 제출 서류', count: preparation.submissionDocuments.length, suffix: '건' },
-  ] : []
-
+  const capabilities = companyCapabilities(preparation?.strategy.capabilityMatches)
+  const hasLegacyCapabilities = (preparation?.strategy.capabilityMatches?.length ?? 0) > capabilities.length
   useEffect(() => {
-    setActiveDetailTab('ANALYSIS')
+    setActiveDetailTab('SUMMARY')
   }, [detail.detectionId])
 
 
@@ -706,15 +692,14 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
         </div>
       </header>
 
-      {analysis && (
-        <nav className="detail-tabs" aria-label="문서 상세 보기">
-          <button className={activeDetailTab === 'ANALYSIS' ? 'active' : ''} onClick={() => setActiveDetailTab('ANALYSIS')}>공고 분석</button>
-          {showProposalTab && <button className={activeDetailTab === 'PROPOSAL' ? 'active' : ''} onClick={() => setActiveDetailTab('PROPOSAL')}>사업 제안</button>}
-          <button className={activeDetailTab === 'SIMILAR' ? 'active' : ''} onClick={() => setActiveDetailTab('SIMILAR')}>유사 공고 비교{!similarLoading && similarNotices && ` ${similarNotices.similarNotices.length}`}</button>
-        </nav>
-      )}
+      <nav className="detail-tabs detail-tabs--summary" aria-label="문서 상세 보기">
+        <button aria-pressed={activeDetailTab === 'SUMMARY'} className={activeDetailTab === 'SUMMARY' ? 'active' : ''} onClick={() => setActiveDetailTab('SUMMARY')}>사업 요약</button>
+        <button aria-pressed={activeDetailTab === 'ANALYSIS'} className={activeDetailTab === 'ANALYSIS' ? 'active' : ''} onClick={() => setActiveDetailTab('ANALYSIS')}>공고 분석</button>
+        {showProposalTab && <button aria-pressed={activeDetailTab === 'PROPOSAL'} className={activeDetailTab === 'PROPOSAL' ? 'active' : ''} onClick={() => setActiveDetailTab('PROPOSAL')}>사업 제안</button>}
+        {analysis && <button aria-pressed={activeDetailTab === 'SIMILAR'} className={activeDetailTab === 'SIMILAR' ? 'active' : ''} onClick={() => setActiveDetailTab('SIMILAR')}>유사 공고 비교{!similarLoading && similarNotices && ` ${similarNotices.similarNotices.length}`}</button>}
+      </nav>
 
-      {analysis ? (
+      {activeDetailTab === 'SUMMARY' ? <BusinessSummary detail={detail} /> : analysis ? (
         <>
           {activeDetailTab === 'ANALYSIS' ? (
           <>
@@ -767,30 +752,12 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
             <section className="detail-section proposal-draft-panel">
               {proposalDraft.preparation ? (
                 <div className="proposal-preparation">
-                  <nav className="proposal-section-nav" aria-label="사업 제안 섹션 바로가기">
-                    <div className="proposal-section-nav__title"><strong>준비 현황</strong><span>확인할 영역을 선택하면 해당 항목으로 이동합니다.</span></div>
-                    {proposalSectionsOverview.map((section) => <a href={`#${section.id}`} key={section.id}><span>{section.label}</span><strong>{section.count}<small>{section.suffix}</small></strong></a>)}
-                  </nav>
                   <details className="preparation-block preparation-block--collapsible" id="proposal-agenda">
-                    <summary className="preparation-block__header"><span>02</span><div><h4>회의 안건</h4><p>제안서 작성 전에 관계자들과 먼저 결정할 내용입니다.</p></div><em>{proposalDraft.preparation.meetingAgenda.length}건 <ChevronDown size={16} /></em></summary>
+                    <summary className="preparation-block__header"><span>02</span><div><h4>회의 안건</h4><p>제안서 작성 전에 관계자들과 먼저 결정할 내용입니다.</p></div><em>{meetingAgenda.length}건 <ChevronDown size={16} /></em></summary>
+                    {meetingAgenda.length === 0 && <p className="preparation-empty">별도로 정리된 회의 안건이 없습니다.</p>}
                     <ol className="meeting-agenda">
-                      {proposalDraft.preparation.meetingAgenda.map((agenda) => <li key={agenda}>{agenda}</li>)}
+                      {meetingAgenda.map((agenda) => <li key={agenda}>{agenda}</li>)}
                     </ol>
-                  </details>
-                  <details className="preparation-block preparation-block--collapsible" id="proposal-eligibility">
-                    <summary className="preparation-block__header"><span>03</span><div><h4>지원 조건 체크리스트</h4><p>공고 요구사항과 현재 확인된 회사 상태를 비교합니다.</p></div><em>{proposalDraft.preparation.eligibilityChecklist.length}건 <ChevronDown size={16} /></em></summary>
-                    <PreparationChecklist items={proposalDraft.preparation.eligibilityChecklist} />
-                  </details>
-                  <details className="preparation-block preparation-block--collapsible" id="proposal-documents">
-                    <summary className="preparation-block__header"><span>04</span><div><h4>제출 서류 체크리스트</h4><p>접수 전에 확보하거나 새로 작성해야 하는 자료입니다.</p></div><em>{proposalDraft.preparation.submissionDocuments.length}건 <ChevronDown size={16} /></em></summary>
-                    <PreparationChecklist items={applicationDocuments} sourceAttachmentNames={proposalDraft.sourceAttachmentNames} />
-                    {laterDocuments.length > 0 && (
-                      <div className="later-requirements">
-                        <h5>선정 이후 준비사항</h5>
-                        <p>신청서류와 구분해 선정·협약 이후 필요한 자료를 보여드립니다.</p>
-                        <PreparationChecklist items={laterDocuments} sourceAttachmentNames={proposalDraft.sourceAttachmentNames} />
-                      </div>
-                    )}
                   </details>
                   <section className="preparation-block strategy-one-page" id="proposal-strategy">
                     <div className="preparation-block__header"><span>01</span><div><h4>제안 전략 한 장 <em className="ai-recommendation-label">AI 제안</em></h4><p>공고 근거와 회사 정보를 바탕으로 제안한 방향이며 담당자 확정이 필요합니다.</p></div></div>
@@ -808,29 +775,19 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
                           <div><strong>추천 참여 방식</strong><p>{proposalDraft.preparation.strategy.recommendedParticipation}</p></div>
                           <div><strong>조건 미충족 시 대안</strong><p>{proposalDraft.preparation.strategy.alternativeParticipation}</p></div>
                         </div>
-                        <div className="strategy-gaps">
-                          <div className="strategy-gaps__header">
-                            <h6>먼저 확인할 핵심 항목</h6>
-                            <p>세 목록에서 신청 단계의 필수 조건과 준비 자료를 우선해 최대 4개를 모았습니다.</p>
-                          </div>
-                          {highlights.map((item) => (
-                            <article key={`${item.section}-${item.title}`}>
-                              <strong>{item.title}</strong>
-                              {item.action && <p>{item.action}</p>}
-                              <a href={`#${item.section}`} onClick={() => {
-                                const section = document.getElementById(item.section)
-                                if (section instanceof HTMLDetailsElement) section.open = true
-                              }}>{item.label}에서 보기</a>
-                            </article>
-                          ))}
-                        </div>
                         <details className="strategy-supporting-details">
                           <summary>기업 역량·활용 방향 및 지원 중단 기준 보기 <ChevronDown size={15} /></summary>
                           <div className="strategy-capabilities">
                             <h6>기업 역량과 활용 방향</h6>
-                            {proposalDraft.preparation.strategy.capabilityMatches?.map((item) => (
-                              <div key={`${item.confirmedFact}-${item.strategicInterpretation}`}><p><span>보유 역량·실적</span>{item.confirmedFact}</p><p><span>활용 방향</span>{item.strategicInterpretation}</p></div>
+                            {capabilities.map((item) => (
+                              <div key={item.companyEvidenceId}><p><span>회사 역량·사례</span>{item.confirmedFact}</p><p><span>공고 활용 방향</span>{item.strategicInterpretation}</p></div>
                             ))}
+                            {hasLegacyCapabilities && (
+                              <p className="strategy-capability-note">이전 분석은 회사 역량과 공고 조건을 구분하지 않아 해당 항목을 표시하지 않습니다. 다음 모니터링에서 새 사업 제안이 생성되면 확인할 수 있습니다.</p>
+                            )}
+                            {!capabilities.length && !hasLegacyCapabilities && (
+                              <p className="strategy-capability-note">이 공고와 연결해 제시할 회사 역량·사례가 확인되지 않았습니다.</p>
+                            )}
                           </div>
                           <div className="strategy-stop">
                             <h6>지원 중단 기준</h6>
@@ -867,7 +824,9 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
                   {applicationExpired
                     ? '접수기한이 지나 제안 준비안을 생성하지 않았습니다. 향후 재공고 여부를 확인해 주세요.'
                     : proposalDraft.draftStatus === 'GENERATING'
-                      ? '공고 분석은 완료되었습니다. 사업 제안을 별도로 준비하고 있으며 완료되면 이 화면이 자동으로 갱신됩니다.'
+                      ? detail.analysisPending
+                        ? '공고 분석은 완료되었습니다. 사업 제안을 별도로 준비하고 있으며 완료되면 이 화면이 자동으로 갱신됩니다.'
+                        : '사업 제안 준비가 종료되었지만 결과를 저장하지 못했습니다. 원문을 확인하거나 다시 모니터링해 주세요.'
                       : proposalUnavailableReason}
                 </p>
               )}
@@ -877,15 +836,22 @@ function DocumentContent({ detail, similarNotices, similarLoading }: { detail: D
           ) : null}
         </>
       ) : (
-        <EmptyState icon={<Sparkles />} title="AI 분석을 준비하고 있어요" description="분석이 완료되면 핵심 내용과 대응 방향을 여기에서 확인할 수 있어요." />
+        <div className={analysisNotice.pending ? undefined : 'analysis-failure'}>
+          <EmptyState icon={analysisNotice.pending ? <Sparkles /> : <FileWarning />}
+            title={analysisNotice.title}
+            description={analysisNotice.description} />
+        </div>
       )}
 
       {showProposalWriter && <ProposalWriter key={detail.detectionId} detectionId={detail.detectionId} active={activeDetailTab === 'PROPOSAL'} expired={applicationExpired} />}
 
       {activeDetailTab === 'ANALYSIS' && <section className="detail-section attachments">
-        <div className="section-title-row"><h3>첨부파일</h3><Badge>{detail.attachments.length}개</Badge></div>
+        {detail.attachments.length > 0 && <div className="section-title-row"><h3>첨부파일</h3><Badge>{detail.attachments.length}개</Badge></div>}
         {detail.attachments.length === 0 ? (
-          <p className="muted">첨부된 파일이 없습니다.</p>
+          <div className="attachments-empty">
+            <span className="attachments-empty__icon" aria-hidden="true"><Paperclip size={20} strokeWidth={1.7} /></span>
+            <div><h3>첨부파일</h3><p>등록된 첨부파일이 없어요.</p></div>
+          </div>
         ) : (
           detail.attachments.map((file) => (
             <a key={file.downloadUrl} href={file.downloadUrl} target="_blank" rel="noreferrer" className="attachment-row">
@@ -1155,24 +1121,4 @@ function getProposalUnavailableReason(detail: DocumentDetail, analysis: Document
   }
   blockers.push('따라서 현재 확인된 조건으로는 사업 제안 준비안을 생성할 수 없습니다.')
   return blockers.join(' ')
-}
-
-function selectPreparationHighlights(preparation: DocumentAnalysis['proposal']['preparation'] | undefined) {
-  if (!preparation) return []
-  const rank = (item: ProposalPreparationItem) =>
-    (item.stage && item.stage !== 'APPLICATION' ? 100 : 0)
-    + ({ MANDATORY: 0, CONDITIONAL: 10, RECOMMENDED: 20, OPTIONAL: 30 }[item.requirementLevel ?? 'RECOMMENDED'])
-    + (['OFFICIAL_DOCUMENT', 'USER_CONFIRMED'].includes(item.companyEvidenceLevel ?? '') ? 1 : 0)
-  const groups = [
-    { items: preparation.eligibilityChecklist, section: 'proposal-eligibility', label: '지원 조건 체크리스트' },
-    { items: preparation.submissionDocuments, section: 'proposal-documents', label: '제출 서류 체크리스트' },
-  ].map(group => [...group.items].sort((a, b) => rank(a) - rank(b)).map(item => ({
-    title: item.title, action: item.nextAction, section: group.section, label: group.label, rank: rank(item),
-  })))
-  const selected = groups.flatMap(group => group.slice(0, 1))
-  if (preparation.meetingAgenda.length) selected.push({
-    title: preparation.meetingAgenda[0], action: '', section: 'proposal-agenda', label: '회의 안건', rank: 0,
-  })
-  const remaining = groups.flatMap(group => group.slice(1)).sort((a, b) => a.rank - b.rank)
-  return [...selected, ...remaining].slice(0, 4)
 }

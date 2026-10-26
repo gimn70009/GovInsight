@@ -64,15 +64,22 @@ class PlaywrightCollector:
             if list_profile.list_ready_selector:
                 await page.wait_for_selector(list_profile.list_ready_selector, state="attached")
             links = json.loads(await page.evaluate(
-                """JSON.stringify(Array.from(
-                    document.querySelectorAll('a[href], a[onclick]')
+                """options => JSON.stringify(Array.from(
+                    document.querySelectorAll(options.linkSelector)
                 ).map(element => ({
                     href: element.getAttribute('href'),
                     onclick: element.getAttribute('onclick'),
                     rowText: (
-                        element.closest('tr, .toggle')?.textContent || ''
+                        (options.dateSelector
+                            ? element.closest('tr, .toggle')
+                                ?.querySelector(options.dateSelector)?.textContent
+                            : element.closest('tr, .toggle')?.textContent) || ''
                     ).trim()
-                })))"""
+                })))""",
+                {
+                    "linkSelector": list_profile.list_link_selector,
+                    "dateSelector": list_profile.list_date_selector,
+                },
             ))
             hrefs = []
             list_dates: dict[str, datetime] = {}
@@ -131,11 +138,17 @@ class PlaywrightCollector:
         if not title:
             raise ValueError(f"게시글 제목을 찾을 수 없습니다: {url}")
 
+        content_text = None
+        if profile.content_html_selector:
+            content_text = await _html_field_text(page, profile.content_html_selector)
+        if not content_text:
+            content_text = await _first_text(page, profile.content_selectors)
+
         return CollectedDocument(
             original_url=url,
             external_document_id=extract_external_document_id(url),
             title=title,
-            content_text=await _first_text(page, profile.content_selectors),
+            content_text=content_text,
             published_at=(
                 _parse_datetime(await _first_date_value(page, profile.date_selectors))
                 or fallback_published_at
@@ -153,6 +166,22 @@ async def _first_text(page: Page, selectors: tuple[str, ...]) -> str | None:
         if normalized:
             return normalized
     return None
+
+
+async def _html_field_text(page: Page, selector: str) -> str | None:
+    locator = page.locator(selector).first
+    if await locator.count() == 0:
+        return None
+    # iframe 로딩을 기다리지 않고 textarea의 HTML 원본을 실행 없이 텍스트로 읽는다.
+    text = await locator.evaluate("""element => {
+        const doc = new DOMParser().parseFromString(element.value, 'text/html');
+        doc.querySelectorAll('script, style, noscript').forEach(node => node.remove());
+        doc.querySelectorAll('br').forEach(node => node.replaceWith(' '));
+        doc.querySelectorAll('p, div, li, tr, td, th, h1, h2, h3, h4, h5, h6')
+            .forEach(node => node.append(' '));
+        return doc.body.textContent || '';
+    }""")
+    return " ".join(text.split()) or None
 
 
 async def _first_date_value(
@@ -191,15 +220,21 @@ def _parse_datetime(value: str | None) -> datetime | None:
 
 async def _collect_attachments(page: Page, page_url: str) -> list[CollectedAttachment]:
     links = json.loads(await page.evaluate(
-        """JSON.stringify(Array.from(document.querySelectorAll('a[href]')).map(element => ({
+        """nameSelector => JSON.stringify(Array.from(
+            document.querySelectorAll('a[href]')
+        ).map(element => ({
             href: element.getAttribute('href'),
             text: (element.textContent || '').trim(),
             download: element.getAttribute('download') || '',
             onclick: element.getAttribute('onclick'),
             relatedFileName: (
-                element.closest('li')?.querySelector('a[class*="ico_file_"]')?.textContent || ''
+                (nameSelector
+                    ? element.closest('li')?.querySelector(nameSelector)?.textContent
+                    : element.closest('li')?.querySelector('a[class*="ico_file_"]')?.textContent
+                ) || ''
             ).trim()
-        })))"""
+        })))""",
+        get_site_profile(page_url).attachment_name_selector,
     ))
     attachments: list[CollectedAttachment] = []
     seen: set[str] = set()

@@ -81,7 +81,7 @@ class CollectionResultServiceTest {
         run.accept("3ed1132b-8d61-45d9-bfab-06c1ed96f202", LocalDateTime.of(2026, 8, 18, 9, 1));
         runSource = MonitoringRunSource.create(run, source);
         ReflectionTestUtils.setField(runSource, "id", 20L);
-        given(runRepository.findById(10L)).willReturn(Optional.of(run));
+        given(runRepository.findForUpdate(10L)).willReturn(Optional.of(run));
         given(runSourceRepository.findByMonitoringRunIdAndMonitoringSourceId(10L, 1L))
                 .willReturn(Optional.of(runSource));
     }

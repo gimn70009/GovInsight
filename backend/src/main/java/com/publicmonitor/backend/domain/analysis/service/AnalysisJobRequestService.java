@@ -29,27 +29,38 @@ public class AnalysisJobRequestService {
     private final DocumentAttachmentRepository attachmentRepository;
     private final AnalysisDocumentVersionRepository versionRepository;
     private final DocumentAnalysisRepository analysisRepository;
+    private final com.publicmonitor.backend.domain.settings.service.EvaluationSettingsService evaluationSettings;
+    private final tools.jackson.databind.ObjectMapper objectMapper;
 
     @Transactional(readOnly = true)
     public Optional<PythonAnalysisJobRequest> prepare(Long runId) {
+        var snapshot = evaluationSettings.currentSnapshot();
+        long revision = snapshot == null ? 0 : snapshot.revision();
         List<PythonAnalysisDocumentRequest> documents = detectionRepository
                 .findAllByMonitoringRunSourceMonitoringRunIdOrderByIdAsc(runId).stream()
-                .filter(this::requiresAnalysis)
-                .map(this::toRequest)
+                .filter(detection -> requiresAnalysis(detection, revision))
+                .map(detection -> toRequest(detection, revision))
                 .filter(this::hasAnalyzableText)
                 .toList();
 
         return documents.isEmpty()
                 ? Optional.empty()
-                : Optional.of(new PythonAnalysisJobRequest(runId, documents));
+                : Optional.of(new PythonAnalysisJobRequest(runId, documents, null, snapshot));
     }
 
-    private boolean requiresAnalysis(DocumentDetection detection) {
+    // Isolate preparation failures so the caller can commit its retry counter.
+    @Transactional(readOnly = true, propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public Optional<PythonAnalysisJobRequest> prepareForRecovery(Long runId) {
+        return prepare(runId);
+    }
+
+    private boolean requiresAnalysis(DocumentDetection detection, long revision) {
         if (detection.getChangeType() != DocumentChangeType.UNCHANGED_DOCUMENT) {
             return true;
         }
         return analysisRepository.findByDocumentVersionId(detection.getDocumentVersion().getId())
-                .map(analysis -> analysis.requiresProposalSchemaUpgrade()
+                .map(analysis -> OpportunitySettingsMetadata.revision(analysis.getOpportunityAssessment(), objectMapper) < revision
+                        || analysis.requiresProposalSchemaUpgrade()
                         || requiresLegalReview(analysis.getComparisonSummary()))
                 .orElse(true);
     }
@@ -58,11 +69,12 @@ public class AnalysisJobRequestService {
         return !LegalReviewPolicy.pendingTypes(summary, java.time.Instant.now()).isEmpty();
     }
 
-    private PythonAnalysisDocumentRequest toRequest(DocumentDetection detection) {
+    private PythonAnalysisDocumentRequest toRequest(DocumentDetection detection, long revision) {
         DocumentVersion version = detection.getDocumentVersion();
         DocumentAnalysis existing = analysisRepository.findByDocumentVersionId(version.getId()).orElse(null);
         boolean legalOnly = detection.getChangeType() == DocumentChangeType.UNCHANGED_DOCUMENT
-                && existing != null && !existing.requiresProposalSchemaUpgrade();
+                && existing != null && !existing.requiresProposalSchemaUpgrade()
+                && OpportunitySettingsMetadata.revision(existing.getOpportunityAssessment(), objectMapper) >= revision;
         List<PythonAnalysisAttachmentRequest> attachments = attachmentRepository
                 .findAllByDocumentVersionId(version.getId()).stream()
                 .map(this::toAttachmentRequest)

@@ -65,7 +65,7 @@ class DocumentDetectionVersionIntegrationTest {
             if (i == 3) continue;
             var analysis = DocumentAnalysis.create(version, "요약", "[]", DocumentImportance.NORMAL,
                     "근거", AnalysisEligibility.REVIEW_REQUIRED, AnalysisFavorability.NOT_APPLICABLE,
-                    "{}", 70, null, "[]", "test", now);
+                    "{}", 70, null, null, "[]", "test", now);
             em.persist(analysis);
             expectedVersion = version.getId();
         }

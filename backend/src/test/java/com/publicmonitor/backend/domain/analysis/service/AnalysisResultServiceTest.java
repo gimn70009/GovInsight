@@ -12,6 +12,7 @@ import com.publicmonitor.backend.domain.analysis.entity.AnalysisFavorability;
 import com.publicmonitor.backend.domain.analysis.entity.DocumentAnalysis;
 import com.publicmonitor.backend.domain.analysis.entity.DocumentImportance;
 import com.publicmonitor.backend.domain.analysis.entity.OpportunityDimensionType;
+import com.publicmonitor.backend.domain.analysis.entity.OpportunityPriority;
 import com.publicmonitor.backend.domain.analysis.repository.AnalysisDocumentDetectionRepository;
 import com.publicmonitor.backend.domain.analysis.repository.DocumentAnalysisRepository;
 import com.publicmonitor.backend.domain.analysis.web.dto.AnalysisResultRequest;
@@ -38,6 +39,8 @@ import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
@@ -53,6 +56,9 @@ class AnalysisResultServiceTest {
     @Mock AnalysisDocumentDetectionRepository detectionRepository;
     @Mock DocumentAnalysisRepository analysisRepository;
     @Mock ApplicationEventPublisher eventPublisher;
+    @Mock com.publicmonitor.backend.domain.analysis.repository.AnalysisTaskRepository tasks;
+    @Mock AnalysisTaskService taskService;
+    @Mock com.publicmonitor.backend.domain.settings.service.EvaluationSettingsService evaluationSettings;
 
     private AnalysisResultService service;
     private MonitoringRun run;
@@ -66,7 +72,8 @@ class AnalysisResultServiceTest {
                 analysisRepository,
                 new ObjectMapper(),
                 Clock.fixed(Instant.parse("2026-08-21T01:00:00Z"), ZoneOffset.UTC),
-                eventPublisher
+                eventPublisher, tasks, taskService,
+                evaluationSettings
         );
         MonitoringSource source = MonitoringSource.create(
                 "산업통상부", "사업공고", null, "https://example.com", null, 3, true
@@ -87,13 +94,55 @@ class AnalysisResultServiceTest {
                 runSource, document, version, DocumentChangeType.NEW_DOCUMENT, LocalDateTime.now()
         );
         ReflectionTestUtils.setField(detection, "id", 50L);
-        given(runRepository.findById(10L)).willReturn(Optional.of(run));
+        given(runRepository.findForUpdate(10L)).willReturn(Optional.of(run));
         given(detectionRepository.findById(50L)).willReturn(Optional.of(detection));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "business-type-v2-notice-activity, RESULT, ADOPTION",
+            "business-type-v4-opinion-notice, GENERAL, ADVISORY",
+            "business-type-v5-service-notices, RESULT, WORKFORCE",
+            "business-type-v6-contest-support, CONTEST, RND",
+            "business-type-v7-planning-surveys, GENERAL, RND"
+    })
+    void 검증에서_제외된_사업유형의_후보와_사유도_분석_JSON에_저장한다(String version, String noticeKind, String candidateType) {
+        given(analysisRepository.findByDocumentVersionIdForUpdate(40L)).willReturn(Optional.empty());
+        var mapper = new ObjectMapper();
+        var payload = mapper.valueToTree(request());
+        var summary = mapper.createObjectNode();
+        summary.put("purpose", "지원 활동을 확인했습니다.");
+        summary.put("supportScale", "지원규모는 원문을 확인합니다.");
+        summary.put("applicationDeadline", "접수기한은 원문을 확인합니다.");
+        summary.put("eligibility", "지원대상은 원문을 확인합니다.");
+        summary.put("requiredPartner", "협력기관은 원문을 확인합니다.");
+        var risks = summary.putArray("legalRisks");
+        for (String type : LegalReviewPolicy.TYPES) {
+            risks.addObject().put("type", type).put("status", "NOT_FOUND").put("summary", "확인된 위험 근거가 없습니다.");
+        }
+        summary.putNull("businessType");
+        summary.putObject("businessTypeReview").put("validatorVersion", version)
+                .put("candidateType", candidateType).put("reason", "NOTICE_" + noticeKind).put("noticeKind", noticeKind);
+        try (var factory = jakarta.validation.Validation.buildDefaultValidatorFactory()) {
+            var review = mapper.treeToValue(summary.path("businessTypeReview"), AnalysisResultRequest.BusinessTypeReview.class);
+            assertThat(factory.getValidator().validate(review)).isEmpty();
+            assertThat(factory.getValidator().validateValue(AnalysisResultRequest.BusinessTypeReview.class,
+                    "noticeKind", "UNKNOWN")).isNotEmpty();
+        }
+        ((tools.jackson.databind.node.ObjectNode) payload.path("results").get(0)).set("comparisonSummary", summary);
+        service.receive(mapper.treeToValue(payload, AnalysisResultRequest.class));
+        var captor = ArgumentCaptor.forClass(DocumentAnalysis.class);
+        verify(analysisRepository).save(captor.capture());
+        var saved = mapper.readTree(captor.getValue().getComparisonSummary());
+        assertThat(saved.path("businessType").isNull()).isTrue();
+        assertThat(saved.path("businessTypeReview").path("reason").asString()).isEqualTo("NOTICE_" + noticeKind);
+        assertThat(saved.path("businessTypeReview").path("candidateType").asString()).isEqualTo(candidateType);
+        assertThat(saved.path("legalRisks").size()).isEqualTo(5);
     }
 
     @Test
     void 분석_결과를_문서_버전에_저장한다() {
-        given(analysisRepository.findByDocumentVersionId(40L)).willReturn(Optional.empty());
+        given(analysisRepository.findByDocumentVersionIdForUpdate(40L)).willReturn(Optional.empty());
 
         AnalysisResultResponse response = service.receive(request());
 
@@ -107,35 +156,69 @@ class AnalysisResultServiceTest {
         assertThat(captor.getValue().getProposalDirection())
                 .contains("sections", "핵심 판단", "제조 AI");
         assertThat(captor.getValue().getOpportunityScore()).isEqualTo(75);
+        assertThat(captor.getValue().getOpportunityPriority()).isEqualTo(OpportunityPriority.HIGH);
+        assertThat(captor.getValue().getOpportunityRankingVersion()).isEqualTo(DocumentAnalysis.OPPORTUNITY_RANKING_VERSION);
         assertThat(captor.getValue().getOpportunityAssessment())
                 .contains("COMPANY_FIT", "URGENCY");
         assertThat(response.storedAnalysisCount()).isEqualTo(1);
         assertThat(response.duplicateAnalysisCount()).isZero();
     }
 
+    @ParameterizedTest
+    @CsvSource({"1,1,73", "3,0,30"})
+    void 새_설정은_재평가하고_늦게_도착한_이전_설정은_덮어쓰지_않는다(long previousRevision, int stored, int score) throws Exception {
+        var mapper = new ObjectMapper();
+        var existing = DocumentAnalysis.create(detection.getDocumentVersion(), "기존 분석", "[]",
+                DocumentImportance.LOW, "기존 근거", AnalysisEligibility.REVIEW_REQUIRED,
+                AnalysisFavorability.NOT_APPLICABLE, "{}", 30, OpportunityPriority.LOW,
+                "{\"settingsRevision\":" + previousRevision + "}", "[]", "old-model", LocalDateTime.now());
+        given(analysisRepository.findByDocumentVersionIdForUpdate(40L)).willReturn(Optional.of(existing));
+        try (var input = new org.springframework.core.io.ClassPathResource("opportunity-settings-defaults.json").getInputStream()) {
+            var data = mapper.readTree(input);
+            ((tools.jackson.databind.node.ObjectNode) data.path("criteria")).put("preset", "GROWTH");
+            given(evaluationSettings.revision(2)).willReturn(mapper.treeToValue(data,
+                    com.publicmonitor.backend.domain.settings.web.dto.EvaluationSettingsData.class));
+        }
+        var payload = mapper.valueToTree(request());
+        ((tools.jackson.databind.node.ObjectNode) payload.path("results").get(0).path("opportunity"))
+                .put("settingsRevision", 2);
+        var response = service.receive(mapper.treeToValue(payload, AnalysisResultRequest.class));
+        assertThat(response.storedAnalysisCount()).isEqualTo(stored);
+        assertThat(existing.getOpportunityScore()).isEqualTo(score);
+        assertThat(mapper.readTree(existing.getOpportunityAssessment()).path("settingsRevision").asLong())
+                .isEqualTo(stored == 1 ? 2 : previousRevision);
+        if (stored == 1) assertThat(existing.getOpportunityAssessment()).contains("GROWTH");
+        else assertThat(existing.getSummary()).isEqualTo("기존 분석");
+    }
+
     @Test
     void 같은_문서_버전의_분석_결과는_중복_저장하지_않는다() {
-        DocumentAnalysis existing = mock(DocumentAnalysis.class);
-        given(existing.requiresProposalSchemaUpgrade()).willReturn(false);
-        given(analysisRepository.findByDocumentVersionId(40L)).willReturn(Optional.of(existing));
+        DocumentAnalysis existing = DocumentAnalysis.create(detection.getDocumentVersion(), "기존 분석", "[]",
+                DocumentImportance.LOW, "기존 근거", AnalysisEligibility.REVIEW_REQUIRED,
+                AnalysisFavorability.NOT_APPLICABLE, "{}", 30, OpportunityPriority.LOW,
+                "{\"dimensions\":[{\"type\":\"COMPANY_FIT\",\"score\":30}]}", "[]", "old-model", LocalDateTime.now());
+        given(analysisRepository.findByDocumentVersionIdForUpdate(40L)).willReturn(Optional.of(existing));
 
         AnalysisResultResponse response = service.receive(request());
 
         assertThat(response.storedAnalysisCount()).isZero();
         assertThat(response.duplicateAnalysisCount()).isEqualTo(1);
+        assertThat(existing.getOpportunityScore()).isEqualTo(30);
+        assertThat(existing.getOpportunityPriority()).isEqualTo(OpportunityPriority.LOW);
+        assertThat(existing.getOpportunityRankingVersion()).isEqualTo(DocumentAnalysis.OPPORTUNITY_RANKING_VERSION);
     }
 
     @Test
     void 기존_사업제안_스키마는_새_분석_결과로_교체한다() {
         DocumentAnalysis existing = mock(DocumentAnalysis.class);
         given(existing.requiresProposalSchemaUpgrade()).willReturn(true);
-        given(analysisRepository.findByDocumentVersionId(40L)).willReturn(Optional.of(existing));
+        given(analysisRepository.findByDocumentVersionIdForUpdate(40L)).willReturn(Optional.of(existing));
 
         AnalysisResultResponse response = service.receive(request());
 
         verify(existing).replaceAnalysis(
                 any(), any(), any(), any(), any(), any(), any(),
-                any(), any(), any(), any(), any()
+                any(), any(), any(), any(), any(), any()
         );
         verify(analysisRepository, never()).save(any());
         assertThat(response.storedAnalysisCount()).isEqualTo(1);
@@ -208,7 +291,7 @@ class AnalysisResultServiceTest {
         String first = saved.get();
         service.receive(delivered);
         assertThat(saved.get()).isEqualTo(first).contains("원래 사업 목적", "비밀정보 조건 확인", "legalReviewVersion", "legalReviewedAt");
-        verify(existing, never()).replaceAnalysis(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+        verify(existing, never()).replaceAnalysis(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
         verify(existing, never()).updateSimilarity(any(), any(), any());
         verify(existing, org.mockito.Mockito.times(1)).updateComparisonSummary(any());
     }

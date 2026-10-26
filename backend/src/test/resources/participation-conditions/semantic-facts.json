@@ -1,0 +1,254 @@
+[
+  {
+    "name": "negative_synonym",
+    "quote": "기업부설연구소 보유. 연구개발전담부서는 불인정",
+    "text": "기업부설연구소를 보유해야 합니다. 연구개발전담부서는 인정되지 않습니다.",
+    "equivalent": true
+  },
+  {
+    "name": "negative_reversed",
+    "quote": "연구개발전담부서는 불인정",
+    "text": "연구개발전담부서도 인정됩니다.",
+    "equivalent": false
+  },
+  {
+    "name": "role_alias",
+    "quote": "주관연구개발기관이 기업인 경우는 접수마감일 현재 법인사업자이어야 함",
+    "text": "주관기관이 기업이면 접수마감일 기준 법인사업자여야 합니다.",
+    "equivalent": true
+  },
+  {
+    "name": "wrong_applicant",
+    "quote": "주관연구개발기관이 기업인 경우는 접수마감일 현재 법인사업자이어야 함",
+    "text": "공동기관이 기업이면 접수마감일 기준 법인사업자여야 합니다.",
+    "equivalent": false
+  },
+  {
+    "name": "dropped_conditional",
+    "quote": "주관기관이 기업인 경우 법인사업자이어야 함",
+    "text": "주관기관은 법인사업자여야 합니다.",
+    "equivalent": false
+  },
+  {
+    "name": "reordered_metrics",
+    "quote": "업력 7년 이하이며 매출액 10억원 이상인 중소기업",
+    "text": "매출액 10억원 이상이며 업력 7년 이하인 중소기업이 지원 대상입니다.",
+    "equivalent": true
+  },
+  {
+    "name": "swapped_values",
+    "quote": "매출액 10억원 이상 및 수출액 20억원 이상",
+    "text": "매출액 20억원 이상이며 수출액 10억원 이상이어야 합니다.",
+    "equivalent": false
+  },
+  {
+    "name": "swapped_operators",
+    "quote": "업력 7년 이하 및 매출액 10억원 이상",
+    "text": "업력 7년 이상 및 매출액 10억원 이하여야 합니다.",
+    "equivalent": false
+  },
+  {
+    "name": "currency_scale",
+    "quote": "매출액 100억원 이상",
+    "text": "매출액 100만원 이상이어야 합니다.",
+    "equivalent": false
+  },
+  {
+    "name": "format_only",
+    "quote": "매출액 1,000억원 이상",
+    "text": "매출액 1000억 원 이상이어야 합니다.",
+    "equivalent": true
+  },
+  {
+    "name": "inclusive_age",
+    "quote": "업력 7년 이내",
+    "text": "업력 7년 이하여야 합니다.",
+    "equivalent": true
+  },
+  {
+    "name": "exclusive_age",
+    "quote": "업력 7년 이내",
+    "text": "업력 7년 미만이어야 합니다.",
+    "equivalent": false
+  },
+  {
+    "name": "symbol_comparison",
+    "quote": "매출액 ≥ 10억원",
+    "text": "매출액 10억원 이상이어야 합니다.",
+    "equivalent": true
+  },
+  {
+    "name": "wrong_symbol_comparison",
+    "quote": "매출액 ≥ 10억원",
+    "text": "매출액 10억원 초과여야 합니다.",
+    "equivalent": false
+  },
+  {
+    "name": "legal_reference_in_evidence",
+    "quote": "「중소기업기본법」 제2조에 따른 중소기업",
+    "text": "중소기업이 지원 대상입니다.",
+    "equivalent": true
+  },
+  {
+    "name": "same_legal_reference_without_marks",
+    "quote": "「중소기업기본법」 제2조에 따른 중소기업",
+    "text": "중소기업기본법 제2조에 따른 중소기업이어야 합니다.",
+    "equivalent": true
+  },
+  {
+    "name": "changed_legal_article",
+    "quote": "「중소기업기본법」 제2조에 따른 중소기업",
+    "text": "중소기업기본법 제3조에 따른 중소기업이어야 합니다.",
+    "equivalent": false
+  },
+  {
+    "name": "invented_law",
+    "quote": "「중소기업기본법」 제2조에 따른 중소기업",
+    "text": "「다른지원법」 제2조에 따른 중소기업이어야 합니다.",
+    "equivalent": false
+  },
+  {
+    "name": "legal_reference_does_not_remove_age",
+    "quote": "「중소기업기본법」 제2조에 따른 업력 7년 이하 중소기업",
+    "text": "중소기업이어야 합니다.",
+    "equivalent": false
+  },
+  {
+    "name": "legal_reference_does_not_remove_exception",
+    "quote": "「중소기업기본법」 제2조에 따른 중소기업. 단, 대기업은 제외",
+    "text": "중소기업이어야 합니다.",
+    "equivalent": false
+  },
+  {
+    "name": "or_synonym",
+    "quote": "업력 3년 이하 또는 매출액 5억원 이하",
+    "text": "매출액 5억원 이하 혹은 업력 3년 이하를 충족해야 합니다.",
+    "equivalent": true
+  },
+  {
+    "name": "or_to_all",
+    "quote": "업력 3년 이하 또는 매출액 5억원 이하",
+    "text": "업력 3년 이하 및 매출액 5억원 이하를 모두 충족해야 합니다.",
+    "equivalent": false
+  },
+  {
+    "name": "all_synonym",
+    "quote": "업력 3년 이하 및 매출액 5억원 이하를 모두 충족",
+    "text": "업력 3년 이하 및 매출액 5억원 이하를 전부 충족해야 합니다.",
+    "equivalent": true
+  },
+  {
+    "name": "business_size_changed",
+    "quote": "중소기업이 대상",
+    "text": "중견기업이 지원 대상입니다.",
+    "equivalent": false
+  },
+  {
+    "name": "entity_role_swap",
+    "quote": "주관기관은 중소기업, 공동기관은 대학",
+    "text": "주관기관은 대학, 공동기관은 중소기업이어야 합니다.",
+    "equivalent": false
+  },
+  {
+    "name": "role_reorder",
+    "quote": "주관기관은 매출액 10억원 이상, 공동기관은 매출액 5억원 이상",
+    "text": "공동기관은 매출액 5억원 이상이며 주관기관은 매출액 10억원 이상이어야 합니다.",
+    "equivalent": true
+  },
+  {
+    "name": "negative_target_swap",
+    "quote": "기업부설연구소 인정, 연구개발전담부서 불인정",
+    "text": "기업부설연구소는 불인정이고 연구개발전담부서는 인정됩니다.",
+    "equivalent": false
+  },
+  {
+    "name": "absence_paraphrase",
+    "quote": "등록 특허가 없는 기업",
+    "text": "등록 특허가 없어야 합니다.",
+    "equivalent": true
+  },
+  {
+    "name": "absence_removed",
+    "quote": "등록 특허가 없는 기업",
+    "text": "등록 특허가 있어야 합니다.",
+    "equivalent": false
+  },
+  {
+    "name": "grade_changed",
+    "quote": "기업신용등급 BBB 이상",
+    "text": "기업신용등급 A 이상이어야 합니다.",
+    "equivalent": false
+  },
+  {
+    "name": "grade_operator_changed",
+    "quote": "기업신용등급 BBB 이상",
+    "text": "기업신용등급 BBB 이하여야 합니다.",
+    "equivalent": false
+  },
+  {
+    "name": "deadline_changed",
+    "quote": "접수마감일 현재 법인사업자",
+    "text": "공고일 기준 법인사업자여야 합니다.",
+    "equivalent": false
+  },
+  {
+    "name": "industry_changed",
+    "quote": "제조업을 주된 사업으로 영위",
+    "text": "서비스업을 주된 사업으로 영위해야 합니다.",
+    "equivalent": false
+  },
+  {
+    "name": "accreditor_missing",
+    "quote": "기업부설연구소(한국산업기술진흥협회 인정서 기준)를 보유",
+    "text": "기업부설연구소를 보유해야 합니다.",
+    "equivalent": false
+  },
+  {
+    "name": "exception_link_missing",
+    "quote": "업력 7년 이하. 단, 중견기업은 업력 10년 이하",
+    "text": "업력 7년 이하이며 중견기업은 업력 10년 이하여야 합니다.",
+    "equivalent": false
+  },
+  {
+    "name": "exception_link_synonym",
+    "quote": "업력 7년 이하. 단, 중견기업은 업력 10년 이하",
+    "text": "업력 7년 이하여야 합니다. 다만 중견기업은 업력 10년 이하여야 합니다.",
+    "equivalent": true
+  },
+  {
+    "name": "invented_unquoted_law",
+    "quote": "「중소기업기본법」 제2조에 따른 중소기업",
+    "text": "다른지원법에 따른 중소기업이어야 합니다.",
+    "equivalent": false
+  },
+  {
+    "name": "formula_relation_missing",
+    "quote": "매출 증가율 = 20%",
+    "text": "매출 증가율 20%이어야 합니다.",
+    "equivalent": false
+  },
+  {
+    "name": "quoted_condition_is_not_a_legal_citation",
+    "quote": "「업력 7년 이하」 중소기업",
+    "text": "중소기업이어야 합니다.",
+    "equivalent": false
+  },
+  {
+    "name": "or_branch_regrouping",
+    "quote": "업력 3년 이하 또는 매출액 5억원 이하 및 수출액 2억원 이상",
+    "text": "업력 3년 이하 및 매출액 5억원 이하 또는 수출액 2억원 이상이어야 합니다.",
+    "equivalent": false
+  },
+  {
+    "name": "same_or_branches_reordered",
+    "quote": "업력 3년 이하 또는 매출액 5억원 이하 및 수출액 2억원 이상",
+    "text": "수출액 2억원 이상 및 매출액 5억원 이하 또는 업력 3년 이하여야 합니다.",
+    "equivalent": true
+  },
+  {
+    "name": "absence_without_obligation_cannot_reverse",
+    "quote": "등록 특허가 없어도 신청 가능",
+    "text": "등록 특허가 있어도 신청 가능합니다.",
+    "equivalent": false
+  }
+]

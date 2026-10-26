@@ -6,6 +6,8 @@ import com.publicmonitor.backend.domain.monitoring.repository.MonitoringSchedule
 import com.publicmonitor.backend.domain.monitoring.web.dto.MonitoringScheduleResponse;
 import com.publicmonitor.backend.domain.monitoring.web.dto.UpdateMonitoringScheduleRequest;
 import java.time.DayOfWeek;
+import java.time.LocalDateTime;
+import com.publicmonitor.backend.domain.monitoring.exception.MonitoringScheduleChangedException;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -29,11 +31,22 @@ public class MonitoringScheduleService {
     @Transactional
     public MonitoringScheduleResponse update(UpdateMonitoringScheduleRequest request) {
         validate(request.frequency(), request.customDays());
-        MonitoringSchedule schedule = scheduleRepository.findAll().stream()
+        MonitoringSchedule schedule = scheduleRepository.findAllForUpdate().stream()
                 .findFirst()
                 .orElseGet(MonitoringSchedule::defaultSchedule);
         schedule.update(request.enabled(), request.frequency(), request.executionTime(), request.customDays());
         return MonitoringScheduleResponse.from(scheduleRepository.save(schedule));
+    }
+
+    @Transactional
+    public MonitoringScheduleResponse cancelPending(LocalDateTime scheduledAt) {
+        MonitoringSchedule schedule = scheduleRepository.findAllForUpdate().stream()
+                .findFirst()
+                .orElseThrow(MonitoringScheduleChangedException::new);
+        if (!schedule.cancelPending(scheduledAt)) {
+            throw new MonitoringScheduleChangedException();
+        }
+        return MonitoringScheduleResponse.from(schedule);
     }
 
     private void validate(MonitoringScheduleFrequency frequency, Set<DayOfWeek> customDays) {

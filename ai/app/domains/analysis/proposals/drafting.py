@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Protocol
 
-from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field, ValidationError
 
+from app.core.openai_models import ChatOpenAI
 from app.core.schemas import CamelCaseModel
 from app.domains.analysis.config import AnalysisSettings
 from app.domains.analysis.context.tools import (
@@ -18,9 +18,18 @@ from app.domains.analysis.context.tools import (
     read_company_profile,
 )
 from app.domains.analysis.evidence.tools import AnalysisToolContext
+from app.domains.analysis.proposals.capabilities import (
+    company_capability_catalog,
+    ground_capability_matches,
+)
+from app.domains.analysis.proposals.eligibility_scope import application_source_text
 from app.domains.analysis.proposals.scoring import score_preparation
+from app.domains.analysis.proposals.submission_requirements import reconcile_submission_documents
+from app.domains.analysis.proposals.submission_review import separate_submission_reviews
+from app.domains.analysis.proposals.submission_validation import validate_submission_documents
 from app.domains.analysis.schemas.request import AnalysisDocumentRequest
 from app.domains.analysis.schemas.result import (
+    PREPARATION_SCHEMA_VERSION,
     CompanyEvidenceLevel,
     DocumentAnalysisResult,
     Eligibility,
@@ -34,11 +43,11 @@ from app.domains.analysis.schemas.result import (
     RequirementLevel,
     RequirementSource,
     RequirementStage,
-    StrategyCapabilityMatch,
     StrategyDecision,
     StrategyGap,
     StrategyStopCriterion,
 )
+from app.observability.model_calls import ModelCallTrace
 
 logger = logging.getLogger(__name__)
 
@@ -104,11 +113,98 @@ DRAFT_PROMPT = """
   공식 자격을 VERIFIED로 확정하지 않습니다.
 - 제출서류 표가 있으면 표의 행을 기준으로 누락 없이 추출하고,
   원문에 없는 자료를 필수 제출서류로 추가하지 않습니다.
+- [표]와 [/표] 사이에서는 한 줄이 한 행이며 탭이 셀 경계입니다.
+  빈 셀은 미확인 정보이며 앞 행의 필수 여부·조건·시기를 임의로 이어받지 않습니다.
+  가로·세로 병합이 명시된 셀만 파서가 해당 행에 반복합니다. PDF의 탭은 배치 힌트이며
+  실제 셀 경계나 병합을 확정하는 근거가 아닙니다. 잘린 표의 누락 조건을 추정하지 않습니다.
+- 제출표의 서류명 / 주요내용 / 비고를 구분합니다. 주요내용이 문서명처럼 끝나도
+  별도 제출 행이 아니면 새 서류로 만들지 않습니다. 예: 사업계획서 행의 ‘운영·지원
+  사업계획서’는 작성 내용이며, 증빙자료 행의 ‘사업계획 내 기재사항 증빙 등’은 설명입니다.
+  ‘발표자료’가 독립된 행이면 앞선 증빙자료에 붙이지 않고 별도 항목으로 기록합니다.
+  PDF, HWP 같은 파일 형식과 기관장 직인본은 서류명이 아니라 해당 행의 준비 조건입니다.
+- ‘필수’, ‘해당 시’ 표시는 해당 행·명시된 묶음에만 적용합니다. 다음 행의 조건을
+  앞선 서류에 소급하거나, 열/행 경계가 불명확한데 필수·신청 시로 추측하지 않습니다.
+  예: 기업신용평가등급 확인서의 ‘해당 시 / 민간기관’은 해당 확인서의 조건입니다.
+  ‘신청·접수기간 내 평가된 확인서’는 발급·평가 시점 조건이며 독립된 서류가 아닙니다.
+- 하나의 셀에 독립된 서류가 여러 개 명시되면 각각의 명칭을 구분합니다. ‘또는/택1’은
+  선택 관계로 보존하고 모두 필수인 것처럼 분리하지 않습니다. 설명 속 서류 언급은
+  별도 제출 의무로 만들지 않으며 ‘운영·지원’ 같은 복합 명칭을 쪼개지 않습니다.
+- 제출 조건은 짧고 읽기 쉬운 문장으로 다듬되 대상·기간·수량·예외를 보존합니다.
+  appliesTo에는 실제 적용 대상·기준만 쓰며 서류명, PDF, 원문 표 전체를 붙이지 않습니다.
+  ‘해당 시’만 있고 대상이 없으면 대상을 추측하지 말고 원문 확인이 필요하다고 씁니다.
+  발표자료 미제출 시 사업계획서로 발표하는 대체 조건도 해당 발표자료의 detail에 보존합니다.
+  표 뒤의 평가·선정 절차 제목, 장 번호, 다음 절 내용은 제출서류에 포함하지 않습니다.
+  다듬은 표시문과 source.excerpt를 구분하며 excerpt에는 실제 원문 표현을 그대로 남깁니다.
 - submissionFormFiles에는 코드가 ZIP 내부에서 먼저 확인한 제출 양식 파일명이 들어 있습니다.
-  각 파일을 submissionDocuments와 대조하고, 같은 서류가 이미 포함되지 않았다면 빠뜨리지 않습니다.
-- eligibilityChecklist에는 신청 자격, 결격 사유와 필수 보유 상태만 기록합니다.
-  접수 마감일 자체와 사업계획서, 확인서, 증명서, 확약서, 등기부등본 같은 제출 파일은 넣지 않습니다.
-- submissionDocuments에는 실제로 작성, 발급, 날인 또는 업로드할 문서만 기록합니다.
+  각 파일을 submissionDocuments와 대조하고, 원문에서 제출 의무가 확인되는 경우만 추가합니다.
+  파일명만 확인되면 제출 여부를 확인할 안건으로 기록합니다.
+- 참여 조건은 현재 모집의 신청 주체별로 읽습니다. 주관기관 모집에서 수혜 창업기업의
+  업력·매출 조건을 주관기관의 필수 자격으로 적용하지 않습니다. 정책자금은 자금명과
+  일반형·혁신형·희망형·도약형 등 적용 유형을 appliesTo에 보존합니다.
+- 특정 이력·대상에게만 적용하는 유형 제한을 모든 신청자의 필수 조건으로 쓰지 않습니다.
+  예: 'A사업 참여기업은 유형2에 한해 신청 가능'은 A사업 참여 이력이 필수라는 뜻이 아닙니다.
+  적용 대상은 appliesTo에, 신청 가능한 유형과 불가한 유형은 원문에 명시된 범위만
+  title/detail에 기록합니다. 다른 유형의 신청 가능 여부를 반대로 추론하지 않습니다.
+  같은 대상의 같은 제한이 신청대상·제외 절에 반복되면 의미가 같은 조건을 중복 나열하지 않습니다.
+  단, 자금명·유형·연도·수치·예외가 다르면 같은 조건으로 합치지 않습니다.
+- CN코드 조회 방법·문의처·증빙 확인 절차는 자격 요건 자체와 분리합니다. 실제 보유·충족
+  요건과 그 요건을 확인하는 방법을 섞지 않습니다. 우대 점수를 자격 판정으로 바꾸지 않습니다.
+- 표의 '구분' 열이 공공기관·민간기관이면 적용 대상입니다. 필수/우대 여부를 뜻하지 않습니다.
+  신청 제외 절의 결격 사유와 예외를 함께 읽으며 우대·가점을 필수 자격으로 바꾸지 않습니다.
+- PDF나 HWP에서 줄이 바뀌어도 문장이 끝난 것은 아닙니다. 조사로 끝난 앞줄과 이어지는
+  뒷줄을 연결하고 조건·서술어가 완성된 단위로 정리합니다. '투자금을'에서 끊지 말고
+  '투자금을 지원받고 선투자 추천서를 발급받은 소상공인'의 두 조건을 모두 보존합니다.
+  '신사업 / 창업사관학교 수료생'처럼 나뉜 명칭도 하나로 연결합니다.
+- 사용자용 title/detail은 대상·수치·기간·기준일·이상/미만·예외·AND/OR가 드러나는
+  짧은 완결문으로 정리합니다. 긴 법률 열거는 기관 유형과 적용 법령별로 구분합니다.
+  원문을 통째로 복사하거나 문장 중간을 잘라 표시하지 않으며, 전체가 필수인 목록과
+  하나만 충족하는 선택 목록을 서로 바꾸지 않습니다.
+- 참여 자격의 title은 업력·기관 유형·지원 역량처럼 실제 기준을 설명하는 짧은 항목명으로,
+  detail은 핵심 대상과 충족 기준이 드러나는 완결된 존댓말 문장으로 작성합니다.
+  '공공기관의 신청 기준.' 같은 제목만 detail에 쓰지 않습니다. 대상 기관의 법령상 유형을
+  간단히 설명하되 법인·단체·기관 범위와 일반기업에만 적용하는 신용등급 조건을 보존합니다.
+- 환수금 미반환, 사업비 계좌·회계처리 불가, 임금 체불, 참여 제재를 '참여 자격'으로 뭉뚱그리지
+  않고 각 제한 사유를 구분합니다. 신청기관의 요건과 수혜기업의 조건을 혼합하지 않습니다.
+- '구분 / 신청자격' 표 머리글, '3 사업 개요' 같은 장 번호·다음 절 제목, 페이지 번호를
+  자격 문장에 붙이지 않습니다. 여러 첨부에서 같은 조건이 반복되어도 형식 차이만으로
+  새 조건을 만들지 않으며, 표의 역할 열을 해석하지 못하면 자격을 추측하지 않습니다.
+- 화면의 세부 조건을 접더라도 대상·수치·기간·예외·법령상 범위는 데이터에서 생략하지 않습니다.
+  원문의 '단, 일반기업은 B 이상이어야 함'은 일반기업의 추가 필수 요건이며 면제 조항이 아닙니다.
+- source.excerpt는 표시문과 별개로 실제 원문을 유지합니다. 조건과 붙어 있는 예외를
+  함께 담은 완결된 단위를 인용하고 1200자 안에서 중간 절단 없이 좁은 범위를 선택합니다.
+  원문이 잘려 복구할 수 없으면 누락된 요건을 추측해 완성하지 않습니다.
+- eligibilityChecklist에는 신청 단계에서 지원할 수 있는 주체인지 판가름하는 요건만 기록합니다.
+  기관·사업자 유형, 업력·설립 기간·소재지·업종·기업 규모, 필수 인증·등록의 보유 상태,
+  체납·휴폐업·참여제한 등 신청 제외 사유가 해당합니다.
+- 근거의 대제목과 소제목을 함께 확인합니다. 지원조건·지원내용·사업비·협약·사후관리 아래의
+  문장은 '~해야 한다'라는 표현이 있어도 신청 자격으로 분류하지 않습니다.
+  해당 절 안의 '신청대상' 같은 작은 제목도 대제목의 문맥을 벗어나 해석하지 않습니다.
+- 각 항목에 '이 조건을 못 갖추면 신청 자체가 불가능한가?'를 검증합니다.
+  선정 후 부담·의무라면 제외합니다. 지원 금액·비율·기간, 정부지원금·자부담·현금·현물 구성,
+  보고·사업비 사용·사후관리 의무, 평가 기준·선정 절차·제출 서류는 신청 자격에 넣지 않습니다.
+- 한 근거에 자격과 지원 조건이 섞이면 자격 문장만 분리합니다. 인증서·사업자등록증의
+  필수 보유·등록 상태는 자격이며, 그 서류를 제출하는 행위는 submissionDocuments에만 둡니다.
+  접수 마감일 자체도 자격 항목으로 만들지 않습니다.
+- 자격의 detail은 원문을 읽기 쉽게 다듬고 '~입니다', '~해야 합니다', '~할 수 없습니다'의
+  안내체로 통일합니다. '~함', '~한다', 명사만 있는 조각 문장을 그대로 출력하지 않습니다.
+  대상·기준일·수치·부정·예외·모두 충족/택일은 보존하고 source.excerpt는 원문 그대로 둡니다.
+  확인된 신청 자격이 없으면 빈 배열로 반환하고 조건을 만들어 채우지 않습니다.
+- submissionDocuments에는 원문의 제출표·제출 지시·연결된 붙임 목록에서 제출 의무가
+  확인된 문서만 기록합니다. 인용문이 원문에 있다는 사실만으로 제출 의무를 인정하지 않습니다.
+- 평가 배점·기업풀 정보·연락처 입력란을 근거로 별도 필수 서류를 만들지 않습니다.
+  연락처·사전교육 계획·직무 설명처럼 양식에 작성할 내용은 해당 서류의 detail에 넣습니다.
+  실제 붙임인 운영 계획 및 직무기술서는 그 상위 운영계획서에 포함하는 자료로 보존합니다.
+- 기업 프로필·서명·직인 같은 부연으로 동일 서류의 카드를 다시 만들지 않습니다.
+  사업자등록증·기관소개 자료를 기본서류로 다시 묶거나 해당 시 조건을 필수로 바꾸지 않습니다.
+- 확인된 서류의 원본·사본·서명·발급·보유 여부 등 준비 행동은 해당 서류의 detail과
+  nextAction에만 기록합니다. 같은 서류를 확인 목록이나 회의 안건에 다시 나열하지 않습니다.
+  담당 부서·직무 개수·확인되지 않은 작성 조건을 임의로 배정하지 않습니다.
+- 온라인 입력란의 작성 불필요 안내와 별도 파일 제출 의무를 구분합니다.
+  입력란이 선택이어도 제출서류 표의 파일을 생략하지 않습니다.
+- 제출 시점이나 제출 대상이 다른 문서는 한 항목으로 묶지 않습니다.
+  신청서에 포함하는 별첨, 협약 시 서류, 운영 완료 후 서류를 구분합니다.
+- 회사가 대학이나 주관기관에 제공할 증빙도 제출서류 표에 있으면 보존합니다.
+  최초 참여, 변경 시, 해당 기관만 제출 같은 조건을 함께 기록합니다.
 - meetingAgenda에는 참여 방식, 투입 인력과 예산 등 회사가 결정해야 할 사항만 기록합니다.
 - 회사가 확인할 자격은 eligibilityChecklist의 detail과 nextAction에, 문서 작성에 필요한
   수치·실적·인력 자료는 해당 submissionDocuments의 detail과 nextAction에 통합합니다.
@@ -117,7 +213,13 @@ DRAFT_PROMPT = """
 - 하나의 요건이나 문서를 여러 체크리스트에 반복하지 않습니다. 자격 요건과 그 증빙 문서를
   모두 보여줘야 한다면 eligibilityChecklist에는 자격 상태만,
   submissionDocuments에는 문서만 기록합니다.
-- 각 체크리스트의 detail은 현재 상태, nextAction은 담당자가 바로 수행할 행동으로 씁니다.
+- 제출 서류의 title에는 실제 서류명을 쓰고, 최근 몇 년 자료인지와 원본·사본 조건은 detail에,
+  제출 대상은 appliesTo에 기록합니다. 같은 서류의 이름과 제출 지시를
+  별도 항목으로 반복하지 않습니다.
+  기간·대상·제출 단계가 실제로 다른 의무는 구분하고 각각의 원문 근거를 붙입니다.
+- eligibilityChecklist의 detail에는 해당 공고의 자격 조건을 읽기 쉽게 정리하고,
+  회사의 충족 여부를 추측하지 않습니다. submissionDocuments의 detail은 준비 조건과
+  확인된 현재 상태를, nextAction은 담당자가 바로 수행할 행동을 씁니다.
 - 공고의 최종 신청 마감일을 확인할 수 있으면 applicationDeadline에 YYYY-MM-DD로 기록합니다.
 - workType은 내부 확인 INTERNAL_CONFIRMATION, 외부 확인 EXTERNAL_CONFIRMATION,
   문서 발급 DOCUMENT_ISSUANCE, 인증 취득 CERTIFICATION, 서명·직인 SIGNATURE_SEAL,
@@ -154,8 +256,17 @@ DRAFT_PROMPT = """
   과제를 확정한다고 쓰며 회사의 일반 기술 역량만으로 구체적인 과제명을 만들지 않습니다.
 - 직접 신청 자격이 확인되지 않은 회사의 외주 수행 가능성은 이번 공고 신청의 대안 역할로 표현하지
   않고 승인기업을 대상으로 한 별도 영업 기회라고 명확히 구분합니다.
-- capabilityMatches의 confirmedFact에는 공고 또는 회사 공개정보에서 확인된 사실만 적고,
-  strategicInterpretation에는 그 사실이 참여 전략에 갖는 의미를 AI 판단으로 분리해 적습니다.
+- capabilityMatches는 회사 역량·사례와 해당 공고에서의 활용 방향만 연결합니다.
+  제공된 회사 역량·사례 선택 목록에서 공고와 관련된 companyEvidenceId를 선택합니다.
+  confirmedFact는 코드가 회사 목록에서 복사하므로 직접 작성하지 않습니다.
+- 공고의 지원 대상, 평가 배점, 자격 조건, 제출서류와 재무제표 요구를
+  회사 역량으로 선택하지 않습니다.
+  목록 밖 회사 사실, 미확인 고객·파트너 관계, 향후 지향 과제를 보유 역량으로 만들지 않습니다.
+- strategicInterpretation은 선택한 회사 역량을 해당 공고의 과업·참여 역할·평가에서
+  어떻게 활용할지 구체적으로 설명합니다. 공고 요약이나 서류 준비 행동만 반복하지 않습니다.
+  개발 중인 사례는 완료 실적으로, 공개 사례는 공식 실적 인정이나 자격 충족으로 단정하지 않습니다.
+- 관련 있는 회사 역량·사례만 최대 4개 선택하고 같은 ID를 중복하지 않습니다.
+  직접 연결할 근거가 없으면 capabilityMatches를 빈 목록으로 반환합니다.
 - stopCriteria는 체크리스트의 행동을 반복하지 않고 지원을 중단할 조건과 이유만 작성합니다.
   공고가 직접 정한 필수조건은 OFFICIAL_REQUIREMENT, AI가 설정한 내부 판단 시점은
   INTERNAL_RECOMMENDATION으로 구분합니다. 임의의 2주 같은 기간은 이유 없이 만들지 않습니다.
@@ -197,20 +308,25 @@ class ProposalChecklistModelOutput(CamelCaseModel):
     work_type: PreparationWorkType = PreparationWorkType.OTHER
 
 
+class ProposalCapabilityModelOutput(CamelCaseModel):
+    company_evidence_id: str = Field(min_length=1, max_length=80)
+    strategic_interpretation: str = Field(min_length=10, max_length=500)
+
+
 class ProposalStrategyModelOutput(CamelCaseModel):
     decision: StrategyDecision
     decision_reason: str = Field(min_length=10, max_length=500)
     recommended_project: str = Field(min_length=5, max_length=120)
     recommended_participation: str = Field(min_length=10, max_length=500)
     alternative_participation: str = Field(min_length=10, max_length=500)
-    capability_matches: list[StrategyCapabilityMatch] = Field(min_length=1, max_length=4)
+    capability_matches: list[ProposalCapabilityModelOutput] = Field(max_length=4)
     stop_criteria: list[StrategyStopCriterion] = Field(min_length=1, max_length=4)
 
 
 class ProposalPreparationModelOutput(CamelCaseModel):
     meeting_agenda: list[str] = Field(max_length=8)
-    eligibility_checklist: list[ProposalChecklistModelOutput] = Field(min_length=1, max_length=12)
-    submission_documents: list[ProposalChecklistModelOutput] = Field(min_length=1, max_length=15)
+    eligibility_checklist: list[ProposalChecklistModelOutput] = Field(max_length=12)
+    submission_documents: list[ProposalChecklistModelOutput] = Field(max_length=15)
     application_deadline: str | None = Field(default=None, max_length=10)
     strategy: ProposalStrategyModelOutput
 
@@ -241,6 +357,7 @@ class LangChainProposalGenerationRunner:
             max_retries=0,
             reasoning_effort="minimal",
             max_tokens=12_000,
+            include_response_headers=True,
         )
         self._draft_model = model.with_structured_output(ProposalModelOutput, include_raw=True)
         self._settings = settings
@@ -250,52 +367,84 @@ class LangChainProposalGenerationRunner:
         document: AnalysisDocumentRequest,
         analysis: DocumentAnalysisResult,
     ) -> ProposalDraftOutput:
-        context = AnalysisToolContext(
-            document=document,
-            max_text_chars=self._settings.max_text_chars,
+        trace = ModelCallTrace(
+            logger,
+            "proposal_generation",
+            detection_id=document.detection_id,
+            version_id=document.version_id,
+            model=getattr(self._settings, "proposal_model_name", "unknown"),
+            timeout_seconds=self._settings.proposal_timeout_seconds,
         )
-        source_context = _build_proposal_source_context(
-            document,
-            min(self._settings.max_text_chars, PROPOSAL_CONTEXT_MAX_CHARS),
-        )
-        draft_input = (
-            f"{DRAFT_PROMPT}\n{COMPANY_CONTEXT_INSTRUCTIONS}\n{NOTICE_APPLICABILITY_INSTRUCTIONS}\n\n"
-            f"분석 기준일: {datetime.now(timezone(timedelta(hours=9))).date().isoformat()}\n\n"
-            f"공고 제목:\n{document.title}\n\n"
-            f"공고 분석:\n{_compact_analysis_context(analysis)}\n\n"
-            f"회사 프로필:\n{read_company_profile(context)}\n\n"
-            f"공고와 첨부파일의 관련 원문:\n{source_context}"
-        )
-        started_at = time.perf_counter()
-        logger.info(
-            "사업 제안 생성 시작. detection_id=%s input_chars=%s source_chars=%s",
-            document.detection_id,
-            len(draft_input),
-            len(source_context),
-        )
-        async with asyncio.timeout(self._settings.proposal_timeout_seconds):
-            response = await self._draft_model.ainvoke(draft_input)
-        draft, raw_response = _parse_model_response(response)
-        draft.uses_demo_profile = False
-        usage = _token_usage(raw_response)
-        logger.info(
-            "사업 제안 모델 응답 완료. detection_id=%s elapsed_seconds=%.2f "
-            "prompt_tokens=%s completion_tokens=%s total_tokens=%s",
-            document.detection_id,
-            time.perf_counter() - started_at,
-            usage.get("input_tokens"),
-            usage.get("output_tokens"),
-            usage.get("total_tokens"),
-        )
-        _retain_verified_source_references(draft, document)
-        _normalize_preparation_structure(draft)
-        _apply_strategy_eligibility_guardrails(draft)
-        _build_preparation_highlights(draft.preparation)
-        score_preparation(draft.preparation)
-        return draft
+        async with trace.observe():
+            trace.stage("input_build")
+            context = AnalysisToolContext(
+                document=document,
+                max_text_chars=self._settings.max_text_chars,
+            )
+            source_context = _build_proposal_source_context(
+                document,
+                min(self._settings.max_text_chars, PROPOSAL_CONTEXT_MAX_CHARS),
+            )
+            capability_catalog = company_capability_catalog(context.company_profile)
+            draft_input = (
+                f"{DRAFT_PROMPT}\n{COMPANY_CONTEXT_INSTRUCTIONS}\n{NOTICE_APPLICABILITY_INSTRUCTIONS}\n\n"
+                f"분석 기준일: {datetime.now(timezone(timedelta(hours=9))).date().isoformat()}\n\n"
+                f"공고 제목:\n{document.title}\n\n"
+                f"공고 분석:\n{_compact_analysis_context(analysis)}\n\n"
+                f"회사 프로필:\n{read_company_profile(context)}\n\n"
+                "회사 역량·사례 선택 목록:\n"
+                f"{json.dumps(capability_catalog, ensure_ascii=False)}\n\n"
+                f"공고와 첨부파일의 관련 원문:\n{source_context}"
+            )
+            trace.update(input_chars=len(draft_input), source_chars=len(source_context))
+            trace.stage("model_invocation")
+            started_at = time.perf_counter()
+            logger.info(
+                "사업 제안 생성 시작. detection_id=%s input_chars=%s source_chars=%s",
+                document.detection_id,
+                len(draft_input),
+                len(source_context),
+            )
+            async with asyncio.timeout(self._settings.proposal_timeout_seconds):
+                response = await self._draft_model.ainvoke(
+                    draft_input, config={"callbacks": [trace]},
+                )
+            trace.stage("response_parsing")
+            draft, raw_response = _parse_model_response(response, capability_catalog)
+            draft.uses_demo_profile = False
+            usage = _token_usage(raw_response)
+            logger.info(
+                "사업 제안 모델 응답 완료. detection_id=%s elapsed_seconds=%.2f "
+                "prompt_tokens=%s completion_tokens=%s total_tokens=%s",
+                document.detection_id,
+                time.perf_counter() - started_at,
+                usage.get("input_tokens"),
+                usage.get("output_tokens"),
+                usage.get("total_tokens"),
+            )
+            trace.stage("final_validation")
+            _retain_verified_source_references(draft, document)
+            _normalize_preparation_structure(draft)
+            draft.preparation.submission_documents, review_notes = validate_submission_documents(
+                draft.preparation.submission_documents, document,
+            )
+            agenda, reviews = separate_submission_reviews(
+                draft.preparation.meeting_agenda,
+                review_notes,
+            )
+            draft.preparation.meeting_agenda = agenda
+            draft.preparation.submission_review_notes = reviews
+            # Revalidate the additive API limits after assigning generated checks.
+            draft.preparation = ProposalPreparation.model_validate(draft.preparation.model_dump())
+            _apply_strategy_eligibility_guardrails(draft)
+            _build_preparation_highlights(draft.preparation)
+            score_preparation(draft.preparation)
+            return draft
 
 
-def _parse_model_response(response: object) -> tuple[ProposalDraftOutput, object | None]:
+def _parse_model_response(
+    response: object, capability_catalog: dict[str, str],
+) -> tuple[ProposalDraftOutput, object | None]:
     raw_response = None
     parsed: object = response
     if isinstance(response, dict) and "parsed" in response:
@@ -304,14 +453,17 @@ def _parse_model_response(response: object) -> tuple[ProposalDraftOutput, object
             raise parsing_error
         parsed = response.get("parsed")
         raw_response = response.get("raw")
-    if isinstance(parsed, ProposalDraftOutput):
-        return parsed, raw_response
     compact = (
         parsed
-        if isinstance(parsed, ProposalModelOutput)
+        if isinstance(parsed, (ProposalModelOutput, ProposalDraftOutput))
         else ProposalModelOutput.model_validate(parsed)
     )
-    return ProposalDraftOutput.model_validate(compact.model_dump()), raw_response
+    payload = compact.model_dump()
+    strategy = payload["preparation"]["strategy"]
+    strategy["capability_matches"] = ground_capability_matches(
+        strategy["capability_matches"], capability_catalog,
+    )
+    return ProposalDraftOutput.model_validate(payload), raw_response
 
 
 def _token_usage(raw_response: object | None) -> dict[str, int | None]:
@@ -402,7 +554,7 @@ class TwoStageAnalysisWorkflow:
                     "uses_demo_profile": (
                         result.proposal.uses_demo_profile or draft.uses_demo_profile
                     ),
-                    "preparation_schema_version": 12,
+                    "preparation_schema_version": PREPARATION_SCHEMA_VERSION,
                 }
             )
             result = DocumentAnalysisResult.model_validate(result.model_dump())
@@ -413,10 +565,10 @@ class TwoStageAnalysisWorkflow:
             )
         except Exception as exception:
             logger.warning(
-                "조건부 사업 제안 생성 실패. detection_id=%s version_id=%s error=%s",
+                "조건부 사업 제안 생성 실패. detection_id=%s version_id=%s error_type=%s",
                 document.detection_id,
                 document.version_id,
-                _safe_error(exception),
+                type(exception).__name__,
             )
             result.proposal = result.proposal.model_copy(
                 update={
@@ -429,7 +581,7 @@ class TwoStageAnalysisWorkflow:
                     "template_sections": [],
                     "draft_sections": [],
                     "preparation": None,
-                    "preparation_schema_version": 12,
+                    "preparation_schema_version": PREPARATION_SCHEMA_VERSION,
                 }
             )
         return DocumentAnalysisResult.model_validate(result.model_dump())
@@ -493,6 +645,13 @@ def apply_proposal_generation_reason(
         blockers.append("신청 자격은 회사의 공식 증빙으로 추가 확인해야 합니다.")
     blockers.append("따라서 현재 확인된 조건으로는 사업 제안 준비안을 생성할 수 없습니다.")
     result.proposal.draft_reason = " ".join(blockers)
+    # A completed exclusion must not look like an obsolete preparation on the next run.
+    # Missing attachment text alone stays retryable when parsing becomes available.
+    if (
+        company_fit < PROPOSAL_GENERATION_MIN_COMPANY_FIT
+        or result.eligibility == Eligibility.INELIGIBLE
+    ):
+        result.proposal.preparation_schema_version = PREPARATION_SCHEMA_VERSION
 
 
 def _retain_verified_source_references(
@@ -503,22 +662,30 @@ def _retain_verified_source_references(
         attachment.file_name: attachment.extracted_text or ""
         for attachment in document.attachments
     }
+    eligibility_texts = {
+        name: application_source_text(text) for name, text in attachment_texts.items()
+    }
     draft.preparation.eligibility_checklist = _verified_items(
-        draft.preparation.eligibility_checklist,
-        document.content_text or "",
-        attachment_texts,
+        [item for item in draft.preparation.eligibility_checklist
+         if item.stage == RequirementStage.APPLICATION],
+        application_source_text(document.content_text or ""),
+        eligibility_texts,
     )
-    draft.preparation.submission_documents = _verified_items(
+    verified_documents = _verified_items(
         draft.preparation.submission_documents,
         document.content_text or "",
         attachment_texts,
     )
+    # Unverified citations must not establish a role or condition during table
+    # reconciliation. Keep the candidate name so the final gate can flag it.
+    draft.preparation.submission_documents = [
+        item if item in verified_documents else item.model_copy(update={"source": None})
+        for item in draft.preparation.submission_documents
+    ]
     _supplement_missing_eligibility_requirements(draft, document)
     _supplement_missing_submission_files(draft, document)
-    if not draft.preparation.eligibility_checklist:
-        raise ValueError("원문에서 확인되는 지원 조건이 없습니다.")
     if not draft.preparation.submission_documents:
-        raise ValueError("원문에서 확인되는 제출 자료가 없습니다.")
+        draft.preparation.submission_documents = reconcile_submission_documents([], document)
 
 
 _SUBMISSION_DOCUMENT_TERMS = (
@@ -616,7 +783,7 @@ def _extract_high_confidence_requirements(
     ]
     raw_candidates: list[_RequirementCandidate] = []
     for origin, attachment_name, location, text in sources:
-        for clause in _requirement_clauses(text):
+        for clause in _requirement_clauses(application_source_text(text)):
             kind = _requirement_kind(clause)
             if kind is None:
                 continue
@@ -989,18 +1156,23 @@ def _verified_items(
         elif source.origin == EvidenceOrigin.ATTACHMENT and source.attachment_name:
             evidence_text = attachment_texts.get(source.attachment_name, "")
             if not evidence_text:
-                inner_marker = _normalize_evidence(f"[파일: {source.attachment_name}]")
-                evidence_text = next(
-                    (
-                        text
-                        for text in attachment_texts.values()
-                        if inner_marker in _normalize_evidence(text)
-                    ),
-                    "",
-                )
+                for text in attachment_texts.values():
+                    markers = list(re.finditer(r"(?m)^\[파일:\s*([^\]\r\n]+)\]\s*\n", text))
+                    for index, marker in enumerate(markers):
+                        if (
+                            _normalize_evidence(marker[1])
+                            != _normalize_evidence(source.attachment_name)
+                        ):
+                            continue
+                        stop = markers[index + 1].start() if index + 1 < len(markers) else len(text)
+                        evidence_text = text[marker.end():stop]
+                        break
+                    if evidence_text:
+                        break
         else:
             continue
-        if _normalize_evidence(source.excerpt) in _normalize_evidence(evidence_text):
+        normalized_quote = _normalize_evidence(source.excerpt)
+        if normalized_quote and normalized_quote in _normalize_evidence(evidence_text):
             verified.append(item)
     return verified
 

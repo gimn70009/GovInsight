@@ -3,8 +3,7 @@ import logging
 from typing import Protocol
 from uuid import UUID
 
-from langchain_openai import OpenAIEmbeddings
-
+from app.core.openai_models import OpenAIEmbeddings
 from app.domains.analysis.clients import AnalysisResultClient, AnalysisResultClientError
 from app.domains.analysis.config import AnalysisConfigurationError, AnalysisSettings
 from app.domains.analysis.proposals.drafting import (
@@ -26,6 +25,7 @@ from app.domains.analysis.schemas.request import (
     AnalysisScope,
 )
 from app.domains.analysis.schemas.result import (
+    PREPARATION_SCHEMA_VERSION,
     DocumentAnalysisResult,
     ProposalDraftStatus,
 )
@@ -272,7 +272,7 @@ async def _generate_and_deliver_proposals(
         )
         async with semaphore:
             completed = await workflow.analyze(document)
-        if completed.proposal.preparation_schema_version != 12:
+        if completed.proposal.preparation_schema_version != PREPARATION_SCHEMA_VERSION:
             return None
         return ProposalUpdateResult(
             detection_id=document.detection_id,

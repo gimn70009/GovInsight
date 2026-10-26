@@ -6,6 +6,7 @@ from pathlib import Path
 import olefile
 
 from app.domains.monitoring.parsers.base import AttachmentParseError, ParsedAttachment
+from app.domains.monitoring.parsers.table_text import Cell, render_table
 
 FILE_HEADER_STREAM = "FileHeader"
 BODY_TEXT_STORAGE = "BodyText"
@@ -18,10 +19,14 @@ DRM_FLAG = 1 << 4
 
 HWPTAG_BEGIN = 0x010
 HWPTAG_PARA_TEXT = HWPTAG_BEGIN + 51
+HWPTAG_CTRL_HEADER = HWPTAG_BEGIN + 55
+HWPTAG_LIST_HEADER = HWPTAG_BEGIN + 56
+HWPTAG_TABLE = HWPTAG_BEGIN + 61
 EXTENDED_RECORD_SIZE = 0xFFF
 SECTION_NAME = re.compile(r"^Section(\d+)$", re.IGNORECASE)
 
 MAX_SECTION_COUNT = 1_000
+MAX_RECORD_COUNT = 500_000
 MAX_DECOMPRESSED_SECTION_SIZE = 50 * 1024 * 1024
 
 # HWP 문단 안에서 글자가 아닌 개체를 가리키는 컨트롤은 8개의 WCHAR를 차지한다.
@@ -106,8 +111,8 @@ def _decompress_section(data: bytes) -> bytes:
     return section
 
 
-def _extract_paragraphs(section: bytes) -> list[str]:
-    paragraphs: list[str] = []
+def _read_records(section: bytes) -> list[tuple[int, int, bytes]]:
+    records = []
     offset = 0
 
     while offset < len(section):
@@ -129,13 +134,78 @@ def _extract_paragraphs(section: bytes) -> list[str]:
         if record_end > len(section):
             raise HwpParseError("HWP 본문 레코드 크기가 올바르지 않습니다.")
 
-        if tag_id == HWPTAG_PARA_TEXT:
-            paragraph = _decode_paragraph_text(section[offset:record_end])
-            if paragraph:
-                paragraphs.append(paragraph)
+        if len(records) >= MAX_RECORD_COUNT:
+            raise HwpParseError("HWP 본문 레코드 수가 너무 많습니다.")
+        records.append((tag_id, (header >> 10) & 0x3FF, section[offset:record_end]))
         offset = record_end
 
+    return records
+
+
+def _extract_paragraphs(section: bytes) -> list[str]:
+    records = _read_records(section)
+    paragraphs = []
+    cursor = 0
+    while cursor < len(records):
+        tag, level, data = records[cursor]
+        if tag == HWPTAG_CTRL_HEADER and data[:4] == b" lbt":
+            end = cursor + 1
+            while end < len(records) and records[end][1] > level:
+                end += 1
+            table = _table_records(records[cursor + 1:end], level)
+            if table:
+                paragraphs.extend(table)
+                cursor = end
+                continue
+        if tag == HWPTAG_PARA_TEXT:
+            paragraph = _decode_paragraph_text(data)
+            if paragraph:
+                paragraphs.append(paragraph)
+        cursor += 1
     return paragraphs
+
+
+def _table_records(records, control_level):
+    body = next((i for i, (tag, level, _) in enumerate(records)
+                 if tag == HWPTAG_TABLE and level == control_level + 1), None)
+    if body is None or len(records[body][2]) < 8:
+        return None
+    if any(tag == HWPTAG_CTRL_HEADER for tag, _, _ in records[body + 1:]):
+        return None  # Nested objects retain paragraph text without guessed boundaries.
+    row_count, column_count = struct.unpack_from("<HH", records[body][2], 4)
+    cells = []
+    current = None
+    paragraphs = []
+
+    def flush():
+        if current is not None:
+            column, row, column_span, row_span = current
+            cells.append(Cell(row, column, " ".join(paragraphs), row_span, column_span))
+        paragraphs.clear()
+
+    for tag, level, data in records[body + 1:]:
+        if tag == HWPTAG_LIST_HEADER and level == control_level + 1:
+            flush()
+            # HWP 5 cell list headers use the 8-byte list prefix followed by
+            # column/row addresses and spans. Captions occur before HWPTAG_TABLE.
+            if len(data) < 34:
+                return None
+            current = struct.unpack_from("<4H", data, 8)
+            column, row, column_span, row_span = current
+            if (not row_span or not column_span or row + row_span > row_count
+                    or column + column_span > column_count):
+                return None
+        elif tag == HWPTAG_PARA_TEXT:
+            if current is None or level <= control_level + 1:
+                return None
+            paragraphs.append(_decode_paragraph_text(data))
+    flush()
+    table = render_table(cells)
+    if table is None:
+        return None
+    captions = [_decode_paragraph_text(data) for tag, _, data in records[:body]
+                if tag == HWPTAG_PARA_TEXT]
+    return [*filter(None, captions), table]
 
 
 def _decode_paragraph_text(data: bytes) -> str:

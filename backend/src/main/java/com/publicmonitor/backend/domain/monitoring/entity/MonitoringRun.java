@@ -144,6 +144,25 @@ public class MonitoringRun extends BaseEntity {
         }
     }
 
+    public boolean isCollectionPending() {
+        return status == MonitoringRunStatus.REQUESTED
+                || status == MonitoringRunStatus.ACCEPTED
+                || status == MonitoringRunStatus.RUNNING;
+    }
+
+    public boolean expireCollection(LocalDateTime cutoff, LocalDateTime now) {
+        LocalDateTime collectionStartedAt = acceptedAt == null ? requestedAt : acceptedAt;
+        if (!isCollectionPending() || collectionStartedAt.isAfter(cutoff)) {
+            return false;
+        }
+        status = MonitoringRunStatus.FAILED;
+        completedAt = now;
+        errorMessage = "수집 결과 대기 시간이 초과됐습니다. 다시 실행해 주세요.";
+        failedSourceCount = totalSourceCount;
+        warningCount = totalSourceCount;
+        return true;
+    }
+
     public void completeCollection(
             int successSourceCount,
             int failedSourceCount,
@@ -161,6 +180,14 @@ public class MonitoringRun extends BaseEntity {
             return;
         }
         this.status = MonitoringRunStatus.COLLECTED;
+    }
+
+    public void failAnalysis(String reason, LocalDateTime failedAt) {
+        if (status != MonitoringRunStatus.COLLECTED)
+            throw new IllegalStateException("수집 완료 상태인 실행만 분석 실패로 변경할 수 있습니다.");
+        status = MonitoringRunStatus.FAILED;
+        completedAt = failedAt;
+        errorMessage = reason;
     }
 
     public void completeReport(LocalDateTime completedAt) {

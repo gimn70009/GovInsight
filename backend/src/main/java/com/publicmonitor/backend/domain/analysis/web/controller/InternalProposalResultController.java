@@ -23,7 +23,7 @@ public class InternalProposalResultController {
 
     @Operation(
             summary = "사업 제안 후속 결과 수신",
-            description = "먼저 저장된 공고 분석에 비동기로 생성된 사업 제안 결과만 갱신합니다."
+            description = "먼저 저장된 공고 분석에 비동기로 생성된 사업 제안 결과만 갱신합니다. 현재 분석 시도의 jobId와 분석 저장 완료 단계를 확인하며, 만료되거나 이전 시도인 경우 409를 반환합니다. 완료된 동일 시도의 재전송은 갱신·발송을 반복하지 않습니다."
     )
     @PostMapping
     public SuccessResponse<ProposalResultResponse> receive(

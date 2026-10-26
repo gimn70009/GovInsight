@@ -1,5 +1,6 @@
 package com.publicmonitor.backend.domain.document.repository;
 
+import com.publicmonitor.backend.domain.analysis.entity.OpportunityPriority;
 import com.publicmonitor.backend.domain.document.entity.DocumentDetection;
 import com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionSummaryRow;
 import java.time.LocalDateTime;
@@ -17,7 +18,8 @@ public interface DocumentDetectionRepository extends JpaRepository<DocumentDetec
                 runSource.monitoringRun.id, detection.id, document.id, version.id,
                 source.organizationName, source.boardName, version.title,
                 detection.changeType, version.attachmentCount, analysis.importance,
-                analysis.opportunityScore, analysis.opportunityAssessment, detection.detectedAt
+                analysis.opportunityScore, analysis.opportunityPriority, detection.detectedAt,
+                latestDetection.monitoringRunSource.monitoringRun.status, analysisTask.state
             )
             from DocumentDetection detection
             join detection.document document
@@ -25,6 +27,12 @@ public interface DocumentDetectionRepository extends JpaRepository<DocumentDetec
             join detection.monitoringRunSource runSource
             join runSource.monitoringSource source
             left join DocumentAnalysis analysis on analysis.documentVersion = version
+            join DocumentDetection latestDetection on latestDetection.documentVersion = version
+                and not exists (select newer.id from DocumentDetection newer
+                    where newer.documentVersion = version
+                      and (newer.detectedAt > latestDetection.detectedAt
+                        or (newer.detectedAt = latestDetection.detectedAt and newer.id > latestDetection.id)))
+            left join AnalysisTask analysisTask on analysisTask.run = latestDetection.monitoringRunSource.monitoringRun
             where (:runId is null or runSource.monitoringRun.id = :runId)
               and (:fromDateTime is null or detection.detectedAt >= :fromDateTime)
               and (:toDateTime is null or detection.detectedAt <= :toDateTime)
@@ -33,7 +41,10 @@ public interface DocumentDetectionRepository extends JpaRepository<DocumentDetec
     String SUMMARY_COUNT_QUERY = """
             select count(detection)
             from DocumentDetection detection
+            join detection.documentVersion version
             join detection.monitoringRunSource runSource
+            join runSource.monitoringSource source
+            left join DocumentAnalysis analysis on analysis.documentVersion = version
             where (:runId is null or runSource.monitoringRun.id = :runId)
               and (:fromDateTime is null or detection.detectedAt >= :fromDateTime)
               and (:toDateTime is null or detection.detectedAt <= :toDateTime)
@@ -85,5 +96,38 @@ public interface DocumentDetectionRepository extends JpaRepository<DocumentDetec
             @Param("userId") Long userId, @Param("runId") Long runId,
             @Param("fromDateTime") LocalDateTime fromDateTime,
             @Param("toDateTime") LocalDateTime toDateTime,
+            @Param("byScore") boolean byScore, Pageable pageable);
+
+    String SEARCH_FILTER = """
+              and (:searchPattern is null or
+                   lower(concat(source.organizationName, ' ', source.boardName, ' ', version.title))
+                       like :searchPattern escape '!')
+            """;
+    String PRIORITY_FILTER = """
+              and (:priority is null or analysis.opportunityPriority = :priority)
+            """;
+    String SEARCH_ORDER = """
+            order by case when :byScore = true then coalesce(analysis.opportunityScore, -1) else 0 end desc,
+                     detection.detectedAt desc, detection.id desc
+            """;
+
+    @Query(value = SUMMARY_QUERY + SEARCH_FILTER + PRIORITY_FILTER + SEARCH_ORDER,
+            countQuery = SUMMARY_COUNT_QUERY + SEARCH_FILTER + PRIORITY_FILTER)
+    Page<DocumentDetectionSummaryRow> findFilteredSummaries(
+            @Param("runId") Long runId,
+            @Param("fromDateTime") LocalDateTime fromDateTime,
+            @Param("toDateTime") LocalDateTime toDateTime,
+            @Param("searchPattern") String searchPattern,
+            @Param("priority") OpportunityPriority priority,
+            @Param("byScore") boolean byScore, Pageable pageable);
+
+    @Query(value = SUMMARY_QUERY + BOOKMARK_FILTER + SEARCH_FILTER + PRIORITY_FILTER + SEARCH_ORDER,
+            countQuery = SUMMARY_COUNT_QUERY + BOOKMARK_FILTER + SEARCH_FILTER + PRIORITY_FILTER)
+    Page<DocumentDetectionSummaryRow> findFilteredBookmarkedSummaries(
+            @Param("userId") Long userId, @Param("runId") Long runId,
+            @Param("fromDateTime") LocalDateTime fromDateTime,
+            @Param("toDateTime") LocalDateTime toDateTime,
+            @Param("searchPattern") String searchPattern,
+            @Param("priority") OpportunityPriority priority,
             @Param("byScore") boolean byScore, Pageable pageable);
 }

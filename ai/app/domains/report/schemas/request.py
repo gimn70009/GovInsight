@@ -15,6 +15,8 @@ class ReportAttachmentRequest(CamelCaseModel):
 
 class ReportComparisonRequest(CamelCaseModel):
     purpose: str | None = None
+    support_scale: str | None = None
+    required_partner: str | None = None
     application_deadline: str | None = None
     eligibility: str | None = None
 

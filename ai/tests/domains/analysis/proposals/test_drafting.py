@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import ValidationError
 
+from app.domains.analysis.context.company_profile import BISTELLIGENCE_PROFILE
+from app.domains.analysis.proposals.capabilities import company_capability_catalog
 from app.domains.analysis.proposals.drafting import (
     CORE_PROPOSAL_SECTION_TITLES,
     LangChainProposalGenerationRunner,
@@ -20,11 +22,14 @@ from app.domains.analysis.proposals.drafting import (
     _parse_model_response,
     _retain_verified_source_references,
     _safe_error,
+    apply_proposal_generation_reason,
 )
 from app.domains.analysis.schemas.request import AnalysisDocumentRequest
 from app.domains.analysis.schemas.result import (
+    PREPARATION_SCHEMA_VERSION,
     CompanyEvidenceLevel,
     DocumentAnalysisResult,
+    Eligibility,
     EvidenceOrigin,
     PreparationChecklistItem,
     ProposalDraftStatus,
@@ -209,6 +214,7 @@ class ProposalRunner:
                         ),
                         capability_matches=[
                             StrategyCapabilityMatch(
+                                company_evidence_id="service:1",
                                 confirmed_fact="회사 공개정보에서 제조 AI 사례가 확인됩니다.",
                                 strategic_interpretation=(
                                     "공고의 산업 AI 실증 분야와 연결할 수 있습니다."
@@ -247,7 +253,7 @@ def test_generates_outline_then_draft_only_for_matching_proposal_request() -> No
     assert generated.proposal.preparation is not None
     assert generated.proposal.preparation.strategy.recommended_project.startswith("제조 현장")
     assert generated.proposal.source_attachment_names == ["신청서식.hwp"]
-    assert generated.proposal.preparation_schema_version == 12
+    assert generated.proposal.preparation_schema_version == PREPARATION_SCHEMA_VERSION
     assert "map_proposal_sources" in generated.used_tools
     assert "build_proposal_preparation" in generated.used_tools
 
@@ -282,6 +288,40 @@ def test_skips_second_stage_when_company_fit_is_below_generation_threshold() -> 
     assert "REVIEW_REQUIRED" not in generated.proposal.draft_reason
 
 
+@pytest.mark.parametrize("company_fit", [40, 60])
+def test_low_fit_decision_is_current_without_generating_preparation(company_fit: int) -> None:
+    base = result(company_fit=company_fit)
+    before = base.opportunity.model_dump()
+    runner = ProposalRunner()
+    workflow = TwoStageAnalysisWorkflow(BaseWorkflow(base), runner)
+    generated = asyncio.run(workflow.analyze(document()))
+
+    assert runner.call_count == 0
+    assert generated.proposal.preparation is None
+    assert generated.proposal.preparation_schema_version == PREPARATION_SCHEMA_VERSION
+    assert generated.opportunity.model_dump() == before
+    serialized = generated.proposal.model_dump(by_alias=True)
+    assert serialized["preparationSchemaVersion"] == PREPARATION_SCHEMA_VERSION
+
+
+def test_ineligible_decision_is_current_before_delivery() -> None:
+    base = result()
+    base.eligibility = Eligibility.INELIGIBLE
+    apply_proposal_generation_reason(base, document())
+
+    assert base.proposal.preparation is None
+    assert base.proposal.preparation_schema_version == PREPARATION_SCHEMA_VERSION
+    assert "현재 회사가 신청할 수 없는" in base.proposal.draft_reason
+
+
+def test_missing_attachment_alone_keeps_upgrade_retry_available() -> None:
+    base = result()
+    apply_proposal_generation_reason(base, document(with_attachment=False))
+
+    assert base.proposal.preparation_schema_version == 1
+    assert "내용 분석이 완료된 첨부 양식이 없어" in base.proposal.draft_reason
+
+
 def test_skip_reason_lists_missing_attachment_and_eligibility_confirmation() -> None:
     proposal_runner = ProposalRunner()
     workflow = TwoStageAnalysisWorkflow(
@@ -311,7 +351,7 @@ def test_proposal_stage_failure_preserves_base_analysis() -> None:
     assert generated.summary.startswith("산업 AI 실증")
     assert generated.proposal.draft_status == ProposalDraftStatus.REVIEW_REQUIRED
     assert generated.proposal.draft_sections == []
-    assert generated.proposal.preparation_schema_version == 12
+    assert generated.proposal.preparation_schema_version == PREPARATION_SCHEMA_VERSION
     assert "사업 제안 생성 제한 시간을 초과했습니다." in generated.proposal.draft_reason
 
 
@@ -434,7 +474,8 @@ def test_compact_model_output_restores_api_defaults() -> None:
 
     compact = ProposalModelOutput.model_validate(payload)
     restored, raw = _parse_model_response(
-        {"parsed": compact, "raw": None, "parsing_error": None}
+        {"parsed": compact, "raw": None, "parsing_error": None},
+        company_capability_catalog(BISTELLIGENCE_PROFILE),
     )
 
     assert raw is None
@@ -497,8 +538,8 @@ def test_supplements_submission_forms_omitted_by_model() -> None:
     request.attachments[0].file_name = "붙임2. 제출서류 양식.zip"
     request.attachments[0].extracted_text = (
         "[파일: 사업계획서.hwp]\n사업계획서를 제출해야 합니다.\n"
+        "산업 AI 공급기업이 신청할 수 있습니다.\n"
         "[파일: 참여확인서.hwp]\n참여확인서를 제출해야 합니다.\n"
-        "산업 AI 공급기업이 신청할 수 있습니다."
     )
     proposal.preparation.eligibility_checklist[0].source.attachment_name = "사업계획서.hwp"
     proposal.preparation.submission_documents[0].source.attachment_name = "사업계획서.hwp"
@@ -795,3 +836,98 @@ def test_model_limit_stays_15_while_final_document_limit_is_27() -> None:
     model_schema = ProposalModelOutput.model_json_schema()
     preparation_schema = model_schema["$defs"]["ProposalPreparationModelOutput"]
     assert preparation_schema["properties"]["submissionDocuments"]["maxItems"] == 15
+
+def test_complete_long_eligibility_quote_retains_exception_and_requires_exact_source() -> None:
+    proposal = asyncio.run(ProposalRunner().generate(document(), result()))
+    quote = (
+        "□ 신청 자격\n공고일 기준 업력 7년 이내인 중소기업이 신청할 수 있습니다.\n"
+        + ("법인기업은 법인등기부등본의 회사성립연월일을 기준으로 하고 "
+           "개인기업은 사업자등록증의 개업연월일을 기준으로 합니다. ") * 5
+        + "\n단, 지원 제외 업종에 해당하는 기업은 신청할 수 없습니다."
+    )
+    assert 300 < len(quote) <= 1200
+    item = PreparationChecklistItem(
+        title="신청 기업의 업력 기준",
+        detail=("공고일 기준 업력 7년 이내인 중소기업이 대상이며 "
+                "지원 제외 업종은 신청할 수 없습니다."),
+        requirement_level=RequirementLevel.MANDATORY,
+        next_action="공고일 기준 업력과 지원 제외 업종 여부를 확인합니다.",
+        source=RequirementSource(
+            origin=EvidenceOrigin.NOTICE_BODY, section_title="신청 자격", excerpt=quote
+        ),
+    )
+    proposal.preparation.eligibility_checklist = [item]
+    request = document()
+    request.content_text = quote
+    _retain_verified_source_references(proposal, request)
+    verified = next(
+        value for value in proposal.preparation.eligibility_checklist if value.title == item.title
+    )
+    assert verified.source.excerpt == quote
+    assert verified.detail != quote
+    request.content_text = "사업과 관련된 일반 안내만 있습니다."
+    request.attachments = []
+    _retain_verified_source_references(proposal, request)
+    assert proposal.preparation.eligibility_checklist == []
+    assert all(value.title != item.title for value in proposal.preparation.eligibility_checklist)
+
+
+def test_requirement_source_rejects_excessive_quote_without_silently_truncating() -> None:
+    with pytest.raises(ValidationError):
+        RequirementSource(
+            origin=EvidenceOrigin.NOTICE_BODY, section_title="신청 자격", excerpt="가" * 1201
+        )
+
+
+@pytest.mark.parametrize("heading", ["지원조건", "지원내용", "사업비", "협약", "사후관리"])
+def test_excluded_sections_do_not_reenter_eligibility_via_source_supplement(heading: str) -> None:
+    from app.domains.analysis.proposals.drafting import _extract_high_confidence_requirements
+
+    request = document(with_attachment=False)
+    quote = "신청기관은 기업부설연구소 인정서를 보유해야 합니다."
+    request.content_text = f"1. {heading}\n가. 신청대상\n□ 신청자격\n{quote}"
+    draft = asyncio.run(ProposalRunner().generate(request, result()))
+    item = draft.preparation.eligibility_checklist[0]
+    item.source = RequirementSource(
+        origin=EvidenceOrigin.NOTICE_BODY, section_title="신청자격", excerpt=quote
+    )
+    draft.preparation.eligibility_checklist = [item]
+    _retain_verified_source_references(draft, request)
+    assert draft.preparation.eligibility_checklist == []
+    assert _extract_high_confidence_requirements(request) == []
+    # An empty, verified list is a valid analysis result, not an invented requirement or failure.
+    ProposalDraftOutput.model_validate(draft.model_dump())
+
+
+def test_nested_section_filter_preserves_next_application_section_and_zip_boundary() -> None:
+    from app.domains.analysis.proposals.drafting import _extract_high_confidence_requirements
+
+    request = document(with_attachment=False)
+    quote = "신청기관은 기업부설연구소 인정서를 보유해야 합니다."
+    request.content_text = (
+        "1.지원조건\n가. 신청대상\n창업 999년 이상 기업\n"
+        f"2.신청자격\n{quote}\n"
+        "3. 사후관리\n□ 신청대상\n창업 888년 이상 기업\n"
+        "[파일: 두 번째 공고.txt]\n□ 신청자격\n접수 마감일 기준 창업 3년 이상인 기업"
+    )
+    candidates = _extract_high_confidence_requirements(request)
+    excerpts = " ".join(candidate.excerpt for candidate in candidates)
+    assert quote in excerpts
+    assert "3년 이상" in excerpts
+    assert "999년" not in excerpts
+    assert "888년" not in excerpts
+
+
+def test_post_selection_item_is_not_an_application_requirement() -> None:
+    request = document(with_attachment=False)
+    quote = "선정 후 기업부설연구소 인정서를 보유해야 합니다."
+    request.content_text = quote
+    draft = asyncio.run(ProposalRunner().generate(request, result()))
+    item = draft.preparation.eligibility_checklist[0]
+    item.stage = RequirementStage.POST_SELECTION
+    item.source = RequirementSource(
+        origin=EvidenceOrigin.NOTICE_BODY, section_title="안내", excerpt=quote
+    )
+    draft.preparation.eligibility_checklist = [item]
+    _retain_verified_source_references(draft, request)
+    assert draft.preparation.eligibility_checklist == []

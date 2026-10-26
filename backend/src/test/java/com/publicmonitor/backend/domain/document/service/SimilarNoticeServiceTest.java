@@ -425,7 +425,7 @@ class SimilarNoticeServiceTest {
                 "사업 목적을 확인했습니다.", AnalysisEligibility.REVIEW_REQUIRED,
                 AnalysisFavorability.NOT_APPLICABLE,
                 "{\"documentType\":\"BUSINESS_NOTICE\",\"preparation\":{\"applicationDeadline\":\"2026-09-30\",\"eligibilityChecklist\":[{\"title\":\"중소기업 자격\"}]}}",
-                70, null, "[]", "test", now
+                70, null, null, "[]", "test", now
         );
         analysis.updateSimilarity(content, new ObjectMapper().writeValueAsString(embedding),
                 "text-embedding-3-small");

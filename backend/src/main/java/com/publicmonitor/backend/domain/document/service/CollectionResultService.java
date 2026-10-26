@@ -64,10 +64,15 @@ public class CollectionResultService {
 
     @Transactional
     public CollectionResultResponse receive(CollectionResultRequest request) {
-        MonitoringRun run = monitoringRunRepository.findById(request.runId())
+        MonitoringRun run = monitoringRunRepository.findForUpdate(request.runId())
                 .orElseThrow(() -> new CollectionResultException(CollectionResultResponseCode.RUN_NOT_FOUND));
         if (!request.jobId().equals(run.getPythonJobId())) {
             throw new CollectionResultException(CollectionResultResponseCode.JOB_ID_MISMATCH);
+        }
+
+        // 응답 유실 재시도와 만료 후 늦은 결과는 상태와 후속 작업을 바꾸지 않는다.
+        if (!run.isCollectionPending()) {
+            return new CollectionResultResponse(List.of());
         }
 
         LocalDateTime now = LocalDateTime.now(clock.withZone(SERVICE_ZONE));

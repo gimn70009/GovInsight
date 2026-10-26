@@ -1,6 +1,8 @@
 package com.publicmonitor.backend.domain.analysis.service;
 
 import com.publicmonitor.backend.domain.analysis.entity.DocumentAnalysis;
+import com.publicmonitor.backend.domain.analysis.entity.AnalysisTask;
+import com.publicmonitor.backend.domain.analysis.repository.AnalysisTaskRepository;
 import com.publicmonitor.backend.domain.analysis.entity.OpportunityDimensionType;
 import com.publicmonitor.backend.domain.analysis.exception.AnalysisResultException;
 import com.publicmonitor.backend.domain.analysis.exception.AnalysisResultResponseCode;
@@ -40,13 +42,26 @@ public class AnalysisResultService {
     private final ObjectMapper objectMapper;
     private final Clock clock;
     private final ApplicationEventPublisher eventPublisher;
+    private final AnalysisTaskRepository tasks;
+    private final AnalysisTaskService taskService;
+    private final com.publicmonitor.backend.domain.settings.service.EvaluationSettingsService evaluationSettings;
 
     @Transactional
     public AnalysisResultResponse receive(AnalysisResultRequest request) {
-        MonitoringRun run = monitoringRunRepository.findById(request.runId())
+        MonitoringRun run = monitoringRunRepository.findForUpdate(request.runId())
                 .orElseThrow(() -> new AnalysisResultException(AnalysisResultResponseCode.RUN_NOT_FOUND));
+        var task = tasks.findByRunId(request.runId()).orElse(null);
+        if (task != null && !task.matches(request.jobId(), LocalDateTime.now(clock.withZone(SERVICE_ZONE)))) {
+            throw new AnalysisResultException(AnalysisResultResponseCode.STALE_ATTEMPT);
+        }
+        if (task != null && task.getState() == AnalysisTask.State.DONE) {
+            return new AnalysisResultResponse(request.runId(), 0, request.results().size(), 0);
+        }
         if (run.getStatus() != MonitoringRunStatus.COLLECTED) {
             throw new AnalysisResultException(AnalysisResultResponseCode.INVALID_RUN_STATUS);
+        }
+        if (task != null && task.getState() == AnalysisTask.State.ANALYZED) {
+            return new AnalysisResultResponse(request.runId(), 0, request.results().size(), 0);
         }
 
         LocalDateTime analyzedAt = LocalDateTime.now(clock.withZone(SERVICE_ZONE));
@@ -62,13 +77,26 @@ public class AnalysisResultService {
                             AnalysisResultRequest.OpportunityDimension::type,
                             AnalysisResultRequest.OpportunityDimension::score
                     ));
-            int opportunityScore = OpportunityScoreCalculator.calculate(opportunityScores);
-            var existingAnalysis = analysisRepository.findByDocumentVersionId(result.versionId());
+            long settingsRevision = result.opportunity().settingsRevision();
+            var settings = evaluationSettings.revision(settingsRevision);
+            var preset = settings == null
+                    ? com.publicmonitor.backend.domain.settings.web.dto.EvaluationSettingsData.Preset.FIT
+                    : settings.criteria().preset();
+            var ranking = OpportunityRankingCalculator.calculate(opportunityScores, preset);
+            String assessment = objectMapper.writeValueAsString(Map.of(
+                    "dimensions", result.opportunity().dimensions(),
+                    "settingsRevision", settingsRevision, "preset", preset.name()));
+            var existingAnalysis = analysisRepository.findByDocumentVersionIdForUpdate(result.versionId());
             if (existingAnalysis.isPresent()) {
                 DocumentAnalysis existing = existingAnalysis.orElseThrow();
+                long previousRevision = OpportunitySettingsMetadata.revision(existing.getOpportunityAssessment(), objectMapper);
+                if (previousRevision > settingsRevision) {
+                    duplicateCount++;
+                    continue;
+                }
                 updateComparisonSummary(existing, result);
                 updateSimilarity(existing, result);
-                if (!existing.requiresProposalSchemaUpgrade()) {
+                if (!existing.requiresProposalSchemaUpgrade() && previousRevision == settingsRevision) {
                     duplicateCount++;
                     continue;
                 }
@@ -80,8 +108,9 @@ public class AnalysisResultService {
                         result.eligibility(),
                         result.favorableOrNot(),
                         objectMapper.writeValueAsString(result.proposal()),
-                        opportunityScore,
-                        objectMapper.writeValueAsString(result.opportunity()),
+                        ranking.score(),
+                        ranking.priority(),
+                        assessment,
                         objectMapper.writeValueAsString(result.usedTools()),
                         result.modelName().strip(),
                         analyzedAt
@@ -98,8 +127,9 @@ public class AnalysisResultService {
                     result.eligibility(),
                     result.favorableOrNot(),
                     objectMapper.writeValueAsString(result.proposal()),
-                    opportunityScore,
-                    objectMapper.writeValueAsString(result.opportunity()),
+                    ranking.score(),
+                    ranking.priority(),
+                    assessment,
                     objectMapper.writeValueAsString(result.usedTools()),
                     result.modelName().strip(),
                     analyzedAt
@@ -134,6 +164,7 @@ public class AnalysisResultService {
                     request.runId(), request.jobId(), request.failures().size()
             );
         }
+        if (task != null) task.analyzed(analyzedAt, taskService.proposalLease(task));
         return new AnalysisResultResponse(
                 request.runId(), storedCount, duplicateCount, request.failures().size()
         );
@@ -141,12 +172,22 @@ public class AnalysisResultService {
 
     @Transactional
     public ProposalResultResponse receiveProposal(ProposalResultRequest request) {
-        MonitoringRun run = monitoringRunRepository.findById(request.runId())
+        MonitoringRun run = monitoringRunRepository.findForUpdate(request.runId())
                 .orElseThrow(() -> new AnalysisResultException(
                         AnalysisResultResponseCode.RUN_NOT_FOUND
                 ));
+        var task = tasks.findByRunId(request.runId()).orElse(null);
+        if (task != null && !task.matches(request.jobId(), LocalDateTime.now(clock.withZone(SERVICE_ZONE)))) {
+            throw new AnalysisResultException(AnalysisResultResponseCode.STALE_ATTEMPT);
+        }
+        if (task != null && task.getState() == AnalysisTask.State.DONE) {
+            return new ProposalResultResponse(request.runId(), 0);
+        }
         if (run.getStatus() != MonitoringRunStatus.COLLECTED) {
             throw new AnalysisResultException(AnalysisResultResponseCode.INVALID_RUN_STATUS);
+        }
+        if (task != null && task.getState() != AnalysisTask.State.ANALYZED) {
+            throw new AnalysisResultException(AnalysisResultResponseCode.STALE_ATTEMPT);
         }
         LocalDateTime updatedAt = LocalDateTime.now(clock.withZone(SERVICE_ZONE));
         int updatedCount = 0;
@@ -169,6 +210,7 @@ public class AnalysisResultService {
                 "사업 제안 결과 갱신 완료. runId={} jobId={} updatedCount={}",
                 request.runId(), request.jobId(), updatedCount
         );
+        if (task != null) task.complete();
         eventPublisher.publishEvent(new ProposalCompletedEvent(request.runId()));
         return new ProposalResultResponse(request.runId(), updatedCount);
     }

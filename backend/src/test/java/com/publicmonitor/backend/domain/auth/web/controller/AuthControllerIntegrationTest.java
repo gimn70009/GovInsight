@@ -24,6 +24,16 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+@MockitoBean(types = {
+        com.publicmonitor.backend.domain.settings.repository.EvaluationSettingsRepository.class,
+        com.publicmonitor.backend.domain.settings.repository.EvaluationSettingsRevisionRepository.class,
+        com.publicmonitor.backend.domain.analysis.repository.DocumentAnalysisRepository.class,
+        com.publicmonitor.backend.domain.analysis.service.OpportunityRankingInitializer.class,
+        com.publicmonitor.backend.domain.analysis.service.AnalysisTaskService.class,
+        com.publicmonitor.backend.domain.analysis.service.AnalysisRecoveryScheduler.class,
+        com.publicmonitor.backend.domain.monitoring.service.MonitoringCollectionRecovery.class,
+        com.publicmonitor.backend.domain.monitoring.service.MonitoringCollectionRecoveryService.class
+})
 @SpringBootTest(properties = {
     "app.report.recovery.enabled=false",
     "app.telegram.commands.enabled=false",

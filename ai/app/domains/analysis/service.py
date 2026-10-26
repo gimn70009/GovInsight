@@ -1,4 +1,4 @@
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from app.domains.analysis.schemas.response import (
     AnalysisJobAcceptedResponse,
@@ -6,9 +6,11 @@ from app.domains.analysis.schemas.response import (
 )
 
 
-def accept_analysis_job(document_count: int) -> AnalysisJobAcceptedResponse:
+def accept_analysis_job(
+    document_count: int, job_id: UUID | None = None
+) -> AnalysisJobAcceptedResponse:
     return AnalysisJobAcceptedResponse(
-        job_id=uuid4(),
+        job_id=job_id or uuid4(),
         status=AnalysisJobStatus.ACCEPTED,
         document_count=document_count,
     )

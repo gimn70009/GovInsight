@@ -9,10 +9,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class AnalysisPreparationValidationTest {
     @Test
-    void acceptsReclassifiedDocumentsAndRejectsOverflow() {
+    void acceptsEmptyEligibilityButStillRequiresAnArrayAndLimitsItsSize() {
         try (var factory = Validation.buildDefaultValidatorFactory()) {
             var validator = factory.getValidator();
-            for (int count : new int[]{16, 27}) {
+            assertThat(validator.validateValue(AnalysisResultRequest.Preparation.class,
+                    "eligibilityChecklist", Collections.emptyList())).isEmpty();
+            assertThat(validator.validateValue(AnalysisResultRequest.Preparation.class,
+                    "eligibilityChecklist", null)).hasSize(1);
+            assertThat(validator.validateValue(AnalysisResultRequest.Preparation.class,
+                    "eligibilityChecklist", Collections.nCopies(13, null))).hasSize(1);
+        }
+    }
+
+    @Test
+    void acceptsUnconfirmedEmptyListAndReclassifiedDocumentsButRejectsOverflow() {
+        try (var factory = Validation.buildDefaultValidatorFactory()) {
+            var validator = factory.getValidator();
+            for (int count : new int[]{0, 16, 27}) {
                 assertThat(validator.validateValue(AnalysisResultRequest.Preparation.class,
                         "submissionDocuments", Collections.nCopies(count, null))).isEmpty();
             }

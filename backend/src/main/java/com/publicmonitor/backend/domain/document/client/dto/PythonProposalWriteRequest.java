@@ -4,7 +4,17 @@ import java.util.List;
 import com.publicmonitor.backend.domain.document.web.dto.ProposalWriteResponse;
 
 public record PythonProposalWriteRequest(String title, String noticeText, String fileName, String templateText,
-        String generationId, String feedback, List<PreviousSection> previousSections) {
+        String generationId, String feedback, List<PreviousSection> previousSections,
+        com.publicmonitor.backend.domain.settings.web.dto.EvaluationSettingsSnapshot evaluationSettings) {
+    public PythonProposalWriteRequest(String title, String noticeText, String fileName, String templateText,
+            String generationId, String feedback, List<PreviousSection> previousSections) {
+        this(title, noticeText, fileName, templateText, generationId, feedback, previousSections, null);
+    }
+    public PythonProposalWriteRequest withEvaluationSettings(
+            com.publicmonitor.backend.domain.settings.web.dto.EvaluationSettingsSnapshot settings) {
+        return new PythonProposalWriteRequest(title, noticeText, fileName, templateText, generationId,
+                feedback, previousSections, settings);
+    }
     public record PreviousSection(String title, String body, String sourceQuote, String selectionReason) {}
     public PythonProposalWriteRequest(String title, String noticeText, String fileName, String templateText) {
         this(title, noticeText, fileName, templateText, "", "", List.of());
@@ -13,6 +23,6 @@ public record PythonProposalWriteRequest(String title, String noticeText, String
         return new PythonProposalWriteRequest(title, noticeText, fileName, templateText, id,
                 instructions == null ? "" : instructions.strip(),
                 previous.sections().stream().map(section -> new PreviousSection(
-                        section.title(), section.body(), section.sourceQuote(), section.selectionReason())).toList());
+                        section.title(), section.body(), section.sourceQuote(), section.selectionReason())).toList(), evaluationSettings);
     }
 }

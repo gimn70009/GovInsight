@@ -13,4 +13,9 @@ public interface MonitoringSourceRepository extends JpaRepository<MonitoringSour
     List<MonitoringSource> findAllByOrderByIdDesc();
 
     List<MonitoringSource> findAllByEnabledTrueOrderByIdAsc();
+
+    // 비활성 소스도 포함해 모든 실행 요청이 같은 행들을 같은 순서로 잠근다.
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select s from MonitoringSource s order by s.id")
+    List<MonitoringSource> findAllForRunCreation();
 }

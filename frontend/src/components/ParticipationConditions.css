@@ -1,0 +1,42 @@
+.participation-guide { color: #213c5b; }
+.participation-guide [hidden] { display: none !important; }
+.participation-guide__table-wrap { border: 1px solid #dfe7f1; border-radius: 10px; overflow: hidden; background: #fff; }
+.participation-guide__table { width: 100%; border-collapse: collapse; table-layout: fixed; text-align: left; }
+.participation-guide__category-col { width: 110px; }
+.participation-guide__table th, .participation-guide__table td { padding: 18px; vertical-align: top; font-size: 13px; line-height: 1.8; word-break: keep-all; overflow-wrap: anywhere; }
+.participation-guide__table tr + tr { border-top: 1px solid #e1e9f3; }
+.participation-guide__table th { background: #f7f9fc; color: #385472; font-weight: 600; }
+.participation-guide__table td + td { border-left: 1px solid #e8edf3; }
+.participation-guide__table thead th { padding-top: 11px; padding-bottom: 11px; background: #eef3fa; color: #526b88; font-size: 12px; border-bottom: 1px solid #dfe7f1; }
+.participation-guide__rules { list-style: none; padding: 0; margin: 0; }
+.participation-guide__rule + .participation-guide__rule { margin-top: 18px; padding-top: 18px; border-top: 1px solid #e8edf3; }
+.participation-guide__main { margin: 0; color: #213c5b; font-size: 13px; line-height: 1.85; font-weight: 500; white-space: pre-line; }
+.participation-guide__exclusion { display: inline-block; margin-bottom: 6px; padding: 2px 7px; color: #9a4c50; background: #fff1f1; border-radius: 4px; font-size: 11px; font-weight: 500; }
+.participation-guide__evidence-button { margin-top: 9px; }
+.participation-guide button[aria-expanded="true"] > svg:last-child { transform: rotate(180deg); }
+.participation-guide .participation-guide__source { margin-top: 12px; padding: 12px; }
+.participation-guide__source blockquote { max-height: 360px; overflow-y: auto; padding-right: 6px; white-space: pre-wrap; }
+.participation-guide__source-selector { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin: 10px 0 6px; min-width: 0; }
+.participation-guide__source-selector label { flex-shrink: 0; color: #536b83; font-weight: 500; }
+.participation-guide__source-selector select { flex: 1 1 160px; width: 100%; min-width: 0; max-width: 100%; min-height: 36px; padding: 7px 10px; border: 1px solid #d8e4f1; border-radius: 6px; background: #fff; color: #334e6f; font: inherit; }
+.participation-guide__source-selector select:focus-visible, .participation-guide__source blockquote:focus-visible { outline: 2px solid #3182f6; outline-offset: 3px; }
+.participation-guide__missing { color: #74869b; font-size: 12px; }
+.participation-guide__mobile-label { display: none; }
+.participation-guide__progress { margin: 0 0 20px; padding: 16px 18px; border: 1px solid #d8e5f5; border-radius: 8px; background: #f7faff; color: #45627f; font-size: 13px; line-height: 1.8; }
+.participation-guide__progress p { margin: 5px 0 0; color: #61758c; }
+@media (max-width: 720px) {
+  .participation-guide__category-col { width: 92px; }
+  .participation-guide__table th, .participation-guide__table td { padding: 14px 12px; }
+}
+@media (max-width: 520px) {
+  .participation-guide__table colgroup { display: none; }
+  .participation-guide__table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .participation-guide__table tbody, .participation-guide__table tbody tr, .participation-guide__table tbody th, .participation-guide__table td { display: block; width: 100%; box-sizing: border-box; }
+  .participation-guide__table tbody th { padding: 11px 14px; border-bottom: 1px solid #e8edf3; }
+  .participation-guide__table td { padding: 13px 14px; }
+  .participation-guide__table td + td { border-left: 0; border-top: 1px dashed #e8edf3; }
+  .participation-guide__mobile-label { display: block; margin-bottom: 7px; font-size: 11px; font-weight: 600; color: #536b83; }
+}
+@media (pointer: coarse) {
+  .participation-guide button, .participation-guide__source-selector select { min-height: 44px; }
+}

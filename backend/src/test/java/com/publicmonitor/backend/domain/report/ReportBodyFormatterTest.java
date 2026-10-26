@@ -4,6 +4,36 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 
 class ReportBodyFormatterTest {
+    @Test void emailLinksCompletePlainUrlsWithoutChangingOtherChannels() {
+        String body = "접수: www.kiat.or.kr 및 https://example.org/apply?x=1&y=%28form%29#submit";
+        assertThat(ReportBodyFormatter.emailHtml(body)).isEqualTo(
+                "접수: <a href=\"https://www.kiat.or.kr\">www.kiat.or.kr</a> 및 "
+                + "<a href=\"https://example.org/apply?x=1&amp;y=%28form%29#submit\">"
+                + "https://example.org/apply?x=1&amp;y=%28form%29#submit</a>");
+        String query = "https://example.org/apply?token=abc;";
+        assertThat(ReportBodyFormatter.emailHtml(query))
+                .isEqualTo("<a href=\"" + query + "\">" + query + "</a>");
+        assertThat(ReportBodyFormatter.html(body)).isEqualTo(body.replace("&", "&amp;"));
+        assertThat(ReportBodyFormatter.displayLength(body)).isEqualTo(body.length());
+    }
+
+    @Test void emailKeepsProsePunctuationOutsideLinksAndBalancedUrlParenthesesInside() {
+        assertThat(ReportBodyFormatter.emailHtml("홈페이지(www.kiat.or.kr)에서 접수. [https://example.org/a(b)]."))
+                .isEqualTo("홈페이지(<a href=\"https://www.kiat.or.kr\">www.kiat.or.kr</a>)에서 접수. "
+                        + "[<a href=\"https://example.org/a(b)\">https://example.org/a(b)</a>].");
+        assertThat(ReportBodyFormatter.emailHtml("접수: HTTPS://example.org/apply."))
+                .contains("href=\"HTTPS://example.org/apply\">HTTPS://example.org/apply</a>.");
+    }
+
+    @Test void emailDoesNotNestExistingLinksOrLinkUnsafeAddresses() {
+        String body = "[www.example.org](https://example.org/form?a=1&b=2)";
+        assertThat(ReportBodyFormatter.emailHtml(body)).isEqualTo(ReportBodyFormatter.html(body));
+        assertThat(ReportBodyFormatter.emailHtml("<script> https://user:pass@example.org/x "
+                + "https://example.org\\evil www. javascript:alert(1) help@www.example.org"))
+                .doesNotContain("<a ", "<script>")
+                .contains("&lt;script&gt;", "help@www.example.org");
+    }
+
     @Test void rendersDateRangesAndCountsTheExpandedMessageLength() {
         String saved = "권역별 설명회(’26.10.13~10.14)";
         String displayed = "권역별 설명회(2026년 10월 13일~10월 14일)";
@@ -31,6 +61,23 @@ class ReportBodyFormatterTest {
         assertThat(ReportBodyFormatter.telegramHtml("▸ <제목>\n• 제출 서류: 신청서\n첨부파일 ↓\n• [서식](https://example.org/a)"))
                 .isEqualTo("<b>▸ &lt;제목&gt;</b>\n<b>• 제출 서류:</b> 신청서\n<b>첨부파일 ↓</b>\n• <a href=\"https://example.org/a\">서식</a>");
     }
+    @Test void telegramPreservesAndEscapesBusinessMetadataAndFacts() {
+        String body = "공고 성격: 사업 기회\n사업 유형: R&D·기술개발\n사업 방식: <연구개발비 지원>\n"
+                + "• 금액·규모: 과제당 연 최대 5억 원, 최대 3년\n  ↳ 자부담 25% 이상\n"
+                + "• 참여 역할: 주관기관\n• 제출 주체·대상: 기업부설연구소 보유 필수\n"
+                + "• 제출처·방법: [접수](https://example.org/apply?a=1&b=2)";
+        assertThat(ReportBodyFormatter.telegramHtml(body)).contains(
+                "<b>공고 성격:</b> 사업 기회", "<b>사업 유형:</b> R&amp;D·기술개발",
+                "<b>사업 방식:</b> &lt;연구개발비 지원&gt;",
+                "<b>• 금액·규모:</b> 과제당 연 최대 5억 원, 최대 3년\n  ↳ 자부담 25% 이상",
+                "<b>• 참여 역할:</b> 주관기관", "<b>• 제출 주체·대상:</b> 기업부설연구소 보유 필수",
+                "<a href=\"https://example.org/apply?a=1&amp;b=2\">접수</a>");
+        assertThat(ReportBodyFormatter.displayLength(body)).isEqualTo(
+                body.replace("[접수](https://example.org/apply?a=1&b=2)", "접수").length());
+        assertThat(ReportBodyFormatter.telegramHtml("공고 성격: 일반 공지\n요약: 운영시간을 변경합니다."))
+                .isEqualTo("<b>공고 성격:</b> 일반 공지\n요약: 운영시간을 변경합니다.");
+    }
+
     @Test void telegramKeepsChecklistRolesAndArchiveLink() {
         String body = "제출 준비 서류 ↓\n◆ 조건부 │ 납세증명서\n제출 주체: 해당 기관\n"
                 + "준비 담당(권장): 재무 담당\n양식: [ZIP 다운로드](https://example.org/zip?id=1&seq=2)\n"

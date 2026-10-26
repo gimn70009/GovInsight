@@ -3,6 +3,7 @@ from datetime import datetime
 from uuid import UUID
 
 import httpx
+import pytest
 
 from app.domains.monitoring.clients import CollectionResultClient
 from app.domains.monitoring.schemas.collected_document import (
@@ -96,3 +97,53 @@ def test_send_collection_result_to_spring_boot() -> None:
     assert captured_body["runId"] == 10
     assert response.data.documents[0].document_id == 100
     assert response.data.documents[0].analysis_required is True
+
+
+@pytest.mark.parametrize("failure", ["disconnect", "lost_response", 500, 503, 429])
+def test_retries_transient_failure_with_identical_payload(failure) -> None:
+    bodies = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        bodies.append(request.content)
+        if len(bodies) == 1:
+            if failure == "disconnect":
+                raise httpx.ConnectError("offline", request=request)
+            if failure == "lost_response":
+                raise httpx.ReadTimeout("response lost", request=request)
+            return httpx.Response(failure)
+        return httpx.Response(200, json={
+            "isSuccess": True, "code": "SUCCESS_200", "httpStatus": 200,
+            "message": "OK", "data": {"documents": []},
+        })
+
+    request = CollectionResultRequest.from_collected(
+        10, UUID("3ed1132b-8d61-45d9-bfab-06c1ed96f202"),
+        [SourceCollectionResult(source_id=1)],
+    )
+    client = CollectionResultClient(
+        transport=httpx.MockTransport(handle), retry_delay_seconds=0,
+    )
+    response = asyncio.run(client.send(request))
+    assert response.data.documents == []
+    assert len(bodies) == 2
+    assert bodies[0] == bodies[1]
+
+
+@pytest.mark.parametrize("status, attempts", [(400, 1), (404, 1), (409, 1), (503, 3)])
+def test_does_not_retry_permanent_errors_and_bounds_transient_retries(status, attempts) -> None:
+    calls = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(status)
+
+    request = CollectionResultRequest.from_collected(
+        10, UUID("3ed1132b-8d61-45d9-bfab-06c1ed96f202"),
+        [SourceCollectionResult(source_id=1)],
+    )
+    client = CollectionResultClient(
+        transport=httpx.MockTransport(handle), retry_delay_seconds=0,
+    )
+    with pytest.raises(httpx.HTTPStatusError):
+        asyncio.run(client.send(request))
+    assert len(calls) == attempts

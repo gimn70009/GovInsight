@@ -2,6 +2,7 @@ package com.publicmonitor.backend.domain.monitoring.web.controller;
 
 import com.publicmonitor.backend.domain.monitoring.service.MonitoringSourceService;
 import com.publicmonitor.backend.domain.monitoring.web.dto.CreateMonitoringSourceRequest;
+import com.publicmonitor.backend.domain.monitoring.web.dto.UpdateMonitoringSourceSettingsRequest;
 import com.publicmonitor.backend.domain.monitoring.web.dto.MonitoringSourceResponse;
 import com.publicmonitor.backend.domain.monitoring.web.dto.UpdateMonitoringSourceEnabledRequest;
 import com.publicmonitor.backend.domain.monitoring.web.dto.UpdateMonitoringSourceRequest;
@@ -94,6 +95,20 @@ public class MonitoringSourceController {
             @Valid @RequestBody UpdateMonitoringSourceRequest request
     ) {
         return SuccessResponse.ok(monitoringSourceService.update(sourceId, request));
+    }
+
+    @Operation(summary = "모니터링 소스 설정 일괄 저장", description = "변경한 기관의 수집 건수와 활성 상태를 하나의 트랜잭션으로 저장합니다. URL과 기관 정보는 유지합니다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "전체 설정 저장 성공"),
+            @ApiResponse(responseCode = "400", description = "요청값 검증 실패 또는 중복 소스"),
+            @ApiResponse(responseCode = "401", description = "인증 필요"),
+            @ApiResponse(responseCode = "404", description = "소스를 찾을 수 없음")
+    })
+    @PatchMapping("/settings")
+    public SuccessResponse<List<MonitoringSourceResponse>> updateSettings(
+            @Valid @RequestBody UpdateMonitoringSourceSettingsRequest request
+    ) {
+        return SuccessResponse.ok(monitoringSourceService.updateSettings(request));
     }
 
     @Operation(summary = "모니터링 소스 활성 상태 변경", description = "등록된 소스의 활성 또는 비활성 상태만 변경합니다.")

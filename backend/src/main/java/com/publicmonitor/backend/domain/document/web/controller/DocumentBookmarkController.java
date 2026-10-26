@@ -8,6 +8,8 @@ import com.publicmonitor.backend.global.response.SuccessResponse;
 import com.publicmonitor.backend.global.security.CustomUserDetails;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
+import com.publicmonitor.backend.domain.analysis.entity.OpportunityPriority;
 import jakarta.validation.constraints.Max;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -47,7 +49,7 @@ public class DocumentBookmarkController {
         return SuccessResponse.empty();
     }
 
-    @Operation(summary = "저장한 게시글 조회", description = "전체 실행에서 저장한 버전별 최신 감지 결과를 한 번씩 조회합니다.")
+    @Operation(summary = "저장한 게시글 조회", description = "내가 저장한 버전별 최신 감지 결과를 한 번씩 조회합니다. 기간·검색어(query, 최대 500자)·우선순위(priority: HIGH/NORMAL/LOW)를 전체 대상에 적용한 뒤 페이지를 반환합니다.")
     @GetMapping("/documents")
     public SuccessResponse<PageResponse<DocumentDetectionSummaryResponse>> documents(
             @AuthenticationPrincipal CustomUserDetails principal,
@@ -55,7 +57,9 @@ public class DocumentBookmarkController {
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
-            @RequestParam(defaultValue = "LATEST") DocumentDetectionSort sort) {
-        return SuccessResponse.ok(service.findAll(principal.user().getId(), page, size, from, to, sort));
+            @RequestParam(defaultValue = "LATEST") DocumentDetectionSort sort,
+            @RequestParam(required = false) @Size(max = 500) String query,
+            @RequestParam(required = false) OpportunityPriority priority) {
+        return SuccessResponse.ok(service.findAll(principal.user().getId(), page, size, from, to, sort, query, priority));
     }
 }

@@ -5,8 +5,11 @@
 .DS_Store
 Thumbs.db
 
-# 사용자 추가
+# 로컬 작업 산출물 및 도구 캐시
 .codex/
+/.ruff_cache/
+/.uv-cache-check/
+
 # Frontend
 frontend/node_modules/
 frontend/dist/

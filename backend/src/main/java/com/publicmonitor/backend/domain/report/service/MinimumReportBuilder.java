@@ -20,10 +20,10 @@ public final class MinimumReportBuilder {
             String url = safeUrl(detection.getDocument().getOriginalUrl());
             String block = "▸ " + text(version.getTitle(), 180) + "\n기관: "
                     + text(detection.getMonitoringRunSource().getMonitoringSource().getOrganizationName(), 100)
-                    + "\n요약: " + (analysis == null ? "분석 결과를 확인하지 못했습니다." : text(analysis.getSummary(), 180))
+                    + "\n요약: " + (analysis == null ? "분석 결과를 확인하지 못했습니다." : text(analysis.getSummary()))
                     + (url == null ? "\n원문: 게시글 상세에서 확인" : "\n원문: [게시글 보기](" + url + ")") + "\n\n";
-            // Includes URLs in the budget, so both Telegram display and DB storage stay bounded.
-            if (body.length() + block.length() > 3300) break;
+            // Reserve room for the omission and fallback notices within the storage limit.
+            if (body.length() + block.length() > 19800) break;
             body.append(block); included++;
         }
         if (included < detections.size()) body.append("그 외 ").append(detections.size() - included).append("건은 감지된 게시글에서 확인하세요.\n");
@@ -31,9 +31,12 @@ public final class MinimumReportBuilder {
         body.append("\n미확인 항목: 상세 제출 안내 — 기본 정보로 작성한 보고서입니다.");
         return new Draft(title, body.toString());
     }
-    private static String text(String value, int limit) {
+    private static String text(String value) {
         if (value == null || value.isBlank()) return "확인되지 않음";
-        String clean = value.replaceAll("\\s+", " ").replace('[', '［').replace(']', '］').strip();
+        return value.replaceAll("\\s+", " ").replace('[', '［').replace(']', '］').strip();
+    }
+    private static String text(String value, int limit) {
+        String clean = text(value);
         if (clean.length() <= limit) return clean;
         int end = Character.isHighSurrogate(clean.charAt(limit - 1)) ? limit - 1 : limit;
         return clean.substring(0, end) + "…";

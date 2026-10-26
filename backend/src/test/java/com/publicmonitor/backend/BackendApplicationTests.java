@@ -4,6 +4,7 @@ import com.publicmonitor.backend.domain.analysis.service.AnalysisJobRequestServi
 import com.publicmonitor.backend.domain.analysis.service.AnalysisResultService;
 import com.publicmonitor.backend.domain.document.service.CollectionResultService;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringSourceRepository;
+import com.publicmonitor.backend.domain.monitoring.repository.MonitoringScheduleRepository;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunRepository;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunSourceRepository;
 import com.publicmonitor.backend.domain.user.repository.UserRepository;
@@ -11,6 +12,16 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+@MockitoBean(types = {
+        com.publicmonitor.backend.domain.settings.repository.EvaluationSettingsRepository.class,
+        com.publicmonitor.backend.domain.settings.repository.EvaluationSettingsRevisionRepository.class,
+        com.publicmonitor.backend.domain.analysis.repository.DocumentAnalysisRepository.class,
+        com.publicmonitor.backend.domain.analysis.service.OpportunityRankingInitializer.class,
+        com.publicmonitor.backend.domain.analysis.service.AnalysisTaskService.class,
+        com.publicmonitor.backend.domain.analysis.service.AnalysisRecoveryScheduler.class,
+        com.publicmonitor.backend.domain.monitoring.service.MonitoringCollectionRecovery.class,
+        com.publicmonitor.backend.domain.monitoring.service.MonitoringCollectionRecoveryService.class
+})
 @SpringBootTest(properties = {
     "app.report.recovery.enabled=false",
     "app.telegram.commands.enabled=false",
@@ -45,6 +56,9 @@ class BackendApplicationTests {
 
 	@MockitoBean
 	MonitoringRunSourceRepository monitoringRunSourceRepository;
+
+	@MockitoBean
+	MonitoringScheduleRepository monitoringScheduleRepository;
 
 	@Test
 	void contextLoads() {

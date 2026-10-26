@@ -12,15 +12,19 @@ import type {
   DocumentDetection,
   LoginResponse,
   MonitoringRun,
+  MonitoringRunActivity,
   MonitoringRunWarnings,
   MonitoringSchedule,
   MonitoringSchedulePayload,
   MonitoringSource,
-  MonitoringSourcePayload,
+  MonitoringSourceSettings,
   SimilarNoticeResult,
   LegalPairResult,
   PageResponse,
+  OpportunityPriority,
 } from './types'
+
+import type { EvaluationSettings, EvaluationSettingsPayload } from './evaluationSettings'
 
 const TOKEN_KEY = 'govinsight.accessToken'
 
@@ -55,6 +59,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  getEvaluationSettings: (signal?: AbortSignal) => request<EvaluationSettings>('/api/evaluation-settings', { signal }),
+  updateEvaluationSettings: (payload: EvaluationSettingsPayload) => request<EvaluationSettings>('/api/evaluation-settings', { method: 'PUT', body: JSON.stringify(payload) }),
   getEmailSettings: () => request<EmailSettings>('/api/email/settings'),
   updateEmailSettings: (payload: EmailSettingsPayload) => request<EmailSettings>('/api/email/settings', { method: 'PUT', body: JSON.stringify(payload) }),
   sendEmailTest: (expectedAddress: string) => request<{ sent: boolean; message: string }>('/api/email/test-message', { method: 'POST', body: JSON.stringify({ expectedAddress }) }),
@@ -95,28 +101,26 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ loginId, password }),
     }),
-  getSources: () => request<MonitoringSource[]>('/api/monitoring-sources'),
+  getSources: (signal?: AbortSignal) => request<MonitoringSource[]>('/api/monitoring-sources', { signal }),
   getSource: (sourceId: number) => request<MonitoringSource>(`/api/monitoring-sources/${sourceId}`),
-  createSource: (payload: MonitoringSourcePayload) =>
-    request<MonitoringSource>('/api/monitoring-sources', { method: 'POST', body: JSON.stringify(payload) }),
-  updateSource: (sourceId: number, payload: MonitoringSourcePayload) =>
-    request<MonitoringSource>(`/api/monitoring-sources/${sourceId}`, { method: 'PUT', body: JSON.stringify(payload) }),
-  changeSourceEnabled: (sourceId: number, enabled: boolean) =>
-    request<MonitoringSource>(`/api/monitoring-sources/${sourceId}/enabled`, {
-      method: 'PATCH',
-      body: JSON.stringify({ enabled }),
+  updateSourceSettings: (sources: MonitoringSourceSettings[]) =>
+    request<MonitoringSource[]>('/api/monitoring-sources/settings', {
+      method: 'PATCH', body: JSON.stringify({ sources }),
     }),
+  getRunActivity: (signal?: AbortSignal) => request<MonitoringRunActivity>('/api/monitoring-runs/active', { signal }),
   createRun: () => request<CreateMonitoringRunResponse>('/api/monitoring-runs', { method: 'POST' }),
   getRuns: (page = 0, size = 10) =>
     request<PageResponse<MonitoringRun>>(`/api/monitoring-runs?page=${page}&size=${size}`),
   getRunWarnings: (runId: number, signal?: AbortSignal) =>
     request<MonitoringRunWarnings>(`/api/monitoring-runs/${runId}/warnings`, { signal }),
-  getMonitoringSchedule: () => request<MonitoringSchedule>('/api/monitoring-schedule'),
+  getMonitoringSchedule: (signal?: AbortSignal) => request<MonitoringSchedule>('/api/monitoring-schedule', { signal }),
   updateMonitoringSchedule: (payload: MonitoringSchedulePayload) =>
     request<MonitoringSchedule>('/api/monitoring-schedule', {
       method: 'PUT',
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ enabled: payload.enabled, frequency: payload.frequency, executionTime: payload.executionTime, customDays: payload.customDays }),
     }),
+  cancelPendingSchedule: (scheduledAt: string) =>
+    request<MonitoringSchedule>(`/api/monitoring-schedule/pending?${new URLSearchParams({ scheduledAt })}`, { method: 'DELETE' }),
   getDocuments: (
     page = 0,
     size = 20,
@@ -125,18 +129,23 @@ export const api = {
     runId?: number,
     sort: 'LATEST' | 'OPPORTUNITY_SCORE' = 'LATEST',
     savedOnly = false,
+    query = '',
+    priority?: OpportunityPriority,
+    signal?: AbortSignal,
   ) => {
     const params = new URLSearchParams({ page: String(page), size: String(size) })
     if (from) params.set('from', from)
     if (to) params.set('to', to)
     if (runId) params.set('runId', String(runId))
     params.set('sort', sort)
-    return request<PageResponse<DocumentDetection>>(`${savedOnly ? "/api/bookmarks/documents" : "/api/document-detections"}?${params}`)
+    if (query.trim()) params.set('query', query.trim())
+    if (priority) params.set('priority', priority)
+    return request<PageResponse<DocumentDetection>>(`${savedOnly ? "/api/bookmarks/documents" : "/api/document-detections"}?${params}`, { signal })
   },
   getBookmarkIds: () => request<number[]>('/api/bookmarks/versions'),
   setBookmark: (versionId: number, saved: boolean) =>
     request<void>(`/api/bookmarks/versions/${versionId}`, { method: saved ? 'PUT' : 'DELETE' }),
-  getDocument: (detectionId: number) => request<DocumentDetail>(`/api/document-detections/${detectionId}`),
+  getDocument: (detectionId: number, signal?: AbortSignal) => request<DocumentDetail>(`/api/document-detections/${detectionId}`, { signal }),
   compareLegalPair: (currentId: number, similarId: number, signal?: AbortSignal) =>
     request<LegalPairResult>(`/api/document-detections/${currentId}/similar-notices/${similarId}/legal-review`, { method: 'POST', signal }),
   getProposalSources: (detectionId: number, signal?: AbortSignal) =>
@@ -165,6 +174,6 @@ export const api = {
     request<ProposalWrittenDraft>(`/api/document-detections/${detectionId}/proposal-draft/restore`, {
       method: 'POST', body: JSON.stringify(payload), signal,
     }),
-  getSimilarNotices: (detectionId: number) =>
-    request<SimilarNoticeResult>(`/api/document-detections/${detectionId}/similar-notices`),
+  getSimilarNotices: (detectionId: number, signal?: AbortSignal) =>
+    request<SimilarNoticeResult>(`/api/document-detections/${detectionId}/similar-notices`, { signal }),
 }

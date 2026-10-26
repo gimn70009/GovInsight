@@ -4,20 +4,23 @@ import com.publicmonitor.backend.domain.monitoring.entity.MonitoringSchedule;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringScheduleFrequency;
 import java.time.DayOfWeek;
 import java.time.LocalTime;
+import java.time.LocalDateTime;
 import java.util.Set;
 
 public record MonitoringScheduleResponse(
         boolean enabled,
         MonitoringScheduleFrequency frequency,
         LocalTime executionTime,
-        Set<DayOfWeek> customDays
+        Set<DayOfWeek> customDays,
+        LocalDateTime pendingScheduledAt
 ) {
     public static MonitoringScheduleResponse from(MonitoringSchedule schedule) {
         return new MonitoringScheduleResponse(
                 schedule.isEnabled(),
                 schedule.getFrequency(),
                 schedule.getExecutionTime(),
-                schedule.getSelectedDays()
+                schedule.getSelectedDays(),
+                schedule.getPendingScheduledAt()
         );
     }
 }

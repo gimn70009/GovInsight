@@ -190,3 +190,13 @@ def test_all_failed_zip_retains_diagnostics(tmp_path: Path) -> None:
     result = ZipParser({".hwp": FailingParser()}, 20, 1024).parse(path)
     assert not result.text
     assert result.archive_entries[0]["status"] == "FAILED"
+
+
+def test_zip_deduplication_preserves_empty_cell_positions(tmp_path):
+    path = tmp_path / "positions.zip"
+    first = "[표]\n서류명\t구분\n신청서\t\n[/표]"
+    second = "[표]\n서류명\t구분\n\t신청서\n[/표]"
+    _write_zip(path, {"one.hwpx": first, "two.hwpx": second})
+    result = ZipParser({".hwpx": TextParser()}, 20, 1024).parse(path)
+    assert [entry["status"] for entry in result.archive_entries] == ["COMPLETED", "COMPLETED"]
+    assert first in result.text and second in result.text

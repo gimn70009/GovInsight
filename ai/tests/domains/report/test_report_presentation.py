@@ -35,7 +35,8 @@ def test_korean_rewrite_cannot_invent_or_drop_a_percentage():
 def test_translated_contact_cannot_change_email_or_phone():
     raw = "Project office: 02-0000-0000 help@example.org"
     brief, _ = check(raw, "국내 문의: 02-0000-0000 other@example.org", "contacts")
-    assert brief.facts.contact == "원문 확인 필요"
+    assert "other@example.org" not in brief.facts.contact
+    assert "help@example.org" in brief.facts.contact
     brief, _ = check(raw, "국내 문의: 02-0000-0000 help@example.org", "contacts")
     assert "help@example.org" in brief.facts.contact
 
@@ -113,7 +114,7 @@ def test_model_emits_evidence_once_and_local_code_derives_verbatim_value():
         validate_brief(
             result, build_context(req.documents[0], 16000), req.documents[0]
         ).facts.applicant
-        == item.display_text
+        == "원문 확인 필요"
     )
     # Forged fragments are still rejected, even though the display is readable.
     item.fragments = ["국내주관기관자격", "대기업"]
@@ -121,7 +122,7 @@ def test_model_emits_evidence_once_and_local_code_derives_verbatim_value():
         validate_brief(
             model.extracted(), build_context(req.documents[0], 16000), req.documents[0]
         ).facts.applicant
-        == "원문 확인 필요"
+        == "원문 확인 필요"  # Role columns and their conditions cannot safely be flattened.
     )
 
 
@@ -142,9 +143,13 @@ def test_combined_labelled_routes_split_without_breaking_urls():
 
 
 def test_english_month_is_normalized_without_losing_the_date():
-    brief, _ = check("January 28, 2027", "마감: 2027년 1월 28일까지", "deadlines")
+    brief, _ = check(
+        "Application deadline: January 28, 2027", "마감: 2027년 1월 28일까지", "deadlines"
+    )
     assert "2027년 1월 28일" in brief.facts.deadline
-    brief, _ = check("January 28, 2027", "마감: 2027년 2월 28일까지", "deadlines")
+    brief, _ = check(
+        "Application deadline: January 28, 2027", "마감: 2027년 2월 28일까지", "deadlines"
+    )
     assert brief.facts.deadline == "원문 확인 필요"
 
 

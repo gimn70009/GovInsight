@@ -23,6 +23,13 @@ from app.domains.analysis.schemas.result import (
     ProposalSection,
 )
 from app.domains.analysis.workflow.agent import AgentAnalysis, AnalysisRunner
+from app.domains.analysis.workflow.configured_scoring import finalize_configured_score
+from app.domains.analysis.workflow.deadlines import (
+    has_calendar_date,
+    normalize_deadline_presentation,
+    resolve_application_deadline,
+    single_event_date,
+)
 from app.domains.analysis.workflow.retry_policy import TIMEOUT_FEEDBACK, is_timeout_error
 
 
@@ -301,7 +308,10 @@ class DocumentAnalysisWorkflow:
                 eligibility=draft.eligibility,
                 favorable_or_not=draft.favorable_or_not,
                 proposal=draft.proposal,
-                opportunity=draft.opportunity,
+                opportunity=finalize_configured_score(
+                    draft.opportunity, document.evaluation_settings,
+                    draft.comparison_summary.application_deadline, self._analysis_date,
+                ),
                 used_tools=candidate.used_tools,
                 model_name=candidate.model_name,
                 comparison_summary=draft.comparison_summary,
@@ -598,21 +608,6 @@ def _application_expired(candidate: AgentAnalysis) -> bool:
     )
 
 
-def _comparison_deadline(candidate: AgentAnalysis) -> date | None:
-    text = candidate.draft.comparison_summary.application_deadline
-    # A date range has an end; unrelated multiple dates are ambiguous and stay unparsed.
-    date_pattern = r"20\d{2}(?:[-./]\d{1,2}[-./]\d{1,2}|\s*년\s*\d{1,2}\s*월\s*\d{1,2}\s*일)"
-    matches = re.findall(date_pattern, text)
-    if len(matches) == 1:
-        # Do not mistake a start date followed by a yearless end date for the deadline.
-        if re.search(r"[~∼～]|부터", text):
-            return None
-        return _deadline_from_reason(matches[0])
-    if len(matches) == 2 and re.search(r"[~∼～]|부터", text):
-        return _deadline_from_reason(matches[-1])
-    return None
-
-
 def _add_expired_notice_context(candidate: AgentAnalysis) -> None:
     if not _application_expired(candidate):
         return
@@ -684,7 +679,7 @@ def _expired_narrative_findings(
                 ):
                     continue
                 if match.re is _SCHEDULED_ACTION:
-                    event_date = _deadline_from_reason(match.group())
+                    event_date = single_event_date(match.group())
                     # Closed applications do not mean a dated, upcoming evaluation is past.
                     if event_date is not None and event_date >= today:
                         continue
@@ -724,13 +719,14 @@ def _expired_narrative_feedback(candidate: AgentAnalysis, analysis_date: date) -
     findings = _expired_narrative_findings(candidate, analysis_date)
     if not findings:
         return ""
-    deadline = _comparison_deadline(candidate)
-    if deadline is None:
-        deadline = next((
-            _deadline_from_reason(dimension.reason)
-            for dimension in candidate.draft.opportunity.dimensions
-            if dimension.type == OpportunityDimensionType.URGENCY
-        ), None)
+    reason = next((
+        dimension.reason
+        for dimension in candidate.draft.opportunity.dimensions
+        if dimension.type == OpportunityDimensionType.URGENCY
+    ), "")
+    deadline = resolve_application_deadline(
+        candidate.draft.comparison_summary.application_deadline, reason,
+    )
     context = {
         "analysisDate": analysis_date.isoformat(),
         "applicationDeadline": deadline.isoformat() if deadline else None,
@@ -761,6 +757,9 @@ def _normalize_urgency_score(
     candidate: AgentAnalysis,
     analysis_date: date | None = None,
 ) -> None:
+    candidate.draft.comparison_summary.application_deadline = normalize_deadline_presentation(
+        candidate.draft.comparison_summary.application_deadline,
+    )
     urgency = next(
         (
             dimension
@@ -771,7 +770,9 @@ def _normalize_urgency_score(
     )
     if urgency is None:
         return
-    deadline = _comparison_deadline(candidate) or _deadline_from_reason(urgency.reason)
+    deadline = resolve_application_deadline(
+        candidate.draft.comparison_summary.application_deadline, urgency.reason,
+    )
     if deadline is not None:
         today = analysis_date or datetime.now(timezone(timedelta(hours=9))).date()
         remaining_days = (deadline - today).days
@@ -789,6 +790,20 @@ def _normalize_urgency_score(
             f"신청 마감일은 {deadline_text}이며 분석일 기준 남은 {remaining_days}일입니다."
         )
         return
+    # An unresolved date must not turn a model's stale closure wording into a
+    # deterministic eligibility rejection, or reuse days belonging to another date.
+    if (
+        has_calendar_date(candidate.draft.comparison_summary.application_deadline)
+        or has_calendar_date(urgency.reason)
+        or "마감 지남" in urgency.reason
+    ):
+        if _has_no_company_action(urgency.reason):
+            urgency.score = 0
+            urgency.reason = "회사 행동 없음이며, 신청 마감일은 기한 미확인 상태입니다."
+        else:
+            urgency.score = 10
+            urgency.reason = "신청 마감일을 명확히 확인하지 못해 기한 미확인 상태입니다."
+        return
     expected_score = _expected_urgency_score(urgency.reason)
     if expected_score is None:
         original_reason = urgency.reason.strip()
@@ -800,26 +815,6 @@ def _normalize_urgency_score(
     if urgency.score == expected_score:
         return
     urgency.score = expected_score
-
-
-def _deadline_from_reason(reason: str) -> date | None:
-    matches = [
-        (int(year), int(month), int(day))
-        for year, month, day in re.findall(r"(20\d{2})[-./](\d{1,2})[-./](\d{1,2})", reason)
-    ]
-    matches.extend(
-        (int(year), int(month), int(day))
-        for year, month, day in re.findall(
-            r"(20\d{2})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일",
-            reason,
-        )
-    )
-    for year, month, day in matches:
-        try:
-            return date(year, month, day)
-        except ValueError:
-            continue
-    return None
 
 
 def _expected_urgency_score(reason: str) -> int | None:

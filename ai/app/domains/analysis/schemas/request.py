@@ -1,9 +1,11 @@
 from datetime import datetime
 from enum import StrEnum
+from uuid import UUID
 
 from pydantic import Field, model_validator
 
 from app.core.schemas import CamelCaseModel
+from app.domains.analysis.context.evaluation_settings import EvaluationSettingsSnapshot
 from app.domains.analysis.schemas.result import LegalRiskType
 
 
@@ -41,6 +43,7 @@ class PreviousAnalysisRequest(CamelCaseModel):
 
 
 class AnalysisDocumentRequest(CamelCaseModel):
+    evaluation_settings: EvaluationSettingsSnapshot | None = None
     detection_id: int = Field(gt=0)
     document_id: int = Field(gt=0)
     version_id: int = Field(gt=0)
@@ -70,5 +73,15 @@ class AnalysisDocumentRequest(CamelCaseModel):
 
 
 class AnalysisJobRequest(CamelCaseModel):
+    evaluation_settings: EvaluationSettingsSnapshot | None = None
+    job_id: UUID | None = None
     run_id: int = Field(gt=0)
     documents: list[AnalysisDocumentRequest] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def apply_settings_snapshot(self) -> "AnalysisJobRequest":
+        self.documents = [
+            document.model_copy(update={"evaluation_settings": self.evaluation_settings})
+            for document in self.documents
+        ]
+        return self

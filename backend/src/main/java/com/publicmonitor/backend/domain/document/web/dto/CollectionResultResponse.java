@@ -6,7 +6,7 @@ import java.util.List;
 
 @Schema(description = "문서 수집 결과 저장 응답")
 public record CollectionResultResponse(
-        @Schema(description = "저장 및 변경 감지가 끝난 문서 목록")
+        @Schema(description = "저장 및 변경 감지가 끝난 문서 목록. 중복 또는 만료된 실행의 결과는 빈 목록으로 반환합니다.")
         List<DocumentResult> documents
 ) {
 

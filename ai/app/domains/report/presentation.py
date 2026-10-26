@@ -2,8 +2,16 @@
 
 import re
 import unicodedata
+from datetime import date
 
-from app.domains.report.facts import _DATE
+from app.domains.report.applicants import (
+    applicant_source_display,
+    checkbox_applicants,
+    equivalent_applicant_display,
+)
+from app.domains.report.facts import _DATE, source_schedule_rows
+from app.domains.report.opportunity import participation_display_lines
+from app.domains.report.outline import outline_display_lines
 
 _MONTHS = (
     "January February March April May June July August September October November December".split()
@@ -43,8 +51,44 @@ def _anchors(value: str) -> set[str]:
     return anchors
 
 
-def korean_display(raw: str, quote: str, display: str | None) -> str | None:
+
+_TABLE_COLUMNS = re.compile(
+    r"(?:^|\s)(부문|훈격|규모|수공기간|공적기간|포상대상|포상규모|인원|구분|합계|"
+    r"지원대상|지원규모|지원기간)(?=\s|$)"
+)
+
+
+def unreadable_table(value: str) -> bool:
+    """Reject flattened column/value streams; never guess which number is a condition."""
+    text = " ".join(value.split())
+    return (
+        len(set(_TABLE_COLUMNS.findall(text))) >= 3
+        or bool(re.search(r"(?<!\S)\d+\s+(?:계|합계|총계)\s+\d+(?!\S)", text))
+        or len(re.findall(r"(?:주관|공동)기관자격", text)) > 1
+    )
+
+
+def source_check_message(label: str) -> str:
+    subject = {
+        "제출 주체·대상": "신청 자격과 제외 조건",
+        "제출·의견 기한": "마감일과 접수 기준",
+        "제출처·방법": "접수처와 제출 방법",
+        "문의 담당": "담당 부서와 연락 방법",
+        "사업 요약": "사업 내용과 세부 조건",
+    }.get(label, label)
+    return f"원문 표에서 {subject}을 확인해 주세요."
+
+
+def korean_display(
+    raw: str, quote: str, display: str | None, *, kind: str | None = None
+) -> str | None:
     if display is None:
+        return None
+    if kind == "applicant" and checkbox_applicants(quote) is not None:
+        # Complete verified quotes supply role/selection context, never model-picked cells.
+        normalized = applicant_source_display(quote)
+        return normalized if len(normalized) <= 300 else None
+    if unreadable_table(quote) or unreadable_table(raw):
         return None
     value = " ".join(display.split())
     if not value or len(value) > 150 or not re.search(r"[가-힣]", value) or foreign_prose(value):
@@ -53,16 +97,142 @@ def korean_display(raw: str, quote: str, display: str | None) -> str | None:
     if not _anchors(value) <= _anchors(quote) or not _anchors(raw) <= _anchors(value):
         return None
 
+    # Bind each comparator to its quantity and unit, not just a set of directions.
     def bounds(text):
-        return set(re.findall(r"(?<=\d)\s*(?:%|억원|원|명|년|일)?\s*(이상|이하|미만|초과)", text))
+        return {
+            re.sub(r"\s+", "", match)
+            for match in re.findall(
+                r"\d+(?:[.,]\d+)*\s*(?:%|[가-힣]+)?\s*(?:이상|이하|미만|초과)",
+                unicodedata.normalize("NFKC", text),
+            )
+        }
 
-    if not bounds(raw) <= bounds(value):
+    if bounds(raw) != bounds(value):
+        return None
+    if kind == "deadline":
+        value = _restore_schedule_display(quote, value)
+        if value is None:
+            return None
+    # Eligibility can be reformatted only when every source word is retained.
+    # Unsupported paraphrases remain unconfirmed instead of exposing raw alternatives.
+    preserve_applicant = (
+        kind == "applicant" and re.search(r"[가-힣]", quote) and not foreign_prose(quote)
+    )
+    if preserve_applicant:
+        source = applicant_source_display(quote)
+        if len(source) > 150:
+            return None
+        return display.strip() if equivalent_applicant_display(source, display) else None
+    if _protected_condition(quote):
+        # Flattening several role columns would attach a condition to the wrong party.
+        if len(re.findall(r"(?:주관|공동)기관자격", quote)) > 1:
+            return None
+        source = " ".join(quote.split())
+        return source if len(source) <= 150 else None
+    if _protected_condition(value) and not _protected_condition(quote):
         return None
     return value
 
 
+
+_SCHEDULE_ROLES = {
+    "announcement": r"^(?:대회\s*)?공고(?:일자|일)?$|^(?:게시일|등록일|announcement\s*date)$",
+    "opening": r"(?:접수|신청|제출)\s*(?:시작|개시)(?:일)?$|opening\s*date$",
+    "other": r"(?:설명회|행사|평가|선정|발표|협약)(?:일|일정)?$|(?:사업|지원)\s*기간$",
+    "deadline": r"마감(?:일자|일)?$|기한$|(?:접수|신청|제출)\s*기간$|deadline$",
+}
+_SCHEDULE_SUBJECT = re.compile(
+    r"연구개발계획서|연구계획서|계획서|의견\s*제출|접수|신청|제출|마감(?:일자|일)?|"
+    r"기한|기간|공고(?:일자|일)?|게시일|등록일|시작|개시|설명회|행사|평가|선정|발표|협약|"
+    r"application|submission|deadline|announcement|opening|date", re.I,
+)
+
+
+def _schedule_context(prefix: str) -> str:
+    return re.sub(r"[\s:：()]+", "", _SCHEDULE_SUBJECT.sub("", prefix))
+
+
+def _date_start(value: str) -> int:
+    matches = [m.start() for pattern in (_DATE, _ENGLISH_DATE) for m in pattern.finditer(value)]
+    return min(matches) if matches else len(value)
+
+
+def _schedule_prefix(value: str) -> str:
+    return value[:_date_start(value)].strip(" \n:：<〈~∼～'‘’□■○•").rstrip("은는 ")
+
+
+def _schedule_role(value: str) -> str | None:
+    heading = _schedule_prefix(value)
+    # A source title such as "공고문 국문 접수 마감" is not an announcement date.
+    for role, pattern in _SCHEDULE_ROLES.items():
+        if re.search(pattern, heading, re.I):
+            return role
+    return None
+
+
+def _restore_schedule_display(quote: str, display: str) -> str | None:
+    rows = source_schedule_rows(quote, include_conditions=False) or deadline_display_lines(quote)
+    sources = [line for line in rows if _schedule_role(line) and _date_start(line) < len(line)]
+    result = []
+    for line in deadline_display_lines(display):
+        role = _schedule_role(line)
+        if not sources:
+            # Bare dates may remain dates; a model cannot invent a deadline role.
+            if role is not None:
+                return None
+            result.append(line)
+            continue
+        prefix = _schedule_prefix(line)
+        display_context = _schedule_context(prefix)
+        candidates = [
+            source for source in sources
+            if _anchors(line) <= _anchors(source)
+            and (role is None or _schedule_role(source) == role)
+            and (not display_context
+                 or display_context == _schedule_context(_schedule_prefix(source)))
+        ]
+        identities = {
+            (re.sub(r"\s+", "", _schedule_prefix(source)), _schedule_role(source))
+            for source in candidates
+        }
+        if len(identities) != 1:
+            return None
+        source = candidates[0]
+        source_prefix = _schedule_prefix(source)
+        if role is None:
+            # A country-only caption must occur in the verified source heading.
+            if prefix and re.sub(r"\s+", "", prefix) not in re.sub(r"\s+", "", source_prefix):
+                return None
+            line = source_prefix + ": " + line[_date_start(line):]
+        elif _schedule_context(source_prefix) != display_context:
+            line = source_prefix + ": " + line[_date_start(line):]
+        result.append(line)
+    return "\n".join(result) if result else None
+
+
+def _same_schedule_roles(quote: str, display: str) -> bool:
+    return _restore_schedule_display(quote, display) is not None
+
+
+def _protected_condition(text: str) -> bool:
+    return bool(re.search(r"[가-힣]", text) and not foreign_prose(text) and re.search(
+        r"불가|제외|제한|한정|필수|반드시|의무|경우|예외|다만|단[,，:]|"
+        r"없|않|못|금지|이상|이하|미만|초과|가능|유효|동시|에만|만\s*(?:신청|지원|참여|접수)",
+        text,
+    ))
+
+
 def readable_source(value: str, kind: str) -> str | None:
-    if len(value) > 150 or foreign_prose(value):
+    if kind == "applicant" and checkbox_applicants(value) is not None:
+        normalized = applicant_source_display(value)
+        return normalized if len(normalized) <= 300 else None
+    if kind == "deadline" and "\n" in value:
+        lines = value.splitlines()
+        return value if len(value) <= 600 and all(
+            len(line) <= 150 and not foreign_prose(line) and not unreadable_table(line)
+            for line in lines
+        ) else None
+    if len(value) > 150 or foreign_prose(value) or unreadable_table(value):
         return None
     if kind == "applicant":
         # Isolated table cells lack the role needed to interpret eligibility.
@@ -75,6 +245,121 @@ def readable_source(value: str, kind: str) -> str | None:
 
 def informational_notice(title: str, source: str) -> bool:
     # Only suppress missing application fields for explicit result announcements.
-    result = re.search(r"(?:선정|평가|심사)\s*결과|최종\s*선정.*(?:안내|공고)", title)
+    result = re.search(
+        r"(?:선정|평가|심사)\s*결과|최종\s*선정.*(?:안내|공고)|입상작\s*발표|"
+        r"추가\s*선정\s*공고|지정\s*변경.*지정\s*취소\s*공고|개발\s*계획.*변경\s*승인",
+        title,
+    )
     action = re.search(r"이의\s*신청|추가\s*제출|접수\s*(?:기간|기한)|제출\s*기한", source)
     return bool(result and not action)
+
+
+_PAIRED_DEADLINE = re.compile(
+    r"^(?P<announcement>(?:대회\s*)?공고(?:일자|일)?)\s*/\s*"
+    r"(?P<closing>(?:접수|신청|제출)\s*마감(?:일자|일)?)\s*[:：]\s*(?P<dates>.+)$"
+)
+_DEADLINE_LABEL = re.compile(r"(?:[가-힣A-Za-z(]|\d+차)[^:\n]{0,40}[:：]\s*")
+
+
+def _deadline_slashes(value: str) -> list[int]:
+    protected = [m.span() for pattern in (_DATE, _LINK) for m in pattern.finditer(value)]
+    return [
+        m.start() for m in re.finditer("/", value)
+        if not any(start <= m.start() < end for start, end in protected)
+        and value[:m.start()].count("(") == value[:m.start()].count(")")
+    ]
+
+
+def _deadline_dates(value: str) -> str:
+    links = [m.span() for m in _LINK.finditer(value)]
+
+    def replace(match: re.Match[str]) -> str:
+        if any(start <= match.start() < end for start, end in links):
+            return match[0]
+        year = int(match["year"]) if match["year"] else None
+        if year is not None and year < 100:
+            if year > 49:
+                return match[0]
+            year += 2000
+        month, day = int(match["month"]), int(match["day"])
+        try:
+            date(year or 2000, month, day)
+        except ValueError:
+            return match[0]
+        return (f"{year}년 " if year else "") + f"{month}월 {day}일"
+
+    value = _DATE.sub(replace, value)
+    value = re.sub(r"['‘’](?=20\d{2}년)", "", value)
+    value = re.sub(r"일\s*\(\s*([월화수목금토일])\s*\)", r"일(\1)", value)
+    return re.sub(r"(일(?:\([월화수목금토일]\))?)(?=\d{1,2}:)", r"\1 ", value)
+
+
+def deadline_display_lines(value: str, *, deduplicate: bool = True) -> list[str]:
+    """Format verified dates without treating an announcement date as a range start."""
+    chunks = []
+    for line in value.splitlines():
+        start = 0
+        for index in _deadline_slashes(line):
+            # Only a new labelled schedule starts a new block here. Keep paired
+            # headings and their two date cells together for the mapping below.
+            if _DATE.search(line[start:index]) and _DEADLINE_LABEL.match(line[index + 1:].strip()):
+                chunks.append(line[start:index].strip())
+                start = index + 1
+        chunks.append(line[start:].strip())
+
+    lines = []
+    for chunk in chunks:
+        paired = _PAIRED_DEADLINE.fullmatch(chunk)
+        if paired:
+            dates = paired["dates"]
+            separators = _deadline_slashes(dates)
+            if len(separators) == 1:
+                left, right = dates[:separators[0]].strip(), dates[separators[0] + 1:].strip()
+                if all(_DATE.match(item.lstrip("'‘’")) for item in (left, right)):
+                    announcement = re.sub(r"공고(?:일자|일)?$", "공고일", paired["announcement"])
+                    announcement = re.sub(r"대회\s*공고", "대회 공고", announcement)
+                    closing = re.sub(r"\s*마감(?:일자|일)?$", " 마감", paired["closing"])
+                    lines.extend([f"{announcement}: {left}", f"{closing}: {right}"])
+                    continue
+        # Preserve unlabelled dates as separate entries, never invent a period.
+        start = 0
+        for index in _deadline_slashes(chunk):
+            following = chunk[index + 1:].strip().lstrip("'‘’")
+            if _DATE.search(chunk[start:index]) and _DATE.match(following):
+                lines.append(chunk[start:index].strip())
+                start = index + 1
+        lines.append(chunk[start:].strip())
+
+    result, seen = [], set()
+    for line in lines:
+        formatted = _deadline_dates(" ".join(line.split()))
+        key = re.sub(r"\s+", "", formatted)
+        if formatted and (not deduplicate or key not in seen):
+            result.append(formatted)
+            seen.add(key)
+    return result
+
+
+def submission_display_lines(value: str, label: str) -> list[str]:
+    """Remove document outline noise without summarizing or changing any conditions."""
+    if label == "제출 주체·대상":
+        checkbox = checkbox_applicants(value)
+        if checkbox is not None:
+            return [" ".join(outline_display_lines(line)) for line in checkbox]
+    if unreadable_table(value):
+        return [source_check_message(label)]
+    text = "\n".join(
+        participation_display_lines(value) if label == "참여 역할"
+        else outline_display_lines(value)
+    )
+    if label == "제출 주체·대상":
+        text = re.sub(
+            r"^(?:[가-하][.)]\s*)?(?:신청\s*자격|신청\s*대상|지원\s*대상)"
+            r"(?=\s|[:：]|$)\s*[:：]?\s*", "", text,
+        )
+    if "기한" in label:
+        text = re.sub(r"^표제\s*[:：]\s*", "", text)
+    # Korean sentence endings only: do not split dates, decimals, names or URLs.
+    text = re.sub(r"(?<=[다요]\.)\s+(?=[가-힣])", "\n", text)
+    text = text.replace("공.사", "공·사")
+    return [line.strip() for line in text.splitlines() if line.strip()]

@@ -8,12 +8,15 @@ import time
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 
-from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field, ValidationError
 
+from app.core.openai_models import ChatOpenAI
 from app.core.schemas import CamelCaseModel
 from app.domains.analysis.config import AnalysisSettings
-from app.domains.analysis.context.company_profile import BISTELLIGENCE_PROFILE
+from app.domains.analysis.context.evaluation_settings import (
+    EvaluationSettingsSnapshot,
+    profile_for_settings,
+)
 from app.domains.analysis.context.tools import (
     COMPANY_CONTEXT_INSTRUCTIONS,
     NOTICE_APPLICABILITY_INSTRUCTIONS,
@@ -47,6 +50,7 @@ class PairCheck(CamelCaseModel):
 
 
 class LegalPairRequest(CamelCaseModel):
+    evaluation_settings: EvaluationSettingsSnapshot | None = None
     current: PairSide
     similar: PairSide
     checks: list[PairCheck] = Field(min_length=1, max_length=5)
@@ -90,7 +94,7 @@ def _verified_checks(request: LegalPairRequest):
 def pair_prompt(request: LegalPairRequest, company_profile: dict | None = None) -> str:
     if company_profile is None:
         company_profile = json.loads(serialize_company_profile(
-            BISTELLIGENCE_PROFILE,
+            profile_for_settings(request.evaluation_settings),
         ))
     evidence = [
         {key: value for key, value in item.items() if key != "interpretation"}
@@ -190,7 +194,7 @@ class LegalPairReviewer:
                 ),
             )
         company_profile = json.loads(serialize_company_profile(
-            BISTELLIGENCE_PROFILE,
+            profile_for_settings(request.evaluation_settings),
         ))
         prompt = pair_prompt(request, company_profile)
         key = hashlib.sha256(prompt.encode()).hexdigest()

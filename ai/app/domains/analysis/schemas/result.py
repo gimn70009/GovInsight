@@ -1,9 +1,11 @@
 import re
 from enum import StrEnum
+from typing import Annotated
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.schemas import CamelCaseModel
+from app.domains.analysis.schemas.business_type import BusinessTypeAssessment, BusinessTypeReview
 
 
 class DocumentImportance(StrEnum):
@@ -71,6 +73,8 @@ class ComparisonSummary(CamelCaseModel):
     application_deadline: str = Field(min_length=5, max_length=300)
     eligibility: str = Field(min_length=5, max_length=1000)
     required_partner: str = Field(min_length=5, max_length=1000)
+    business_type: BusinessTypeAssessment | None = None
+    business_type_review: BusinessTypeReview | None = None
     legal_risks: list[LegalRiskFinding] = Field(min_length=5, max_length=5)
 
     @model_validator(mode="after")
@@ -204,6 +208,7 @@ class OpportunityDimension(BaseModel):
 
 
 class OpportunityAssessment(BaseModel):
+    settings_revision: int = Field(default=0, ge=0, alias="settingsRevision")
     dimensions: list[OpportunityDimension] = Field(min_length=4, max_length=4)
 
     @model_validator(mode="after")
@@ -230,7 +235,7 @@ class RequirementSource(CamelCaseModel):
     attachment_name: str | None = Field(default=None, max_length=500)
     section_title: str = Field(min_length=2, max_length=200)
     location: str | None = Field(default=None, max_length=200)
-    excerpt: str = Field(min_length=5, max_length=300)
+    excerpt: str = Field(min_length=5, max_length=1200)
 
 
 class PreparationChecklistItem(CamelCaseModel):
@@ -270,7 +275,11 @@ class PreparationChecklistItem(CamelCaseModel):
         return self
 
 
+PREPARATION_SCHEMA_VERSION = 23
+
+
 class StrategyCapabilityMatch(CamelCaseModel):
+    company_evidence_id: str | None = Field(default=None, max_length=80)
     confirmed_fact: str = Field(min_length=10, max_length=500)
     strategic_interpretation: str = Field(min_length=10, max_length=500)
 
@@ -313,7 +322,7 @@ class StrategyOnePage(CamelCaseModel):
     recommended_project: str = Field(min_length=5, max_length=120)
     recommended_participation: str = Field(min_length=10, max_length=500)
     alternative_participation: str = Field(min_length=10, max_length=500)
-    capability_matches: list[StrategyCapabilityMatch] = Field(min_length=1, max_length=4)
+    capability_matches: list[StrategyCapabilityMatch] = Field(default_factory=list, max_length=4)
     critical_gaps: list[StrategyGap] = Field(default_factory=list, max_length=4)
     stop_criteria: list[StrategyStopCriterion] = Field(min_length=1, max_length=4)
 
@@ -329,10 +338,17 @@ class StrategyOnePage(CamelCaseModel):
 
 
 class ProposalPreparation(CamelCaseModel):
-    meeting_agenda: list[str] = Field(default_factory=list)
-    eligibility_checklist: list[PreparationChecklistItem] = Field(min_length=1, max_length=12)
+    meeting_agenda: list[Annotated[str, Field(min_length=1, max_length=500)]] = Field(
+        default_factory=list, max_length=20,
+    )
+    submission_review_notes: list[Annotated[str, Field(min_length=1, max_length=500)]] = Field(
+        default_factory=list, max_length=64,
+    )
+    eligibility_checklist: list[PreparationChecklistItem] = Field(max_length=12)
     # Preserve up to 12 document items reclassified from the eligibility checklist.
-    submission_documents: list[PreparationChecklistItem] = Field(min_length=1, max_length=27)
+    submission_documents: list[PreparationChecklistItem] = Field(
+        default_factory=list, max_length=27,
+    )
     company_inputs: list[PreparationChecklistItem] = Field(default_factory=list, exclude=True)
     application_deadline: str | None = Field(default=None, max_length=10)
     strategy: StrategyOnePage
@@ -354,7 +370,7 @@ class ProposalStrategy(CamelCaseModel):
     template_sections: list[str] = Field(default_factory=list, max_length=30)
     draft_sections: list[ProposalSection] = Field(default_factory=list, max_length=8)
     preparation: ProposalPreparation | None = None
-    preparation_schema_version: int = Field(default=1, ge=1, le=12)
+    preparation_schema_version: int = Field(default=1, ge=1, le=PREPARATION_SCHEMA_VERSION)
 
     @field_validator("draft_reason")
     @classmethod

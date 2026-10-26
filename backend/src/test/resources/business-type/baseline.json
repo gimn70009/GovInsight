@@ -1,0 +1,209 @@
+{
+  "total": 20,
+  "kind": "offline_source_and_format_replay_not_live_model_accuracy",
+  "cases": [
+    {
+      "id": "ax-hwpx",
+      "kind": "public_source_snapshot",
+      "sourceGroup": "ax",
+      "expectedStatus": "CLASSIFIED",
+      "expectedCode": "RND",
+      "actualStatus": "CLASSIFIED",
+      "actualCode": "RND",
+      "passed": true
+    },
+    {
+      "id": "ax-pdf",
+      "kind": "public_source_snapshot",
+      "sourceGroup": "ax",
+      "expectedStatus": "CLASSIFIED",
+      "expectedCode": "RND",
+      "actualStatus": "CLASSIFIED",
+      "actualCode": "RND",
+      "passed": true
+    },
+    {
+      "id": "bio",
+      "kind": "public_source_snapshot",
+      "sourceGroup": "bio",
+      "expectedStatus": "CLASSIFIED",
+      "expectedCode": "COMMERCIALIZATION",
+      "actualStatus": "CLASSIFIED",
+      "actualCode": "COMMERCIALIZATION",
+      "passed": true
+    },
+    {
+      "id": "certification-hwpx",
+      "kind": "public_source_snapshot",
+      "sourceGroup": "certification",
+      "expectedStatus": "CLASSIFIED",
+      "expectedCode": "CERTIFICATION",
+      "actualStatus": "CLASSIFIED",
+      "actualCode": "CERTIFICATION",
+      "passed": true
+    },
+    {
+      "id": "certification-pdf",
+      "kind": "public_source_snapshot",
+      "sourceGroup": "certification",
+      "expectedStatus": "CLASSIFIED",
+      "expectedCode": "CERTIFICATION",
+      "actualStatus": "CLASSIFIED",
+      "actualCode": "CERTIFICATION",
+      "passed": true
+    },
+    {
+      "id": "clean-structured",
+      "kind": "public_source_snapshot",
+      "sourceGroup": "clean",
+      "expectedStatus": "CLASSIFIED",
+      "expectedCode": "ADOPTION",
+      "actualStatus": "CLASSIFIED",
+      "actualCode": "ADOPTION",
+      "passed": true
+    },
+    {
+      "id": "clean-legacy",
+      "kind": "public_source_snapshot",
+      "sourceGroup": "clean",
+      "expectedStatus": "CLASSIFIED",
+      "expectedCode": "ADOPTION",
+      "actualStatus": "CLASSIFIED",
+      "actualCode": "ADOPTION",
+      "passed": true
+    },
+    {
+      "id": "loan-hwpx",
+      "kind": "public_source_snapshot",
+      "sourceGroup": "loan",
+      "expectedStatus": "CLASSIFIED",
+      "expectedCode": "FINANCE",
+      "actualStatus": "CLASSIFIED",
+      "actualCode": "FINANCE",
+      "passed": true
+    },
+    {
+      "id": "loan-pdf",
+      "kind": "public_source_snapshot",
+      "sourceGroup": "loan",
+      "expectedStatus": "CLASSIFIED",
+      "expectedCode": "FINANCE",
+      "actualStatus": "CLASSIFIED",
+      "actualCode": "FINANCE",
+      "passed": true
+    },
+    {
+      "id": "startup-structured",
+      "kind": "public_source_snapshot",
+      "sourceGroup": "startup",
+      "expectedStatus": "CLASSIFIED",
+      "expectedCode": "DEMONSTRATION",
+      "actualStatus": "CLASSIFIED",
+      "actualCode": "DEMONSTRATION",
+      "passed": true
+    },
+    {
+      "id": "startup-legacy",
+      "kind": "public_source_snapshot",
+      "sourceGroup": "startup",
+      "expectedStatus": "CLASSIFIED",
+      "expectedCode": "DEMONSTRATION",
+      "actualStatus": "CLASSIFIED",
+      "actualCode": "DEMONSTRATION",
+      "passed": true
+    },
+    {
+      "id": "cbam",
+      "kind": "public_source_snapshot",
+      "sourceGroup": "cbam",
+      "expectedStatus": "CLASSIFIED",
+      "expectedCode": "ADOPTION",
+      "actualStatus": "CLASSIFIED",
+      "actualCode": "ADOPTION",
+      "passed": true
+    },
+    {
+      "id": "documents-only",
+      "kind": "public_source_fragment",
+      "sourceGroup": "cbam",
+      "expectedStatus": "REVIEW_REQUIRED",
+      "expectedCode": null,
+      "actualStatus": "REVIEW_REQUIRED",
+      "actualCode": null,
+      "passed": true
+    },
+    {
+      "id": "award-fragment",
+      "kind": "public_source_fragment",
+      "sourceGroup": "award",
+      "expectedStatus": "REVIEW_REQUIRED",
+      "expectedCode": null,
+      "actualStatus": "REVIEW_REQUIRED",
+      "actualCode": null,
+      "passed": true
+    },
+    {
+      "id": "notice-appendix-heading",
+      "kind": "format_variant",
+      "sourceGroup": "certification",
+      "expectedStatus": "CLASSIFIED",
+      "expectedCode": "CERTIFICATION",
+      "actualStatus": "REVIEW_REQUIRED",
+      "actualCode": null,
+      "passed": false
+    },
+    {
+      "id": "form-example",
+      "kind": "synthetic_boundary",
+      "sourceGroup": "form-example",
+      "expectedStatus": "REVIEW_REQUIRED",
+      "expectedCode": null,
+      "actualStatus": "REVIEW_REQUIRED",
+      "actualCode": null,
+      "passed": true
+    },
+    {
+      "id": "duplicate-name",
+      "kind": "synthetic_boundary",
+      "sourceGroup": "duplicate-name",
+      "expectedStatus": "REVIEW_REQUIRED",
+      "expectedCode": null,
+      "actualStatus": "REVIEW_REQUIRED",
+      "actualCode": null,
+      "passed": true
+    },
+    {
+      "id": "fabricated-quote",
+      "kind": "synthetic_boundary",
+      "sourceGroup": "fabricated-quote",
+      "expectedStatus": "REVIEW_REQUIRED",
+      "expectedCode": null,
+      "actualStatus": "REVIEW_REQUIRED",
+      "actualCode": null,
+      "passed": true
+    },
+    {
+      "id": "designation",
+      "kind": "synthetic_boundary",
+      "sourceGroup": "designation",
+      "expectedStatus": "NOT_APPLICABLE",
+      "expectedCode": null,
+      "actualStatus": "NOT_APPLICABLE",
+      "actualCode": null,
+      "passed": true
+    },
+    {
+      "id": "recruitment-over-general",
+      "kind": "synthetic_boundary",
+      "sourceGroup": "recruitment-over-general",
+      "expectedStatus": "CLASSIFIED",
+      "expectedCode": "ADOPTION",
+      "actualStatus": "CLASSIFIED",
+      "actualCode": "ADOPTION",
+      "passed": true
+    }
+  ],
+  "passed": 19,
+  "baselineCommit": "b2b0b89",
+  "labelReview": "Agent-reviewed against repository policy and saved public text; not an independent human-labelled benchmark."
+}

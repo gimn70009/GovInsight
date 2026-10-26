@@ -31,7 +31,7 @@ public class InternalAnalysisResultController {
             @ApiResponse(responseCode = "200", description = "분석 결과 저장 성공"),
             @ApiResponse(responseCode = "400", description = "요청값 검증 실패"),
             @ApiResponse(responseCode = "404", description = "실행 또는 문서 감지 결과를 찾을 수 없음"),
-            @ApiResponse(responseCode = "409", description = "실행 상태 또는 문서 관계 불일치")
+            @ApiResponse(responseCode = "409", description = "실행 상태·문서 관계 불일치 또는 만료/이전 시도의 jobId")
     })
     @PostMapping
     public SuccessResponse<AnalysisResultResponse> receive(

@@ -13,6 +13,7 @@ public final class PreparationCompatibility {
     public static String normalize(String json, ObjectMapper mapper) {
         JsonNode root = mapper.readTree(json);
         if (!(root.path("preparation") instanceof ObjectNode preparation)) return json;
+        separateSubmissionReviews(preparation, mapper);
         JsonNode inputs = preparation.remove("companyInputs");
         if (inputs == null || !inputs.isArray()) return mapper.writeValueAsString(root);
         ArrayNode agenda = array(preparation, "meetingAgenda", mapper);
@@ -48,6 +49,37 @@ public final class PreparationCompatibility {
             }
         }
         return mapper.writeValueAsString(root);
+    }
+
+    private static void separateSubmissionReviews(ObjectNode preparation, ObjectMapper mapper) {
+        if (!(preparation.path("meetingAgenda") instanceof ArrayNode agenda)) return;
+        ArrayNode decisions = mapper.createArrayNode();
+        ArrayNode reviews = mapper.createArrayNode();
+        if (preparation.path("submissionReviewNotes") instanceof ArrayNode existing) {
+            for (JsonNode note : existing) appendReview(reviews, note.asText());
+        }
+        for (JsonNode item : agenda) {
+            if (item.asText().strip().matches("(?s)^제출\\s*여부\\s*확인\\s*:.*")) {
+                appendReview(reviews, item.asText());
+            } else {
+                decisions.add(item);
+            }
+        }
+        if (!reviews.isEmpty()) {
+            preparation.set("meetingAgenda", decisions);
+            preparation.set("submissionReviewNotes", reviews);
+        }
+    }
+
+    private static void appendReview(ArrayNode reviews, String text) {
+        for (String part : text.split("(?=제출\\s*여부\\s*확인\\s*:)")) {
+            if (part.isBlank()) continue;
+            boolean exists = false;
+            for (JsonNode existing : reviews) {
+                if (existing.asText().equals(part.strip())) exists = true;
+            }
+            if (!exists) reviews.add(part.strip());
+        }
     }
 
     private static ArrayNode array(ObjectNode preparation, String name, ObjectMapper mapper) {

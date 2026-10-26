@@ -50,6 +50,8 @@ class EmailPersistenceIntegrationTest {
     @Autowired EmailDeliveryWorker worker;
     @Autowired PlatformTransactionManager transactions;
     @MockitoBean EmailClient client;
+    @MockitoBean EmailReportContentService contentService;
+    private static final EmailMessageContent CONTENT = new EmailMessageContent("사업명: 요약 표", "<table><tr><td>요약 표</td></tr></table>");
     @TestConfiguration static class Config {
         @Bean Clock clock() { return Clock.systemUTC(); }
         @Bean EmailProperties emailProperties() { return new EmailProperties(EmailProperties.Provider.GMAIL, "sender@gmail.com", "test-only", "GovInsight"); }
@@ -57,7 +59,8 @@ class EmailPersistenceIntegrationTest {
     }
     @BeforeEach void clean() {
         new TransactionTemplate(transactions).executeWithoutResult(tx -> { deliveries.deleteAllInBatch(); telegram.deleteAllInBatch(); reports.deleteAllInBatch(); settings.deleteAll(); em.flush(); });
-        reset(client);
+        reset(client, contentService);
+        when(contentService.build(any())).thenReturn(CONTENT);
     }
     EmailRecipientRequest person(String address, boolean enabled) { return new EmailRecipientRequest(address, "담당자", enabled); }
     void recipients(EmailRecipientRequest... people) {
@@ -81,21 +84,21 @@ class EmailPersistenceIntegrationTest {
     @Test void partialFailureRetriesOnlyFailedAddressAndPreservesRecipientSnapshot() {
         recipients(person("a@gmail.com", true), person("b@naver.com", true), person("off@naver.com", false));
         Long id = report(); var runId = query.detail(id).report().runId();
-        doThrow(new EmailClientException("테스트 실패")).when(client).send(eq("b@naver.com"), anyString(), anyString());
+        doThrow(new EmailClientException("테스트 실패")).when(client).sendReport(eq("b@naver.com"), anyString(), any(EmailMessageContent.class));
         service.deliver(runId);
         var detail = query.detail(id);
         assertThat(detail.report().email().status()).isEqualTo("PARTIAL");
         assertThat(detail.report().email().sentCount()).isEqualTo(1);
         assertThat(detail.emailDeliveries()).hasSize(2);
-        verify(client, never()).send(eq("off@naver.com"), anyString(), anyString());
+        verify(client, never()).sendReport(eq("off@naver.com"), anyString(), any(EmailMessageContent.class));
         var failed = detail.emailDeliveries().stream().filter(d -> d.status() == EmailDeliveryState.FAILED).findFirst().orElseThrow();
-        doNothing().when(client).send(eq("b@naver.com"), anyString(), anyString());
+        doNothing().when(client).sendReport(eq("b@naver.com"), anyString(), any(EmailMessageContent.class));
         recipients(new EmailRecipientRequest("b@naver.com", "변경 이름", true), person("a@gmail.com", true));
         assertThat(service.retry(failed.deliveryId(), new EmailRetryRequest("b@naver.com", 1)).status()).isEqualTo(EmailDeliveryState.SENT);
         assertThatThrownBy(() -> service.retry(failed.deliveryId(), new EmailRetryRequest("b@naver.com", 1))).hasMessageContaining("이미 처리");
         service.deliver(runId);
-        verify(client, times(1)).send("a@gmail.com", "테스트 보고서", "저장된 본문");
-        verify(client, times(2)).send("b@naver.com", "테스트 보고서", "저장된 본문");
+        verify(client, times(1)).sendReport("a@gmail.com", "테스트 보고서", CONTENT);
+        verify(client, times(2)).sendReport("b@naver.com", "테스트 보고서", CONTENT);
         assertThat(query.detail(id).emailDeliveries()).extracting(EmailRecipientDeliveryResponse::name).containsOnly("담당자");
     }
     @Test void concurrentCompletionEventsDoNotDuplicateEmails() throws Exception {
@@ -104,7 +107,7 @@ class EmailPersistenceIntegrationTest {
             var first = pool.submit(() -> service.deliver(run)); var second = pool.submit(() -> service.deliver(run));
             first.get(10, TimeUnit.SECONDS); second.get(10, TimeUnit.SECONDS);
         }
-        verify(client, times(1)).send(eq("a@gmail.com"), anyString(), anyString());
+        verify(client, times(1)).sendReport(eq("a@gmail.com"), anyString(), any(EmailMessageContent.class));
     }
     @Test void disabledSettingsAndRemovedRecipientsPreventQueuedDelivery() {
         recipients(person("a@gmail.com", true)); Long id = report(); var ids = preparation.prepare(query.detail(id).report().runId());
@@ -118,7 +121,7 @@ class EmailPersistenceIntegrationTest {
     @Test void unifiedHistoryFiltersChannelsStatusesDatesAndLegacyTelegram() {
         recipients(person("a@gmail.com", true)); Long id = report();
         new TransactionTemplate(transactions).executeWithoutResult(tx -> { var r = reports.findById(id).orElseThrow(); r.completeTelegramDelivery(777L, LocalDateTime.now()); });
-        doThrow(new EmailClientException("실패")).when(client).send(anyString(), anyString(), anyString());
+        doThrow(new EmailClientException("실패")).when(client).sendReport(anyString(), anyString(), any(EmailMessageContent.class));
         service.deliver(query.detail(id).report().runId());
         assertThat(query.list(0, 10, null, null, "TELEGRAM", "SENT").totalElements()).isEqualTo(1);
         assertThat(query.list(0, 10, null, null, "EMAIL", "SENT").totalElements()).isZero();
@@ -138,20 +141,20 @@ class EmailPersistenceIntegrationTest {
         Long reportId = report();
         Long runId = new TransactionTemplate(transactions).execute(tx -> reports.findById(reportId).orElseThrow().getMonitoringRun().getId());
         Long deliveryId = preparation.prepare(runId).getFirst();
-        doThrow(new IllegalStateException("DB outcome unavailable")).when(client).send(anyString(), anyString(), anyString());
+        doThrow(new IllegalStateException("DB outcome unavailable")).when(client).sendReport(anyString(), anyString(), any(EmailMessageContent.class));
         assertThatThrownBy(() -> worker.sendPending(deliveryId)).isInstanceOf(IllegalStateException.class);
         var persisted = deliveries.findById(deliveryId).orElseThrow();
         assertThat(persisted.getAttemptCount()).isEqualTo(1);
         assertThat(persisted.getStatus()).isEqualTo(com.publicmonitor.backend.domain.email.entity.EmailDeliveryState.PENDING);
         worker.sendPending(deliveryId);
-        verify(client, times(1)).send(anyString(), anyString(), anyString());
+        verify(client, times(1)).sendReport(anyString(), anyString(), any(EmailMessageContent.class));
         new TransactionTemplate(transactions).executeWithoutResult(tx -> {
             var d = deliveries.findById(deliveryId).orElseThrow();
             org.springframework.test.util.ReflectionTestUtils.setField(d, "attemptedAt", java.time.LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul")).minusMinutes(3));
         });
         worker.sendPending(deliveryId);
         assertThat(deliveries.findById(deliveryId).orElseThrow().getStatus()).isEqualTo(com.publicmonitor.backend.domain.email.entity.EmailDeliveryState.FAILED);
-        verify(client, times(1)).send(anyString(), anyString(), anyString());
+        verify(client, times(1)).sendReport(anyString(), anyString(), any(EmailMessageContent.class));
     }
 
 }

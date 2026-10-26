@@ -41,6 +41,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
+import com.publicmonitor.backend.domain.monitoring.entity.MonitoringSchedule;
+import com.publicmonitor.backend.domain.monitoring.entity.MonitoringScheduleFrequency;
+import com.publicmonitor.backend.domain.monitoring.exception.MonitoringSchedulePendingException;
+import com.publicmonitor.backend.domain.monitoring.repository.MonitoringScheduleRepository;
+import java.time.Duration;
+import java.time.LocalTime;
+import java.util.Set;
 
 @ExtendWith(MockitoExtension.class)
 class MonitoringRunServiceTest {
@@ -57,6 +64,9 @@ class MonitoringRunServiceTest {
     @Mock
     private PythonMonitoringClient pythonMonitoringClient;
 
+    @Mock
+    private MonitoringScheduleRepository schedules;
+
     private MonitoringRunService monitoringRunService;
 
     @BeforeEach
@@ -67,14 +77,14 @@ class MonitoringRunServiceTest {
                 monitoringRunRepository,
                 monitoringRunSourceRepository,
                 pythonMonitoringClient,
-                clock
+                clock, schedules, true
         );
     }
 
     @Test
     void 활성_소스를_대상으로_수동_실행을_생성한다() {
         List<MonitoringSource> sources = List.of(createSource("서울시"), createSource("환경부"));
-        given(monitoringSourceRepository.findAllByEnabledTrueOrderByIdAsc()).willReturn(sources);
+        given(monitoringSourceRepository.findAllForRunCreation()).willReturn(sources);
         given(monitoringRunRepository.save(any(MonitoringRun.class))).willAnswer(invocation -> {
             MonitoringRun run = invocation.getArgument(0);
             ReflectionTestUtils.setField(run, "id", 1L);
@@ -109,7 +119,7 @@ class MonitoringRunServiceTest {
 
     @Test
     void 활성_소스가_없으면_실행을_생성할_수_없다() {
-        given(monitoringSourceRepository.findAllByEnabledTrueOrderByIdAsc()).willReturn(List.of());
+        given(monitoringSourceRepository.findAllForRunCreation()).willReturn(List.of());
 
         assertThatThrownBy(() -> monitoringRunService.create(MonitoringTriggerType.MANUAL))
                 .isInstanceOf(NoActiveMonitoringSourceException.class);
@@ -120,7 +130,7 @@ class MonitoringRunServiceTest {
     @Test
     void Python_작업_접수에_실패하면_실행을_실패_상태로_남긴다() {
         List<MonitoringSource> sources = List.of(createSource("서울시"));
-        given(monitoringSourceRepository.findAllByEnabledTrueOrderByIdAsc()).willReturn(sources);
+        given(monitoringSourceRepository.findAllForRunCreation()).willReturn(sources);
         given(monitoringRunRepository.save(any(MonitoringRun.class))).willAnswer(invocation -> {
             MonitoringRun run = invocation.getArgument(0);
             ReflectionTestUtils.setField(run, "id", 1L);
@@ -159,6 +169,35 @@ class MonitoringRunServiceTest {
         assertThat(response.content().getFirst().status()).isEqualTo(MonitoringRunStatus.COMPLETED);
         assertThat(response.content().getFirst().reportTitle()).isEqualTo("최근 보고서");
         assertThat(response.totalElements()).isEqualTo(2);
+    }
+
+    @Test
+    void 대기_예약이_있으면_수동_실행이_앞지르지_않는다() {
+        var schedule = MonitoringSchedule.defaultSchedule();
+        schedule.update(true, MonitoringScheduleFrequency.DAILY, LocalTime.of(10, 0), Set.of());
+        schedule.queueDue(LocalDateTime.of(2026, 8, 12, 10, 0), Duration.ofMinutes(5));
+        given(monitoringSourceRepository.findAllForRunCreation()).willReturn(List.of(createSource("기관")));
+        given(schedules.findAllForUpdate()).willReturn(List.of(schedule));
+
+        assertThatThrownBy(() -> monitoringRunService.create(MonitoringTriggerType.MANUAL))
+                .isInstanceOf(MonitoringSchedulePendingException.class);
+
+        var order = org.mockito.Mockito.inOrder(monitoringSourceRepository, schedules);
+        order.verify(monitoringSourceRepository).findAllForRunCreation();
+        order.verify(schedules).findAllForUpdate();
+        verifyNoInteractions(monitoringRunRepository, monitoringRunSourceRepository, pythonMonitoringClient);
+    }
+
+    @Test
+    void 예약_기능이_서버에서_꺼져_있으면_수동_대기_검사를_하지_않는다() {
+        monitoringRunService = new MonitoringRunService(monitoringSourceRepository, monitoringRunRepository,
+                monitoringRunSourceRepository, pythonMonitoringClient, Clock.systemUTC(), schedules, false);
+        given(monitoringSourceRepository.findAllForRunCreation()).willReturn(List.of());
+
+        assertThatThrownBy(() -> monitoringRunService.create(MonitoringTriggerType.MANUAL))
+                .isInstanceOf(NoActiveMonitoringSourceException.class);
+
+        verifyNoInteractions(schedules);
     }
 
     private MonitoringSource createSource(String organizationName) {

@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus;
 @RequiredArgsConstructor
 public enum AnalysisResultResponseCode implements BaseResponseCode {
 
+    STALE_ATTEMPT("ANALYSIS_RESULT_409_3", HttpStatus.CONFLICT.value(), "만료되거나 현재 단계와 일치하지 않는 분석 시도입니다."),
     RUN_NOT_FOUND("ANALYSIS_RESULT_404_1", HttpStatus.NOT_FOUND.value(), "모니터링 실행을 찾을 수 없습니다."),
     DETECTION_NOT_FOUND("ANALYSIS_RESULT_404_2", HttpStatus.NOT_FOUND.value(), "문서 감지 결과를 찾을 수 없습니다."),
     ANALYSIS_NOT_FOUND("ANALYSIS_RESULT_404_3", HttpStatus.NOT_FOUND.value(), "저장된 공고 분석 결과를 찾을 수 없습니다."),

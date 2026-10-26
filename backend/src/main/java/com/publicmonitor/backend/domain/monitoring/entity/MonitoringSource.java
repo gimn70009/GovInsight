@@ -126,6 +126,10 @@ public class MonitoringSource extends BaseEntity {
         this.enabled = enabled;
     }
 
+    public void changeCollectionCount(int detailFetchCount) {
+        this.detailFetchCount = detailFetchCount;
+    }
+
     public void changeEnabled(boolean enabled) {
         this.enabled = enabled;
     }

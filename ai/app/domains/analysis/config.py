@@ -39,7 +39,7 @@ class AnalysisSettings:
             max_attempts=_positive_int("ANALYSIS_MAX_ATTEMPTS", 2),
             max_text_chars=_positive_int("ANALYSIS_MAX_TEXT_CHARS", 40_000),
             result_delivery_max_attempts=_positive_int("ANALYSIS_RESULT_MAX_ATTEMPTS", 3),
-            concurrency=_positive_int("ANALYSIS_CONCURRENCY", 2),
+            concurrency=_positive_int("ANALYSIS_CONCURRENCY", 3),
             embedding_model_name=os.getenv(
                 "OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"
             ).strip(),

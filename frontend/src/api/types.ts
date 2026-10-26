@@ -36,17 +36,13 @@ export interface MonitoringSource {
   updatedAt: string
 }
 
-export interface MonitoringSourcePayload {
-  organizationName: string
-  boardName: string
-  description: string | null
-  listUrl: string
-  urlIncludePattern: string | null
+export interface MonitoringSourceSettings {
+  sourceId: number
   detailFetchCount: number
   enabled: boolean
 }
 
-export type RunStatus = 'REQUESTED' | 'ACCEPTED' | 'COLLECTED' | 'COMPLETED' | 'FAILED'
+export type RunStatus = 'REQUESTED' | 'ACCEPTED' | 'RUNNING' | 'COLLECTED' | 'COMPLETED' | 'FAILED'
 
 export interface MonitoringRun {
   runId: number
@@ -89,15 +85,19 @@ export interface MonitoringSchedule {
   frequency: MonitoringScheduleFrequency
   executionTime: string
   customDays: Weekday[]
+  pendingScheduledAt: string | null
 }
 
-export type MonitoringSchedulePayload = MonitoringSchedule
+export type MonitoringSchedulePayload = Omit<MonitoringSchedule, 'pendingScheduledAt'>
 
 export type Importance = 'HIGH' | 'NORMAL' | 'LOW'
 export type OpportunityPriority = 'HIGH' | 'NORMAL' | 'LOW'
 export type ChangeType = 'NEW_DOCUMENT' | 'UPDATED_DOCUMENT' | 'UNCHANGED_DOCUMENT'
 
+export type DocumentAnalysisStatus = 'PENDING' | 'COMPLETED' | 'FAILED'
+
 export interface DocumentDetection {
+  analysisStatus: DocumentAnalysisStatus
   runId: number
   detectionId: number
   documentId: number
@@ -120,6 +120,8 @@ export type OpportunityDimensionType =
   | 'URGENCY'
 
 export interface OpportunityAssessment {
+  settingsRevision?: number
+  weights?: number[]
   totalScore: number
   priority: OpportunityPriority
   dimensions: Array<{
@@ -129,7 +131,14 @@ export interface OpportunityAssessment {
   }>
 }
 
+export interface StrategyCapabilityMatch {
+  companyEvidenceId?: string | null
+  confirmedFact: string
+  strategicInterpretation: string
+}
+
 export interface DocumentAnalysis {
+  businessSummary?: { purpose: string | null; supportScale: string | null } | null
   applicationDeadline?: string | null
   summary: string
   keyPoints: string[]
@@ -149,6 +158,7 @@ export interface DocumentAnalysis {
     preparationSchemaVersion?: number
     preparation: {
       meetingAgenda: string[]
+      submissionReviewNotes?: string[] | null
       eligibilityChecklist: ProposalPreparationItem[]
       submissionDocuments: ProposalPreparationItem[]
       applicationDeadline?: string | null
@@ -158,7 +168,7 @@ export interface DocumentAnalysis {
         recommendedProject?: string | null
         recommendedParticipation?: string | null
         alternativeParticipation?: string | null
-        capabilityMatches?: Array<{ confirmedFact: string; strategicInterpretation: string }> | null
+        capabilityMatches?: StrategyCapabilityMatch[] | null
         criticalGaps?: Array<{
           gap: string
           nextAction: string
@@ -228,8 +238,98 @@ export interface DocumentAttachment {
   downloadUrl: string
 }
 
+export interface ResponsibleOrganization {
+  name: string
+  role: string
+  sourceType: 'NOTICE_BODY' | 'ATTACHMENT'
+  attachmentName: string | null
+  excerpt: string
+}
+
+export type SubmissionDocument = Pick<ProposalPreparationItem, 'title' | 'detail' | 'requirementLevel' | 'stage' | 'appliesTo' | 'source'> & {
+  documentNames?: string[]
+  conditions?: string[]
+  formats?: string[]
+}
+
+export interface SubmissionGuide {
+  documents: SubmissionDocument[]
+  notes: { text: string; appliesTo?: string | null; source: ProposalPreparationItem['source'] }[]
+}
+
+export type ParticipationReviewReason = 'TABLE_MAPPING_UNCLEAR' | 'CLASSIFICATION_UNCLEAR' | 'SOURCE_CONTEXT_UNCONFIRMED'
+  | 'MIXED_REQUIREMENT' | 'PREFERENCE_NEGATED' | 'INCOMPLETE_TEXT' | 'CONFLICTING_CRITERIA'
+
+export interface ParticipationCondition {
+  reviewReason?: ParticipationReviewReason | null
+  kind: 'MANDATORY' | 'FUNDING' | 'PREFERENCE' | 'DEDUCTION' | 'EXCLUSION' | 'REVIEW_REQUIRED'
+  category: string
+  text: string
+  scope: string | null
+  details: string[]
+  source: NonNullable<ProposalPreparationItem['source']>
+}
+
+export interface ParticipationRule {
+  reviewReason?: ParticipationReviewReason | null
+  section: 'BASIC' | 'ELIGIBILITY' | 'EVIDENCE' | 'FUNDING' | 'TARGETED' | 'EXCLUSION' | 'PREFERENCE' | 'DEDUCTION' | 'REVIEW'
+  label: string
+  text: string
+  scope: string | null
+  audience: string | null
+  details: string[]
+  exceptions: string[]
+  guidance: string[]
+  outcomes: { variant: string; status: 'ELIGIBLE' | 'INELIGIBLE' }[]
+  sources: NonNullable<ProposalPreparationItem['source']>[]
+}
+
+export interface ParticipationCriterionEntry {
+  supportingQuotes?: string[]
+  displayStatus?: 'VERIFIED' | 'EVIDENCE_ONLY'
+  rule: ParticipationRule
+  context: string | null
+  relation: 'LINKED' | 'ALTERNATIVE' | null
+  relatedCriteria: string[]
+}
+export interface ParticipationCriterionRow {
+  code: string
+  label: string
+  status: 'STATED' | 'NOT_STATED' | 'REVIEW_REQUIRED'
+  entries: ParticipationCriterionEntry[]
+}
+export interface ParticipationCategory {
+  code: string
+  label: string
+  rows: ParticipationCriterionRow[]
+}
+export interface ParticipationGuide {
+  rewriteStatus?: 'PENDING' | 'READY' | 'UNAVAILABLE'
+  categories?: ParticipationCategory[]
+  conditions: ParticipationCondition[]
+  rules?: ParticipationRule[]
+  variants?: { name: string; description: string }[]
+}
+
+export type BusinessTypeCode = 'RND' | 'DEMONSTRATION' | 'COMMERCIALIZATION' | 'ADOPTION'
+  | 'CERTIFICATION' | 'MARKET' | 'FINANCE' | 'WORKFORCE' | 'ADVISORY' | 'SPACE'
+
+export interface BusinessTypeSummary {
+  noticeNature?: { code: 'RESULT' | 'REGULATION' | 'AWARD' | 'DESIGNATION_RECRUITMENT' | 'GENERAL' | 'CONTEST'; label: string } | null
+  status: 'CLASSIFIED' | 'REVIEW_REQUIRED' | 'NOT_APPLICABLE'
+  code: BusinessTypeCode | null
+  label: string | null
+  description: string | null
+  explanation: string
+  details: string[]
+  sources: NonNullable<ProposalPreparationItem['source']>[]
+}
+
 export interface DocumentDetail {
+  analysisStatus: DocumentAnalysisStatus
+  analysisFailureReason: string | null
   detectionId: number
+  analysisPending: boolean
   organizationName: string
   boardName: string
   title: string
@@ -239,6 +339,10 @@ export interface DocumentDetail {
   lastCheckedAt: string
   analysis: DocumentAnalysis | null
   attachments: DocumentAttachment[]
+  businessType?: BusinessTypeSummary | null
+  responsibleOrganizations?: ResponsibleOrganization[]
+  participationGuide?: ParticipationGuide
+  submissionGuide?: SubmissionGuide
 }
 
 export interface SimilarNoticeComparisonSide {
@@ -389,4 +493,10 @@ export interface ReportDelivery {
 export interface ReportDeliveryDetail {
   report: ReportDelivery; body: string | null
   telegramDeliveries: TelegramRecipientDelivery[]; emailDeliveries: EmailRecipientDelivery[]
+}
+
+export interface MonitoringRunActivity {
+  running: boolean
+  runId: number | null
+  status: RunStatus | null
 }

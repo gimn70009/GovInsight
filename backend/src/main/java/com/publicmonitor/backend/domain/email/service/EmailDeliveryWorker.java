@@ -20,6 +20,7 @@ public class EmailDeliveryWorker {
     private final EmailProperties properties;
     private final Clock clock;
     private final ReportDeliveryAttemptService attempts;
+    private final EmailReportContentService contentService;
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void sendPending(Long id) {
         if (!attempts.claimEmail(id)) return;
@@ -60,7 +61,11 @@ public class EmailDeliveryWorker {
             d.fail("발송이 꺼졌거나 수신 대상이 변경되어 전송하지 않았습니다."); return;
         }
         var report = d.getReport();
-        try { client.send(d.getAddress(), report.getTitle(), report.getSummary()); d.complete(now()); }
+        try {
+            var content = contentService.build(report);
+            client.sendReport(d.getAddress(), report.getTitle(), content);
+            d.complete(now());
+        }
         catch (EmailClientException e) { d.fail(e.getMessage()); }
     }
     private LocalDateTime now() { return LocalDateTime.now(clock.withZone(ZoneId.of("Asia/Seoul"))); }

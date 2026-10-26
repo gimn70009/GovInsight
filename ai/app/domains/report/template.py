@@ -4,14 +4,26 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlsplit
 
 from app.domains.analysis.schemas.result import DocumentImportance
-from app.domains.report.brief import SubmissionBrief
-from app.domains.report.facts import submission_facts
-from app.domains.report.presentation import foreign_prose, informational_notice
+from app.domains.report.brief import SubmissionBrief, source_brief_facts
+from app.domains.report.opportunity import source_opportunity_facts
+from app.domains.report.presentation import (
+    foreign_prose,
+    informational_notice,
+    source_check_message,
+    submission_display_lines,
+    unreadable_table,
+)
+from app.domains.report.quality import schedule_consistency_issues
+from app.domains.report.schedules import schedule_fields
 from app.domains.report.schemas.request import ReportDocumentRequest, ReportJobRequest
 from app.domains.report.schemas.result import ReportDraft
-from app.domains.report.submission_documents import submission_documents
+from app.domains.report.submission_documents import (
+    SubmissionDocument,
+    display_submission_documents,
+    fallback_submission_documents,
+)
+from app.domains.report.summary import purpose_summary
 
-_MAX_DISPLAY_UNITS = 3_900  # Reserve room for the title; Java/Telegram use UTF-16 offsets.
 _MAX_STORAGE_UNITS = 20_000
 _LINK = re.compile(r"\[([^\[\]\r\n]+)\]\((https?://[^\s()<>\"]+)\)")
 _IMPORTANCE_ORDER = {
@@ -56,7 +68,7 @@ def _utf16_units(value: str) -> int:
 
 
 def _fits(value: str) -> bool:
-    return display_units(value) <= _MAX_DISPLAY_UNITS and _utf16_units(value) <= _MAX_STORAGE_UNITS
+    return _utf16_units(value) <= _MAX_STORAGE_UNITS
 
 
 def _report_summary(
@@ -96,7 +108,8 @@ def _report_summary(
 def _document_block(
     document: ReportDocumentRequest, compact: bool = False, brief: SubmissionBrief | None = None
 ) -> str:
-    facts = brief.facts if brief else submission_facts(document)
+    facts = brief.facts if brief else source_brief_facts(document)
+    opportunity = brief.opportunity if brief else source_opportunity_facts(document)
     kind = (
         _DOCUMENT_TYPE_LABEL.get(document.proposal.document_type, "유형 확인 필요")
         if document.proposal
@@ -110,43 +123,73 @@ def _document_block(
         f"▸ {_shorten(document.title, 120 if compact else 180)}",
         f"기관: {_text(document.organization_name)}",
         f"문서 유형: {kind} │ {change} │ 기회점수: {score}",
+        f"공고 성격: {opportunity.notice_kind}",
+        *([
+            f"사업 유형: {opportunity.business_type or '확인 필요'}",
+            f"사업 방식: {opportunity.business_method or '확인 필요'}",
+        ] if opportunity.notice_kind == "사업 기회" else []),
         "",
-        f"요약: {_brief_summary(document, 110 if compact else 180)}",
+        f"요약: {_summary(document, facts, opportunity)}",
         "",
     ]
+    schedule_issues = schedule_consistency_issues(document, facts.deadline)
+    if "deadline:summary_conflict" in schedule_issues:
+        lines.extend([
+            "안내: 요약과 제출 안내의 일정이 다릅니다. "
+            "원문에서 확인한 아래 제출 기한을 우선 확인해 주세요.",
+            "",
+        ])
+    elif "deadline:summary_without_verified_schedule" in schedule_issues:
+        lines.extend([
+            "안내: 요약에 적힌 제출 기한은 원문 근거를 확인하지 못했습니다. "
+            "신청 전에 원문을 확인해 주세요.",
+            "",
+        ])
     missing = []
-    informational = informational_notice(document.title, document.content_text or "")
+    informational = (opportunity.notice_kind == "일반 공지" and not re.search(
+        r"이의신청|의견.{0,8}제출|신청|접수|제출", document.content_text or "",
+    )) or informational_notice(
+        document.title, document.content_text or "",
+    )
+    schedules = schedule_fields(facts.deadline)
     for label, value in [
+        ("금액·규모", opportunity.amount or ""),
+        ("참여 역할", opportunity.participation_role or ""),
         ("제출 주체·대상", facts.applicant),
-        ("제출·의견 기한", facts.deadline),
+        ("공고일", "\n".join(schedules["공고일"])),
+        ("제출·의견 기한", "\n".join(schedules["제출·의견 기한"])),
+        ("관련 일정", "\n".join(schedules["관련 일정"])),
         ("제출처·방법", facts.destination),
         ("문의 담당", facts.contact),
     ]:
-        items = [_field(item, compact) for item in value.splitlines() if item.strip()]
+        display_lines = (
+            value.splitlines() if label == "금액·규모" else submission_display_lines(value, label)
+        )
+        items = [
+            _text(item) if label in {"금액·규모", "참여 역할"} else _field(item, compact)
+            for item in display_lines if item.strip()
+        ]
         items = [item for item in items if not foreign_prose(item)]
         valid = [item for item in items if item not in {"원문 확인 필요", "상세 조건은 원문 확인"}]
         if not valid:
-            missing.append(label)
+            if label not in {"공고일", "관련 일정", "금액·규모", "참여 역할"}:
+                missing.append(label)
+            if (
+                label == "제출·의견 기한" and not informational
+                or opportunity.notice_kind == "사업 기회"
+                and label in {"금액·규모", "제출 주체·대상"}
+            ):
+                lines.append(f"• {label}: 원문 확인 필요")
         else:
             lines.append(f"• {label}: {valid[0]}")
             lines.extend(f"  ↳ {item}" for item in valid[1:])
-    required = brief.documents if brief else submission_documents(document)
+    if brief is None:
+        required, uses_saved_checklist = fallback_submission_documents(document)
+    else:
+        required, uses_saved_checklist = brief.documents, brief.uses_saved_checklist
     shown = 0
     used = 0
-    seen = set()
-    entries = []
-    for item in required:
-        form = item.form
-        url = _safe_url(form.url) if form and form.url else None
-        label = _text(item.title)
-        # A member has no public URL of its own: identify the archive download honestly.
-        if form and form.archive and url:
-            label += " (ZIP)"
-        key = (label, url)
-        if key in seen:
-            continue
-        seen.add(key)
-        entries.append(f"• [{label}]({url})" if url else f"• {label}")
+    entries = _submission_entries(required)
     if entries:
         lines.extend(["", "제출 준비 서류 ↓"])
     for entry in entries[: 3 if compact else 6]:
@@ -157,7 +200,7 @@ def _document_block(
         shown += 1
     if shown < len(entries):
         location = (
-            "사업 제안 체크리스트" if not brief and submission_documents(document) else "원문"
+            "사업 제안 체크리스트" if uses_saved_checklist else "원문"
         )
         lines.append(f"추가 제출서류 {len(entries) - shown}종: {location}에서 확인")
     if brief:
@@ -165,8 +208,11 @@ def _document_block(
             missing.append("제출 서류")
         if brief.note:
             missing.append(brief.note)
-    elif not document.proposal or not document.proposal.preparation:
+    elif not required and (not document.proposal or not document.proposal.preparation):
         missing.append("제출 서류 체크리스트 미작성")
+    if not uses_saved_checklist and any(item.requirement_level is not None for item in required):
+        if "원문 표에서 확인한 서류만 표시" not in missing:
+            missing.append("원문 표에서 확인한 서류만 표시")
     if missing and not informational:
         labels = {
             "제출 주체·대상": "신청 자격",
@@ -175,10 +221,14 @@ def _document_block(
             "문의 담당": "문의처",
             "제출 서류": "준비 서류",
             "제출 서류 체크리스트 미작성": "준비 서류",
+            "제출 대상·조건 확인 필요": "서류별 제출 대상·조건",
+            "원문 표에서 확인한 서류만 표시": "전체 제출서류 목록",
         }
         pending = [labels[item] for item in missing if item in labels]
         if pending:
             subject = "·".join(pending) + " 항목" if len(pending) <= 2 else "일부 접수 정보"
+            if len(pending) > 2 and "전체 제출서류 목록" in pending:
+                subject = "전체 제출서류 목록 등 일부 접수 정보"
             lines.extend(
                 [
                     "",
@@ -200,18 +250,52 @@ def _document_block(
     return "\n".join(lines)
 
 
-def _brief_summary(document: ReportDocumentRequest, limit: int) -> str:
-    value = document.comparison_summary.purpose if document.comparison_summary else None
-    if not value or "확인하지 못" in value:
-        value = document.summary
-    value = _text(value)
-    sentences = re.split(r"(?<=[다요][.])\s+|(?<=[!?])\s+", value)
-    selected = []
-    for sentence in sentences[:2]:
-        if len(" ".join([*selected, sentence])) > limit:
-            break
-        selected.append(sentence)
-    return " ".join(selected) if selected else _shorten(value, limit)
+def _submission_entries(required: list[SubmissionDocument]) -> list[str]:
+    """One download per URL, without discarding distinct submission requirements."""
+    groups: list[tuple[str | None, list[SubmissionDocument]]] = []
+    positions: dict[str, int] = {}
+    for item in display_submission_documents(required):
+        url = _safe_url(item.form.url) if item.form and item.form.url else None
+        # Fragments select a page inside the same file; query parameters identify files.
+        key = url.split("#", 1)[0] if url else None
+        if key and key in positions:
+            groups[positions[key]][1].append(item)
+        else:
+            if key:
+                positions[key] = len(groups)
+            groups.append((url, [item]))
+    entries = []
+    for url, items in groups:
+        labels = []
+        for item in items:
+            label = _text(item.title)
+            if item.requirement_level == "OPTIONAL" or item.condition in {"선택", "선택 제출"}:
+                label += " (선택 제출)"
+            if label not in labels:
+                labels.append(label)
+        if len(items) > 1:
+            filenames = {item.form.archive or item.form.name for item in items}
+            filename = next(iter(filenames)) if len(filenames) == 1 else None
+            label = _text(filename or "통합 서류 파일")
+            entries.append(f"• [{label}]({url})\n  ↳ 관련 서류: " + " · ".join(labels))
+        else:
+            item = items[0]
+            label = _text(item.title)
+            if item.form and item.form.archive and url:
+                label += " (ZIP)"
+            entry = f"• [{label}]({url})" if url else f"• {label}"
+            if labels[0] != _text(item.title):
+                entry += " (선택 제출)"
+            entries.append(entry)
+    return entries
+
+
+def _summary(document: ReportDocumentRequest, facts, opportunity) -> str:
+    # Only report prose changes; the saved analysis and source evidence stay intact.
+    if unreadable_table(document.summary or ""):
+        return source_check_message("사업 요약")
+    summary = _text(purpose_summary(document, facts, opportunity))
+    return summary or "분석 요약을 확인하지 못했습니다."
 
 
 def _field(value: str, compact: bool) -> str:

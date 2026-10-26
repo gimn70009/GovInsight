@@ -11,9 +11,12 @@ import jakarta.persistence.Id;
 import jakarta.persistence.SequenceGenerator;
 import jakarta.persistence.Table;
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.EnumSet;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.AccessLevel;
@@ -52,6 +55,9 @@ public class MonitoringSchedule extends BaseEntity {
     @Column(name = "last_attempted_date")
     private LocalDate lastAttemptedDate;
 
+    @Column(name = "pending_scheduled_at")
+    private LocalDateTime pendingScheduledAt;
+
     public static MonitoringSchedule defaultSchedule() {
         return new MonitoringSchedule();
     }
@@ -77,6 +83,7 @@ public class MonitoringSchedule extends BaseEntity {
         this.customDays = normalizedCustomDays;
         if (scheduleChanged) {
             this.lastAttemptedDate = null;
+            this.pendingScheduledAt = null;
         }
     }
 
@@ -97,12 +104,47 @@ public class MonitoringSchedule extends BaseEntity {
         );
     }
 
-    public boolean isDue(LocalDate date, LocalTime time) {
-        return enabled
-                && getSelectedDays().contains(date.getDayOfWeek())
-                && executionTime.getHour() == time.getHour()
-                && executionTime.getMinute() == time.getMinute()
-                && !date.equals(lastAttemptedDate);
+    public Optional<LocalDate> dueDate(LocalDateTime now, Duration catchUpWindow) {
+        if (!enabled) {
+            return Optional.empty();
+        }
+        LocalDateTime scheduledAt = now.toLocalDate().atTime(executionTime);
+        if (scheduledAt.isAfter(now)) {
+            scheduledAt = scheduledAt.minusDays(1);
+        }
+        LocalDate scheduledDate = scheduledAt.toLocalDate();
+        if (!getSelectedDays().contains(scheduledDate.getDayOfWeek())
+                || (lastAttemptedDate != null && !scheduledDate.isAfter(lastAttemptedDate))
+                || now.isAfter(scheduledAt.plus(catchUpWindow))) {
+            return Optional.empty();
+        }
+        return Optional.of(scheduledDate);
+    }
+
+    public boolean queueDue(LocalDateTime now, Duration catchUpWindow) {
+        var due = dueDate(now, catchUpWindow);
+        if (due.isEmpty()) {
+            return false;
+        }
+        var scheduledDate = due.get();
+        // Consume every occurrence, even when it is merged into the existing slot.
+        markAttempted(scheduledDate);
+        if (pendingScheduledAt == null) {
+            pendingScheduledAt = scheduledDate.atTime(executionTime);
+        }
+        return true;
+    }
+
+    public boolean cancelPending(LocalDateTime expected) {
+        if (expected == null || !expected.equals(pendingScheduledAt)) {
+            return false;
+        }
+        clearPending();
+        return true;
+    }
+
+    public void clearPending() {
+        pendingScheduledAt = null;
     }
 
     public void markAttempted(LocalDate date) {

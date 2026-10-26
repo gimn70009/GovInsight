@@ -1,5 +1,7 @@
 import asyncio
 
+import pytest
+
 from app.domains.analysis.schemas.request import AnalysisDocumentRequest
 from app.domains.analysis.tasks import _analyze_documents
 from app.domains.analysis.workflow.graph import AnalysisWorkflowError
@@ -41,14 +43,17 @@ def analysis_document(identifier: int) -> AnalysisDocumentRequest:
     )
 
 
-def test_analyze_documents_limits_concurrency_and_isolates_failures() -> None:
+@pytest.mark.parametrize("concurrency", [2, 3])
+def test_analyze_documents_limits_concurrency_and_isolates_failures(concurrency) -> None:
     workflow = SlowFailingWorkflow()
     documents = [analysis_document(identifier) for identifier in range(1, 5)]
 
-    results, failures = asyncio.run(_analyze_documents(workflow, documents, concurrency=2))
+    results, failures = asyncio.run(
+        _analyze_documents(workflow, documents, concurrency=concurrency)
+    )
 
     assert results == []
-    assert workflow.max_active_count == 2
+    assert workflow.max_active_count == concurrency
     assert [failure.detection_id for failure in failures] == [1, 2, 3, 4]
 
 
@@ -80,4 +85,6 @@ def test_legal_only_task_never_invokes_base_analysis_and_has_valid_delivery():
     result = asyncio.run(_ScopedAnalysisWorkflow(base, legal).analyze(doc))
     assert isinstance(result, LegalReviewResult)
     base.analyze.assert_not_awaited()
-    assert AnalysisResultRequest(run_id=1, job_id=uuid4(), results=[], failures=[], legal_results=[result])
+    assert AnalysisResultRequest(
+        run_id=1, job_id=uuid4(), results=[], failures=[], legal_results=[result]
+    )
