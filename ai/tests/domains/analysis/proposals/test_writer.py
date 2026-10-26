@@ -180,7 +180,9 @@ def test_single_flight_cache_profile_change_and_failed_result_not_cached():
             assert "demoProfile" not in profile
             assert profile["verifiedFacts"] == list(BISTELLIGENCE_PROFILE.verified_facts)
             updated = replace(BISTELLIGENCE_PROFILE, description="수정된 실제 회사 소개입니다.")
-            with patch("app.domains.analysis.proposals.writer.BISTELLIGENCE_PROFILE", updated):
+            with patch(
+                "app.domains.analysis.context.evaluation_settings.BISTELLIGENCE_PROFILE", updated
+            ):
                 await writer.write(request())
             assert compose.await_count == 2
             compose.side_effect = RuntimeError("sensitive internal data")

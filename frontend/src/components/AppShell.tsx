@@ -1,4 +1,4 @@
-import { FileSearch2, LogOut, Radar, Send, ShieldCheck } from 'lucide-react'
+import { FileSearch2, LogOut, Radar, Send, Settings2, ShieldCheck } from 'lucide-react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { authStore } from '../api/client'
 
@@ -16,6 +16,7 @@ export default function AppShell() {
           <NavLink to="/monitoring" aria-label="모니터링"><Radar size={18} /><span>모니터링</span></NavLink>
           <NavLink to="/documents" aria-label="감지된 게시글"><FileSearch2 size={18} /><span>감지된 게시글</span></NavLink>
           <NavLink to="/reports" aria-label="보고서 발송"><Send size={18} /><span>보고서 발송</span></NavLink>
+          <NavLink to="/settings" aria-label="설정"><Settings2 size={18} /><span>설정</span></NavLink>
         </nav>
         <div className="sidebar__footer">
           <div className="admin-profile"><span className="avatar">A</span><div><strong>관리자</strong><small>운영 계정</small></div></div>

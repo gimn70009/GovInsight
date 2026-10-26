@@ -144,3 +144,6 @@
 @media (max-width: 600px) {
   .business-summary__type-label { font-size: 14px; }
 }
+
+.business-summary__status p { margin: 4px 0 0; }
+.business-summary__status--failed { color: #884b4b; background: #fff5f5; border: 1px solid #ffe0e0; }

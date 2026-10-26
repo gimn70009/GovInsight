@@ -116,16 +116,20 @@ class ParticipationResearchNoticeTest {
         var guide = ParticipationConditionResolver.resolve("□ 신청자격\n- 국내 소재 기업\n* 연구비로 집행할 수 있음", List.of(), null);
         assertThat(guide.rules()).singleElement().satisfies(row -> {
             assertThat(row.text()).contains("국내 소재 기업");
-            assertThat(String.join(" ", row.details())).contains("집행할 수");
+            assertThat(String.join(" ", row.details())).doesNotContain("집행할 수");
+            assertThat(row.sources().getFirst().excerpt()).contains("집행할 수");
         });
     }
 
     @Test
     void 집행_설명에_붙은_추가_자격이나_금지_조건도_유지한다() {
         var guide = ParticipationConditionResolver.resolve("□ 신청자격\n- 연구비로 집행 가능\n* 국내 소재 기업\n※ 기준일은 접수 마감일", List.of(), null);
-        assertThat(guide.rules()).singleElement().satisfies(row -> assertThat(String.join(" ", row.details())).contains("국내 소재 기업"));
+        assertThat(guide.rules()).singleElement().satisfies(row -> {
+            assertThat(row.text()).contains("국내 소재 기업").doesNotContain("집행");
+            assertThat(String.join(" ", row.details())).contains("접수 마감일");
+        });
         var restriction = ParticipationConditionResolver.resolve("□ 신청자격\n- 사업비로 집행 불가", List.of(), null);
-        assertThat(restriction.rules()).singleElement().satisfies(row -> assertThat(row.text()).contains("집행 불가"));
+        assertThat(restriction.rules()).noneMatch(row -> row.section().equals("BASIC") || row.section().equals("REVIEW"));
     }
 
 }

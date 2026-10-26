@@ -14,11 +14,7 @@ class ParticipationApplicantScopeTest {
     @ValueSource(strings = {"지원금 대비 민간부담금 의무매칭(유형별 상이)", "신청기업은 자부담 30% 이상을 부담해야 함", "기관부담연구개발비는 현금과 현물로 매칭함"})
     void 비용_부담_방식은_신청_자격으로_분류하지_않는다(String text) {
         var guide = ParticipationConditionResolver.resolve("□ 지원조건\n" + text, List.of(), null);
-        assertThat(guide.rules()).singleElement().satisfies(row -> {
-            assertThat(row.section()).isEqualTo("FUNDING");
-            assertThat(row.label()).isEqualTo("자부담·사업비");
-            assertThat(row.sources().getFirst().excerpt()).contains(text);
-        });
+        assertThat(guide.rules()).isEmpty();
     }
 
     @ParameterizedTest

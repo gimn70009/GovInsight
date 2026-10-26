@@ -168,6 +168,86 @@ class ResponsibleOrganizationExtractorTest {
         assertThat(result).allSatisfy(item -> assertThat(text).contains(item.excerpt()));
     }
 
+
+    @Test
+    void 참여인력과_일반적인_기관종류를_담당기관명으로_읽지_않는다() {
+        for (String value : List.of("참여연구원", "참여 연구원", "책임연구원", "소속 연구원",
+                "기업부설연구소", "기업 부설 연구소", "국내 연구기관", "대학", "대학교", "연구소", "사무국")) {
+            assertThat(ResponsibleOrganizationExtractor.extract("주관기관 : " + value, List.of()))
+                    .as(value).isEmpty();
+            assertThat(ResponsibleOrganizationExtractor.extract(
+                    "[표]\n주관기관\t" + value + "\n[/표]", List.of())).as(value).isEmpty();
+        }
+    }
+
+    @Test
+    void 공동연구기관_서류명을_주관_역할과_기관명으로_분리하지_않는다() {
+        for (String text : List.of(
+                "주관 및 공동연구개발기관 기업부설연구소 인정서",
+                "주관 및\n공동연구개발기관 기업부설연구소 인정서",
+                "주관기관 : 한국연구원 재직증명서",
+                "[표]\n번호\t서류 유형\t파일 형식\n7\t주관 및 공동연구개발기관 기업부설연구소 인정서\tPDF\n[/표]")) {
+            assertThat(ResponsibleOrganizationExtractor.extract(text, List.of())).as(text).isEmpty();
+        }
+    }
+
+    @Test
+    void 연결어는_완전한_기관명_사이에_있을_때만_목록으로_읽는다() {
+        assertThat(ResponsibleOrganizationExtractor.extract(
+                "주관기관: 한국연구원 및 한국기술재단", List.of()))
+                .extracting(ResponsibleOrganization::name).containsExactly("한국연구원", "한국기술재단");
+        assertThat(ResponsibleOrganizationExtractor.extract("주관 및 한국연구원", List.of())).isEmpty();
+        assertThat(ResponsibleOrganizationExtractor.extract("주관기관: 및 한국연구원", List.of())).isEmpty();
+    }
+
+    @Test
+    void ZIP_내부_서식은_건너뛰고_다음_공고의_기관은_독립적으로_읽는다() {
+        String text = """
+                [파일: 참여확인서.hwp]
+                주관기관 : 신청인연구원
+                문의처 : 신청인연구소
+                [파일: 공고문.hwp]
+                전담기관 : 한국산업기술진흥원
+                [파일: 사업계획서.hwp]
+                작성 예시
+                주관기관 : 예제진흥원
+                [파일: 추가 공고문.hwp]
+                (접수처) 유레카 사무국 https://example.org
+                """;
+        var result = ResponsibleOrganizationExtractor.extract(null, List.of(attachment("첨부 일체.zip", text)));
+        assertThat(result).extracting(ResponsibleOrganization::name)
+                .containsExactly("한국산업기술진흥원", "유레카 사무국");
+        assertThat(result).extracting(ResponsibleOrganization::role).containsExactly("전담기관", "접수처");
+        assertThat(result).allSatisfy(item -> assertThat(text).contains(item.excerpt()));
+    }
+
+    @Test
+    void 역할과_기관을_다른_ZIP_문서에서_연결하지_않는다() {
+        String text = """
+                [파일: 앞 공고문.hwp]
+                주관기관
+                [파일: 뒤 공고문.hwp]
+                한국연구원
+                """;
+        assertThat(ResponsibleOrganizationExtractor.extract(null, List.of(attachment("공고.zip", text)))).isEmpty();
+    }
+
+    @Test
+    void 실제_일본_공고의_서류와_인력_표는_제외하고_접수기관을_보존한다() throws Exception {
+        String text;
+        try (var stream = getClass().getResourceAsStream("/organizations/japan-globalstars.txt")) {
+            text = new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        var result = ResponsibleOrganizationExtractor.extract(null, List.of(attachment("첨부 일체.zip", text)));
+        assertThat(result).extracting(ResponsibleOrganization::name)
+                .containsExactly("유레카 사무국", "한국산업기술진흥원");
+        assertThat(result).allSatisfy(item -> {
+            assertThat(item.role()).isEqualTo("접수처");
+            assertThat(item.sourceType()).isEqualTo("ATTACHMENT");
+            assertThat(text).contains(item.excerpt());
+        });
+    }
+
     private DocumentAttachment attachment(String name, String text) {
         return DocumentAttachment.create(null, name, "https://example.org/file", "hwpx", "application/zip", 1L,
                 "hash", text, AttachmentParseStatus.COMPLETED, null);

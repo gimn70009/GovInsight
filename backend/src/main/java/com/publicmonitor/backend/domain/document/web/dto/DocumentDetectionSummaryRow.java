@@ -18,6 +18,8 @@ public record DocumentDetectionSummaryRow(
         DocumentImportance importance,
         Integer opportunityScore,
         OpportunityPriority opportunityPriority,
-        LocalDateTime lastCheckedAt
+        LocalDateTime lastCheckedAt,
+        com.publicmonitor.backend.domain.monitoring.entity.MonitoringRunStatus analysisRunStatus,
+        com.publicmonitor.backend.domain.analysis.entity.AnalysisTask.State analysisTaskState
 ) {
 }

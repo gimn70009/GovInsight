@@ -87,7 +87,9 @@ public class DocumentDetectionQueryService {
                 row.importance(),
                 row.opportunityScore(),
                 row.opportunityPriority(),
-                row.lastCheckedAt()
+                row.lastCheckedAt(),
+                DocumentAnalysisStatusResolver.resolve(row.importance() != null,
+                        row.analysisRunStatus(), row.analysisTaskState())
         );
     }
 }

@@ -25,12 +25,16 @@ public record DocumentDetectionDetailResponse(
         Analysis analysis,
         @Schema(description = "같은 문서 버전의 최신 감지 실행에서 분석·제안 처리가 진행될 수 있으면 true")
         boolean analysisPending,
+        @Schema(description = "분석 상태: PENDING/COMPLETED/FAILED. 제안 준비 여부와 별개")
+        com.publicmonitor.backend.domain.document.entity.DocumentAnalysisStatus analysisStatus,
+        @Schema(description = "분석 실패 시 원문 확인 안내. 내부 오류 정보는 노출하지 않음", nullable = true)
+        String analysisFailureReason,
         List<Attachment> attachments,
         @Schema(description = "현재 본문·첨부에 역할과 이름이 명시된 사업 담당기관. 근거가 없으면 빈 목록")
         List<ResponsibleOrganization> responsibleOrganizations,
         @Schema(description = "원문의 명시된 제출서류와 기존 준비서류를 통합한 안내. 분석 완료 여부와 독립적")
         SubmissionGuide submissionGuide,
-        @Schema(description = "현재 원문 근거로 분류한 참여 조건. 회사의 충족 여부를 판정하지 않음")
+        @Schema(description = "업력·매출·특허·유관산업의 필수/우대 조건과 원문 근거. 회사의 충족 여부를 판정하지 않음")
         ParticipationGuide participationGuide,
         @Schema(description = "대표 사업 유형 1개와 설명·원문 근거. 미확인 또는 일반 공지는 유형을 추정하지 않음")
         BusinessTypeSummary businessType
@@ -61,7 +65,36 @@ public record DocumentDetectionDetailResponse(
     }
 
     public record ParticipationGuide(List<ParticipationCondition> conditions, List<ParticipationRule> rules,
-                                     List<ParticipationVariant> variants) {}
+                                     List<ParticipationVariant> variants, List<ParticipationCategory> categories,
+                                     String rewriteStatus) {
+        public ParticipationGuide(List<ParticipationCondition> conditions, List<ParticipationRule> rules,
+                                  List<ParticipationVariant> variants, List<ParticipationCategory> categories) {
+            this(conditions, rules, variants, categories, null);
+        }
+        public ParticipationGuide(List<ParticipationCondition> conditions, List<ParticipationRule> rules,
+                                  List<ParticipationVariant> variants) {
+            this(conditions, rules, variants, List.of());
+        }
+    }
+
+    @Schema(description = "상세 응답은 참여기업 조건 그룹의 업력·매출·특허·유관산업 4행을 반환")
+    public record ParticipationCategory(String code, String label, List<ParticipationCriterionRow> rows) {}
+    public record ParticipationCriterionRow(String code, String label,
+            @Schema(description = "STATED / NOT_STATED / REVIEW_REQUIRED") String status,
+            List<ParticipationCriterionEntry> entries) {}
+    public record ParticipationCriterionEntry(ParticipationRule rule,
+            @Schema(description = "분리 전 연결 문장. 조건의 대상·기준일·논리관계 보존") String context,
+            @Schema(description = "ALTERNATIVE: 선택 관계, LINKED: 같은 문장에서 분리, null: 독립 항목") String relation,
+            List<String> relatedCriteria, String displayStatus, List<String> supportingQuotes) {
+        public ParticipationCriterionEntry(ParticipationRule rule, String context, String relation,
+                                           List<String> relatedCriteria, String displayStatus) {
+            this(rule, context, relation, relatedCriteria, displayStatus, List.of());
+        }
+        public ParticipationCriterionEntry(ParticipationRule rule, String context, String relation,
+                                           List<String> relatedCriteria) {
+            this(rule, context, relation, relatedCriteria, null);
+        }
+    }
 
     public record ParticipationRule(String section, String label, String text, String scope, String audience,
                                     List<String> details, List<String> exceptions, List<String> guidance,
@@ -301,8 +334,17 @@ public record DocumentDetectionDetailResponse(
     public record Opportunity(
             Integer totalScore,
             OpportunityPriority priority,
-            List<OpportunityDimension> dimensions
+            List<OpportunityDimension> dimensions,
+            Long settingsRevision,
+            List<Integer> weights
     ) {
+        public Opportunity {
+            settingsRevision = settingsRevision == null ? 0L : settingsRevision;
+            weights = weights == null ? List.of(50, 20, 20, 10) : weights;
+        }
+        public Opportunity(Integer totalScore, OpportunityPriority priority, List<OpportunityDimension> dimensions) {
+            this(totalScore, priority, dimensions, 0L, List.of(50, 20, 20, 10));
+        }
     }
 
     @Schema(description = "기회 점수 평가 항목")

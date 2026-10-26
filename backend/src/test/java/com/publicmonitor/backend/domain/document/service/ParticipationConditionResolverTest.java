@@ -165,11 +165,7 @@ class ParticipationConditionResolverTest {
         assertThat(rows).anySatisfy(row -> {
             assertThat(row.kind()).isEqualTo(ParticipationKind.MANDATORY);
             assertThat(row.text()).contains("사업자등록증", "제조");
-        }).anySatisfy(row -> {
-            assertThat(row.kind()).isEqualTo(ParticipationKind.PREFERENCE);
-            assertThat(row.text()).contains("가점 2점을 부여합니다");
-            assertThat(String.join(" ", row.details())).contains("수출 계약서", "증빙");
-        }).anySatisfy(row -> {
+        }).noneMatch(row -> row.kind() == ParticipationKind.PREFERENCE).anySatisfy(row -> {
             assertThat(row.kind()).isEqualTo(ParticipationKind.EXCLUSION);
             assertThat(row.text()).contains("체납");
             assertThat(row.scope()).contains("하나 이상");

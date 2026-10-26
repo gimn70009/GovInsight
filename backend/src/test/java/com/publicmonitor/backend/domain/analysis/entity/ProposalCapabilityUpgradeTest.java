@@ -17,7 +17,8 @@ class ProposalCapabilityUpgradeTest {
         assertThat(analysis(18, "PROPOSAL_REQUEST").requiresProposalSchemaUpgrade()).isTrue();
         assertThat(analysis(20, "PROPOSAL_REQUEST").requiresProposalSchemaUpgrade()).isTrue();
         assertThat(analysis(21, "PROPOSAL_REQUEST").requiresProposalSchemaUpgrade()).isTrue();
-        assertThat(analysis(22, "PROPOSAL_REQUEST").requiresProposalSchemaUpgrade()).isFalse();
+        assertThat(analysis(22, "PROPOSAL_REQUEST").requiresProposalSchemaUpgrade()).isTrue();
+        assertThat(analysis(23, "PROPOSAL_REQUEST").requiresProposalSchemaUpgrade()).isFalse();
         assertThat(analysis(12, "BUSINESS_NOTICE").requiresProposalSchemaUpgrade()).isFalse();
     }
 

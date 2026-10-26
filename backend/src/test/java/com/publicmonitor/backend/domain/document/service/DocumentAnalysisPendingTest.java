@@ -56,7 +56,8 @@ class DocumentAnalysisPendingTest {
 
         assertThat(response.analysis()).isNull();
         assertThat(response.analysisPending())
-                .isEqualTo(state != AnalysisTask.State.DONE && state != AnalysisTask.State.FAILED);
+                .isEqualTo(state == AnalysisTask.State.PENDING || state == AnalysisTask.State.RUNNING);
+        assertThat(response.analysisStatus().name()).isEqualTo(response.analysisPending() ? "PENDING" : "FAILED");
     }
 
     @ParameterizedTest
@@ -181,6 +182,12 @@ class DocumentAnalysisPendingTest {
     }
 
     private DocumentDetectionDetailService service() {
-        return new DocumentDetectionDetailService(detections, analyses, tasks, attachments, new ObjectMapper());
+        return new DocumentDetectionDetailService(detections, analyses, tasks, attachments, new ObjectMapper(), rewriteService());
+    }
+    private com.publicmonitor.backend.domain.document.service.ParticipationRewriteService rewriteService() {
+        var service = org.mockito.Mockito.mock(com.publicmonitor.backend.domain.document.service.ParticipationRewriteService.class);
+        org.mockito.Mockito.lenient().when(service.resolve(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyBoolean()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+        return service;
     }
 }

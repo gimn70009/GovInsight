@@ -7,6 +7,8 @@ import com.publicmonitor.backend.domain.analysis.repository.DocumentAnalysisRepo
 import com.publicmonitor.backend.domain.analysis.entity.OpportunityDimensionType;
 import com.publicmonitor.backend.domain.analysis.service.OpportunityScoreCalculator;
 import com.publicmonitor.backend.domain.document.entity.DocumentAttachment;
+import com.publicmonitor.backend.domain.document.entity.DocumentAnalysisStatus;
+import com.publicmonitor.backend.domain.document.entity.AttachmentParseStatus;
 import com.publicmonitor.backend.domain.document.entity.DocumentDetection;
 import com.publicmonitor.backend.domain.document.entity.DocumentVersion;
 import com.publicmonitor.backend.domain.document.exception.DocumentDetectionException;
@@ -39,15 +41,29 @@ public class DocumentDetectionDetailService {
     private final AnalysisTaskRepository analysisTaskRepository;
     private final DocumentAttachmentRepository attachmentRepository;
     private final ObjectMapper objectMapper;
+    private final ParticipationRewriteService participationRewriteService;
 
     @Transactional(readOnly = true)
     public DocumentDetectionDetailResponse findById(Long detectionId) {
+        return findById(detectionId, true);
+    }
+
+    @Transactional(readOnly = true)
+    public DocumentDetectionDetailResponse findSummaryById(Long detectionId) {
+        return findById(detectionId, false);
+    }
+
+    private DocumentDetectionDetailResponse findById(Long detectionId, boolean includeParticipationGuide) {
         DocumentDetection detection = detectionRepository.findById(detectionId)
                 .orElseThrow(() -> new DocumentDetectionException(DocumentDetectionResponseCode.NOT_FOUND));
         DocumentVersion version = detection.getDocumentVersion();
         // Read processing state first so a concurrent completion cannot pair old results with a terminal state.
-        boolean analysisPending = isAnalysisPending(detection, version);
+        ProcessingState processing = processingState(detection, version);
         DocumentAnalysis analysis = analysisRepository.findByDocumentVersionId(version.getId()).orElse(null);
+        DocumentAnalysisStatus analysisStatus = DocumentAnalysisStatusResolver.resolve(
+                analysis != null, processing.runStatus(), processing.taskState());
+        boolean analysisPending = analysisStatus != DocumentAnalysisStatus.FAILED
+                && DocumentAnalysisStatusResolver.isProcessing(processing.runStatus(), processing.taskState());
         List<DocumentAttachment> storedAttachments = attachmentRepository.findAllByDocumentVersionId(version.getId());
         List<DocumentDetectionDetailResponse.Attachment> attachments = storedAttachments.stream()
                 .map(this::toAttachment)
@@ -62,6 +78,8 @@ public class DocumentDetectionDetailService {
                 detectionId, version.getId(), analysisPending, businessType.summary().status(), businessType.summary().code(),
                 businessType.decisionReason(), businessType.storedReason(), businessType.rejectedSourceIndex(),
                 businessType.usableSourceCount(), businessType.failedAttachmentCount(), businessType.emptyAttachmentCount());
+        var participation = includeParticipationGuide
+                ? ParticipationConditionResolver.candidatesWithScopes(version.getContentText(), storedAttachments, preparation) : null;
         return new DocumentDetectionDetailResponse(
                 detection.getId(),
                 detection.getMonitoringRunSource().getMonitoringSource().getOrganizationName(),
@@ -73,26 +91,41 @@ public class DocumentDetectionDetailService {
                 detection.getDocument().getLastDetectedAt(),
                 analysisResponse,
                 analysisPending,
+                analysisStatus,
+                analysisStatus == DocumentAnalysisStatus.FAILED ? failureReason(version, storedAttachments) : null,
                 attachments,
                 ResponsibleOrganizationExtractor.extract(version.getContentText(), storedAttachments),
                 SubmissionDocumentResolver.resolve(version.getContentText(), storedAttachments, preparation),
-                ParticipationConditionResolver.resolve(version.getContentText(), storedAttachments, preparation),
+                includeParticipationGuide ? participationRewriteService.resolve(version,
+                        participation.guide(),
+                        ParticipationCategorySources.incomplete(version.getContentText(), storedAttachments), participation.scopes()) : null,
                 businessType.summary()
         );
     }
 
-    private boolean isAnalysisPending(DocumentDetection detection, DocumentVersion version) {
+    private ProcessingState processingState(DocumentDetection detection, DocumentVersion version) {
         DocumentDetection latestDetection = detectionRepository
                 .findTopByDocumentVersionIdOrderByDetectedAtDescIdDesc(version.getId())
                 .orElse(detection);
         MonitoringRun run = latestDetection.getMonitoringRunSource().getMonitoringRun();
         if (!MonitoringRunStatus.inProgress().contains(run.getStatus())) {
-            return false;
+            return new ProcessingState(run.getStatus(), null);
         }
-        return analysisTaskRepository.findByRunId(run.getId())
-                .map(task -> task.getState() != AnalysisTask.State.DONE
-                        && task.getState() != AnalysisTask.State.FAILED)
-                .orElse(true);
+        return new ProcessingState(run.getStatus(), analysisTaskRepository.findByRunId(run.getId())
+                .map(AnalysisTask::getState).orElse(null));
+    }
+
+    private record ProcessingState(MonitoringRunStatus runStatus, AnalysisTask.State taskState) {}
+
+    private String failureReason(DocumentVersion version, List<DocumentAttachment> attachments) {
+        boolean hasText = version.getContentText() != null && !version.getContentText().isBlank();
+        boolean hasAttachmentText = attachments.stream()
+                .filter(attachment -> attachment.getParseStatus() == AttachmentParseStatus.COMPLETED)
+                .anyMatch(attachment -> attachment.getExtractedText() != null
+                        && !attachment.getExtractedText().isBlank());
+        return !hasText && !hasAttachmentText
+                ? "본문·첨부파일에서 읽을 텍스트를 찾지 못했어요. 이미지로 된 공고일 수 있으니 원문을 확인해 주세요."
+                : "분석을 완료하지 못했어요. 원문을 확인하거나 다시 모니터링해 주세요.";
     }
 
     private DocumentDetectionDetailResponse.Analysis toAnalysis(DocumentAnalysis analysis) {
@@ -132,7 +165,7 @@ public class DocumentDetectionDetailService {
         if (comparisonSummary == null || comparisonSummary.isBlank()) return null;
         try {
             var value = objectMapper.readTree(comparisonSummary).path("applicationDeadline");
-            return value.isString() ? value.asString().strip() : null;
+            return value.isString() ? ApplicationDeadlinePresentation.normalize(value.asString().strip()) : null;
         } catch (RuntimeException exception) {
             return null;
         }
@@ -186,7 +219,9 @@ public class DocumentDetectionDetailService {
                         DocumentDetectionDetailResponse.OpportunityDimension::type,
                         DocumentDetectionDetailResponse.OpportunityDimension::score
                 ));
-        int totalScore = OpportunityScoreCalculator.calculate(scores);
+        var preset = com.publicmonitor.backend.domain.analysis.service.OpportunitySettingsMetadata.preset(
+                objectMapper.readTree(analysis.getOpportunityAssessment()));
+        int totalScore = OpportunityScoreCalculator.calculate(scores, preset);
         int companyFitScore = scores.getOrDefault(OpportunityDimensionType.COMPANY_FIT, 0);
         int feasibilityScore = scores.getOrDefault(OpportunityDimensionType.FEASIBILITY, 0);
         int urgencyScore = scores.getOrDefault(OpportunityDimensionType.URGENCY, 0);
@@ -198,7 +233,9 @@ public class DocumentDetectionDetailService {
                         feasibilityScore,
                         urgencyScore
                 ),
-                dimensions
+                dimensions,
+                stored.settingsRevision() == null ? 0 : stored.settingsRevision(),
+                preset.weights()
         );
     }
 
@@ -216,7 +253,7 @@ public class DocumentDetectionDetailService {
         }
     }
 
-    private record StoredOpportunity(List<StoredDimension> dimensions) {
+    private record StoredOpportunity(List<StoredDimension> dimensions, Long settingsRevision, String preset) {
     }
 
     private record StoredDimension(String type, Integer score, String reason) {

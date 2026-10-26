@@ -9,6 +9,7 @@ from app.domains.analysis.context.company_profile import (
     BISTELLIGENCE_PROFILE,
     CompanyProfile,
 )
+from app.domains.analysis.context.evaluation_settings import profile_for_settings
 from app.domains.analysis.context.tools import (
     read_company_profile,
     read_previous_analysis,
@@ -28,6 +29,12 @@ class AnalysisToolContext:
         compare=False,
         repr=False,
     )
+
+    def __post_init__(self) -> None:
+        if self.document.evaluation_settings is not None:
+            object.__setattr__(
+                self, "company_profile", profile_for_settings(self.document.evaluation_settings)
+            )
 
 
 def read_document_content(context: AnalysisToolContext) -> str:

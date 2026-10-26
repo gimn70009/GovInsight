@@ -185,7 +185,7 @@ public class DocumentAnalysis extends BaseEntity {
     public boolean requiresProposalSchemaUpgrade() {
         return proposalDirection != null
                 && proposalDirection.contains("\"documentType\":\"PROPOSAL_REQUEST\"")
-                && (!proposalDirection.contains("\"preparationSchemaVersion\":22")
+                && (!proposalDirection.contains("\"preparationSchemaVersion\":23")
                 || (proposalDirection.contains("\"draftStatus\":\"REVIEW_REQUIRED\"")
                 && proposalDirection.contains("확인 내용:")));
     }

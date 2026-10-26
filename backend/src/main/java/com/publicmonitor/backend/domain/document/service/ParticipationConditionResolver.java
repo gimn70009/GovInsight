@@ -33,6 +33,23 @@ final class ParticipationConditionResolver {
     private ParticipationConditionResolver() {}
 
     static ParticipationGuide resolve(String body, List<DocumentAttachment> attachments, Preparation preparation) {
+        return resolve(body, attachments, preparation, true);
+    }
+
+    record Candidates(ParticipationGuide guide, ParticipationScopeIndex scopes) {}
+
+    static ParticipationGuide candidates(String body, List<DocumentAttachment> attachments, Preparation preparation) {
+        return candidatesWithScopes(body, attachments, preparation).guide();
+    }
+
+    static Candidates candidatesWithScopes(String body, List<DocumentAttachment> attachments, Preparation preparation) {
+        var raw = resolve(body, attachments, preparation, false);
+        var sources = ParticipationRawSources.collectWithScopes(body, attachments);
+        return new Candidates(new ParticipationGuide(raw.conditions(), sources.rules(), raw.variants(), List.of()), sources.scopes());
+    }
+
+    private static ParticipationGuide resolve(String body, List<DocumentAttachment> attachments,
+                                               Preparation preparation, boolean project) {
         var result = new LinkedHashMap<String, ParticipationCondition>();
         collect(body, null, result);
         for (var file : attachments) {
@@ -70,7 +87,9 @@ final class ParticipationConditionResolver {
         }
         var display = new LinkedHashMap<String, ParticipationCondition>();
         var sourcedConditions = new ArrayList<ParticipationCondition>();
-        for (var raw : result.values().stream().flatMap(row -> ParticipationEligibilityContext.separateFunding(row).stream()).toList()) {
+        for (var raw : result.values().stream()
+                .map(ParticipationEligibilityContext::applicationOnly).filter(java.util.Objects::nonNull)
+                .flatMap(row -> ParticipationEligibilityContext.separateFunding(row).stream()).toList()) {
             var row = ParticipationConditionText.prepare(raw);
             sourcedConditions.add(row);
             String identity = row.kind() + ":" + row.reviewReason() + ":" + key(row.text()) + ":" + key(row.scope()) + ":" + key(String.join(" ", row.details()));
@@ -82,8 +101,28 @@ final class ParticipationConditionResolver {
         attachments.stream().filter(file -> file.getParseStatus() == AttachmentParseStatus.COMPLETED
                 && allowedFile(file.getFileName()) && file.getExtractedText() != null)
                 .forEach(file -> texts.add(noticeText(file.getExtractedText())));
-        return new ParticipationGuide(conditions, ParticipationGuidePresentation.rules(sourcedConditions),
-                ParticipationGuidePresentation.variants(texts));
+        var rules = ParticipationGuidePresentation.rules(sourcedConditions);
+        var expanded = new LinkedHashMap<String, ParticipationCondition>();
+        collectCategories(body, null, expanded);
+        attachments.stream().filter(file -> file.getParseStatus() == AttachmentParseStatus.COMPLETED && allowedFile(file.getFileName()))
+                .forEach(file -> collectCategories(file.getExtractedText(), file.getFileName(), expanded));
+        var categorizedConditions = new ArrayList<>(sourcedConditions);
+        expanded.values().stream().map(ParticipationEligibilityContext::applicationOnly).filter(java.util.Objects::nonNull)
+                .flatMap(row -> ParticipationEligibilityContext.separateFunding(row).stream())
+                .map(ParticipationConditionText::prepare).filter(row -> !categorizedConditions.contains(row))
+                .forEach(categorizedConditions::add);
+        var categoryRules = new ArrayList<>(ParticipationGuidePresentation.rules(categorizedConditions));
+        categoryRules.addAll(ParticipationCategorySources.supplement(body, attachments, categoryRules));
+        return new ParticipationGuide(conditions, project ? rules : categoryRules, ParticipationGuidePresentation.variants(texts),
+                project ? ParticipationCategoryProjector.project(categoryRules, ParticipationCategorySources.incomplete(body, attachments)) : List.of());
+    }
+
+    private static void collectCategories(String text, String name, LinkedHashMap<String, ParticipationCondition> result) {
+        for (String document : ParticipationCategorySources.documents(text)) {
+            var partial = new LinkedHashMap<String, ParticipationCondition>();
+            collect(document, name, partial, true);
+            result.putAll(partial);
+        }
     }
 
     private static boolean allowedFile(String name) {
@@ -93,12 +132,10 @@ final class ParticipationConditionResolver {
     private static String noticeText(String text) {
         StringBuilder result = new StringBuilder();
         boolean blocked = false;
-        boolean postAward = false;
-        for (String raw : text.substring(0, Math.min(MAX_TEXT, text.length())).split("\\R")) {
+        var sectionContext = new ParticipationSectionContext();
+        for (String raw : new ParticipationSourceLines(text.substring(0, Math.min(MAX_TEXT, text.length()))).lines()) {
             String line = raw.strip();
-            if (line.startsWith("[파일:")) postAward = false;
-            if (line.matches("^[□■▶▷].*")) postAward = ParticipationEligibilityContext.postAwardHeading(clean(line));
-            if (postAward) continue;
+            if (sectionContext.excludes(line)) continue;
             if (line.startsWith("[파일:")) {
                 int end = line.indexOf(']');
                 blocked = end < 0 || !allowedFile(line.substring(4, end).strip());
@@ -113,25 +150,27 @@ final class ParticipationConditionResolver {
     }
 
     private static void collect(String text, String fileName, LinkedHashMap<String, ParticipationCondition> result) {
+        collect(text, fileName, result, false);
+    }
+
+    private static void collect(String text, String fileName, LinkedHashMap<String, ParticipationCondition> result, boolean categorized) {
         if (text == null || text.isBlank()) return;
         var sourceLines = new ParticipationSourceLines(text.substring(0, Math.min(MAX_TEXT, text.length())));
         String[] lines = sourceLines.lines();
         Block block = null;
         boolean blocked = false;
-        boolean postAward = false;
+        var sectionContext = new ParticipationSectionContext(categorized);
         String program = "";
         String introduction = text.substring(0, Math.min(text.length(), 1800)).replaceAll("\\s+", " ");
         boolean separateBeneficiary = introduction.matches(".*주관기관.{0,40}모집.*")
                 && introduction.matches(".*창업기업.{0,40}별도.{0,10}공고.*");
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i].strip();
-            if (line.startsWith("[파일:")) postAward = false;
-            if (line.matches("^[□■▶▷].*")) {
-                boolean nextPostAward = ParticipationEligibilityContext.postAwardHeading(clean(line));
-                if (nextPostAward) { emit(block, fileName, result); block = null; }
-                postAward = nextPostAward;
+            if (sectionContext.excludes(line)) {
+                emit(block, fileName, result);
+                block = null;
+                continue;
             }
-            if (postAward) continue;
             String fundTitle = fundTitle(line, i > 0 ? lines[i - 1].strip() : "");
             if (fundTitle != null) {
                 emit(block, fileName, result);

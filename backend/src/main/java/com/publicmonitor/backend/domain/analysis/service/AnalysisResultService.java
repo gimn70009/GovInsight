@@ -44,6 +44,7 @@ public class AnalysisResultService {
     private final ApplicationEventPublisher eventPublisher;
     private final AnalysisTaskRepository tasks;
     private final AnalysisTaskService taskService;
+    private final com.publicmonitor.backend.domain.settings.service.EvaluationSettingsService evaluationSettings;
 
     @Transactional
     public AnalysisResultResponse receive(AnalysisResultRequest request) {
@@ -76,13 +77,26 @@ public class AnalysisResultService {
                             AnalysisResultRequest.OpportunityDimension::type,
                             AnalysisResultRequest.OpportunityDimension::score
                     ));
-            var ranking = OpportunityRankingCalculator.calculate(opportunityScores);
+            long settingsRevision = result.opportunity().settingsRevision();
+            var settings = evaluationSettings.revision(settingsRevision);
+            var preset = settings == null
+                    ? com.publicmonitor.backend.domain.settings.web.dto.EvaluationSettingsData.Preset.FIT
+                    : settings.criteria().preset();
+            var ranking = OpportunityRankingCalculator.calculate(opportunityScores, preset);
+            String assessment = objectMapper.writeValueAsString(Map.of(
+                    "dimensions", result.opportunity().dimensions(),
+                    "settingsRevision", settingsRevision, "preset", preset.name()));
             var existingAnalysis = analysisRepository.findByDocumentVersionIdForUpdate(result.versionId());
             if (existingAnalysis.isPresent()) {
                 DocumentAnalysis existing = existingAnalysis.orElseThrow();
+                long previousRevision = OpportunitySettingsMetadata.revision(existing.getOpportunityAssessment(), objectMapper);
+                if (previousRevision > settingsRevision) {
+                    duplicateCount++;
+                    continue;
+                }
                 updateComparisonSummary(existing, result);
                 updateSimilarity(existing, result);
-                if (!existing.requiresProposalSchemaUpgrade()) {
+                if (!existing.requiresProposalSchemaUpgrade() && previousRevision == settingsRevision) {
                     duplicateCount++;
                     continue;
                 }
@@ -96,7 +110,7 @@ public class AnalysisResultService {
                         objectMapper.writeValueAsString(result.proposal()),
                         ranking.score(),
                         ranking.priority(),
-                        objectMapper.writeValueAsString(result.opportunity()),
+                        assessment,
                         objectMapper.writeValueAsString(result.usedTools()),
                         result.modelName().strip(),
                         analyzedAt
@@ -115,7 +129,7 @@ public class AnalysisResultService {
                     objectMapper.writeValueAsString(result.proposal()),
                     ranking.score(),
                     ranking.priority(),
-                    objectMapper.writeValueAsString(result.opportunity()),
+                    assessment,
                     objectMapper.writeValueAsString(result.usedTools()),
                     result.modelName().strip(),
                     analyzedAt

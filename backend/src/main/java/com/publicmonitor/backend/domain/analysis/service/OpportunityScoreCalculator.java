@@ -6,20 +6,21 @@ import java.util.Map;
 
 public final class OpportunityScoreCalculator {
 
-    private static final Map<OpportunityDimensionType, Double> WEIGHTS = Map.of(
-            OpportunityDimensionType.COMPANY_FIT, 0.50,
-            OpportunityDimensionType.BUSINESS_VALUE, 0.20,
-            OpportunityDimensionType.FEASIBILITY, 0.20,
-            OpportunityDimensionType.URGENCY, 0.10
-    );
-
     private OpportunityScoreCalculator() {
     }
 
     public static int calculate(Map<OpportunityDimensionType, Integer> scores) {
-        double weightedScore = WEIGHTS.entrySet().stream()
-                .mapToDouble(entry -> scores.getOrDefault(entry.getKey(), 0) * entry.getValue())
-                .sum();
+        return calculate(scores, com.publicmonitor.backend.domain.settings.web.dto.EvaluationSettingsData.Preset.FIT);
+    }
+
+    public static int calculate(Map<OpportunityDimensionType, Integer> scores,
+            com.publicmonitor.backend.domain.settings.web.dto.EvaluationSettingsData.Preset preset) {
+        var weights = preset.weights();
+        var dimensions = OpportunityDimensionType.values();
+        double weightedScore = 0;
+        for (int index = 0; index < dimensions.length; index++) {
+            weightedScore += scores.getOrDefault(dimensions[index], 0) * weights.get(index) / 100.0;
+        }
         int roundedScore = (int) Math.round(weightedScore);
         int companyFitScore = scores.getOrDefault(OpportunityDimensionType.COMPANY_FIT, 0);
         if (companyFitScore <= 40) {

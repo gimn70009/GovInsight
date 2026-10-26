@@ -212,6 +212,14 @@ class DocumentDetectionDetailServiceTest {
     }
 
     @Test
+    void 기존_상세와_메일용_마감일에서_날짜와_접수조건을_보존하고_종료단정을_제거한다() {
+        String stored = "{\"applicationDeadline\":\"2026-10-29 (목) 23:59:00, 시스템 접수 기준으로 마감되었습니다.\"}";
+        String deadline = ReflectionTestUtils.invokeMethod(service(), "parseApplicationDeadline", stored);
+        assertThat(deadline).isEqualTo("2026-10-29 (목) 23:59:00, 시스템 접수 기준 마감입니다.");
+        assertThat(stored).contains("마감되었습니다");
+    }
+
+    @Test
     void 사업요약이_없거나_손상되어도_기존_상세를_조회한다() {
         for (String json : new String[] {null, "", "{broken"}) {
             Object summary = ReflectionTestUtils.invokeMethod(service(), "parseBusinessSummary", json);
@@ -277,6 +285,49 @@ class DocumentDetectionDetailServiceTest {
         }
     }
 
+
+    @Test
+    void 기존_일본_공고를_조회할_때_원문을_변경하지_않고_접수기관만_반환한다() throws Exception {
+        String text;
+        try (var stream = getClass().getResourceAsStream("/organizations/japan-globalstars.txt")) {
+            text = new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        LocalDateTime now = LocalDateTime.of(2026, 10, 12, 9, 0);
+        MonitoringSource source = MonitoringSource.create("한국산업기술진흥원", "사업공고", null,
+                "https://www.kiat.or.kr", null, 2, true);
+        MonitoringRun run = MonitoringRun.create(MonitoringTriggerType.MANUAL, 1, now);
+        MonitoringRunSource runSource = MonitoringRunSource.create(run, source);
+        Document document = Document.create(source, "https://www.kiat.or.kr/notice", "japan", now);
+        String body = "2026년도 일본 다자간 국제공동기술개발사업 공고";
+        DocumentVersion version = DocumentVersion.create(document, 1, body, body, "a".repeat(64), now, 1, now);
+        ReflectionTestUtils.setField(version, "id", 3L);
+        DocumentDetection detection = DocumentDetection.create(runSource, document, version,
+                DocumentChangeType.NEW_DOCUMENT, now);
+        ReflectionTestUtils.setField(detection, "id", 4L);
+        DocumentAttachment attachment = DocumentAttachment.create(version, "첨부 일체.zip",
+                "https://example.org/attachments.zip", "zip", "application/zip", 1L, "b".repeat(64),
+                text, AttachmentParseStatus.COMPLETED, null);
+        given(detectionRepository.findById(4L)).willReturn(Optional.of(detection));
+        given(analysisRepository.findByDocumentVersionId(3L)).willReturn(Optional.empty());
+        given(attachmentRepository.findAllByDocumentVersionId(3L)).willReturn(List.of(attachment));
+
+        var response = service().findById(4L);
+
+        assertThat(response.responsibleOrganizations()).extracting(item -> item.name())
+                .containsExactly("유레카 사무국", "한국산업기술진흥원");
+        assertThat(response.responsibleOrganizations()).allSatisfy(item -> {
+            assertThat(item.role()).isEqualTo("접수처");
+            assertThat(text).contains(item.excerpt());
+        });
+        assertThat(response.analysis()).isNull();
+        assertThat(version.getContentText()).isEqualTo(body);
+        assertThat(attachment.getExtractedText()).isEqualTo(text);
+        org.mockito.Mockito.verify(analysisRepository, org.mockito.Mockito.never())
+                .save(org.mockito.ArgumentMatchers.any());
+        org.mockito.Mockito.verify(attachmentRepository, org.mockito.Mockito.never())
+                .save(org.mockito.ArgumentMatchers.any());
+    }
+
     private String opportunityJson() {
         return """
                 {"dimensions":[
@@ -295,7 +346,13 @@ class DocumentDetectionDetailServiceTest {
                 analysisRepository,
                 analysisTaskRepository,
                 attachmentRepository,
-                new ObjectMapper()
+                new ObjectMapper(), rewriteService()
         );
+    }
+    private com.publicmonitor.backend.domain.document.service.ParticipationRewriteService rewriteService() {
+        var service = org.mockito.Mockito.mock(com.publicmonitor.backend.domain.document.service.ParticipationRewriteService.class);
+        org.mockito.Mockito.lenient().when(service.resolve(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+        return service;
     }
 }

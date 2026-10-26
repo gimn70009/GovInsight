@@ -15,7 +15,10 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 from app.core.openai_models import ChatOpenAI
 from app.core.schemas import CamelCaseModel
 from app.domains.analysis.config import AnalysisSettings
-from app.domains.analysis.context.company_profile import BISTELLIGENCE_PROFILE
+from app.domains.analysis.context.evaluation_settings import (
+    EvaluationSettingsSnapshot,
+    profile_for_settings,
+)
 from app.domains.analysis.context.tools import (
     COMPANY_CONTEXT_INSTRUCTIONS,
     NOTICE_APPLICABILITY_INSTRUCTIONS,
@@ -65,6 +68,7 @@ class PreviousDraftSection(CamelCaseModel):
 
 
 class ProposalWriteRequest(CamelCaseModel):
+    evaluation_settings: EvaluationSettingsSnapshot | None = None
     title: str = Field(min_length=1, max_length=500)
     notice_text: str = Field(max_length=16_000)
     file_name: str = Field(min_length=1, max_length=1000)
@@ -607,7 +611,7 @@ class ProposalWriter:
     async def write(self, request):
         profile = json.loads(
             serialize_company_profile(
-                BISTELLIGENCE_PROFILE,
+                profile_for_settings(request.evaluation_settings),
             )
         )
         try:

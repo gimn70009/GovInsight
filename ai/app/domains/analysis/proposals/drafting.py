@@ -22,6 +22,7 @@ from app.domains.analysis.proposals.capabilities import (
     company_capability_catalog,
     ground_capability_matches,
 )
+from app.domains.analysis.proposals.eligibility_scope import application_source_text
 from app.domains.analysis.proposals.scoring import score_preparation
 from app.domains.analysis.proposals.submission_requirements import reconcile_submission_documents
 from app.domains.analysis.proposals.submission_review import separate_submission_reviews
@@ -172,8 +173,22 @@ DRAFT_PROMPT = """
 - source.excerpt는 표시문과 별개로 실제 원문을 유지합니다. 조건과 붙어 있는 예외를
   함께 담은 완결된 단위를 인용하고 1200자 안에서 중간 절단 없이 좁은 범위를 선택합니다.
   원문이 잘려 복구할 수 없으면 누락된 요건을 추측해 완성하지 않습니다.
-- eligibilityChecklist에는 신청 자격, 결격 사유와 필수 보유 상태만 기록합니다.
-  접수 마감일 자체와 사업계획서, 확인서, 증명서, 확약서, 등기부등본 같은 제출 파일은 넣지 않습니다.
+- eligibilityChecklist에는 신청 단계에서 지원할 수 있는 주체인지 판가름하는 요건만 기록합니다.
+  기관·사업자 유형, 업력·설립 기간·소재지·업종·기업 규모, 필수 인증·등록의 보유 상태,
+  체납·휴폐업·참여제한 등 신청 제외 사유가 해당합니다.
+- 근거의 대제목과 소제목을 함께 확인합니다. 지원조건·지원내용·사업비·협약·사후관리 아래의
+  문장은 '~해야 한다'라는 표현이 있어도 신청 자격으로 분류하지 않습니다.
+  해당 절 안의 '신청대상' 같은 작은 제목도 대제목의 문맥을 벗어나 해석하지 않습니다.
+- 각 항목에 '이 조건을 못 갖추면 신청 자체가 불가능한가?'를 검증합니다.
+  선정 후 부담·의무라면 제외합니다. 지원 금액·비율·기간, 정부지원금·자부담·현금·현물 구성,
+  보고·사업비 사용·사후관리 의무, 평가 기준·선정 절차·제출 서류는 신청 자격에 넣지 않습니다.
+- 한 근거에 자격과 지원 조건이 섞이면 자격 문장만 분리합니다. 인증서·사업자등록증의
+  필수 보유·등록 상태는 자격이며, 그 서류를 제출하는 행위는 submissionDocuments에만 둡니다.
+  접수 마감일 자체도 자격 항목으로 만들지 않습니다.
+- 자격의 detail은 원문을 읽기 쉽게 다듬고 '~입니다', '~해야 합니다', '~할 수 없습니다'의
+  안내체로 통일합니다. '~함', '~한다', 명사만 있는 조각 문장을 그대로 출력하지 않습니다.
+  대상·기준일·수치·부정·예외·모두 충족/택일은 보존하고 source.excerpt는 원문 그대로 둡니다.
+  확인된 신청 자격이 없으면 빈 배열로 반환하고 조건을 만들어 채우지 않습니다.
 - submissionDocuments에는 원문의 제출표·제출 지시·연결된 붙임 목록에서 제출 의무가
   확인된 문서만 기록합니다. 인용문이 원문에 있다는 사실만으로 제출 의무를 인정하지 않습니다.
 - 평가 배점·기업풀 정보·연락처 입력란을 근거로 별도 필수 서류를 만들지 않습니다.
@@ -310,7 +325,7 @@ class ProposalStrategyModelOutput(CamelCaseModel):
 
 class ProposalPreparationModelOutput(CamelCaseModel):
     meeting_agenda: list[str] = Field(max_length=8)
-    eligibility_checklist: list[ProposalChecklistModelOutput] = Field(min_length=1, max_length=12)
+    eligibility_checklist: list[ProposalChecklistModelOutput] = Field(max_length=12)
     submission_documents: list[ProposalChecklistModelOutput] = Field(max_length=15)
     application_deadline: str | None = Field(default=None, max_length=10)
     strategy: ProposalStrategyModelOutput
@@ -647,10 +662,14 @@ def _retain_verified_source_references(
         attachment.file_name: attachment.extracted_text or ""
         for attachment in document.attachments
     }
+    eligibility_texts = {
+        name: application_source_text(text) for name, text in attachment_texts.items()
+    }
     draft.preparation.eligibility_checklist = _verified_items(
-        draft.preparation.eligibility_checklist,
-        document.content_text or "",
-        attachment_texts,
+        [item for item in draft.preparation.eligibility_checklist
+         if item.stage == RequirementStage.APPLICATION],
+        application_source_text(document.content_text or ""),
+        eligibility_texts,
     )
     verified_documents = _verified_items(
         draft.preparation.submission_documents,
@@ -665,8 +684,6 @@ def _retain_verified_source_references(
     ]
     _supplement_missing_eligibility_requirements(draft, document)
     _supplement_missing_submission_files(draft, document)
-    if not draft.preparation.eligibility_checklist:
-        raise ValueError("원문에서 확인되는 지원 조건이 없습니다.")
     if not draft.preparation.submission_documents:
         draft.preparation.submission_documents = reconcile_submission_documents([], document)
 
@@ -766,7 +783,7 @@ def _extract_high_confidence_requirements(
     ]
     raw_candidates: list[_RequirementCandidate] = []
     for origin, attachment_name, location, text in sources:
-        for clause in _requirement_clauses(text):
+        for clause in _requirement_clauses(application_source_text(text)):
             kind = _requirement_kind(clause)
             if kind is None:
                 continue

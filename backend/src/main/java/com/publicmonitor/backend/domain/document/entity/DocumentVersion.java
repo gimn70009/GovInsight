@@ -63,6 +63,13 @@ public class DocumentVersion extends BaseEntity {
     @Column(name = "content_text", columnDefinition = "CLOB")
     private String contentText;
 
+    @Column(name = "participation_rewrite_json", columnDefinition = "CLOB")
+    private String participationRewriteJson;
+
+    @Column(name = "participation_rewrite_key", length = 64)
+    private String participationRewriteKey;
+
+
     @Column(name = "version_hash", nullable = false, length = 64)
     private String versionHash;
 

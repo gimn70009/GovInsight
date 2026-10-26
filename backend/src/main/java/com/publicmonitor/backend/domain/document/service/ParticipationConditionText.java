@@ -8,7 +8,7 @@ import java.util.regex.Pattern;
 
 /** Presentation only: reconnect wrapped prose and preserve the official qualifiers in visible clauses. */
 final class ParticipationConditionText {
-    private static final Pattern MARKER = Pattern.compile("^(?:[□■○◦●ㅇ•⦁▪∘※*→▶▷▸►-]|[①-⑳➀-➉]|\\d+[.)])\\h*");
+    private static final Pattern MARKER = Pattern.compile("^(?:[□■○◦●ㅇ•⦁▪∘※*→▶▷▸►-]|[①-⑳➀-➉]|\\d+[.)](?!\\d))\\h*");
     private ParticipationConditionText() {}
 
     static List<String> paragraphs(List<String> physicalLines) {
@@ -79,7 +79,8 @@ final class ParticipationConditionText {
     }
 
     static String unmark(String value) {
-        return spacing(value).replaceFirst("^(?:[□■○◦●ㅇ•⦁▪∘※*→▶▷▸►-]+|[①-⑳➀-➉]|\\d+[.)])\\h*", "").strip();
+        if (spacing(value).matches("^-\\d.*")) return spacing(value);
+        return spacing(value).replaceFirst("^(?:[□■○◦●ㅇ•⦁▪∘※*→▶▷▸►-]+|[①-⑳➀-➉]|\\d+[.)](?!\\d))\\h*", "").strip();
     }
 
     static String sentence(String raw, ParticipationKind kind) {
@@ -87,6 +88,16 @@ final class ParticipationConditionText {
         if (value.isBlank()) return value;
         value = value.replaceAll("(?<=[가-힣0-9])\\*+(?=[은는이가의\\h,]|$)", "");
         value = value.replace("必", "필수").replace("內", "내").replace("中", "중");
+        value = value.replaceFirst("하여야\\h*한다[.]?$", "해야 합니다.")
+                .replaceFirst("해야\\h*한다[.]?$", "해야 합니다.")
+                .replaceFirst("이어야\\h*한다[.]?$", "이어야 합니다.")
+                .replaceFirst("한다[.]?$", "합니다.")
+                .replaceFirst("된다[.]?$", "됩니다.")
+                .replaceFirst("할\\h*수\\h*없(?:다|음)[.]?$", "할 수 없습니다.")
+                .replaceFirst("할\\h*수\\h*있(?:다|음)[.]?$", "할 수 있습니다.")
+                .replaceFirst("(?:등록되어|등록돼)\\h*있어야\\h*함[.]?$", "등록되어 있어야 합니다.");
+        if (kind == ParticipationKind.MANDATORY && !value.matches(".*(?:미보유|보유하지\\h*않음)[.]?$"))
+            value = value.replaceFirst("보유(?:함)?[.]?$", "보유해야 합니다.");
         value = value.replaceFirst("인정하지\\h*않음[.]?$", "인정하지 않습니다.")
                 .replaceFirst("가점[（(](\\d+\\h*점)[）)]\\h*부여[.]?$", "가점 $1을 부여합니다.")
                 .replaceFirst("이어야\\h*함[.]?$", "이어야 합니다.")
@@ -142,7 +153,7 @@ final class ParticipationConditionText {
             return value + topic(value) + " 신청이 제한됩니다.";
         if (value.matches(".*(?:기업|기관|단체|소상공인|수료생|보유자|받은 자|가능한 자|[가-힣]+한 자|결정된 자|체결한 자|소공인|제조업|지주회사|전문회사|창업기획자|법인)$"))
             return nominal(value);
-        var exceptionDate = Pattern.compile("^조건\\h*예외\\h*대상\\((.+?)\\h*기준\\)$").matcher(value);
+        var exceptionDate = Pattern.compile("^조건\\h*예외\\h*대상\\h*\\((.+?)\\h*기준\\)$").matcher(value);
         if (exceptionDate.matches()) return "예외 여부는 " + exceptionDate.group(1) + " 기준으로 확인합니다.";
         if (value.matches("^업력\\h*\\d+\\h*년\\h*(?:이내|이상|이하|미만|초과)$"))
             return value.replaceFirst("^업력\\h*", "업력 기준은 ") + "입니다.";

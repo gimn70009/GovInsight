@@ -21,15 +21,16 @@ final class ParticipationGuidePresentation {
                 .filter(value -> value.kind() == ParticipationKind.MANDATORY && value.scope() == null)
                 .map(value -> compact(value.text().replaceFirst("(?:이 대상입니다|입니다)[.]?$", ""))).toList();
         for (var condition : conditions) {
-            ParticipationRule row = present(condition, sharedScopes);
-            var identity = identity(row);
+            var original = present(condition, sharedScopes);
+            var row = ParticipationReadability.present(original);
+            // Compare the final clauses, but do not collapse damaged originals into one review message.
+            var identity = identity(row.section().equals("REVIEW") ? original : row);
             var previous = result.get(identity);
             if (previous == null) result.put(identity, row);
             else result.put(identity, merge(previous, row));
         }
         return mergeIncludedDetails(List.copyOf(result.values())).stream()
-                .sorted(Comparator.comparingInt(row -> order(row.section())))
-                .map(ParticipationReadability::present).toList();
+                .sorted(Comparator.comparingInt(row -> order(row.section()))).toList();
     }
 
     private static ParticipationRule present(ParticipationCondition condition, List<String> sharedScopes) {

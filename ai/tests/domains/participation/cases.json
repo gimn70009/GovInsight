@@ -1,0 +1,320 @@
+{
+  "catalog": [
+    {
+      "code": "BUSINESS_FORM",
+      "category": "기업 기본 요건",
+      "label": "기업 형태"
+    },
+    {
+      "code": "COMPANY_SIZE",
+      "category": "기업 기본 요건",
+      "label": "기업 규모"
+    },
+    {
+      "code": "BUSINESS_AGE",
+      "category": "기업 기본 요건",
+      "label": "업력"
+    },
+    {
+      "code": "LOCATION",
+      "category": "기업 기본 요건",
+      "label": "소재지"
+    },
+    {
+      "code": "LEGAL_FORM",
+      "category": "기업 기본 요건",
+      "label": "설립 형태"
+    },
+    {
+      "code": "REPRESENTATIVE",
+      "category": "기업 기본 요건",
+      "label": "대표자 조건"
+    },
+    {
+      "code": "REVENUE",
+      "category": "재무 요건",
+      "label": "매출액"
+    },
+    {
+      "code": "CAPITAL",
+      "category": "재무 요건",
+      "label": "자본금·자본잠식"
+    },
+    {
+      "code": "CREDIT",
+      "category": "재무 요건",
+      "label": "부채비율·신용등급·기업평가등급"
+    },
+    {
+      "code": "INVESTMENT",
+      "category": "재무 요건",
+      "label": "투자유치 실적"
+    },
+    {
+      "code": "EXPORT",
+      "category": "재무 요건",
+      "label": "수출 실적"
+    },
+    {
+      "code": "IP",
+      "category": "기술·인증 요건",
+      "label": "특허·지식재산권"
+    },
+    {
+      "code": "CERTIFICATION",
+      "category": "기술·인증 요건",
+      "label": "기업 인증"
+    },
+    {
+      "code": "TRL",
+      "category": "기술·인증 요건",
+      "label": "기술 성숙도"
+    },
+    {
+      "code": "QUALITY",
+      "category": "기술·인증 요건",
+      "label": "품질·보안 인증"
+    },
+    {
+      "code": "TCB",
+      "category": "기술·인증 요건",
+      "label": "기술평가 등급"
+    },
+    {
+      "code": "SECTOR",
+      "category": "사업·산업 요건",
+      "label": "업종·산업 분야"
+    },
+    {
+      "code": "PRODUCT",
+      "category": "사업·산업 요건",
+      "label": "제품·서비스 요건"
+    },
+    {
+      "code": "EXPERIENCE",
+      "category": "사업·산업 요건",
+      "label": "유관산업 경험"
+    },
+    {
+      "code": "BUSINESS_ITEM",
+      "category": "사업·산업 요건",
+      "label": "사업 아이템"
+    },
+    {
+      "code": "HEADCOUNT",
+      "category": "인력 요건",
+      "label": "상시근로자 수"
+    },
+    {
+      "code": "EXPERTS",
+      "category": "인력 요건",
+      "label": "전문 인력"
+    },
+    {
+      "code": "EMPLOYMENT",
+      "category": "인력 요건",
+      "label": "고용 실적"
+    },
+    {
+      "code": "DUPLICATE",
+      "category": "이력·참여 제한 요건",
+      "label": "중복 수혜 제한"
+    },
+    {
+      "code": "COMPLETION",
+      "category": "이력·참여 제한 요건",
+      "label": "졸업·수료 이력"
+    },
+    {
+      "code": "CLOSURE",
+      "category": "이력·참여 제한 요건",
+      "label": "휴·폐업 여부"
+    },
+    {
+      "code": "TAX",
+      "category": "이력·참여 제한 요건",
+      "label": "국세·지방세 체납"
+    },
+    {
+      "code": "DEFAULT",
+      "category": "이력·참여 제한 요건",
+      "label": "연체·신용불량·회생·파산"
+    },
+    {
+      "code": "SANCTIONS",
+      "category": "이력·참여 제한 요건",
+      "label": "정부지원사업 참여 제한 처분"
+    },
+    {
+      "code": "EXCLUDED_SECTOR",
+      "category": "이력·참여 제한 요건",
+      "label": "제외 업종"
+    },
+    {
+      "code": "PLAN",
+      "category": "사업 수행 관련 요건",
+      "label": "사업 수행 의지·계획"
+    },
+    {
+      "code": "MATCHING",
+      "category": "사업 수행 관련 요건",
+      "label": "자부담 능력"
+    },
+    {
+      "code": "CONSORTIUM",
+      "category": "사업 수행 관련 요건",
+      "label": "협력 구조"
+    },
+    {
+      "code": "LINKAGE",
+      "category": "사업 수행 관련 요건",
+      "label": "상호 연계 요건"
+    },
+    {
+      "code": "PREF_REGION",
+      "category": "우대·가점 항목",
+      "label": "지역 우대"
+    },
+    {
+      "code": "PREF_SOCIAL",
+      "category": "우대·가점 항목",
+      "label": "사회적 가치"
+    },
+    {
+      "code": "PREF_REPRESENTATIVE",
+      "category": "우대·가점 항목",
+      "label": "청년·여성·장애인 대표 우대"
+    },
+    {
+      "code": "PREF_INVESTMENT_EXPORT",
+      "category": "우대·가점 항목",
+      "label": "투자유치·수출 실적 우대"
+    },
+    {
+      "code": "PREF_AWARDS",
+      "category": "우대·가점 항목",
+      "label": "정부 포상·수상 이력"
+    },
+    {
+      "code": "PREF_CLUSTER",
+      "category": "우대·가점 항목",
+      "label": "특구·클러스터 입주 우대"
+    }
+  ],
+  "cases": [
+    {
+      "id": "fragment_product",
+      "raw": "제품이 대상입니다.",
+      "criterion": "PRODUCT",
+      "expected": null
+    },
+    {
+      "id": "fragment_private",
+      "raw": "민간기관이 대상입니다.",
+      "criterion": "BUSINESS_FORM",
+      "expected": null
+    },
+    {
+      "id": "fragment_policy",
+      "raw": "정책적 배려기업 소상공인, 소기업이 대상입니다.",
+      "criterion": "COMPANY_SIZE",
+      "expected": null
+    },
+    {
+      "id": "product",
+      "raw": "(제 품) 우선구매대상 기술개발제품 12종에 해당할 것",
+      "criterion": "PRODUCT",
+      "expected": "신청 제품은 우선구매대상 기술개발제품 12종에 해당해야 합니다."
+    },
+    {
+      "id": "closure",
+      "raw": "사항: 기업의 휴·폐업은 신청이 제한됩니다.",
+      "criterion": "CLOSURE",
+      "expected": "휴업 또는 폐업 상태인 기업은 신청할 수 없습니다."
+    },
+    {
+      "id": "tax",
+      "raw": "사항: 국세·지방세 체납 및 금융기관 등의 채무불이행이 확인된 경우에는 신청이 제한됩니다.",
+      "criterion": "TAX",
+      "expected": "국세 또는 지방세를 체납한 기업은 신청할 수 없습니다."
+    },
+    {
+      "id": "employment",
+      "raw": "(최대 5점) 고용 우수기업 전체 종업원수 대비 최근 90일간 신규 고용한 종업원 수가 10%이상인 기업인 경우 (공고일 기준 4대 사회보험 사업자 가입자 명부 확인) 정책적 배려기업 소상공인, 소기업이 대상입니다.",
+      "criterion": "PREF_SOCIAL",
+      "expected": "최근 90일간 신규 고용한 종업원이 전체 종업원의 10% 이상인 고용 우수기업은 최대 5점의 가점을 받을 수 있습니다."
+    },
+    {
+      "id": "preference",
+      "raw": "여성기업, 장애인기업, 청년창업기업 (공고일 기준 유효 여부 확인)에 해당하는 경우 우대",
+      "criterion": "PREF_REPRESENTATIVE",
+      "expected": "여성기업, 장애인기업, 청년창업기업 중 공고일 기준으로 유효한 확인을 받은 기업은 우대를 받을 수 있습니다."
+    },
+    {
+      "id": "types",
+      "raw": "창업과제\n(기 업) 설립 7년 이하 「판로지원법」시행령 제13조의2제1항제1호에 따른 중소기업자\n일반과제\n(기 업) 설립 7년 초과 「판로지원법」시행령 제13조의2제1항제1호에 따른 중소기업자. 최근 10년간 공공기관 계약실적이 매년 10억 원을 초과하지 않아야 함",
+      "criterion": "BUSINESS_AGE",
+      "expected": "창업과제는 설립 7년 이하여야 합니다."
+    },
+    {
+      "id": "spacing",
+      "raw": "사업 신청 시, 전담조직구성등신청요건중\"예정(확보·설치등)\"으로기재한사항은협약체결일이후60일이내에요건을충족해야하며,기한내요건미충족시선정취소혹은협약해지조치가능□사업신청은신청기관의대표자*명의로만신청할 수 있습니다.",
+      "criterion": "PLAN",
+      "expected": "신청 요건 중 예정으로 기재한 사항은 협약 체결일 이후 60일 이내에 충족해야 합니다."
+    },
+    {
+      "id": "law",
+      "raw": "(적용 법령: 『산업교육진흥및산학연협력촉진에관한법률』) 산학연협력기술지주회사",
+      "criterion": "LEGAL_FORM",
+      "expected": "산업교육진흥 및 산학연협력촉진에 관한 법률에 따른 산학연협력기술지주회사여야 합니다."
+    },
+    {
+      "id": "tiers",
+      "raw": "스케일업 100억 트랙\n업력 7년 이상의 매출액 100억원 달성 중소기업이 대상입니다.\n스케일업 500억 트랙\n업력 7년 이상의 매출액 500억원 달성 중소기업이 대상입니다.\n스케일업 1,000억 트랙\n업력 7년 이상의 매출액 1,000억원 달성 중소기업이 대상입니다.",
+      "criterion": "REVENUE",
+      "expected": "스케일업 100억 트랙은 매출액 100억 원을 달성해야 합니다."
+    },
+    {
+      "id": "unknown_tiers",
+      "raw": "업력 기준은 7년 이상입니다.\n업력 기준은 7년 이상입니다.\n업력 기준은 7년 이상입니다.",
+      "criterion": "BUSINESS_AGE",
+      "expected": null
+    },
+    {
+      "id": "sanction",
+      "raw": "대표자 조건: 대표자 또는 기업이 보조금법 위반 등으로 정부 지원 사업에 참여제한 중인 경우에는 신청이 제한됩니다.",
+      "criterion": "SANCTIONS",
+      "expected": "보조금법 위반 등으로 정부 지원사업 참여가 제한된 대표자 또는 기업은 신청할 수 없습니다."
+    },
+    {
+      "id": "submission_table",
+      "raw": "제출 서류\t주요내용\t비고\n사업계획서\t운영·지원 사업계획서 (HWP 또는 PDF)\t기관장 직인본 필수",
+      "criterion": "PLAN",
+      "expected": "제출 서류는 사업계획서(HWP 또는 PDF)이며 기관장 직인본이 필수입니다."
+    },
+    {
+      "id": "ambiguous_table",
+      "raw": "지원 지원한도 지원유형 세부지원내용 규모 국비 자부담 (70%) (30%) 안전 일반 650내외개사630이내만원270이상만원 ・・산업안전",
+      "criterion": "MATCHING",
+      "expected": null
+    },
+    {
+      "id": "matching",
+      "raw": "라. 지원방식 : 사업비 매칭지원(국비 70% 이내, 자부담 30% 이상).",
+      "criterion": "MATCHING",
+      "expected": "지원방식은 사업비 매칭지원이며, 국비는 70% 이내, 자부담은 30% 이상입니다."
+    },
+    {
+      "id": "headcount",
+      "raw": "업종별 상시 근로자 수 등이 대통령령으로 정하는 기준에 해당할 것 나.",
+      "criterion": "HEADCOUNT",
+      "expected": "업종별 상시근로자 수가 대통령령으로 정하는 기준에 해당해야 합니다."
+    },
+    {
+      "id": "sector",
+      "raw": "한국표준산업분류 상 중분류 기준 '제조업(업종코드 : C10~C34)'을 주된 사업으로 신청 영위중이어야 함([참고1],[참고2] 참조) 조건.",
+      "criterion": "SECTOR",
+      "expected": "신청기업은 한국표준산업분류상 중분류 기준 제조업(업종코드 C10~C34)을 주된 사업으로 영위하고 있어야 합니다."
+    }
+  ]
+}

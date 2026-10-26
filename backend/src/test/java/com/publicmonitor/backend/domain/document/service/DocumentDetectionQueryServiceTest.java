@@ -36,7 +36,7 @@ class DocumentDetectionQueryServiceTest {
         DocumentDetectionSummaryRow item = new DocumentDetectionSummaryRow(
                 3L, 15L, 8L, 10L, "기후에너지환경부", "공지/공고", "기업 지원사업 모집 공고",
                 DocumentChangeType.NEW_DOCUMENT, 2, DocumentImportance.HIGH, 60,
-                OpportunityPriority.NORMAL, checkedAt
+                OpportunityPriority.NORMAL, checkedAt, com.publicmonitor.backend.domain.monitoring.entity.MonitoringRunStatus.COMPLETED, null
         );
         given(detectionRepository.findFilteredSummaries(3L, null, null, null, null, false, PageRequest.of(0, 20)))
                 .willReturn(new PageImpl<>(List.of(item), PageRequest.of(0, 20), 1));
@@ -85,7 +85,7 @@ class DocumentDetectionQueryServiceTest {
         PageRequest pageRequest = PageRequest.of(3, 2);
         var item = new DocumentDetectionSummaryRow(3L, 15L, 8L, 10L,
                 "기관", "게시판", "할인 50%_AI!", DocumentChangeType.NEW_DOCUMENT,
-                0, DocumentImportance.NORMAL, 80, OpportunityPriority.HIGH, from);
+                0, DocumentImportance.NORMAL, 80, OpportunityPriority.HIGH, from, com.publicmonitor.backend.domain.monitoring.entity.MonitoringRunStatus.COMPLETED, null);
         given(detectionRepository.findFilteredSummaries(3L, from, to, "%50!%!_ai!!%",
                 OpportunityPriority.HIGH, true, pageRequest))
                 .willReturn(new PageImpl<>(List.of(item, item), pageRequest, 17));
@@ -107,7 +107,7 @@ class DocumentDetectionQueryServiceTest {
         PageRequest pageRequest = PageRequest.of(0, 20);
         var item = new DocumentDetectionSummaryRow(3L, 15L, 8L, 10L,
                 "기관", "게시판", "미분석", DocumentChangeType.NEW_DOCUMENT,
-                0, null, null, null, LocalDateTime.of(2026, 10, 1, 0, 0));
+                0, null, null, null, LocalDateTime.of(2026, 10, 1, 0, 0), com.publicmonitor.backend.domain.monitoring.entity.MonitoringRunStatus.COLLECTED, null);
         given(detectionRepository.findFilteredSummaries(null, null, null, null, null, false, pageRequest))
                 .willReturn(new PageImpl<>(List.of(item), pageRequest, 1));
 

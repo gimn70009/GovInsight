@@ -38,7 +38,7 @@ import tools.jackson.databind.ObjectMapper;
     "app.local-admin.enabled=false", "app.monitoring.schedule.enabled=false", "spring.jpa.show-sql=false"
 })
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, AnalysisTaskService.class, AnalysisTaskRunner.class, AnalysisResultService.class,
+@Import({com.publicmonitor.backend.domain.settings.service.EvaluationSettingsService.class, JpaAuditingConfig.class, AnalysisTaskService.class, AnalysisTaskRunner.class, AnalysisResultService.class,
     AnalysisJobEventListener.class, AnalysisRecoveryScheduler.class, AnalysisRecoveryIntegrationTest.Config.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class AnalysisRecoveryIntegrationTest {

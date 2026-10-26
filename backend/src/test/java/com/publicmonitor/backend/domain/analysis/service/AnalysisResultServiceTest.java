@@ -58,6 +58,7 @@ class AnalysisResultServiceTest {
     @Mock ApplicationEventPublisher eventPublisher;
     @Mock com.publicmonitor.backend.domain.analysis.repository.AnalysisTaskRepository tasks;
     @Mock AnalysisTaskService taskService;
+    @Mock com.publicmonitor.backend.domain.settings.service.EvaluationSettingsService evaluationSettings;
 
     private AnalysisResultService service;
     private MonitoringRun run;
@@ -71,7 +72,8 @@ class AnalysisResultServiceTest {
                 analysisRepository,
                 new ObjectMapper(),
                 Clock.fixed(Instant.parse("2026-08-21T01:00:00Z"), ZoneOffset.UTC),
-                eventPublisher, tasks, taskService
+                eventPublisher, tasks, taskService,
+                evaluationSettings
         );
         MonitoringSource source = MonitoringSource.create(
                 "산업통상부", "사업공고", null, "https://example.com", null, 3, true
@@ -160,6 +162,33 @@ class AnalysisResultServiceTest {
                 .contains("COMPANY_FIT", "URGENCY");
         assertThat(response.storedAnalysisCount()).isEqualTo(1);
         assertThat(response.duplicateAnalysisCount()).isZero();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"1,1,73", "3,0,30"})
+    void 새_설정은_재평가하고_늦게_도착한_이전_설정은_덮어쓰지_않는다(long previousRevision, int stored, int score) throws Exception {
+        var mapper = new ObjectMapper();
+        var existing = DocumentAnalysis.create(detection.getDocumentVersion(), "기존 분석", "[]",
+                DocumentImportance.LOW, "기존 근거", AnalysisEligibility.REVIEW_REQUIRED,
+                AnalysisFavorability.NOT_APPLICABLE, "{}", 30, OpportunityPriority.LOW,
+                "{\"settingsRevision\":" + previousRevision + "}", "[]", "old-model", LocalDateTime.now());
+        given(analysisRepository.findByDocumentVersionIdForUpdate(40L)).willReturn(Optional.of(existing));
+        try (var input = new org.springframework.core.io.ClassPathResource("opportunity-settings-defaults.json").getInputStream()) {
+            var data = mapper.readTree(input);
+            ((tools.jackson.databind.node.ObjectNode) data.path("criteria")).put("preset", "GROWTH");
+            given(evaluationSettings.revision(2)).willReturn(mapper.treeToValue(data,
+                    com.publicmonitor.backend.domain.settings.web.dto.EvaluationSettingsData.class));
+        }
+        var payload = mapper.valueToTree(request());
+        ((tools.jackson.databind.node.ObjectNode) payload.path("results").get(0).path("opportunity"))
+                .put("settingsRevision", 2);
+        var response = service.receive(mapper.treeToValue(payload, AnalysisResultRequest.class));
+        assertThat(response.storedAnalysisCount()).isEqualTo(stored);
+        assertThat(existing.getOpportunityScore()).isEqualTo(score);
+        assertThat(mapper.readTree(existing.getOpportunityAssessment()).path("settingsRevision").asLong())
+                .isEqualTo(stored == 1 ? 2 : previousRevision);
+        if (stored == 1) assertThat(existing.getOpportunityAssessment()).contains("GROWTH");
+        else assertThat(existing.getSummary()).isEqualTo("기존 분석");
     }
 
     @Test

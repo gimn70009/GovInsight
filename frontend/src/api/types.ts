@@ -94,7 +94,10 @@ export type Importance = 'HIGH' | 'NORMAL' | 'LOW'
 export type OpportunityPriority = 'HIGH' | 'NORMAL' | 'LOW'
 export type ChangeType = 'NEW_DOCUMENT' | 'UPDATED_DOCUMENT' | 'UNCHANGED_DOCUMENT'
 
+export type DocumentAnalysisStatus = 'PENDING' | 'COMPLETED' | 'FAILED'
+
 export interface DocumentDetection {
+  analysisStatus: DocumentAnalysisStatus
   runId: number
   detectionId: number
   documentId: number
@@ -117,6 +120,8 @@ export type OpportunityDimensionType =
   | 'URGENCY'
 
 export interface OpportunityAssessment {
+  settingsRevision?: number
+  weights?: number[]
   totalScore: number
   priority: OpportunityPriority
   dimensions: Array<{
@@ -267,7 +272,7 @@ export interface ParticipationCondition {
 
 export interface ParticipationRule {
   reviewReason?: ParticipationReviewReason | null
-  section: 'BASIC' | 'FUNDING' | 'TARGETED' | 'EXCLUSION' | 'PREFERENCE' | 'DEDUCTION' | 'REVIEW'
+  section: 'BASIC' | 'ELIGIBILITY' | 'EVIDENCE' | 'FUNDING' | 'TARGETED' | 'EXCLUSION' | 'PREFERENCE' | 'DEDUCTION' | 'REVIEW'
   label: string
   text: string
   scope: string | null
@@ -279,7 +284,28 @@ export interface ParticipationRule {
   sources: NonNullable<ProposalPreparationItem['source']>[]
 }
 
+export interface ParticipationCriterionEntry {
+  supportingQuotes?: string[]
+  displayStatus?: 'VERIFIED' | 'EVIDENCE_ONLY'
+  rule: ParticipationRule
+  context: string | null
+  relation: 'LINKED' | 'ALTERNATIVE' | null
+  relatedCriteria: string[]
+}
+export interface ParticipationCriterionRow {
+  code: string
+  label: string
+  status: 'STATED' | 'NOT_STATED' | 'REVIEW_REQUIRED'
+  entries: ParticipationCriterionEntry[]
+}
+export interface ParticipationCategory {
+  code: string
+  label: string
+  rows: ParticipationCriterionRow[]
+}
 export interface ParticipationGuide {
+  rewriteStatus?: 'PENDING' | 'READY' | 'UNAVAILABLE'
+  categories?: ParticipationCategory[]
   conditions: ParticipationCondition[]
   rules?: ParticipationRule[]
   variants?: { name: string; description: string }[]
@@ -300,6 +326,8 @@ export interface BusinessTypeSummary {
 }
 
 export interface DocumentDetail {
+  analysisStatus: DocumentAnalysisStatus
+  analysisFailureReason: string | null
   detectionId: number
   analysisPending: boolean
   organizationName: string
