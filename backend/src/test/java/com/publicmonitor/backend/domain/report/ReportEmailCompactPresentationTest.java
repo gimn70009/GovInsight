@@ -1,5 +1,7 @@
 package com.publicmonitor.backend.domain.report;
 
+import com.publicmonitor.backend.domain.email.EmailBrand;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -114,7 +116,7 @@ class ReportEmailCompactPresentationTest {
                 + "• 제출처·방법: 온라인 접수: https://user@example.org/apply\n"
                 + "• 문의 담당: <img src=x onerror=alert(1)> 지원팀 02-0000-0000\n"
                 + "원문: [위험](javascript:alert(1))");
-        assertThat(html).doesNotContain("<img ", "href=\"https://user@", "href=\"javascript:");
+        assertThat(html.replace(EmailBrand.html(), "")).doesNotContain("<img ", "href=\"https://user@", "href=\"javascript:");
         assertThat(html).contains("&lt;img", "02-0000-0000");
     }
 

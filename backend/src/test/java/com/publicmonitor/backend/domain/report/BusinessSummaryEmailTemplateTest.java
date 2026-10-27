@@ -1,5 +1,7 @@
 package com.publicmonitor.backend.domain.report;
 
+import com.publicmonitor.backend.domain.email.EmailBrand;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
@@ -44,7 +46,9 @@ class BusinessSummaryEmailTemplateTest {
                 null, "변경", "https://example.org/file?q=\"x\"&a=1");
         var result = BusinessSummaryEmailTemplate.render("<제목>", List.of(notice), false);
         assertThat(result.html()).contains("&lt;script&gt;", "&lt;img", "&lt;svg", "&lt;기관&gt;", "설명 &amp; 내용", "기회점수 미산정");
-        assertThat(result.html()).doesNotContain("<script", "<img", "<svg", "href=\"javascript:", "data-report-original-link");
+        assertThat(result.html().replace(EmailBrand.html(), "")).doesNotContain("<script", "<img", "<svg", "href=\"javascript:", "data-report-original-link");
+        assertThat(result.html().split("<img ", -1)).hasSize(2);
+        assertThat(result.html()).contains("src=\"cid:govinsight-brand\"");
         assertThat(result.plainText()).contains("설명 & 내용");
     }
 

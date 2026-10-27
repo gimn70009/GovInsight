@@ -10,39 +10,30 @@ import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
-/** Read explicit role/name pairs from the current version, never from generated analysis. */
+/** Read explicit role/name relations from the current source; never infer them from generated analysis. */
 final class ResponsibleOrganizationExtractor {
     private static final int MAX_TEXT_LENGTH = 200_000;
-    private static final String ROLES = "주관기관|주최기관|총괄기관|총괄부처|소관부처|시행기관|전담기관|운영기관|관리기관|전문기관|주관|주최|접수처|문의처";
+    private static final String ROLES = "주관기관|주최기관|총괄기관|총괄부처|소관부처|시행부처|주관부처|시행기관|전담기관|운영기관|관리기관|전문기관|주관|주최|접수처|문의처";
     private static final String SPACED_ROLES = String.join("|", List.of(ROLES.split("\\|")).stream()
             .map(role -> String.join("\\h*", role.split(""))).toList());
-    private static final Pattern LABELED = Pattern.compile(
-            "^[\\h|□◦○ㅇ▪▫※*·•∙⦁■▶◈-]*(?:\\(|\\[)?\\h*(?<role>" + SPACED_ROLES
-                    + ")(?![가-힣A-Za-z])\\h*(?<separator>[)\\]:：|]|\\(|$|\\h)(?<value>.*)$");
-    private static final Pattern ROLE_PREFIX = Pattern.compile(
-            "^(?:" + SPACED_ROLES + ")(?=$|\\h|[:：|])");
-    private static final Pattern NAME = Pattern.compile(
-            "^((?:\\([재사]\\)\\h*)?[가-힣A-Za-z][가-힣A-Za-z0-9·ㆍ‧∙&.\\-\\h]{1,78}?"
-                    + "(?:공단|재단|협회|진흥원|진흥회|연구원|연구소|센터|대학교|대학|공사|기술원|개발원|평가원|지원단|사업단|사무국|조합|상공회의소|테크노파크|위원회|청|부|원|시|도))"
-                    + "(?=$|[\\h,;/|()])");
-    private static final Pattern PLACEHOLDER = Pattern.compile(
-            "(?i)예시|견본|가칭|미정|추후|모집|선정|기재|작성|입력|해당|각\\s*기관|전문기업|중소기업$|(?:^|[가-힣])(?:OO|XX)|[○□ㅇ]{2}");
-    private static final Pattern FORM_HEADING = Pattern.compile(
-            "^[\\h\\[<(【]*(?:붙임|별첨|별지|서식)\\h*(?:제\\h*)?\\d|^[\\h\\[<(【]*(?:(?:사업|연구개발)계획서|신청서|공적조서|동의서)");
+    private static final String LEADING = "[\\h|□◦○ㅇ▪▫※*·•∙⦁■▶◈-]*(?:\\d+[.)]\\h*)?(?:(?:본\\h*)?사업\\h*(?:담당\\h*)?)?";
+    private static final Pattern LABELED = Pattern.compile("^" + LEADING + "[(\\[【]?\\h*(?<role>" + SPACED_ROLES
+            + ")(?:\\h*명)?(?=$|[\\h)\\]】:：|=(–—-]|은|는)\\h*"
+            + "(?:[)\\]】]\\h*)?(?:[:：|=–—-]\\h*|\\(\\h*|(?:은|는)\\h*|$|\\h)(?<value>.*)$");
+    private static final Pattern INLINE_ROLE = Pattern.compile("\\h*[,;/|]\\h*(?=[(\\[【]?(?:" + SPACED_ROLES + ")(?=$|[\\h:：()\\]】]))");
+    private static final Pattern COMBINED = Pattern.compile("^" + LEADING + "[(\\[【]?\\h*(?<roles>(?:" + SPACED_ROLES
+            + ")(?:\\h*/\\h*(?:" + SPACED_ROLES + "))+)\\h*[)\\]】]?\\h*[:：]?\\h+(?<value>.+)$");
+    private static final Pattern REVERSED = Pattern.compile("^(.+?)\\(\\h*(" + SPACED_ROLES + ")\\h*\\)[.]?$");
+    private static final Pattern SUBJECT = Pattern.compile("^(.+?)(?:이|가)\\h+(?:(?:본\\h*)?사업을\\h+)?(주관|주최|총괄|시행|운영)(?:합니다|한다|함)[.]?$");
+    private static final Pattern FORM_HEADING = Pattern.compile("^[\\h\\[<(【]*(?:서식\\h*(?:제\\h*)?\\d|"
+            + "(?:붙임|별첨|별지)\\h*(?:제\\h*)?\\d.{0,30}(?:신청서|계획서|동의서|서식|양식)|"
+            + "(?:(?:사업|연구개발)계획서|신청서|공적조서|동의서)(?:\\h*양식)?[\\h)\\]】>]*$)");
     private static final Pattern EXAMPLE_HEADING = Pattern.compile("^.{0,12}(?:작성\\h*예시|작성\\h*예제|작성\\h*견본)");
     private static final Pattern NON_NOTICE_FILE = Pattern.compile("(?i)예시|견본|FAQ|참고자료|신청서|계획서|동의서|서식|양식|협약서|확인서|증명서|인정서|서약서");
     private static final Pattern NOTICE_FILE = Pattern.compile("공고|모집|안내");
     private static final Pattern ARCHIVE_ENTRY = Pattern.compile("(?m)^\\[파일: ([^\\r\\n]+)]\\h*$");
-    private static final Pattern NON_NAME_PREFIX = Pattern.compile(
-            "^(?:및|또는|와|과)(?=$|\\h)|^(?:(?:주관|공동|참여|국내|국외)\\h*)?(?:연구개발기관|연구기관)(?=$|\\h)");
-    private static final Pattern GENERIC_NAME = Pattern.compile(
-            "(?:(?:참여|책임|공동|소속|담당|실습|학생|신규|선임|수석)?연구원|연구책임자|담당자|직원|"
-                    + "(?:국내|국외|공공|민간|영리|비영리)?(?:연구기관|연구소|기업부설연구소|대학|대학교|의료기관|사무국|기업))");
-    private static final Pattern DOCUMENT_AFTER_NAME = Pattern.compile(
-            "^\\h*(?:인정서|확인서|증명서|재직증명서|등록증|신청서|동의서|서약서|계획서|보고서)(?=$|[\\h,;/|()])");
-    private static final Pattern NAME_SEPARATOR = Pattern.compile("^(?:[,/;]\\h*|및\\h+)");
-
     private static final Pattern OTHER_CONTEXT = Pattern.compile("전년도|지난해|타\\h*사업|다른\\h*사업|참고\\h*사업|작성\\h*예시|예\\h*[:：]");
+    private static final Pattern LINES = Pattern.compile("(.*?)(\\R|$)", Pattern.DOTALL);
 
     private ResponsibleOrganizationExtractor() {}
 
@@ -91,20 +82,40 @@ final class ResponsibleOrganizationExtractor {
         return NON_NOTICE_FILE.matcher(fileName).find() && !NOTICE_FILE.matcher(fileName).find();
     }
 
+    private record Line(String text, int start, int end) {}
+    private record Label(String role, String value) {}
+    private record Cell(String text, int start, int end) {}
+    private record RoleEvidence(String role, String value, String excerpt) {}
+
+    private static List<Line> lines(String text) {
+        var result = new ArrayList<Line>();
+        var matcher = LINES.matcher(text);
+        while (matcher.find() && matcher.end() > matcher.start()) {
+            result.add(new Line(matcher.group(1), matcher.start(), matcher.end(1)));
+        }
+        return result;
+    }
+
     private static void collectDocument(String text, DocumentAttachment attachment,
                                         LinkedHashMap<String, ResponsibleOrganization> found) {
-        String[] lines = text.replace('\u00a0', ' ').replace("\u200b", "").split("\\R+");
+        var lines = lines(text);
         int tableEnd = -1;
+        String tableHeader = "";
         boolean form = false;
         boolean example = false;
-        for (int index = 0; index < lines.length; index++) {
-            String line = lines[index].strip();
+        for (int index = 0; index < lines.size(); index++) {
+            var source = lines.get(index);
+            String line = source.text().strip();
+            if (line.isBlank()) continue;
             if (line.equals("[표]")) {
                 tableEnd = tableEnd(lines, index);
-                if (tableEnd < 0) break; // A truncated table cannot establish a role/name relation.
+                if (tableEnd < 0) break;
                 if (!validTable(lines, index, tableEnd)) {
                     index = tableEnd;
                     tableEnd = -1;
+                } else {
+                    int first = nextNonblank(lines, index, tableEnd);
+                    tableHeader = lines.get(first).text();
                 }
                 continue;
             }
@@ -112,134 +123,214 @@ final class ResponsibleOrganizationExtractor {
                 tableEnd = -1;
                 continue;
             }
-            for (String cell : line.split("\t", -1)) {
-                if (FORM_HEADING.matcher(cell.strip()).find()) form = true;
-                if (EXAMPLE_HEADING.matcher(cell.strip()).find()) example = true;
-            }
-            if (example || OTHER_CONTEXT.matcher(line).find()) continue;
+            // A description cell mentioning 신청서류 is not a form title for this or subsequent rows.
+            var distinctCells = cells(line).stream().map(Cell::text).filter(cell -> !cell.isBlank()).distinct().toList();
+            if (distinctCells.size() == 1 && FORM_HEADING.matcher(distinctCells.getFirst()).find()) form = true;
+            if (distinctCells.size() == 1 && EXAMPLE_HEADING.matcher(distinctCells.getFirst()).find()) example = true;
+            if (example) continue;
+            String context = tableEnd >= 0 ? distinctCells.getFirst() : line;
+            if (OTHER_CONTEXT.matcher(context).find()) continue;
             if (tableEnd >= 0) {
-                String next = index + 1 < tableEnd ? lines[index + 1] : null;
-                for (var evidence : tableRow(lines[index], next)) {
-                    if (!form || isContact(evidence.role())) {
-                        add(evidence.role(), evidence.value(), evidence.excerpt(), attachment, found);
-                    }
+                int next = nextNonblank(lines, index, tableEnd);
+                String following = next < tableEnd ? lines.get(next).text() : null;
+                String gap = next < tableEnd ? text.substring(source.end(), lines.get(next).start()) : "";
+                for (var evidence : tableRow(source.text(), following, gap, tableHeader)) {
+                    if (!form || isContact(evidence.role())) add(evidence, attachment, found);
                 }
                 continue;
             }
-            var label = LABELED.matcher(line);
-            if (!label.matches()) continue;
-            String role = label.group("role").replaceAll("\\h", "");
-            if (form && !isContact(role)) continue;
-            String value = label.group("value").replaceFirst("^[\\h:：|]+", "").strip();
-            String excerpt = line;
-            if (value.isEmpty() && index + 1 < lines.length) {
-                value = lines[index + 1].strip();
-                excerpt += "\n" + value;
+            var evidence = labeledParts(line);
+            if (evidence.size() == 1) {
+                evidence = List.of(withContinuation(evidence.getFirst(), text, lines, index));
             }
-            add(role, value, excerpt, attachment, found);
+            for (var item : evidence) if (!form || isContact(item.role())) add(item, attachment, found);
         }
     }
 
-    private static void add(String role, String value, String excerpt, DocumentAttachment attachment,
-                            LinkedHashMap<String, ResponsibleOrganization> found) {
-        for (String name : names(value)) {
-            var item = new ResponsibleOrganization(name, role,
-                    attachment == null ? "NOTICE_BODY" : "ATTACHMENT",
-                    attachment == null ? null : attachment.getFileName(), excerpt);
-            found.putIfAbsent(role + ":" + nameKey(name), item);
+    private static RoleEvidence withContinuation(RoleEvidence evidence, String text, List<Line> lines, int index) {
+        String value = evidence.value();
+        int last = index;
+        if (value.isBlank()) {
+            int next = nextNonblank(lines, index, Math.min(lines.size(), index + 5));
+            if (next < lines.size() && next < index + 5 && !lines.get(next).text().strip().startsWith("[")) {
+                value = lines.get(next).text().strip();
+                last = next;
+            }
+        } else if (ResponsibleOrganizationNames.read(value).isEmpty() && index + 1 < lines.size()
+                && value.matches("[가-힣A-Za-z]{2,40}") && lines.get(index + 1).text().strip().matches("[가-힣A-Za-z]{2,20}")) {
+            String joined = value + lines.get(index + 1).text().strip();
+            if (ResponsibleOrganizationNames.complete(joined)) {
+                value = joined;
+                last = index + 1;
+            }
         }
+        if (ResponsibleOrganizationNames.complete(value)) {
+            // Only complete adjacent names continue a list; headings and prose end it.
+            int continuationEnd = Math.min(lines.size(), last + 8);
+            for (int next = last + 1; next < continuationEnd; next++) {
+                String candidate = lines.get(next).text().strip();
+                if (!ResponsibleOrganizationNames.complete(candidate)) break;
+                value += ", " + candidate;
+                last = next;
+                if (ResponsibleOrganizationNames.read(value).size() >= 8) break;
+            }
+        }
+        String excerpt = last == index ? evidence.excerpt()
+                : text.substring(lines.get(index).start(), lines.get(last).end()).strip();
+        return new RoleEvidence(evidence.role(), value, excerpt);
     }
 
-    private record Cell(String text, int start, int end) {}
-    private record RoleEvidence(String role, String value, String excerpt) {}
-
-    private static List<Cell> cells(String row) {
-        var cells = new ArrayList<Cell>();
-        int offset = 0;
-        for (String raw : row.split("\t", -1)) {
-            cells.add(new Cell(raw.strip(), offset, offset + raw.length()));
-            offset += raw.length() + 1;
-        }
-        return cells;
+    private static int nextNonblank(List<Line> lines, int index, int end) {
+        int next = index + 1;
+        while (next < end && lines.get(next).text().isBlank()) next++;
+        return next;
     }
 
-    private static List<RoleEvidence> tableRow(String row, String nextRow) {
+    private static Label label(String value) {
+        var matcher = LABELED.matcher(ResponsibleOrganizationNames.normalize(value).strip());
+        if (!matcher.matches()) return null;
+        return new Label(matcher.group("role").replaceAll("\\h", ""), matcher.group("value").strip());
+    }
+
+    private static List<RoleEvidence> labeledParts(String raw) {
+        var combined = COMBINED.matcher(ResponsibleOrganizationNames.normalize(raw).strip());
+        if (combined.matches()) {
+            String[] roles = combined.group("roles").split("/");
+            String[] values = combined.group("value").split("/", -1);
+            // 주최/주관 does not assign every following institution to the last role.
+            // Use aligned groups only; an ambiguous or incomplete mapping stays unconfirmed.
+            if (roles.length != values.length) return List.of();
+            var result = new ArrayList<RoleEvidence>();
+            for (int index = 0; index < roles.length; index++) {
+                if (ResponsibleOrganizationNames.read(values[index]).isEmpty()) return List.of();
+                result.add(new RoleEvidence(roles[index].replaceAll("\\h", ""), values[index].strip(), raw.strip()));
+            }
+            return result;
+        }
         var result = new ArrayList<RoleEvidence>();
-        var cells = cells(row);
-        var below = nextRow == null ? List.<Cell>of() : cells(nextRow);
-        for (int column = 0; column < cells.size(); column++) {
-            var cell = cells.get(column);
-            if (cell.text().isBlank() || (column > 0 && cell.text().equals(cells.get(column - 1).text()))) continue;
-            var label = LABELED.matcher(cell.text());
-            if (!label.matches()) continue;
-            String role = label.group("role").replaceAll("\\h", "");
-            String value = label.group("value").replaceFirst("^[\\h:：|]+", "").strip();
-            if (!value.isEmpty()) {
-                result.add(new RoleEvidence(role, value, cell.text()));
-                continue;
-            }
-            // Repeated adjacent cells are the same expanded merge. Use the last role
-            // occurrence and first value so the evidence stays a real contiguous excerpt.
-            int lastRole = column, right = column + 1;
-            while (right < cells.size()
-                    && (cells.get(right).text().isBlank() || cells.get(right).text().equals(cell.text()))) {
-                if (!cells.get(right).text().isBlank()) lastRole = right;
-                right++;
-            }
-            if (right < cells.size() && !names(cells.get(right).text()).isEmpty()) {
-                result.add(new RoleEvidence(role, cells.get(right).text(),
-                        row.substring(cells.get(lastRole).start(), cells.get(right).end()).strip()));
-            } else if (below.size() == cells.size() && !names(below.get(column).text()).isEmpty()) {
-                // Vertical role headers must use their own column, never the next nonempty cell.
-                result.add(new RoleEvidence(role, below.get(column).text(),
-                        row.substring(cell.start()) + "\n" + nextRow.substring(0, below.get(column).end())));
+        var delimiter = INLINE_ROLE.matcher(raw);
+        int start = 0;
+        while (delimiter.find()) {
+            String part = raw.substring(start, delimiter.start()).strip();
+            var previous = label(part);
+            // A separator within 주최/주관 or an annotation cannot start a new role/value pair.
+            if (previous == null || previous.value().isBlank() || unmatchedParenthesis(part)) continue;
+            result.add(new RoleEvidence(previous.role(), previous.value(), part));
+            start = delimiter.end();
+        }
+        String part = raw.substring(start).strip();
+        var label = label(part);
+        if (label != null) result.add(new RoleEvidence(label.role(), label.value(), part));
+        else {
+            String normalized = ResponsibleOrganizationNames.normalize(part);
+            var reversed = REVERSED.matcher(normalized);
+            var subject = SUBJECT.matcher(normalized);
+            if (reversed.matches() && ResponsibleOrganizationNames.complete(reversed.group(1))) {
+                result.add(new RoleEvidence(reversed.group(2).replaceAll("\\h", ""), reversed.group(1), part));
+            } else if (subject.matches() && ResponsibleOrganizationNames.complete(subject.group(1))) {
+                result.add(new RoleEvidence(subject.group(2) + "기관", subject.group(1), part));
             }
         }
         return result;
     }
 
-    private static int tableEnd(String[] lines, int start) {
-        for (int index = start + 1; index < lines.length; index++) {
-            if (lines[index].strip().equals("[/표]")) return index;
-            if (lines[index].strip().equals("[표]")) return -1;
+    private static boolean unmatchedParenthesis(String value) {
+        int depth = 0;
+        for (char character : ResponsibleOrganizationNames.normalize(value).toCharArray()) {
+            if (character == '(' || character == '[' || character == '【') depth++;
+            if (character == ')' || character == ']' || character == '】') depth--;
+        }
+        return depth != 0;
+    }
+
+    private static void add(RoleEvidence evidence, DocumentAttachment attachment,
+                            LinkedHashMap<String, ResponsibleOrganization> found) {
+        for (String name : ResponsibleOrganizationNames.read(evidence.value())) {
+            var item = new ResponsibleOrganization(name, evidence.role(),
+                    attachment == null ? "NOTICE_BODY" : "ATTACHMENT",
+                    attachment == null ? null : attachment.getFileName(), evidence.excerpt());
+            found.putIfAbsent(evidence.role() + ":" + nameKey(name), item);
+        }
+    }
+
+    private static List<Cell> cells(String row) {
+        var result = new ArrayList<Cell>();
+        int offset = 0;
+        for (String raw : row.split("\t", -1)) {
+            result.add(new Cell(raw.strip(), offset, offset + raw.length()));
+            offset += raw.length() + 1;
+        }
+        return result;
+    }
+
+    private static List<RoleEvidence> tableRow(String row, String nextRow, String gap, String header) {
+        var result = new ArrayList<RoleEvidence>();
+        var cells = cells(row);
+        var headers = cells(header);
+        var below = nextRow == null ? List.<Cell>of() : cells(nextRow);
+        for (int column = 0; column < cells.size(); column++) {
+            var cell = cells.get(column);
+            if (cell.text().isBlank() || (column > 0 && cell.text().equals(cells.get(column - 1).text()))) continue;
+            var labels = labeledParts(cell.text());
+            for (var entry : labels) {
+                if (!entry.value().isEmpty()) {
+                    result.add(entry);
+                    continue;
+                }
+                // Reverse columns are used only when the table explicitly identifies a name column.
+                int nameColumn = nameColumn(headers);
+                if (nameColumn >= 0 && nameColumn < column && column < headers.size()
+                        && headers.get(column).text().matches("역\\h*할|구\\h*분")
+                        && !ResponsibleOrganizationNames.read(cells.get(nameColumn).text()).isEmpty()) {
+                    result.add(new RoleEvidence(entry.role(), cells.get(nameColumn).text(),
+                            row.substring(cells.get(nameColumn).start(), cell.end()).strip()));
+                    continue;
+                }
+                int lastRole = column, right = column + 1;
+                while (right < cells.size() && (cells.get(right).text().isBlank() || cells.get(right).text().equals(cell.text()))) {
+                    if (!cells.get(right).text().isBlank()) lastRole = right;
+                    right++;
+                }
+                if (right < cells.size() && !ResponsibleOrganizationNames.read(cells.get(right).text()).isEmpty()) {
+                    result.add(new RoleEvidence(entry.role(), cells.get(right).text(),
+                            row.substring(cells.get(lastRole).start(), cells.get(right).end()).strip()));
+                } else if (below.size() == cells.size() && !ResponsibleOrganizationNames.read(below.get(column).text()).isEmpty()) {
+                    result.add(new RoleEvidence(entry.role(), below.get(column).text(),
+                            row.substring(cell.start()) + gap + nextRow.substring(0, below.get(column).end())));
+                }
+            }
+        }
+        return result;
+    }
+
+    private static int nameColumn(List<Cell> header) {
+        int found = -1;
+        for (int index = 0; index < header.size(); index++) {
+            if (!header.get(index).text().replaceAll("\\h", "").matches("기관명|기관|담당기관")) continue;
+            if (found >= 0) return -1;
+            found = index;
+        }
+        return found;
+    }
+
+    private static int tableEnd(List<Line> lines, int start) {
+        for (int index = start + 1; index < lines.size(); index++) {
+            if (lines.get(index).text().strip().equals("[/표]")) return index;
+            if (lines.get(index).text().strip().equals("[표]")) return -1;
         }
         return -1;
     }
 
-    private static boolean validTable(String[] lines, int start, int end) {
-        if (end <= start + 1 || end - start > 10_001) return false;
-        int width = lines[start + 1].split("\t", -1).length;
+    private static boolean validTable(List<Line> lines, int start, int end) {
+        int first = nextNonblank(lines, start, end);
+        if (first >= end || end - start > 10_001) return false;
+        int width = lines.get(first).text().split("\t", -1).length;
         if (width < 2 || width > 256) return false;
-        for (int index = start + 1; index < end; index++) {
-            if (lines[index].split("\t", -1).length != width) return false;
+        for (int index = first; index < end; index++) {
+            String row = lines.get(index).text();
+            if (!row.isBlank() && row.split("\t", -1).length != width) return false;
         }
         return true;
-    }
-
-    private static List<String> names(String value) {
-        // Parentheses may surround a name, except the legal-entity prefix (재)/(사).
-        if (value.startsWith("(") && !value.matches("^\\([재사]\\).*")) value = value.substring(1).strip();
-        if (value.length() > 500 || OTHER_CONTEXT.matcher(value).find()
-                || value.matches(".*(?:예시|견본|가칭|예정|미정|추후).*")) return List.of();
-        var names = new ArrayList<String>();
-        String remaining = value;
-        while (!remaining.isBlank() && names.size() < 8) {
-            if (ROLE_PREFIX.matcher(remaining).find() || NON_NAME_PREFIX.matcher(remaining).find()) break;
-            var name = NAME.matcher(remaining);
-            if (!name.find()) break;
-            String candidate = name.group(1).replaceAll("\\h+", " ").strip();
-            String tail = remaining.substring(name.end());
-            if (PLACEHOLDER.matcher(candidate).find()
-                    || GENERIC_NAME.matcher(candidate.replaceAll("\\h", "")).matches()
-                    || DOCUMENT_AFTER_NAME.matcher(tail).find()) break;
-            names.add(candidate);
-            remaining = tail.strip();
-            // A conjunction can join complete names, but cannot start an institution name.
-            var separator = NAME_SEPARATOR.matcher(remaining);
-            if (!separator.find()) break;
-            remaining = remaining.substring(separator.end()).strip();
-        }
-        return names;
     }
 
     private static boolean isContact(String role) {

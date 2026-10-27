@@ -1,6 +1,7 @@
 package com.publicmonitor.backend.domain.report;
 
 import com.publicmonitor.backend.domain.email.EmailMessageContent;
+import com.publicmonitor.backend.domain.email.EmailBrand;
 import com.publicmonitor.backend.global.presentation.YearNotation;
 import java.util.List;
 
@@ -17,15 +18,15 @@ public final class BusinessSummaryEmailTemplate {
                 <!doctype html><html lang="ko"><head><meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width,initial-scale=1"></head>
                 <body style="margin:0;padding:0;background:#f4f6f8;color:#243247;font-family:Arial,'Malgun Gothic',sans-serif">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8"><tr>
+                <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="background:#f4f6f8"><tr>
                 <td align="center" style="padding:24px 10px">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:720px;table-layout:fixed">
+                <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="max-width:720px;table-layout:fixed">
                 <tr><td data-report-header style="padding:28px 24px 24px;background:#193655;border:1px solid #2c4b6b;border-radius:14px">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-                <td style="color:#a9c9f3;font-size:16px;font-weight:700;letter-spacing:-0.4px">GovInsight</td>
-                <td align="right" style="color:#a9c9f3;font-size:10px;font-weight:700;letter-spacing:1.5px">MONITORING REPORT</td>
+                <table role="presentation" width="100%%" cellpadding="0" cellspacing="0"><tr>
+                <td width="160" valign="middle" style="padding:0;vertical-align:middle;line-height:0">%s</td>
+                <td align="right" valign="middle" style="padding:0 0 0 12px;vertical-align:middle;color:#a9c9f3;font-size:11px;line-height:16px;font-weight:700;letter-spacing:0.8px">MONITORING REPORT</td>
                 </tr></table>
-                """);
+                """.formatted(EmailBrand.html()));
         html.append("<h1 style=\"margin:22px 0 0;color:#ffffff;font-size:24px;font-weight:700;letter-spacing:-0.7px;line-height:1.5;word-break:keep-all;overflow-wrap:anywhere\">")
                 .append(escape(heading)).append("</h1><div data-report-overview style=\"margin-top:20px;padding-top:16px;border-top:1px solid #3b5673;color:#c5d5e8;font-size:13px;line-height:1.9;overflow-wrap:anywhere\">")
                 .append(escape(overview)).append("</div></td></tr>");
