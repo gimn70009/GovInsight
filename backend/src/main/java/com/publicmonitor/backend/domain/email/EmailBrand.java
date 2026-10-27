@@ -9,7 +9,7 @@ public final class EmailBrand {
 
     public static String html() {
         return """
-                <img src="cid:govinsight-brand" width="180" height="54" alt="GovInsight · Public Notice Intelligence" style="display:block;width:180px;height:54px;border:0;border-radius:9px">
+                <img src="cid:govinsight-brand" width="160" height="40" alt="GovInsight" style="display:block;width:160px;height:40px;border:0">
                 """;
     }
 }

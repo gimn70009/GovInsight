@@ -23,8 +23,8 @@ public final class BusinessSummaryEmailTemplate {
                 <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="max-width:720px;table-layout:fixed">
                 <tr><td data-report-header style="padding:28px 24px 24px;background:#193655;border:1px solid #2c4b6b;border-radius:14px">
                 <table role="presentation" width="100%%" cellpadding="0" cellspacing="0"><tr>
-                <td>%s</td>
-                <td align="right" style="color:#a9c9f3;font-size:9px;font-weight:700;letter-spacing:1px">MONITORING REPORT</td>
+                <td width="160" valign="middle" style="padding:0;vertical-align:middle;line-height:0">%s</td>
+                <td align="right" valign="middle" style="padding:0 0 0 12px;vertical-align:middle;color:#a9c9f3;font-size:11px;line-height:16px;font-weight:700;letter-spacing:0.8px">MONITORING REPORT</td>
                 </tr></table>
                 """.formatted(EmailBrand.html()));
         html.append("<h1 style=\"margin:22px 0 0;color:#ffffff;font-size:24px;font-weight:700;letter-spacing:-0.7px;line-height:1.5;word-break:keep-all;overflow-wrap:anywhere\">")
