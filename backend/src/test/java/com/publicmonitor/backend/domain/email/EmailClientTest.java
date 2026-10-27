@@ -30,6 +30,7 @@ class EmailClientTest {
         message.saveChanges();
         var bytes = new java.io.ByteArrayOutputStream(); message.writeTo(bytes);
         assertThat(bytes.toString(java.nio.charset.StandardCharsets.UTF_8)).contains("multipart/alternative", "text/plain", "text/html");
+        assertEmbeddedBrand(message);
         assertThat(EmailClient.html("<title>", "<script>\n&본문")).contains("&lt;title&gt;", "&lt;script&gt;<br>&amp;본문").doesNotContain("<script>");
         verify(sender).send(message);
     }
@@ -80,6 +81,7 @@ class EmailClientTest {
         collectText(message, texts);
         assertThat(texts.get("text/plain")).isEqualTo(content.plainText());
         assertThat(texts.get("text/html")).isEqualTo(content.html()).contains("data-business-summary-table");
+        assertEmbeddedBrand(message);
         assertThat(message.getAllRecipients()).hasSize(1);
         verify(sender).send(message);
     }
@@ -94,4 +96,39 @@ class EmailClientTest {
             texts.put("text/html", (String) part.getContent());
         }
     }
+    private void assertEmbeddedBrand(jakarta.mail.Part message) throws Exception {
+        var images = new java.util.ArrayList<jakarta.mail.Part>();
+        collectImages(message, images);
+        assertThat(images).hasSize(1);
+        var image = images.getFirst();
+        assertThat(image.getHeader("Content-ID")).containsExactly("<govinsight-brand>");
+        assertThat(image.getDisposition()).isEqualTo(jakarta.mail.Part.INLINE);
+        try (var embedded = image.getInputStream();
+             var source = new org.springframework.core.io.ClassPathResource(EmailBrand.RESOURCE).getInputStream()) {
+            assertThat(embedded.readAllBytes()).isEqualTo(source.readAllBytes()).hasSizeGreaterThan(100);
+        }
+    }
+
+    private void collectImages(jakarta.mail.Part part, java.util.List<jakarta.mail.Part> images) throws Exception {
+        if (part.isMimeType("multipart/*")) {
+            var multipart = (jakarta.mail.Multipart) part.getContent();
+            for (int i = 0; i < multipart.getCount(); i++) collectImages(multipart.getBodyPart(i), images);
+        } else if (part.isMimeType("image/png")) {
+            images.add(part);
+        }
+    }
+
+    @Test void preparedContentWithoutBrandDoesNotAddAnImage() throws Exception {
+        var sender = mock(JavaMailSender.class);
+        var message = new MimeMessage(Session.getInstance(new Properties()));
+        when(sender.createMimeMessage()).thenReturn(message);
+        new EmailClient(sender, properties(EmailProperties.Provider.GMAIL))
+                .sendReport("recipient@example.org", "Custom", new EmailMessageContent("Plain", "<p>Plain</p>"));
+        message.saveChanges();
+        var images = new java.util.ArrayList<jakarta.mail.Part>();
+        collectImages(message, images);
+        assertThat(images).isEmpty();
+        verify(sender).send(message);
+    }
+
 }

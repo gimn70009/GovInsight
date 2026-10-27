@@ -1,6 +1,7 @@
 package com.publicmonitor.backend.domain.report;
 
 import com.publicmonitor.backend.global.presentation.YearNotation;
+import com.publicmonitor.backend.domain.email.EmailBrand;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
@@ -49,8 +50,8 @@ public final class ReportEmailTemplate {
                 + "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"max-width:720px;table-layout:fixed\">"
                 + "<tr><td style=\"padding:28px 24px 24px;background:#193655;border:1px solid #2c4b6b;border-radius:14px\">"
                 + "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\"><tr>"
-                + "<td style=\"color:#a9c9f3;font-size:16px;font-weight:700;letter-spacing:-0.4px\">GovInsight</td>"
-                + "<td align=\"right\" style=\"color:#a9c9f3;font-size:10px;font-weight:700;letter-spacing:1.5px\">MONITORING REPORT</td>"
+                + "<td>" + EmailBrand.html() + "</td>"
+                + "<td align=\"right\" style=\"color:#a9c9f3;font-size:9px;font-weight:700;letter-spacing:1px\">MONITORING REPORT</td>"
                 + "</tr></table>"
                 + "<h1 style=\"margin:22px 0 0;color:#ffffff;font-size:24px;font-weight:700;letter-spacing:-0.7px;line-height:1.5;word-break:keep-all;overflow-wrap:anywhere\">");
         html.append(ReportBodyFormatter.html(title)).append("</h1>");
