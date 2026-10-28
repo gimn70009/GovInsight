@@ -71,7 +71,7 @@ def test_docx_preserves_rows_real_merges_blank_cells_and_current_text(tmp_path):
     path.write_bytes(docx_bytes())
     text = DocxParser().parse(path).text
     assert text == (
-        "신청서류\n[표]\n구분\t서류명\t비고\n필수\t신청서\t직인 날인\n"
+        "신청서류\n[표]\n구분\t서류명\t비고\n필수\t신청서\t직인 ⏎ 날인\n"
         "필수\t사업계획서\t\n\t추천서\t\n[/표]\n현재 안내"
     )
     assert "삭제된" not in text

@@ -14,8 +14,10 @@ from app.domains.analysis.context.tools import (
     COMPANY_CONTEXT_INSTRUCTIONS,
     EVIDENCE_COVERAGE_INSTRUCTIONS,
     NOTICE_APPLICABILITY_INSTRUCTIONS,
+    TARGETED_EVIDENCE_INSTRUCTIONS,
 )
 from app.domains.analysis.evidence.agent import EVIDENCE_TIMEOUT_SECONDS, AnalysisEvidenceAgent
+from app.domains.analysis.evidence.targeted import SEARCH_TOOLS
 from app.domains.analysis.evidence.tools import AnalysisToolContext
 from app.domains.analysis.legal.risks import (
     LegalRiskModelResponse,
@@ -240,6 +242,10 @@ class LangChainAnalysisRunner:
         prompt = "\n".join(prompt_parts)
         system_prompt = SYSTEM_PROMPT + "\n" + BUSINESS_TYPE_INSTRUCTIONS + "\n" + COMPANY_CONTEXT_INSTRUCTIONS + "\n" + NOTICE_APPLICABILITY_INSTRUCTIONS + "\n" + EVIDENCE_COVERAGE_INSTRUCTIONS
         system_prompt = configured_system_prompt(system_prompt, document.evaluation_settings)
+        if SEARCH_TOOLS.intersection(used_tools) or any(
+            section.startswith("<evidence_check>") for section in input_sections
+        ):
+            system_prompt += "\n" + TARGETED_EVIDENCE_INSTRUCTIONS
         if compact_retry:
             system_prompt += "\n" + COMPACT_RETRY_INSTRUCTIONS
         logger.info(

@@ -41,6 +41,26 @@ final class StructuredSubmissionTable {
             if (rawRows.length < 2 || rawRows.length > 10_000) continue;
             int width = rawRows[0].split("\t", -1).length;
             if (width < 2 || width > 256 || Arrays.stream(rawRows).anyMatch(row -> row.split("\t", -1).length != width)) continue;
+            var matrix = SubmissionMatrix.read(rawRows, context, text.substring(matcher.end()), fileName);
+            if (matrix != null) {
+                result.addAll(matrix);
+                long explicit = Arrays.stream(rawRows).filter(row -> Arrays.stream(row.split("\\t", -1))
+                        .anyMatch(cell -> SubmissionMatrix.obligation(cell) != null)).count();
+                if (explicit > matrix.size()) {
+                    String quote = matcher.group();
+                    if (quote.length() <= 12_000) notes.add(new SubmissionNote(
+                            "제출서류 표의 " + (explicit - matrix.size()) + "개 행은 대상·조건을 자동 검증하지 못했습니다. 제출하지 않아도 된다는 뜻이 아니므로 원문 표를 확인해 주세요.",
+                            null, new RequirementSource(fileName == null ? "NOTICE_BODY" : "ATTACHMENT",
+                                fileName, "제출서류 표 확인 필요", null, quote)));
+                }
+                continue;
+            }
+            var grouped = GroupedSubmissionTable.read(rawRows, context,
+                    text.substring(matcher.end()), fileName);
+            if (grouped != null) {
+                result.addAll(grouped);
+                continue;
+            }
             int headerIndex = -1, nameColumn = -1;
             List<String> headers = List.of();
             for (int i = 0; i < Math.min(rawRows.length, 5); i++) {
@@ -52,7 +72,7 @@ final class StructuredSubmissionTable {
                     if (!nameHeader(candidate.get(column))) continue;
                     int count = 0;
                     for (int r = i + 1; r < rawRows.length; r++) {
-                        if (SubmissionDocumentResolver.isDocument(rawRows[r].split("\t", -1)[column])) count++;
+                        if (SubmissionNameCell.read(rawRows[r].split("\t", -1)[column]) != null) count++;
                     }
                     if (count > best) { best = count; nameColumn = column; ambiguous = false; }
                     else if (count == best && count > 0) ambiguous = true;
@@ -68,10 +88,21 @@ final class StructuredSubmissionTable {
             int priorCount = result.size();
             for (int r = headerIndex + 1; r < rawRows.length; r++) {
                 String[] cells = rawRows[r].split("\t", -1);
-                String title = SubmissionDocumentResolver.cleanTitle(cells[nameColumn]);
-                if (!SubmissionDocumentResolver.isDocument(title) || title.matches(".*(?:예시|참고용|제출서류\\h*없음).*")) continue;
-                var instructions = new ArrayList<String>();
+                var name = SubmissionNameCell.read(cells[nameColumn]);
+                if (name == null || name.notes().stream().anyMatch(note ->
+                        note.matches(".*(?:제출\\s*(?:불필요|면제|생략)|제출하지|미제출|대체|대신).*"))) {
+                    if (!cells[nameColumn].isBlank()) notes.add(new SubmissionNote(
+                            "제출서류 표의 서류명 또는 예외를 자동 검증하지 못했습니다. 원문 행을 확인해 주세요.",
+                            null, new RequirementSource(fileName == null ? "NOTICE_BODY" : "ATTACHMENT",
+                                fileName, "제출서류 표 확인 필요", "표의 " + (r + 1) + "행", rawRows[r])));
+                    continue;
+                }
+                String title = name.title();
+                if (title.matches(".*(?:예시|참고용|제출서류\\h*없음).*")) continue;
+                var instructions = new ArrayList<String>(name.notes());
                 var conditions = new ArrayList<String>();
+                name.notes().stream().filter(note -> CONDITION.matcher(note).find())
+                        .map(SubmissionDocumentDisplay::readable).forEach(conditions::add);
                 if (CONDITION.matcher(title).find()) conditions.add(SubmissionDocumentDisplay.readable(title));
                 String marker = "", target = null, rowStage = commonStage;
                 var included = new ArrayList<String>();
@@ -90,7 +121,7 @@ final class StructuredSubmissionTable {
                     if (value.isBlank()) continue;
                     if (header.matches("순번|번호|연번")) continue;
                     if (header.matches("구분|필수여부|제출여부|제출구분|필수선택")) {
-                        marker = value;
+                        if (!value.matches("\\d+[.)]?")) marker = value;
                     } else if (nameHeader(header)
                             && key(value).matches("필수|필수제출|해당시|해당시제출|선택|선택제출")) {
                         marker = value;
@@ -157,6 +188,10 @@ final class StructuredSubmissionTable {
                 }
                 var source = new RequirementSource(fileName == null ? "NOTICE_BODY" : "ATTACHMENT",
                         fileName, "제출서류 표", "표의 " + (r + 1) + "행", quote);
+                java.util.stream.Stream.concat(name.notes().stream(),
+                        instructions.stream().filter(value -> value.matches("원본|사본")))
+                        .map(SubmissionDocumentDisplay::readable)
+                        .filter(note -> !conditions.contains(note)).forEach(conditions::add);
                 result.add(new SubmissionDocument(title,
                         instructions.isEmpty() ? null : String.join(" ", instructions.stream().map(SubmissionDocumentDisplay::readable).toList()),
                         level, rowStage, target, source, SubmissionDocumentDisplay.names(title),
@@ -164,7 +199,7 @@ final class StructuredSubmissionTable {
             }
             if (result.size() > priorCount) {
                 for (String note : footnotes) {
-                    if (!SubmissionNoteFormatter.common(note) || !SubmissionNoteFormatter.actionable(note)) continue;
+                    if (!SubmissionNoteFormatter.actionable(note)) continue;
                     var source = new RequirementSource(fileName == null ? "NOTICE_BODY" : "ATTACHMENT",
                             fileName, "제출서류 표 공통 유의사항", null, note);
                     notes.add(new SubmissionNote(SubmissionNoteFormatter.format(note), null, source));

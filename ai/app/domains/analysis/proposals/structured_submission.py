@@ -3,6 +3,9 @@
 import re
 from dataclasses import dataclass
 
+from app.domains.analysis.proposals.submission_cells import name_cell
+from app.domains.analysis.proposals.submission_lists import grouped_rows
+from app.domains.analysis.proposals.submission_matrix import matrix_rows
 from app.domains.monitoring.parsers.table_text import tables
 
 
@@ -13,6 +16,7 @@ class SubmissionTableRow:
     context: str
     marker: str
     condition: str
+    complete_table: bool = False
 
 
 def submission_table_rows(text: str) -> list[SubmissionTableRow]:
@@ -20,6 +24,14 @@ def submission_table_rows(text: str) -> list[SubmissionTableRow]:
     for start, end, rows in tables(text):
         context = text[max(0, start - 600) : start]
         if re.search(r"작성\s*예시|작성\s*견본|첨부\s*목록|양식\s*목록|참고\s*자료", context):
+            continue
+        matrix = matrix_rows(rows, context, text[end:])
+        if matrix is not None:
+            result.extend(matrix)
+            continue
+        grouped = grouped_rows(rows, context, text[end:])
+        if grouped is not None:
+            result.extend(grouped)
             continue
         headers = []
         name_column = -1
@@ -34,8 +46,8 @@ def submission_table_rows(text: str) -> list[SubmissionTableRow]:
                     count = sum(
                         bool(
                             re.search(
-                                r"(?:계획서|신청서|확인서|증명서|동의서|증빙자료|발표자료|공문)(?:\s*\([^)]*\))?$",
-                                candidate[column],
+                                r"(?:계획서|신청서|확인서|증명서|동의서|등록증|증빙자료|발표자료|공문)(?:\s*\([^)]*\))?$",
+                                cell.title if (cell := name_cell(candidate[column])) else "",
                             )
                         )
                         for candidate in rows[index + 1 :]
@@ -57,15 +69,24 @@ def submission_table_rows(text: str) -> list[SubmissionTableRow]:
         context += "\n" + "\n".join("\t".join(row) for row in rows[:header_index])
         # Shared exceptions must not be lost by deterministic row reconciliation.
         # The model still sees the complete table and its footnotes.
-        if re.match(r"\s*[*※]", text[end:]):
+        footnotes = re.match(r"(?:\s*[*※][^\n]*(?:\n|$))+", text[end:])
+        note = footnotes[0] if footnotes else ""
+        if re.search(r"면제|생략|미제출|제출하지|대체|대신|택\s*1", note):
+            continue
+        complete_quote = text[start : end + len(note)] if note else ""
+        if len(complete_quote) > 1200:
             continue
         for row in rows[header_index + 1 :]:
+            cell = name_cell(row[name_column])
+            if cell is None:
+                continue
             marker = ""
             conditions = []
             row_context = context
             for header, value in zip(headers, row, strict=True):
                 if header in ("구분", "필수여부", "제출여부", "제출구분", "필수선택"):
-                    marker = value
+                    if not re.fullmatch(r"\d+[.)]?", value.strip()):
+                        marker = value
                 elif _name_header(header) and re.fullmatch(
                     r"필수(?:\s*제출)?|해당\s*시(?:\s*제출)?|선택(?:\s*제출)?",
                     value,
@@ -85,11 +106,12 @@ def submission_table_rows(text: str) -> list[SubmissionTableRow]:
                     marker = value
             result.append(
                 SubmissionTableRow(
-                    row[name_column],
-                    "\t".join(row),
+                    cell.title,
+                    complete_quote or "\t".join(row),
                     row_context,
                     marker,
                     " / ".join(conditions),
+                    complete_table=bool(complete_quote),
                 )
             )
     return result

@@ -392,7 +392,6 @@ def _referenced_application_enclosures(sources: list[_Source]) -> list[Submissio
     return result
 
 
-
 def _structured_table_requirements(source: _Source) -> list[SubmissionRequirement]:
     result = []
     for row in submission_table_rows(source.text):
@@ -401,33 +400,57 @@ def _structured_table_requirements(source: _Source) -> list[SubmissionRequiremen
             r"[가-힣A-Za-z0-9 ()·ㆍ-]{0,100}(?:증빙자료|발표자료|공문)(?:\s*\([^)]{0,60}\))?",
             title,
         )
-        if not (_TITLE.fullmatch(title) or named_material) or not 5 <= len(row.quote) <= 300:
+        named = getattr(row, "grouped", False) or _TITLE.fullmatch(title) or named_material
+        quote_limit = 1200 if getattr(row, "complete_table", False) else 300
+        if not named or not 5 <= len(row.quote) <= quote_limit:
             continue
         # There is no UNKNOWN enum in the model checklist. Leave unconfirmed
         # stages/requirements for the source-backed model and the summary UI.
-        if not re.search(r"신청|접수|협약|계약|선정|평가|완료|종료", row.context):
+        if not re.search(r"신청|접수|협약|계약|선정|평가|완료|종료", row.context) and not (
+            getattr(row, "grouped", False) and re.search(r"제출\s*서류", row.context)
+        ):
             continue
         stage = _stage(row.context)
         if stage is None:
             continue
         marker = re.sub(r"\s+", "", row.marker)
         levels = {
-            "필수": RequirementLevel.MANDATORY, "필수제출": RequirementLevel.MANDATORY,
-            "해당시": RequirementLevel.CONDITIONAL, "해당시제출": RequirementLevel.CONDITIONAL,
-            "선택": RequirementLevel.OPTIONAL, "선택제출": RequirementLevel.OPTIONAL,
+            "필수": RequirementLevel.MANDATORY,
+            "필수제출": RequirementLevel.MANDATORY,
+            "해당시": RequirementLevel.CONDITIONAL,
+            "해당시제출": RequirementLevel.CONDITIONAL,
+            "선택": RequirementLevel.OPTIONAL,
+            "선택제출": RequirementLevel.OPTIONAL,
         }
         level = levels.get(marker)
         if level is None or len(row.condition) > 200:
             continue
         if re.search(r"면제|생략|미제출|제출하지|대체|대신", row.quote):
             continue  # Complex exceptions remain with the complete model input.
-        if row.condition and level != RequirementLevel.OPTIONAL:
+        if (
+            row.condition
+            and level != RequirementLevel.OPTIONAL
+            and not getattr(row, "grouped", False)
+        ):
             level = RequirementLevel.CONDITIONAL
-        result.append(SubmissionRequirement(
-            title, source.reference(row.quote, "제출서류 표"), stage, level, row.condition,
-            detail=row.quote,
-        ))
+        section = "제출서류 표 내 목록" if getattr(row, "grouped", False) else "제출서류 표"
+        result.append(
+            SubmissionRequirement(
+                title,
+                source.reference(row.quote, section),
+                stage,
+                level,
+                row.condition,
+                detail=row.quote,
+            )
+        )
     return result
+
+
+def unresolved_submission_rows(document: SubmissionSources) -> int:
+    from .submission_matrix import unresolved_matrix_rows
+
+    return sum(unresolved_matrix_rows(source.text) for source in _sources(document))
 
 
 def collect_submission_requirements(
@@ -521,20 +544,31 @@ def collect_submission_requirements(
             requirement.stage,
             requirement.level,
             _key(requirement.condition),
+            _key(requirement.source.excerpt)
+            if requirement.source.section_title == "제출서류 표 내 목록"
+            else "",
         )
         roles = _roles(requirement.source.excerpt)
         period_evidence = period_submission_evidence(
-            requirement.source, submission_name(requirement.title).key,
+            requirement.source,
+            submission_name(requirement.title).key,
         )
         duplicate = next(
             (
                 old
                 for old in unique
                 if (
-                    _document_key(old.title), submission_name(old.title).references,
-                    submission_name(old.title).submitters, old.stage, old.level,
+                    _document_key(old.title),
+                    submission_name(old.title).references,
+                    submission_name(old.title).submitters,
+                    old.stage,
+                    old.level,
                     _key(old.condition),
-                ) == identity
+                    _key(old.source.excerpt)
+                    if old.source.section_title == "제출서류 표 내 목록"
+                    else "",
+                )
+                == identity
                 and period_submission_evidence(old.source, submission_name(old.title).key)
                 == period_evidence
                 and (
@@ -574,7 +608,10 @@ def _roles(quote: str) -> set[str]:
 
 
 def _matches(
-    item: PreparationChecklistItem, requirement: SubmissionRequirement, *, allow_alias: bool,
+    item: PreparationChecklistItem,
+    requirement: SubmissionRequirement,
+    *,
+    allow_alias: bool,
 ) -> bool:
     source_roles = _roles(item.source.excerpt) if item.source else set()
     requirement_roles = _roles(requirement.source.excerpt)
@@ -588,17 +625,25 @@ def _matches(
         if not allow_alias or (item_name.references and source_name.references):
             return False
     if item_name.submitters != source_name.submitters:
-        if (not allow_alias or (item_name.submitters and source_name.submitters)
-                or not same_submission_source(item.source, requirement.source)):
+        if (
+            not allow_alias
+            or (item_name.submitters and source_name.submitters)
+            or not same_submission_source(item.source, requirement.source)
+        ):
             return False
     if item_name.period is not None or source_name.period is not None:
         periods = {n.period for n in (item_name, source_name) if n.period is not None}
         return bool(
-            allow_alias and len(periods) == 1 and item_name.key == source_name.key
+            allow_alias
+            and len(periods) == 1
+            and item_name.key == source_name.key
             and item.stage == requirement.stage
             and item.requirement_level == requirement.level
             and same_period_submission_source(
-                item.source, requirement.source, item_name.key, next(iter(periods)),
+                item.source,
+                requirement.source,
+                item_name.key,
+                next(iter(periods)),
             )
         )
     if name == title or (allow_alias and item_name.key == source_name.key):
@@ -614,7 +659,8 @@ def _matches(
 
 
 def _preserve_period_submitter(
-    target: PreparationChecklistItem, item: PreparationChecklistItem,
+    target: PreparationChecklistItem,
+    item: PreparationChecklistItem,
 ) -> PreparationChecklistItem | None:
     """Carry only a quoted submitter into the source row, with its original evidence."""
     if not item.source or not _roles(item.applies_to):
@@ -626,8 +672,11 @@ def _preserve_period_submitter(
         return target if subject in _key(target.applies_to) else None
     detail = target.detail
     if _key(item.source.excerpt) not in _key(detail):
-        label = ("공고 본문" if item.source.origin == EvidenceOrigin.NOTICE_BODY
-                 else item.source.attachment_name)
+        label = (
+            "공고 본문"
+            if item.source.origin == EvidenceOrigin.NOTICE_BODY
+            else item.source.attachment_name
+        )
         detail += f"\n추가 제출 대상 근거({label}): {item.source.excerpt}"
     if len(detail) > 500:
         return None
@@ -637,9 +686,13 @@ def _preserve_period_submitter(
     if len(detail) > 500:
         return None
     # The retained citation must support the newly retained submitter too.
-    return target.model_copy(update={
-        "applies_to": item.applies_to, "detail": detail, "source": item.source,
-    })
+    return target.model_copy(
+        update={
+            "applies_to": item.applies_to,
+            "detail": detail,
+            "source": item.source,
+        }
+    )
 
 
 def reconcile_submission_documents(
@@ -666,17 +719,22 @@ def reconcile_submission_documents(
             periods.setdefault(name.key, set()).add(name.period)
     for item in items:
         name = submission_name(item.title, split_period=True)
-        allow_alias = (len(references.get(name.key, set())) <= 1
-                       and len(submitters.get(name.key, set())) <= 1
-                       and len(periods.get(name.key, set())) <= 1)
+        allow_alias = (
+            len(references.get(name.key, set())) <= 1
+            and len(submitters.get(name.key, set())) <= 1
+            and len(periods.get(name.key, set())) <= 1
+        )
         matched = [r for r in requirements if _matches(item, r, allow_alias=allow_alias)]
         matched_period = name.period is not None
         if len(matched) == 1 and item.source:
             row = matched[0]
             matched_period |= (
-                item.stage == row.stage and item.requirement_level == row.level
-                and any(same_period_submission_source(item.source, row.source, name.key, years)
-                        for years, _ in period_submission_evidence(item.source, name.key))
+                item.stage == row.stage
+                and item.requirement_level == row.level
+                and any(
+                    same_period_submission_source(item.source, row.source, name.key, years)
+                    for years, _ in period_submission_evidence(item.source, name.key)
+                )
             )
         if matched_period:
             # Never choose one of several source obligations for a generic alias.

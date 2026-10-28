@@ -67,7 +67,7 @@ def _table(node: ElementTree.Element) -> str | None:
                     int(address.get("rowAddr", row_index)) if address is not None else row_index,
                     int(address.get("colAddr", column_index)) if address is not None
                     else column_index,
-                    " ".join(text_blocks(cell, lambda _: None)),
+                    "\n".join(text_blocks(cell, lambda _: None)),
                     int(span.get("rowSpan", "1")) if span is not None else 1,
                     int(span.get("colSpan", "1")) if span is not None else 1,
                 ))

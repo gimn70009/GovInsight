@@ -56,6 +56,7 @@ class PdfParser:
             and len(re.findall(
                 r"주요\s*내용|비고|필수|해당\s*시|파일\s*형식|제출\s*대상", plain,
             )) >= 2
+            or bool(re.search(r"구\s*분\s*제출\s*서류", plain))
         )
         if collapsed or merged_contacts or submission_table:
             try:
@@ -67,11 +68,77 @@ class PdfParser:
                     Counter(re.sub(r"\s+", "", layout)) == Counter(re.sub(r"\s+", "", plain))
                 )
                 if layout and unchanged:
-                    return layout
+                    return _submission_layout_tables(raw_layout)
             except (TypeError, ValueError, NotImplementedError):
                 pass
         return plain
 
+
+
+
+
+def _submission_layout_tables(value: str) -> str:
+    """Recognize only an aligned two-column group/list table, using pypdf's text layout."""
+    from app.domains.monitoring.parsers.table_text import Cell, render_table
+
+    lines = value.splitlines()
+    result = []
+    index = 0
+    header = re.compile(r"^\s*(구\s*분|제출\s*대상)\s{2,}(제출\s*서류|구비\s*서류)\s*$")
+    group = re.compile(
+        r"공통|필수|선택|해당시|.*(?:기관|기업|법인|개인|연구|과제)(?:만)?(?:제출|의경우)?",
+    )
+    bullet = re.compile(r"^(?:[-–—•▪◦●○]|[①-⑳]|\d{1,2}[.)])\s*")
+    while index < len(lines):
+        match = header.match(lines[index])
+        if not match:
+            result.append(_normalize_layout_text(lines[index]))
+            index += 1
+            continue
+        column = match.start(2)
+        cells = [Cell(0, 0, match[1]), Cell(0, 1, match[2])]
+        target, paragraphs = "", []
+        cursor = index + 1
+        valid = True
+
+        def flush():
+            if target and paragraphs:
+                row = len(cells) // 2
+                cells.extend([Cell(row, 0, target), Cell(row, 1, "\n".join(paragraphs))])
+
+        while cursor < min(len(lines), index + 100):
+            line = lines[cursor]
+            if not line.strip():
+                cursor += 1
+                continue
+            if re.match(r"^\s*[□■]", line) or header.match(line):
+                break
+            left, right = line[:column].strip(), line[column:].strip()
+            if left and group.fullmatch(re.sub(r"\s+", "", left)) and bullet.match(right):
+                flush()
+                target, paragraphs = left, [right]
+            elif not left and right and target:
+                if bullet.match(right) or right.startswith("※"):
+                    paragraphs.append(right)
+                else:
+                    paragraphs[-1] += " " + right
+            else:
+                # Centred row labels, irregular columns and following prose are not guessed.
+                valid = False
+                break
+            if sum(map(len, paragraphs)) > 8_000:
+                valid = False
+                break
+            cursor += 1
+        flush()
+        table = render_table(cells) if valid and len(cells) > 2 else None
+        if table:
+            result.append(table)
+            index = cursor
+        else:
+            result.append(_normalize_layout_text(lines[index]))
+            index += 1
+    return "\n".join(filter(None, result))
 
 
 def _normalize_page_text(value: str) -> str:

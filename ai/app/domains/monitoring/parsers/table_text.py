@@ -7,6 +7,7 @@ merges repeat their anchor text. A blank cell never inherits its neighbour.
 import re
 from dataclasses import dataclass
 
+CELL_BREAK = " ⏎ "
 TABLE_START = "[표]"
 TABLE_END = "[/표]"
 MAX_TABLE_CELLS = 100_000
@@ -39,7 +40,10 @@ def render_table(cells: list[Cell]) -> str | None:
     for cell in cells:
         if min(cell.row, cell.column) < 0 or min(cell.row_span, cell.column_span) < 1:
             return None
-        text = re.sub(r"\s+", " ", cell.text).strip()
+        text = CELL_BREAK.join(
+            re.sub(r"[^\S\n]+", " ", paragraph).strip()
+            for paragraph in cell.text.split("\n") if paragraph.strip()
+        )
         for row in range(cell.row, cell.row + cell.row_span):
             for column in range(cell.column, cell.column + cell.column_span):
                 if (row, column) in occupied:
