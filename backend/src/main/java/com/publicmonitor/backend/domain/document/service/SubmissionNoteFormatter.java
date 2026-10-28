@@ -12,7 +12,7 @@ final class SubmissionNoteFormatter {
     private SubmissionNoteFormatter() {}
 
     static String clean(String raw) {
-        return raw.replaceFirst("^[*※◦•]+\\h*", "").replaceAll("\\s+", " ").strip();
+        return raw.replace('⏎', ' ').replaceFirst("^[*※◦•]+\\h*", "").replaceAll("\\s+", " ").strip();
     }
 
     static boolean empty(String raw) {

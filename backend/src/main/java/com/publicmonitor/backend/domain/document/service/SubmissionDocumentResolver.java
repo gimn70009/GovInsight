@@ -44,7 +44,14 @@ final class SubmissionDocumentResolver {
                     || (EXCLUDED_FILE.matcher(name).find() && !name.matches(".*(?:공고|모집|안내).*"))) continue;
             collect(attachment.getExtractedText(), name, documents, notes);
         }
-        var result = new ArrayList<>(documents.values());
+        var structured = documents.values().stream()
+                .filter(item -> "제출서류 표".equals(item.source().sectionTitle())).toList();
+        var result = new ArrayList<>(documents.values().stream().filter(item ->
+                "제출서류 표".equals(item.source().sectionTitle()) || !item.conditions().isEmpty()
+                || item.appliesTo() != null || structured.stream().noneMatch(table ->
+                    canonicalTitle(table.title()).equals(canonicalTitle(item.title()))
+                    && java.util.Objects.equals(table.stage(), item.stage())
+                    && java.util.Objects.equals(table.requirementLevel(), item.requirementLevel()))).toList());
         if (preparation != null && preparation.submissionDocuments() != null) {
             for (var item : preparation.submissionDocuments()) {
                 if (!grounded(item, body, attachments)) continue;
@@ -94,6 +101,7 @@ final class SubmissionDocumentResolver {
         }
         for (var item : structured.documents()) {
             String identity = titleKey(item.title()) + ":" + item.stage() + ":" + item.requirementLevel() + ":" + key(item.appliesTo());
+            if ("제출서류 표 내 목록".equals(item.source().sectionTitle())) identity += ":" + key(item.source().excerpt());
             documents.putIfAbsent(identity, item);
         }
         bounded = StructuredSubmissionTable.withoutTables(bounded);
@@ -328,6 +336,11 @@ final class SubmissionDocumentResolver {
         if (value.matches(".*평가\\h*(?:시|단계).*")) return "EVALUATION";
         if (value.matches(".*(?:신청|접수).*")) return "APPLICATION";
         return null;
+    }
+
+    private static String canonicalTitle(String text) {
+        return titleKey(cleanTitle(text).replaceFirst("^(?:양식|서류|서식)\\s*\\d+[.)]\\s*", "")
+                .replaceAll("\\s*[（(](?:원본|사본|한글파일|PDF|HWPX?)[)）]", ""));
     }
 
     private static String titleKey(String text) {

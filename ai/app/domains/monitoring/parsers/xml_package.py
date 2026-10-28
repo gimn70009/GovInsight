@@ -70,7 +70,9 @@ def text_blocks(root: ElementTree.Element, table_reader) -> list[str]:
             flush()
         if tag == "t":
             fragments.append("".join(node.itertext()))
-        elif tag in ("br", "lineBreak", "tab"):
+        elif tag in ("br", "lineBreak"):
+            flush()
+        elif tag == "tab":
             fragments.append(" ")
         else:
             for child in node:

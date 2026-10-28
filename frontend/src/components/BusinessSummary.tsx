@@ -217,7 +217,7 @@ export function BusinessSummary({ detail }: { detail: DocumentDetail }) {
         {documents.length > 0 && <span className="business-summary__heading-count">확인된 서류 {documents.length}건</span>}
       </header>
       <div className="business-summary__section-body">
-        {documents.length > 0 && notes.length > 0 && <aside className="business-summary__submission-notes" aria-label="제출 유의사항">
+        {notes.length > 0 && <aside className="business-summary__submission-notes" aria-label="제출 유의사항">
           <strong>제출 유의사항</strong>
           <ul>{notes.map((note, index) => <SubmissionNoteRow key={`${detail.detectionId}-${note.text}-${index}`} note={note} detail={detail} />)}</ul>
         </aside>}

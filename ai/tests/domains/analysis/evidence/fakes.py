@@ -21,7 +21,9 @@ class ScriptedEvidenceModel(BaseChatModel):
         return "scripted-evidence-model"
 
     def bind_tools(self, tools, **kwargs):
-        self.available_tools = [tool.name for tool in tools]
+        self.available_tools = [
+            tool["function"]["name"] if isinstance(tool, dict) else tool.name for tool in tools
+        ]
         return self
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
