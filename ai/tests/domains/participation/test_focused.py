@@ -23,13 +23,14 @@ def source(sid, text, heading="신청자격"):
     return Source(id=sid, excerpt=text, group_label=heading)
 
 
-def item(sid, code, quote, kind="ELIGIBILITY", basis="신청자격"):
+def item(sid, code, quote, kind="ELIGIBILITY", basis="신청자격", text=None):
     return ExtractedCondition(
         source_id=sid,
         criterion=code,
         quote=quote,
         basis=basis,
         kind=kind,
+        text=text,
     )
 
 
@@ -56,6 +57,10 @@ def test_four_fields_required_and_preferred_are_visible_with_one_call():
     age = "공고일 기준 창업 후 7년 이내인 기업"
     revenue = "직전년도 매출액 10억원 이상 50억원 미만인 기업"
     patent = "관련 분야 등록 특허 보유기업 가점 2점. 단, 출원 중인 특허는 인정하지 않음."
+    patent_text = (
+        "관련 분야 등록 특허 보유기업에 가점 2점을 부여합니다. "
+        "단, 출원 중인 특허는 인정하지 않습니다."
+    )
     sector = "자동차 부품 제조업을 주된 사업으로 영위하는 기업"
     req = request(
         source("a", age), source("r", revenue), source("p", patent, "우대사항"), source("s", sector)
@@ -64,24 +69,26 @@ def test_four_fields_required_and_preferred_are_visible_with_one_call():
         [
             item("a", "BUSINESS_AGE", age),
             item("r", "REVENUE", revenue),
-            item("p", "IP", patent, "PREFERENCE", "우대사항"),
+            item("p", "IP", patent, "PREFERENCE", "우대사항", text=patent_text),
             item("s", "SECTOR", sector),
         ]
     )
     result = asyncio.run(service.rewrite(req, model))
     assert len(model.calls) == 1
     assert [(s.criterion, s.kind, s.text) for s in result.statements] == [
-        ("BUSINESS_AGE", "ELIGIBILITY", age),
-        ("REVENUE", "ELIGIBILITY", revenue),
-        ("IP", "PREFERENCE", patent),
-        ("SECTOR", "ELIGIBILITY", sector),
+        ("BUSINESS_AGE", "ELIGIBILITY", age + "이어야 합니다."),
+        ("REVENUE", "ELIGIBILITY", revenue + "이어야 합니다."),
+        ("IP", "PREFERENCE", patent_text),
+        ("SECTOR", "ELIGIBILITY", sector + "이어야 합니다."),
     ]
     assert not result.evidence_only_ids
 
 
 def test_revenue_preference_is_allowed_in_revenue_field():
     quote = "최근 3년 매출 증가율 20% 이상 기업에 가점 1점"
-    model = Fake([item("r", "REVENUE", quote, "PREFERENCE", "우대사항")])
+    model = Fake(
+        [item("r", "REVENUE", quote, "PREFERENCE", "우대사항", text=quote + "을 부여합니다.")]
+    )
     result = asyncio.run(service.rewrite(request(source("r", quote, "우대사항")), model))
     assert result.statements[0].criterion == "REVENUE"
     assert result.statements[0].kind == "PREFERENCE"
@@ -92,7 +99,7 @@ def test_or_conditions_keep_whole_alternative_and_source_whitespace():
     raw = quote.replace("업력 3년", "업력\n  3년")
     model = Fake([item("or", "BUSINESS_AGE", quote), item("or", "REVENUE", quote)])
     result = asyncio.run(service.rewrite(request(source("or", raw)), model))
-    assert [s.text for s in result.statements] == [raw, raw]
+    assert [s.text for s in result.statements] == [quote + "이어야 합니다."] * 2
     assert all(s.supporting_quotes == [raw] for s in result.statements)
 
 
@@ -124,7 +131,7 @@ def test_valid_item_survives_rejected_item_and_partial_source_stays_visible():
     )
     result = asyncio.run(service.rewrite(request(source("a", quote)), model))
     assert len(result.statements) == 1
-    assert result.statements[0].text == quote
+    assert result.statements[0].text == quote + "이어야 합니다."
     assert result.evidence_only_ids == ["a"]
 
 
@@ -226,7 +233,7 @@ def test_sdk_single_request_cheap_model_caps_and_usage_log(monkeypatch, caplog):
 
     with caplog.at_level("INFO", logger=focused.__name__):
         result = asyncio.run(scenario())
-    assert result.statements[0].text == quote
+    assert result.statements[0].text == quote + "이어야 합니다."
     assert len(payloads) == 1
     assert payloads[0]["model"] == "gpt-5-nano"
     assert payloads[0]["reasoning_effort"] == "minimal"
@@ -236,12 +243,20 @@ def test_sdk_single_request_cheap_model_caps_and_usage_log(monkeypatch, caplog):
     assert quote not in caplog.text and "test-not-real" not in caplog.text
 
 
-@pytest.mark.parametrize("quote", ["업력 무관", "제조업체", "특허 보유"])
-def test_short_source_conditions_are_not_rejected_for_sentence_style(quote):
+@pytest.mark.parametrize(
+    "quote,text",
+    [
+        ("업력 무관", "업력은 무관합니다."),
+        ("제조업체", "제조업체가 지원 대상입니다."),
+        ("특허 보유", "특허를 보유해야 합니다."),
+    ],
+)
+def test_short_source_conditions_accept_a_complete_grounded_sentence(quote, text):
     code = "BUSINESS_AGE" if "업력" in quote else "IP" if "특허" in quote else "SECTOR"
-    model = Fake([item("x", code, quote, basis="모집대상")])
+    model = Fake([item("x", code, quote, basis="모집대상", text=text)])
     result = asyncio.run(service.rewrite(request(source("x", quote, "모집대상")), model))
-    assert result.statements[0].text == quote
+    assert result.statements[0].text == text
+    assert result.statements[0].supporting_quotes == [quote]
 
 
 @pytest.mark.parametrize(
@@ -291,9 +306,9 @@ def test_quote_cannot_hide_preference_negation_or_exclusion(raw, quote, heading,
 
 def test_explicit_exclusion_preserves_its_negative_meaning():
     quote = "업력 7년 이상 기업은 지원에서 제외"
-    model = Fake([item("x", "BUSINESS_AGE", quote, basis="지원제외")])
+    model = Fake([item("x", "BUSINESS_AGE", quote, basis="지원제외", text=quote + "됩니다.")])
     result = asyncio.run(service.rewrite(request(source("x", quote, "지원제외")), model))
-    assert result.statements[0].text == quote
+    assert result.statements[0].text == quote + "됩니다."
 
 
 def test_recruitment_context_does_not_classify_every_source_as_business_age():
@@ -305,7 +320,7 @@ def test_recruitment_context_does_not_classify_every_source_as_business_age():
 def test_named_technology_industry_is_kept(quote):
     model = Fake([item("x", "SECTOR", quote)])
     result = asyncio.run(service.rewrite(request(source("x", quote)), model))
-    assert result.statements[0].text == quote
+    assert result.statements[0].text == quote + "이어야 합니다."
 
 
 @pytest.mark.parametrize(
@@ -321,7 +336,7 @@ def test_backend_topic_variants_are_not_dropped_by_the_ai_selector(quote, code):
     model = Fake([item("x", code, quote)])
     result = asyncio.run(service.rewrite(request(source("x", quote)), model))
     assert len(model.calls) == 1
-    assert result.statements[0].text == quote
+    assert result.statements[0].text == quote + "이어야 합니다."
 
 
 @pytest.mark.parametrize(
@@ -366,25 +381,34 @@ def test_sector_basis_cannot_launder_general_checks_or_exclusion_lists(quote):
 
 
 @pytest.mark.parametrize(
-    "quote",
+    "quote,text",
     [
-        "제조업 C10~C34에 해당하는 기업",
-        "한국표준산업분류 C10~C34 해당기업",
-        "관련 산업의 실적을 보유한 기업",
-        "바이오 산업 관련 실적 2건 이상 보유 기업",
-        "AI 분야 기술 개발 실적이 있는 기업",
-        "조선해양업을 영위하는 기업",
-        "신청자격 검토 결과 제조업 C10~C34에 해당하는 기업이어야 함",
-        "지원 제외 업종: 유흥주점업. 해당 업종은 지원에서 제외",
-        "지원 제외 업종: 유흥주점업, 도박업",
-        "지원 제외 업종은 유흥주점업과 도박업",
+        ("제조업 C10~C34에 해당하는 기업", "제조업 C10~C34에 해당하는 기업이어야 합니다."),
+        ("한국표준산업분류 C10~C34 해당기업", "한국표준산업분류 C10~C34 해당기업이어야 합니다."),
+        ("관련 산업의 실적을 보유한 기업", "관련 산업의 실적을 보유한 기업이어야 합니다."),
+        (
+            "바이오 산업 관련 실적 2건 이상 보유 기업",
+            "바이오 산업 관련 실적 2건 이상 보유 기업이어야 합니다.",
+        ),
+        ("AI 분야 기술 개발 실적이 있는 기업", "AI 분야 기술 개발 실적이 있는 기업이어야 합니다."),
+        ("조선해양업을 영위하는 기업", "조선해양업을 영위하는 기업이어야 합니다."),
+        (
+            "신청자격 검토 결과 제조업 C10~C34에 해당하는 기업이어야 함",
+            "신청자격 검토 결과 제조업 C10~C34에 해당하는 기업이어야 합니다.",
+        ),
+        (
+            "지원 제외 업종: 유흥주점업. 해당 업종은 지원에서 제외",
+            "지원 제외 업종은 유흥주점업입니다. 해당 업종은 지원에서 제외됩니다.",
+        ),
+        ("지원 제외 업종: 유흥주점업, 도박업", "지원 제외 업종은 유흥주점업, 도박업입니다."),
+        ("지원 제외 업종은 유흥주점업과 도박업", "지원 제외 업종은 유흥주점업과 도박업입니다."),
     ],
 )
-def test_direct_industry_requirements_survive_screening_filter(quote):
-    model = Fake([item("x", "SECTOR", quote)])
+def test_direct_industry_requirements_survive_screening_filter(quote, text):
+    model = Fake([item("x", "SECTOR", quote, text=text)])
     result = asyncio.run(service.rewrite(request(source("x", quote)), model))
     assert len(model.calls) == 1
-    assert result.statements[0].text == quote
+    assert result.statements[0].text == text
     assert result.statements[0].supporting_quotes == [quote]
 
 
@@ -393,7 +417,7 @@ def test_specific_industry_clause_can_be_selected_without_neighboring_tax_list()
     text = direct + "\n□ (요건검토) 체납·휴폐업·부적절 업종 등 확인"
     model = Fake([item("x", "SECTOR", direct)])
     result = asyncio.run(service.rewrite(request(source("x", text)), model))
-    assert [statement.text for statement in result.statements] == [direct]
+    assert [statement.text for statement in result.statements] == [direct + "이어야 합니다."]
 
 
 def test_focus_prompt_does_not_increase_fixed_input_budget():
@@ -654,7 +678,7 @@ def test_real_heading_grounds_condition_when_model_basis_is_not_verbatim():
     quote = "매출액 5억원 이하인 기업"
     model = Fake([item("r", "REVENUE", quote, basis="필수 신청 요건")])
     result = asyncio.run(service.rewrite(request(source("r", quote, "지원 대상")), model))
-    assert [s.text for s in result.statements] == [quote]
+    assert [s.text for s in result.statements] == [quote + "이어야 합니다."]
     assert len(model.calls) == 1
 
 
@@ -704,7 +728,7 @@ def test_restored_oversized_quote_does_not_erase_other_valid_items(caplog):
     )
     with caplog.at_level("INFO", logger=focused.__name__):
         result = focused.project(extraction, req.sources, req)
-    assert [s.text for s in result.statements] == [good]
+    assert [s.text for s in result.statements] == [good + "이어야 합니다."]
     assert "QUOTE_TOO_LONG" in caplog.text
 
 
@@ -955,7 +979,10 @@ def test_rewritten_law_alias_in_quote_is_still_rejected():
 def test_line_references_restore_exact_original_without_retyping_law_or_exception():
     text = "□ 신청자격\r\n중소기업기본법 제2조에 따른 중소기업\r\n※ 단, 대기업은 제외"
     src = source("a", text)
-    candidate = item("a", "BUSINESS_FORM", "L2-L3", basis="L1")
+    candidate = item(
+        "a", "BUSINESS_FORM", "L2-L3", basis="L1",
+        text="중소기업기본법 제2조에 따른 중소기업이 지원 대상입니다. 단, 대기업은 제외됩니다.",
+    )
     result = focused.project(
         Extraction(items=[candidate], unresolved_source_ids=[]), [src], request(src)
     )

@@ -107,7 +107,7 @@ class ParticipationScopeIndexTest {
             assertThat(guide.rewriteStatus()).isEqualTo("READY");
             assertThat(guide.categories().stream().flatMap(c -> c.rows().stream()).flatMap(r -> r.entries().stream())
                     .filter(e -> "VERIFIED".equals(e.displayStatus()))).singleElement().satisfies(entry -> {
-                        assertThat(entry.rule().text()).isEqualTo(quote);
+                        assertThat(entry.rule().text()).isEqualTo(quote.replace("수 있음", "수 있습니다."));
                         assertThat(entry.rule().scope()).isEqualTo("점프업1000");
                     });
             ReflectionTestUtils.setField(version, "participationRewriteJson", mapper.writeValueAsString(Response.unavailable(oldInput.request())));
@@ -195,4 +195,97 @@ class ParticipationScopeIndexTest {
         assertThat(result.rules()).noneMatch(rule -> rule.text().contains("업력 10년"));
         assertThat(result.rules()).anyMatch(rule -> rule.text().contains("전문 기관"));
     }
+
+    @Test void wrappedSentenceTailIsNotADisplayTrackAndCannotReplaceItsParent() {
+        for (String tail : List.of("는사업", "는 사업", "의 프로그램", "을 지원")) {
+            String body = "1. 경제안보지원사업\n□ 사업개요\n안정적인 공급망 확보를 지원하\n" + tail
+                    + "\n□ 신청자격\n" + quote;
+            var collected = ParticipationRawSources.collectWithScopes(body, List.of());
+            var evidence = collected.rules().stream().flatMap(rule -> rule.sources().stream())
+                    .filter(source -> source.excerpt().contains(quote)).toList();
+            // Request-side labels intentionally remain frozen for already-paid cached results.
+            assertThat(collected.scopes().scope(evidence, quote)).isEqualTo(tail);
+            assertThat(collected.scopes().displayScope(evidence, quote)).isEqualTo("경제안보지원사업");
+        }
+    }
+
+    @Test void aWrappedTailWithoutAParentDoesNotInventAProgramName() {
+        String body = "안정적인 공급망 확보를 지원하\n는사업\n□ 신청자격\n" + quote;
+        var collected = ParticipationRawSources.collectWithScopes(body, List.of());
+        var evidence = collected.rules().stream().flatMap(rule -> rule.sources().stream())
+                .filter(source -> source.excerpt().contains(quote)).toList();
+        assertThat(collected.scopes().displayScope(evidence, quote)).isNull();
+    }
+
+    @Test void legitimateProgramNamesAndDocumentBoundariesSurviveDisplayRepair() {
+        for (String title : List.of("늘봄사업", "나눔사업", "함께하는사업", "으뜸기업 지원", "점프업1000")) {
+            String body = "[파일: 첫 공고.hwp]\n1. 경제안보지원사업\n□ 신청자격\n다른 조건\n"
+                    + "[파일: 둘째 공고.hwp]\n1. " + title + "\n□ 신청자격\n" + quote;
+            var collected = ParticipationRawSources.collectWithScopes(body, List.of());
+            var evidence = collected.rules().stream().flatMap(rule -> rule.sources().stream())
+                    .filter(source -> source.excerpt().contains(quote)).toList();
+            assertThat(collected.scopes().displayScope(evidence, quote)).isEqualTo(title);
+        }
+    }
+
+    @Test void currentPaidCacheRepairsWrappedScopeWithoutCallingTheModelAgain() throws Exception {
+        String text = "경제안보품목 및 경제안보서비스의 원활한 도입·생산 및 제공에 기여하고자 하는 사업자 또는 사업자단체";
+        String body = "1. 경제안보지원사업\n□ 사업개요\n안정적인 공급망 확보를 지원하\n는사업\n□ 지원대상\n" + text;
+        var candidates = ParticipationConditionResolver.candidatesWithScopes(body, List.of(), null);
+        var input = ParticipationRewriteProjection.input(candidates.guide(), false, candidates.scopes());
+        var source = input.request().sources().stream().filter(item -> item.excerpt().contains(text)).findFirst().orElseThrow();
+        assertThat(source.groupLabel()).contains("[적용 유형] 는사업");
+        var mapper = new ObjectMapper();
+        var client = mock(PythonParticipationRewriteClient.class);
+        var store = mock(ParticipationRewriteStore.class);
+        var service = new ParticipationRewriteService(client, store, mapper);
+        try {
+            var saved = new Response(List.of(new Statement(List.of(source.id()), "BUSINESS_FORM", text, "",
+                    List.of(text), "ELIGIBILITY")), List.of(), "READY");
+            var version = DocumentVersion.create(null, 1, "공고", body, "b".repeat(64), null, 0, null);
+            ReflectionTestUtils.setField(version, "id", 12L);
+            ReflectionTestUtils.setField(version, "participationRewriteKey", service.fingerprint(input.request()));
+            ReflectionTestUtils.setField(version, "participationRewriteJson", mapper.writeValueAsString(saved));
+            var guide = service.resolve(version, candidates.guide(), false, candidates.scopes());
+            assertThat(guide.rewriteStatus()).isEqualTo("READY");
+            assertThat(guide.rules()).isNotEmpty().allSatisfy(rule -> {
+                assertThat(rule.scope()).isEqualTo("경제안보지원사업");
+                assertThat(rule.text()).contains("경제안보품목", "사업자 또는 사업자단체");
+                assertThat(rule.sources()).anySatisfy(evidence -> assertThat(evidence.excerpt()).contains(text));
+            });
+            verifyNoInteractions(client, store);
+        } finally { service.close(); }
+    }
+
+    private String shownScope(String body, String quote) {
+        var data = ParticipationRawSources.collectWithScopes(body, List.of());
+        var evidence = data.rules().stream().flatMap(rule -> rule.sources().stream())
+                .filter(source -> source.excerpt().contains(quote)).toList();
+        return data.scopes().displayScope(evidence, quote);
+    }
+
+    @Test void circledProgramsKeepTheWholeTitleAndStopThePreviousProgramsScope() {
+        String body = "1. 공통사항\n□ 신청자격\n중소기업\n1\n스마트공장 구축\n"
+                + "② 제조AI특화\t스마트공장\t(자율형공장\tAI트랙)\n□ 사업개요\n◦ 지원 대상: AI 구축 희망 기업\n"
+                + "③ 자율형공장\n□ 사업개요\n◦ 지원 대상: " + quote + "\n"
+                + "④ 대중소 상생형\t스마트공장(일반형)\n□ 사업개요\n◦ 지원 대상: 국내 중소기업\n"
+                + "⑤ 대중소 상생형\t스마트공장(AX선도모델)\n□ 사업개요\n◦ 지원 대상: 국내 중견기업";
+        assertThat(shownScope(body, quote)).isEqualTo("스마트공장 구축 · 자율형공장");
+        assertThat(shownScope(body, "AI 구축 희망 기업")).isEqualTo("스마트공장 구축 · 제조AI특화 스마트공장 (자율형공장 AI트랙)");
+        assertThat(shownScope(body, "국내 중소기업")).isEqualTo("스마트공장 구축 · 대중소 상생형 스마트공장(일반형)");
+        assertThat(shownScope(body, "국내 중견기업")).isEqualTo("스마트공장 구축 · 대중소 상생형 스마트공장(AX선도모델)");
+    }
+
+    @Test void pdfWordTabsAndProseEndingInSupportCannotBecomeProgramTitles() {
+        String body = "5\t공급기업\t역량진단\n□ 사업개요\n◦ 지원 대상: 공급기업\n"
+                + "□ 유의사항\n신청자격\t기본요건으로\t우수등급\t획득\t필요\n"
+                + "기업의 현장 수요를 지원\n◦ 지원내용: 별도 안내\n"
+                + "6\t제조 DX멘토단\t활용지원\n□ 사업개요\n◦ 지원 대상: 멘토 지원기업\n"
+                + "□ 지원 조건\n지원\n◦ 과제별 세부 안내\n"
+                + "7\t제조데이터\t상품가공\t지원\n□ 사업개요\n◦ 지원 대상: " + quote;
+        assertThat(shownScope(body, "공급기업")).isEqualTo("공급기업 역량진단");
+        assertThat(shownScope(body, "멘토 지원기업")).isEqualTo("제조 DX멘토단 활용지원");
+        assertThat(shownScope(body, quote)).isEqualTo("제조데이터 상품가공 지원");
+    }
+
 }

@@ -76,6 +76,15 @@ IP 보유 특허·인증·지정, SECTOR 업종·품목, EXPERIENCE 계약·납�
 필수는 ELIGIBILITY, 우대/가점은 PREFERENCE입니다. 예외는 우대가 아닙니다.
 item: source_id, criterion, kind, text, quote, basis.
 text는 독립적으로 이해할 완전한 한국어 문장(240자 이내)입니다.
+화면용 text에서 의미 없는 깨진 문자·장식 불릿·목록번호·표 구분선만 제거하세요.
+수치·단위·%·≥·≤·O/X·법령 조항과 실제 유형명은 보존하세요.
+의미가 불명확한 기호는 임의 삭제하지 마세요.
+‘신청자격·지원’ 같은 구역명·열 이름을 유형명이나 주어에 붙이지 마세요.
+다른 셀·유형·신청 역할의 조건을 섞지 마세요.
+문장·단어를 중간에서 자르거나 잘린 글자·주어를 추측하지 마세요.
+불완전한 원문 조각에 어미만 붙여 문장으로 만들지 마세요.
+완결된 조건을 복원할 수 없으면 unresolved_source_ids에 남기세요.
+이 정제는 text에만 적용하며 quote·basis 줄 참조와 원문 인용은 변경하지 마세요.
 유형·신청 주체·수치·법령 조항·기준일·AND/OR·부정·예외를 보존하고 “조건 확인 필요”로 대신하지 마세요.
 원문 각 줄에 L번호가 있습니다. quote에는 연속 줄 참조만 쓰세요: "L3" 또는 "L3-L5".
 서버가 해당 원문을 그대로 인용합니다.
@@ -189,8 +198,34 @@ def field_quote(quote, code):
     return quote
 
 
+def display_quality(text):
+    """Reject explicit damage, without guessing missing letters or deleting facts."""
+    if re.search(r"[\ufffd\ue000-\uf8ff\U000f0000-\U000ffffd\U00100000-\U0010fffd]", text):
+        return False
+    if re.match(r"^\s*(?:및|또는|혹은|와|과|은|는|을|를|의)(?=\s|[:：])", text):
+        return False
+    # A numeral followed by the same unit twice is an OCR artifact; separated
+    # measurements (3년 또는 7년) and ordinary repeated Korean words are allowed.
+    if re.search(
+        r"\d[\d,.]*\s*(년|개월|억원|만원|천원|원|달러|명|개사|개|건|종|%|점)\s+\1(?=\s|[.,·]|$)",
+        text,
+    ):
+        return False
+    if re.search(r"[□■]|(?:신청\s*자격|지원\s*대상|신청\s*방법)\s*[:：]", text):
+        return False
+    if re.match(r"^\s*[◦○●]\s+", text):
+        return False
+    if re.search(
+        r"(?<![가-힣])(?:의|은|는|을|를|및|또는|중|단,?|하는|해당하는|중인|있는|없는|보유한)"
+        r"\s*(?:이어야|여야|입니다|합니다)",
+        text,
+    ):
+        return False
+    return True
+
+
 def valid_sentence(text, quote, code, kind="ELIGIBILITY"):
-    if not text or not re.search(r"(?:다|요)\.$", text.strip()):
+    if not text or not display_quality(text) or not re.search(r"(?:다|요)\.$", text.strip()):
         return False
     if len(text) > 240 or re.search(
         r"\[/?표\]|\t|https?://|[□■]|신청\s*(?:기간|방법)|접수\s*(?:기간|방법)", text
@@ -442,10 +477,9 @@ def project(extraction, selected, request):
             rejected.add(item.source_id)
             continue
         display = item.text.strip() if item.text else quote
-        # No raw-source fallback: only a bounded sentence transformation may replace bad prose.
-        if item.text is not None and not valid_sentence(
-            item.text, quote, item.criterion, item.kind
-        ):
+        # A nullable model field must not bypass the same sentence checks as
+        # generated prose. Only a known, grounded clause may supply a fallback.
+        if not valid_sentence(display, quote, item.criterion, item.kind):
             display = source_sentence(quote, item.criterion, item.kind)
             if not display:
                 rejected.add(item.source_id)

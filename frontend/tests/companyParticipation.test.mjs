@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { companyParticipationRows, companyConditionEmptyText, companyConditionScope, formatCompanyCondition, isSpecificIndustryCondition, companyConditionSentence, scopedCompanyConditionSentence } from '../src/utils/companyParticipation.ts'
+import { readFileSync } from 'node:fs'
+import { companyParticipationRows, companyConditionEmptyText, companyConditionScope, formatCompanyCondition, isSpecificIndustryCondition, companyConditionSentence, scopedCompanyConditionSentence, companyConditionPresentation, isReadableCompanyCondition, companyConditionAppliesTo, activeCompanyConditionProgram } from '../src/utils/companyParticipation.ts'
 
 const entry = (text, section = 'BASIC', extra = {}) => ({
   displayStatus: 'VERIFIED', context: null, relation: null, relatedCriteria: [],
@@ -290,7 +291,7 @@ test('reported duplicate compact common clauses merge without losing evidence', 
     assert.equal(result.mandatory[0].rule.sources.length, 2)
     assert.equal(result.mandatory[0].rule.scope, '공통')
     const sentence = companyConditionSentence(result.mandatory[0].rule.text, false, code)
-    assert.equal(sentence, code === 'BUSINESS_AGE' ? '공고일 기준 업력이 7년 이상이어야 합니다.' : '중소기업이어야 하며, 세부 프로그램별 신청 요건을 충족해야 합니다.')
+    assert.equal(sentence, code === 'BUSINESS_AGE' ? '공고일 기준 업력이 7년 이상이어야 합니다.' : '중소기업기본법 제 2조에 따라 공고일 기준 업력 7년 이상의 중소기업 중 세부 프로그램별 신청요건을 충족하는 기업이어야 합니다.')
   }
   assert.deepEqual([good, bad], original)
 })
@@ -345,4 +346,397 @@ test('program name is part of the sentence and a purpose paragraph never becomes
   assert.equal(scopedCompanyConditionSentence(entry('업력 6년 이상', 'BASIC', { scope: '공통' }), 'BUSINESS_AGE'),
     '공통으로 업력 6년 이상이어야 합니다.')
   assert.equal(scopedCompanyConditionSentence(entry('업력 6년 이상'), 'BUSINESS_AGE'), '업력 6년 이상이어야 합니다.')
+})
+
+
+const detailedApplicant = '중소기업기본법 제2조에 따라 공고일 기준 업력 7년 이상의 중소기업 중 세부 프로그램별 신청요건을 충족하는 기업이어야 합니다.'
+const shortApplicant = '중소기업기본법 제2조에 따라 공고일 기준 업력 7년 이상의 중소기업이 지원 대상입니다.'
+const applicantRows = entries => companyParticipationRows(guide([row('BUSINESS_FORM', entries)]))[4]
+
+test('the reported detailed applicant sentence replaces its summary in either order and retains every original', () => {
+  const detailed = entry(detailedApplicant, 'BASIC', { scope: '공통' })
+  const short = entry(shortApplicant, 'BASIC', { scope: '공통' })
+  const original = structuredClone([detailed, short])
+  for (const values of [[short, detailed], [detailed, short]]) {
+    const result = applicantRows(values)
+    assert.equal(result.mandatory.length, 1)
+    assert.equal(result.evidence.length, 0)
+    assert.equal(result.mandatory[0].rule.text, detailedApplicant)
+    assert.equal(scopedCompanyConditionSentence(result.mandatory[0], 'BUSINESS_FORM'),
+      '공통으로 중소기업기본법 제 2조에 따라 공고일 기준 업력 7년 이상의 중소기업 중 세부 프로그램별 신청요건을 충족하는 기업이어야 합니다.')
+    assert.deepEqual(new Set(result.mandatory[0].supportingQuotes), new Set([shortApplicant, detailedApplicant]))
+    assert.deepEqual(new Set(result.mandatory[0].rule.sources.map(source => source.excerpt)), new Set([shortApplicant, detailedApplicant]))
+  }
+  assert.deepEqual([detailed, short], original)
+})
+
+test('detailed conditions retain separate supporting quotations and all merged evidence', () => {
+  const detailed = entry(detailedApplicant, 'BASIC', { scope: '공통' })
+  const short = entry(shortApplicant, 'BASIC', { scope: '공통' })
+  detailed.supportingQuotes = [detailedApplicant.replace('이어야 합니다.', '')]
+  short.supportingQuotes = [shortApplicant.replace('이 지원 대상입니다.', '')]
+  const result = applicantRows([short, detailed]).mandatory[0]
+  assert.equal(result.rule.text, detailedApplicant)
+  assert.deepEqual(new Set(result.supportingQuotes), new Set([...short.supportingQuotes, ...detailed.supportingQuotes]))
+})
+
+test('a missing program scope joins only one uniquely matching detailed condition', () => {
+  const short = entry(shortApplicant)
+  const detailed = entry(detailedApplicant, 'BASIC', { scope: '성장형' })
+  const unique = applicantRows([short, detailed])
+  assert.equal(unique.mandatory.length, 1)
+  assert.equal(unique.mandatory[0].rule.scope, '성장형')
+  const alternative = entry(detailedApplicant, 'BASIC', { scope: '도약형' })
+  assert.equal(applicantRows([short, detailed, alternative]).mandatory.length, 3)
+})
+
+test('a shared summary remains separate when multiple different detailed conditions contain it', () => {
+  const short = entry(shortApplicant, 'BASIC', { scope: '공통' })
+  const first = entry(detailedApplicant, 'BASIC', { scope: '공통' })
+  const second = entry(detailedApplicant.replace('세부 프로그램별 신청요건을 충족하는', '기업부설연구소를 보유한'), 'BASIC', { scope: '공통' })
+  for (const values of [[short, first, second], [second, short, first], [first, second, short]]) {
+    assert.equal(applicantRows(values).mandatory.length, 3)
+  }
+})
+
+test('containment chains choose the most detailed condition independently of input order', () => {
+  const short = entry('중소기업이 지원 대상입니다.')
+  const middle = entry('중소기업 중 연구소를 보유한 기업이어야 합니다.')
+  const detailed = entry('중소기업 중 연구소를 보유한 기업 중 세부 신청요건을 충족하는 기업이어야 합니다.')
+  for (const values of [[short, middle, detailed], [detailed, short, middle], [middle, detailed, short]]) {
+    const result = applicantRows(values)
+    assert.equal(result.mandatory.length, 1)
+    assert.equal(result.mandatory[0].rule.text, detailed.rule.text)
+    assert.equal(result.mandatory[0].rule.sources.length, 3)
+  }
+})
+
+test('different numbers, comparisons, dates, logical operators and exceptions never merge as details', () => {
+  const pairs = [
+    ['매출액 100억원 이상 기업', '매출액 500억원 이상 기업 중 연구소 보유 기업'],
+    ['업력 7년 이상 기업', '업력 7년 이하 기업 중 연구소 보유 기업'],
+    ['공고일 기준 업력 7년 이상 기업', '접수마감일 기준 업력 7년 이상 기업 중 연구소 보유 기업'],
+    ['법인사업자 또는 연구소 보유 기업', '법인사업자 및 연구소 보유 기업 중 신청요건 충족 기업'],
+    ['중소기업', '중소기업 중 대기업을 제외한 기업'],
+    ['중소기업', '중소기업 중 출원 중 특허를 포함하는 기업'],
+    ['매출 10억 및 수출 5억 이상 기업', '매출 5억 및 수출 10억 이상 기업 중 연구소 보유 기업'],
+    ['중소기업 중 연구소를 보유한 기업', '중소기업 중 연구소를 보유한 기업 또는 대기업'],
+  ]
+  for (const [short, detailed] of pairs) {
+    const values = [entry(short + '이어야 합니다.'), entry(detailed + '이어야 합니다.')]
+    assert.equal(applicantRows(values).mandatory.length, 2, `${short} / ${detailed}`)
+  }
+})
+
+test('same-looking conditions keep different program, audience, mandatory status and explicit exceptions', () => {
+  for (const difference of [{ scope: '성장형' }, { audience: '주관기관' }, { exceptions: ['별도 예외 적용'] }]) {
+    assert.equal(applicantRows([entry(shortApplicant, 'BASIC', { scope: '공통' }),
+      entry(detailedApplicant, 'BASIC', { scope: '공통', ...difference })]).mandatory.length, 2)
+  }
+  const result = applicantRows([entry(shortApplicant), entry(detailedApplicant, 'PREFERENCE')])
+  assert.equal(result.mandatory.length, 1)
+  assert.equal(result.preference.length, 1)
+})
+
+test('a clipped program label cannot produce a malformed prefix or become an unscoped requirement', () => {
+  const text = '경제안보품목 및 경제안보서비스의 원활한 도입·생산 및 제공에 기여하고자 하는 사업자 또는 사업자단체가 지원 대상입니다.'
+  const damaged = entry(text, 'BASIC', { scope: '는사업' })
+  const result = applicantRows([damaged])
+  assert.equal(result.mandatory.length, 0)
+  assert.equal(result.evidence.length, 1)
+  assert.equal(result.evidence[0].rule.sources[0].excerpt, text)
+  assert.equal(scopedCompanyConditionSentence(damaged, 'BUSINESS_FORM'), '')
+  assert.equal(scopedCompanyConditionSentence(entry(text, 'BASIC', { scope: '공급망안정화사업' }), 'BUSINESS_FORM'),
+    '공급망안정화사업 유형은 ' + text)
+})
+
+test('a clipped scope is restored only from one explicitly labelled full program name in evidence', () => {
+  const text = '중소기업이 지원 대상입니다.'
+  const source = { origin: 'NOTICE_BODY', sectionTitle: '사업 유형: 성장하는사업', excerpt: text }
+  const damaged = entry(text, 'BASIC', { scope: '는사업', sources: [source] })
+  const restored = applicantRows([damaged]).mandatory[0]
+  assert.equal(restored.rule.scope, '성장하는사업')
+  assert.equal(restored.rule.sources[0], source)
+  assert.equal(damaged.rule.scope, '는사업')
+  const ambiguous = entry(text, 'BASIC', { scope: '는사업', sources: [source,
+    { ...source, sectionTitle: '사업 유형: 도약하는사업' }] })
+  assert.equal(applicantRows([ambiguous]).mandatory.length, 0)
+  const unlabelled = entry(text, 'BASIC', { scope: '는사업', sources: [{ ...source, sectionTitle: '성장하는사업' }] })
+  assert.equal(applicantRows([unlabelled]).mandatory.length, 0)
+})
+
+test('a verified long complete condition keeps its beginning ending and all qualifications', () => {
+  const long = '중소기업기본법에 따른 중소기업 중 ' + '신청 분야의 세부 프로그램별 신청요건과 공고에 명시된 참여 요건을 충족하고 '.repeat(9)
+    + '기업부설연구소를 보유한 기업이어야 합니다.'
+  assert.ok(long.length > 360)
+  const result = applicantRows([entry(long)])
+  assert.equal(result.mandatory.length, 1)
+  assert.equal(companyConditionSentence(result.mandatory[0].rule.text, false, 'BUSINESS_FORM'), long)
+  assert.equal(result.mandatory[0].rule.sources[0].excerpt, long)
+})
+
+
+test('required section aliases merge but exclusions never replace ordinary eligibility', () => {
+  const basic = entry(shortApplicant, 'BASIC', { scope: '공통' })
+  const detailed = entry(detailedApplicant, 'ELIGIBILITY', { scope: '공통' })
+  assert.equal(applicantRows([basic, detailed]).mandatory.length, 1)
+  const exclusion = entry(detailedApplicant, 'EXCLUSION', { scope: '공통' })
+  assert.equal(applicantRows([basic, exclusion]).mandatory.length, 2)
+})
+
+test('an unreadable detailed source never displaces a readable shorter condition', () => {
+  const compact = detailedApplicant.replace(/\s/gu, '')
+  const result = applicantRows([entry(shortApplicant), entry(compact)])
+  assert.equal(result.mandatory.length, 1)
+  assert.equal(result.mandatory[0].rule.text, shortApplicant)
+  assert.equal(result.evidence.length, 1)
+})
+
+
+test('damaged OCR duplicates remain original evidence instead of being certified as readable', () => {
+  const prefix = '중소기업기본법 제2조에 따라 공고일 기준 업 력 7년 년 이상 이 상의 의중중소 소기기업'
+  const short = entry(prefix + '이 지원 대상입니다.', 'BASIC', { scope: '공통' })
+  const detailed = entry(prefix + ' 중 세부 프로그램별 신청요건을 충족하는 기업이어야 합니다.', 'BASIC', { scope: '공통' })
+  for (const values of [[short, detailed], [detailed, short]]) {
+    const result = applicantRows(values)
+    assert.equal(result.mandatory.length, 0)
+    assert.equal(result.evidence.length, 1)
+    assert.deepEqual(result.evidence[0].rule.sources.map(source => source.excerpt), values.map(value => value.rule.text))
+  }
+})
+
+
+test('ordinary section headings never become a program type or an implicit common condition', () => {
+  const text = '국내 중소·중견기업이 지원 대상입니다.'
+  for (const scope of ['신청자격 · 지원', '공통 · 지원', '신청자격', '지원 조건', '공통사항', '성장형 / 공통 · 지원']) {
+    const value = entry(text, 'BASIC', { scope })
+    assert.equal(companyConditionScope(value), null, scope)
+    assert.equal(scopedCompanyConditionSentence(value, 'BUSINESS_FORM'), '', scope)
+    const result = applicantRows([value])
+    assert.equal(result.mandatory.length, 0)
+    assert.equal(result.evidence[0].rule.sources[0].excerpt, text)
+  }
+  assert.equal(scopedCompanyConditionSentence(entry(text, 'BASIC', { scope: '공통' }), 'BUSINESS_FORM'), '공통으로 ' + text)
+})
+
+test('a real program retains its name while generic section headings remain only in evidence', () => {
+  const text = '국내 중소·중견기업이 지원 대상입니다.'
+  const value = entry(text, 'BASIC', { scope: '제조AI특화 · 신청자격 · 지원',
+    sources: [{ origin: 'NOTICE_BODY', excerpt: text, sectionTitle: '□ 신청자격' }] })
+  const result = applicantRows([value]).mandatory[0]
+  assert.equal(result.rule.scope, '제조AI특화')
+  assert.equal(scopedCompanyConditionSentence(result, 'BUSINESS_FORM'), '제조AI특화 유형은 ' + text)
+  assert.equal(result.rule.sources[0].sectionTitle, '□ 신청자격')
+  assert.equal(value.rule.scope, '제조AI특화 · 신청자격 · 지원')
+})
+
+test('circled list numbers and whitespace normalize equivalent scopes without changing actual type numbers', () => {
+  const text = '국내 중소·중견기업이 지원 대상입니다.'
+  const a = entry(text, 'BASIC', { scope: '④ 대중소 상생형' })
+  const b = entry(text, 'BASIC', { scope: '대중소상생형' })
+  const result = applicantRows([a, b])
+  assert.equal(result.mandatory.length, 1)
+  assert.equal(result.mandatory[0].rule.sources.length, 2)
+  assert.doesNotMatch(scopedCompanyConditionSentence(result.mandatory[0], 'BUSINESS_FORM'), /④/u)
+  const distinct = ['점프업100', '점프업500', '유형1', '유형2', '대중소 상생형(일반형)', '대중소 상생형(AI형)']
+  assert.equal(applicantRows(distinct.map(scope => entry(text, 'BASIC', { scope }))).mandatory.length, distinct.length)
+  assert.equal(companyConditionScope(entry(text, 'BASIC', { scope: '① 점프업100' })), '점프업100')
+})
+
+test('the supplied applicant role is visible and distinct roles never look like duplicate statements', () => {
+  const text = '국내 중소·중견기업이 지원 대상입니다.'
+  const values = ['도입기업', '공급기업'].map(audience => entry(text, 'BASIC', { scope: '제조AI특화', audience }))
+  const result = applicantRows(values)
+  assert.equal(result.mandatory.length, 2)
+  assert.deepEqual(result.mandatory.map(value => scopedCompanyConditionSentence(value, 'BUSINESS_FORM')), [
+    '제조AI특화 유형의 도입기업은 ' + text,
+    '제조AI특화 유형의 공급기업은 ' + text,
+  ])
+  assert.equal(scopedCompanyConditionSentence(entry(text, 'BASIC', { scope: '공통', audience: '도입기업' }), 'BUSINESS_FORM'),
+    '공통으로 도입기업은 ' + text)
+})
+
+test('an applicant role already supplied in the sentence is not repeated and labelled roles read naturally', () => {
+  const text = '국내 중소·중견 제조기업이 지원 대상입니다.'
+  for (const prefix of ['- (도입기업) ', '(도입기업) ', '도입기업은 ']) {
+    const value = entry(prefix + text, 'BASIC', { scope: '제조AI특화', audience: '도입기업' })
+    assert.equal(scopedCompanyConditionSentence(value, 'BUSINESS_FORM'), '제조AI특화 유형의 도입기업은 ' + text)
+    assert.equal(value.rule.sources[0].excerpt, prefix + text)
+  }
+  const existing = '국내 중소·중견 도입기업이 지원 대상입니다.'
+  assert.equal(scopedCompanyConditionSentence(entry(existing, 'BASIC', { scope: '제조AI특화', audience: '도입기업' }), 'BUSINESS_FORM'),
+    '제조AI특화 유형에서 ' + existing)
+})
+
+test('scope and role display never reclassify or merge distinct source-assigned fields', () => {
+  const text = '제조데이터를 수집 중인 국내 중소·중견 제조기업이 지원 대상입니다.'
+  const value = entry(text, 'BASIC', { scope: '제조데이터 지원', audience: '도입기업' })
+  const rows = companyParticipationRows(guide([row('BUSINESS_FORM', [value]), row('SECTOR', [structuredClone(value)])]))
+  assert.equal(rows.find(row => row.code === 'BUSINESS_FORM').mandatory.length, 1)
+  assert.equal(rows.find(row => row.code === 'SECTOR').mandatory.length, 1)
+})
+
+
+test('an exact partial scope hierarchy joins one full parent path with identical statement role and evidence', () => {
+  const text = '국내 중소·중견기업이 지원 대상입니다.'
+  const partial = entry(text, 'BASIC', { scope: '자율형공장', audience: '도입기업' })
+  const full = entry(text, 'BASIC', { scope: '스마트공장 구축 · 자율형공장', audience: '도입기업' })
+  for (const values of [[partial, full], [full, partial]]) {
+    const result = applicantRows(values)
+    assert.equal(result.mandatory.length, 1)
+    assert.equal(result.mandatory[0].rule.scope, '스마트공장 구축 · 자율형공장')
+    assert.equal(result.mandatory[0].rule.sources.length, 2)
+    assert.equal(result.evidence.length, 0)
+  }
+})
+
+test('partial scope hierarchies cannot choose between competing parents or match a text substring', () => {
+  const text = '국내 중소·중견기업이 지원 대상입니다.'
+  const value = scope => entry(text, 'BASIC', { scope })
+  assert.equal(applicantRows([value('자율형공장'), value('스마트공장 구축 · 자율형공장'), value('지역혁신 · 자율형공장')]).mandatory.length, 3)
+  assert.equal(applicantRows([value('자율형'), value('스마트공장 구축 · 자율형공장')]).mandatory.length, 2)
+  assert.equal(applicantRows([value('대중소상생형(일반형)'), value('스마트공장 구축 · 대중소상생형(AX형)')]).mandatory.length, 2)
+})
+
+test('partial hierarchy recovery requires the same actor statement and complete quotation set', () => {
+  const text = '국내 중소·중견기업이 지원 대상입니다.'
+  const partial = entry(text, 'BASIC', { scope: '자율형공장', audience: '도입기업' })
+  const otherActor = entry(text, 'BASIC', { scope: '스마트공장 구축 · 자율형공장', audience: '공급기업' })
+  assert.equal(applicantRows([partial, otherActor]).mandatory.length, 2)
+  const detail = entry('국내 중소·중견기업 중 연구소를 보유한 기업이 지원 대상입니다.', 'BASIC',
+    { scope: '스마트공장 구축 · 자율형공장', audience: '도입기업' })
+  assert.equal(applicantRows([partial, detail]).mandatory.length, 2)
+  const differentQuotes = entry(text, 'BASIC', { scope: '스마트공장 구축 · 자율형공장', audience: '도입기업',
+    sources: [{ origin: 'NOTICE_BODY', excerpt: text + ' 국내 법인사업자' }] })
+  differentQuotes.supportingQuotes = [text, '국내 법인사업자']
+  assert.equal(applicantRows([partial, differentQuotes]).mandatory.length, 2)
+})
+
+
+test('a role mentioned only as an object or registration requirement does not replace the supplied subject', () => {
+  const text = '공급기업과 협력하며 도입기업 등록을 완료한 기업이어야 합니다.'
+  const value = entry(text, 'BASIC', { scope: '자율형공장', audience: '도입기업' })
+  assert.equal(scopedCompanyConditionSentence(value, 'BUSINESS_FORM'), '자율형공장 유형의 도입기업은 ' + text)
+  const target = entry('도입기업을 지원하는 기술을 보유한 기업이어야 합니다.', 'BASIC', { scope: '자율형공장', audience: '도입기업' })
+  assert.equal(scopedCompanyConditionSentence(target, 'BUSINESS_FORM'),
+    '자율형공장 유형의 도입기업은 도입기업을 지원하는 기술을 보유한 기업이어야 합니다.')
+})
+
+
+test('table presentation separates supplied program context without shortening the complete sentence', () => {
+  const text = '중소기업기본법 제2조에 따라 공고일 기준 업력 7년 이상의 중소기업 중 세부 프로그램별 신청요건을 충족하는 기업이어야 합니다.'
+  const value = entry(text, 'BASIC', { scope: '공통' })
+  assert.deepEqual(companyConditionPresentation(value, 'BUSINESS_FORM'), {
+    scope: '공통', audience: null, sentence: text.replace('제2조', '제 2조'), notes: [],
+  })
+  assert.equal(value.rule.text, text)
+})
+
+test('table presentation preserves roles, program alternatives and complete long conditions', () => {
+  const text = '국내 중소·중견 제조기업 중 ' + '세부 프로그램별 신청요건을 충족하고 '.repeat(20) + '기업부설연구소를 보유한 기업이어야 합니다.'
+  const value = entry(text, 'BASIC', { scope: '① 제조AI · 자율형공장 / AX선도모델', audience: '도입기업' })
+  const result = companyConditionPresentation(value, 'BUSINESS_FORM')
+  assert.equal(result.scope, '제조AI · 자율형공장 / AX선도모델')
+  assert.equal(result.audience, '도입기업')
+  assert.equal(result.sentence, '도입기업은 ' + text)
+  assert.ok(result.sentence.length > 360)
+})
+
+test('table presentation never guesses or strips a scope-like phrase in the supplied condition', () => {
+  const value = entry('제조AI 유형은 국내 중소기업이 지원 대상입니다.', 'BASIC', { scope: '제조AI' })
+  assert.equal(companyConditionPresentation(value, 'BUSINESS_FORM').sentence, value.rule.text)
+  const invalid = entry('국내 중소기업이 지원 대상입니다.', 'BASIC', { scope: '는사업' })
+  assert.equal(companyConditionPresentation(invalid, 'BUSINESS_FORM').sentence, '')
+})
+
+
+test('table presentation always retains exception footnotes and measurement dates outside the evidence toggle', () => {
+  const text = '□ 업력 7년 이상\n※ 단, 업력 7년 미만 추천기업도 신청대상에 포함\n* 최근 3개년(’23~’25년) 표준재무제표증명원상 매출액 100억원 1회 이상 달성 기업'
+  const value = entry(text, 'BASIC', { scope: '공통' })
+  const result = companyConditionPresentation(value, 'BUSINESS_AGE')
+  assert.equal(result.sentence, '업력 7년 이상이어야 합니다.')
+  assert.deepEqual(result.notes, ['단, 업력 7년 미만 추천기업도 신청대상에 포함', '최근 3개년(’23~’25년) 표준재무제표증명원상 매출액 100억원 1회 이상 달성 기업'])
+  assert.equal(value.rule.text, text)
+})
+
+
+for (const sample of JSON.parse(readFileSync(new URL('../../backend/src/test/resources/participation-conditions/display-quality.json', import.meta.url), 'utf8'))) {
+  test('shared display-quality contract: ' + sample.name, () => {
+    assert.equal(isReadableCompanyCondition(sample.text), sample.readable)
+    if (!sample.readable) {
+      const result = applicantRows([entry(sample.text)])
+      assert.equal(result.mandatory.length, 0)
+      assert.equal(result.evidence[0].rule.sources[0].excerpt, sample.text)
+    }
+  })
+}
+
+
+test('meaningful circle glyphs inside eligibility prose survive decoration cleanup', () => {
+  for (const text of ['적격(○) 판정을 받은 중소기업이 지원 대상입니다.', '등록 상태가 ●인 중소기업이 지원 대상입니다.']) {
+    assert.equal(companyConditionSentence(text, false, 'BUSINESS_FORM'), text)
+  }
+})
+
+
+test('explicit program filter retains common and unknown scope and exact alternative programs', () => {
+  const value = scope => entry('국내 중소기업이 지원 대상입니다.', 'BASIC', { scope })
+  const selected = '스마트공장 · 자율형공장'
+  for (const scope of [null, '공통', '스마트공장 · 공통', selected, selected + ' / 일반형']) {
+    assert.equal(companyConditionAppliesTo(value(scope), selected), true, scope)
+  }
+  for (const scope of ['스마트공장 · AI형', '다른사업 · 공통', '자율형공장']) {
+    assert.equal(companyConditionAppliesTo(value(scope), selected), false, scope)
+    assert.equal(companyConditionAppliesTo(value(scope), ''), true, scope)
+  }
+})
+
+
+test('table notes retain server-supported details and exceptions without repeating the same footnote', () => {
+  const note = '최근 3개년(’23~’25년) 매출액 500억원 1회 이상 달성 기업'
+  const exception = '창업 3년 미만 추천기업도 신청대상에 포함'
+  const value = entry('매출액 500억원 이상\n* ' + note, 'BASIC', {
+    details: [note, note.replaceAll(' ', '  ')], exceptions: [exception],
+  })
+  const result = companyConditionPresentation(value, 'REVENUE')
+  assert.deepEqual(result.notes, [note, exception])
+  assert.equal(value.rule.details.length, 2)
+  assert.equal(value.rule.exceptions[0], exception)
+})
+
+
+test('a hidden or stale program filter never hides conditions after a notice or result change', () => {
+  const selection = { detectionId: 1, program: '일반형' }
+  const programs = ['일반형', '성장형', '도약형']
+  assert.equal(activeCompanyConditionProgram(selection, 1, programs, 8), '일반형')
+  assert.equal(activeCompanyConditionProgram(selection, 2, programs, 8), '')
+  assert.equal(activeCompanyConditionProgram(selection, 1, programs, 7), '')
+  assert.equal(activeCompanyConditionProgram(selection, 1, programs.slice(0, 2), 8), '')
+  assert.equal(activeCompanyConditionProgram(selection, 1, ['특화형', '성장형', '도약형'], 8), '')
+})
+
+
+test('identical complete display contracts merge different file layouts and retain all original quotations', () => {
+  const text = '도시형소공인 지원에 관한 특별법 제2조에 의한 소공인이 지원 대상입니다.'
+  const details = ['① 제조업(C10~C34)을 주된 사업으로 영위 ② 상시근로자 10인 미만을 모두 충족']
+  const originals = ['◦ 도시형소공인 지원에 관한 특별법 제2조에 의한 소공인\n- ' + details[0],
+    '◦ 도시형소공인 지원에 관한 특별법 제2조에 의한 소공인\n[표]\n신청 조건\t' + details[0] + '\n[/표]']
+  const entries = originals.map(quote => ({ ...entry(text, 'BASIC', { details, sources: [{ origin: 'ATTACHMENT', excerpt: quote }] }), supportingQuotes: [quote] }))
+  const result = applicantRows(entries)
+  assert.equal(result.mandatory.length, 1)
+  assert.deepEqual(result.mandatory[0].rule.details, details)
+  assert.deepEqual(result.mandatory[0].supportingQuotes, originals)
+  assert.deepEqual(result.mandatory[0].rule.sources.map(source => source.excerpt), originals)
+  for (const change of [
+    { details: [details[0].replace('10인', '9인')] },
+    { details: [details[0].replace('모두', '하나를')] },
+    { exceptions: ['추천 기업은 제외'] },
+    { guidance: ['협약 체결 전 확인'] },
+    { scope: '별도 유형' }, { audience: '도입기업' }, { section: 'PREFERENCE' },
+  ]) {
+    const second = structuredClone(entries[1])
+    Object.assign(second.rule, change)
+    const different = applicantRows([entries[0], second])
+    assert.equal(different.mandatory.length + different.preference.length, 2, JSON.stringify(change))
+  }
 })

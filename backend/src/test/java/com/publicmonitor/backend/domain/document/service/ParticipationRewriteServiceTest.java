@@ -17,6 +17,7 @@ import tools.jackson.databind.ObjectMapper;
 class ParticipationRewriteServiceTest {
     final ObjectMapper mapper = new ObjectMapper();
     final String quote = "업력 7년 이내 창업기업만 신청 가능";
+    final String sentence = "업력 7년 이내 창업기업만 신청 가능합니다.";
     ParticipationGuide raw() {
         var source = new RequirementSource("NOTICE_BODY", null, "신청자격", null, quote);
         var rule = new ParticipationRule("BASIC", "대표자 조건", "잘못 붙인 문장입니다.", null, null,
@@ -66,7 +67,7 @@ class ParticipationRewriteServiceTest {
             assertThat(entries(ready)).singleElement().satisfies(entry -> {
                 assertThat(entry.displayStatus()).isEqualTo("VERIFIED");
                 assertThat(entry.rule().label()).isEqualTo("업력");
-                assertThat(entry.rule().text()).isEqualTo(valid().statements().getFirst().text());
+                assertThat(entry.rule().text()).isEqualTo(sentence);
             });
             verify(client, times(1)).rewrite(any(), any());
         } finally { release.countDown(); service.close(); }
@@ -137,7 +138,7 @@ class ParticipationRewriteServiceTest {
             assertThat(pending.rewriteStatus()).isEqualTo("PENDING");
             assertThat(entries(pending)).singleElement().satisfies(entry -> {
                 assertThat(entry.displayStatus()).isEqualTo("VERIFIED");
-                assertThat(entry.rule().text()).isEqualTo(valid().statements().getFirst().text());
+                assertThat(entry.rule().text()).isEqualTo(sentence);
             });
             verify(store, never()).finish(any(), any(), any());
         } finally { release.countDown(); service.close(); }
@@ -160,7 +161,7 @@ class ParticipationRewriteServiceTest {
                 var guide = service.resolve(version, raw(), false);
                 assertThat(guide.rewriteStatus()).isEqualTo("READY");
                 assertThat(entries(guide)).singleElement().satisfies(entry ->
-                        assertThat(entry.rule().text()).isEqualTo(quote));
+                        assertThat(entry.rule().text()).isEqualTo(sentence));
                 verify(client, times(1)).rewrite(any(), any());
                 verify(store).finish(eq(1L), eq(service.fingerprint(request)), anyString());
             } finally { service.close(); }
@@ -310,7 +311,7 @@ class ParticipationRewriteServiceTest {
                     for (int attempt = 0; attempt < 2; attempt++) {
                         var guide = service.resolve(version, expandedRaw, false);
                         assertThat(guide.rewriteStatus()).isEqualTo(status);
-                        if (status.equals("READY")) assertThat(guide.rules()).singleElement().satisfies(r -> assertThat(r.text()).isEqualTo(quote));
+                        if (status.equals("READY")) assertThat(guide.rules()).singleElement().satisfies(r -> assertThat(r.text()).isEqualTo(sentence));
                     }
                     verifyNoInteractions(client, store);
                 } finally { service.close(); }
@@ -344,8 +345,8 @@ class ParticipationRewriteServiceTest {
                 var result = service.resolve(version, candidates.guide(), false, candidates.scopes());
                 assertThat(result.rewriteStatus()).isEqualTo(response.status());
                 assertThat(result.rules()).anyMatch(rule -> rule.text().equals("전통시장 및 상점가가 지원 대상입니다."));
-                if (status.equals("READY")) assertThat(result.rules()).anyMatch(rule -> rule.text().equals(quote));
-                else assertThat(result.rules()).noneMatch(rule -> rule.text().equals(quote));
+                if (status.equals("READY")) assertThat(result.rules()).anyMatch(rule -> rule.text().equals(sentence));
+                else assertThat(result.rules()).noneMatch(rule -> rule.text().equals(sentence));
                 verifyNoInteractions(client, store);
             } finally { service.close(); }
         }
@@ -389,7 +390,7 @@ class ParticipationRewriteServiceTest {
                 var guide = service.resolve(version, candidates.guide(), false, candidates.scopes());
                 assertThat(guide.rewriteStatus()).isEqualTo(status);
                 assertThat(guide.rules()).anyMatch(rule -> rule.text().equals("중견기업이 지원 대상입니다."));
-                if (status.equals("READY")) assertThat(guide.rules()).anyMatch(rule -> rule.text().equals(quote));
+                if (status.equals("READY")) assertThat(guide.rules()).anyMatch(rule -> rule.text().equals(sentence));
                 verifyNoInteractions(client, store);
             } finally { service.close(); }
         }

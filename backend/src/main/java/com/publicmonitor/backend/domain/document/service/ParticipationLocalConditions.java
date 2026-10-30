@@ -15,17 +15,23 @@ final class ParticipationLocalConditions {
         if (input.scopes() == null) return List.of();
         var result = new LinkedHashMap<String, Condition>();
         for (var evidence : input.evidence().values()) for (var source : evidence) {
-            if (ParticipationAudience.recipient(List.of(source), input.scopes().context(List.of(source)))) continue;
+            if (ParticipationAudience.recipient(List.of(source), input.scopes().displayContext(List.of(source)))) continue;
             String raw = source.excerpt();
             addResearchCondition(source, input, result);
+            addStructuredConditions(source, input, result);
             String[] lines = raw.split("\\R", -1);
             int[] lineStarts = new int[lines.length];
             var breaks = Pattern.compile("\\R").matcher(raw);
             for (int index = 1; index < lines.length && breaks.find(); index++) lineStarts[index] = breaks.end();
             boolean qualification = false;
+            boolean inTable = false;
             String rowScope = null;
             for (int i = 0; i < lines.length && result.size() < 48; i++) {
                 String line = lines[i].strip();
+                if (line.equals("[표]")) { inTable = true; continue; }
+                if (line.equals("[/표]")) { inTable = false; continue; }
+                // Column headers and cells are handled separately; never turn a whole target row into prose.
+                if (inTable) continue;
                 if (line.matches(".*(?:과제별\\s*신청자격|선정\\s*대상).*")) qualification = true;
                 if (qualification && line.matches("[가-힣A-Za-z0-9 ]{1,20}과제") && !line.contains("신청")) rowScope = line;
                 if (qualification && line.equals("과제") && i > 0 && lines[i - 1].strip().matches("[가-힣A-Za-z]{1,10}"))
@@ -35,25 +41,35 @@ final class ParticipationLocalConditions {
                 var company = Pattern.compile("^[(（]기\\s*업[)）]\\s*").matcher(line);
                 boolean companyRow = qualification && company.find();
                 if (!labelled && !companyRow) continue;
+                if (labelled && line.substring(label.end()).strip().matches("^(?:및|과|와)\\s*(?:방법|절차|선정절차|지원내용).*$")) {
+                    qualification = true;
+                    continue;
+                }
                 if (labelled && line.startsWith("ㅇ") && !qualification) continue;
                 qualification = true;
                 String quote = line.substring(labelled ? label.end() : company.end()).strip();
                 int last = i;
                 if (quote.isEmpty()) {
                     last++;
+                    while (last < lines.length && lines[last].isBlank()) last++;
                     if (last >= lines.length) continue;
                     quote = lines[last].strip();
+                    if (ParticipationConditionStructure.roleLine(quote)) continue;
                 }
                 // Read wrapped prose, never a following row, note, or a whole table.
-                while (last + 1 < lines.length && (!entity(clean(quote)) || lines[last + 1].strip().matches("^\\(상시.*")) && quote.length() < 260) {
+                while (last + 1 < lines.length && quote.length() < 260) {
                     String next = lines[last + 1].strip();
-                    if (next.isEmpty() || STOP.matcher(next).matches() || (next.contains("\t") && !next.startsWith("("))) break;
+                    if (next.isEmpty() || STOP.matcher(next).matches()
+                            || next.matches("^(?:[-◦○●]|\\d+[.)]).*")
+                            || next.matches("\\d{1,2}(?:-\\d{1,2})*[.)]?|[가-힣A-Za-z0-9 ]{1,20}과제")
+                            || LABEL.matcher(next).find() || (next.contains("\t") && !next.startsWith("("))) break;
                     quote += "\n" + lines[++last].strip();
                 }
                 String exact = exactQuote(raw.substring(lineStarts[i]), quote);
                 if (exact == null) continue;
                 int exactStart = raw.indexOf(exact, lineStarts[i]);
                 String value = clean(exact);
+                if (ParticipationConditionStructure.multipleTargets(exact)) continue;
                 if (companyRow && value.contains("아래 요건 중 어느 하나")) {
                     int end = raw.indexOf("[/표]", exactStart + exact.length());
                     if (end < 0 || end - exactStart > 550) continue;
@@ -68,35 +84,119 @@ final class ParticipationLocalConditions {
                 if (Pattern.compile("[가-힣0-9]{35,}").matcher(value).find()) continue;
                 if (!entity(value) || value.length() > 240 || value.matches(".*(?:아래|다음|상기).*(?:조건|요건|기준|해당).*")) continue;
                 if (value.matches(".*(?:서류|제출|신청방법|신청기간|사업목적|사업비|선정된|선정 후|지원금|https?://|[□■]).*")) continue;
-                // Do not erase an adjacent exception that changes the headline eligibility.
-                String exception = last + 1 < lines.length ? lines[last + 1].strip() : "";
                 String sentence = value + particle(value) + " 지원 대상입니다.";
-                if (exception.matches("^(?:[*※]\\s*)?(?:단|다만)[,，].*")) {
-                    String extra = clean(exception).replaceFirst("^(?:단|다만)[,，]\\s*", "");
-                    if (!extra.endsWith("도 지원 가능")) continue;
-                    sentence = value + "이며, 다만 " + extra.replaceFirst("지원 가능$", "지원할 수 있습니다.");
-                    int end = raw.indexOf(lines[last + 1], exactStart + exact.length());
-                    if (end < 0) continue;
-                    exact = raw.substring(exactStart, end + lines[last + 1].length());
+                var details = new ArrayList<String>();
+                boolean unsupportedNote = false;
+                int noteStart = last + 1;
+                while (noteStart < lines.length && lines[noteStart].isBlank()) noteStart++;
+                while (noteStart < lines.length && lines[noteStart].strip().matches("^(?:[※*]|단[,，]|다만).*")) {
+                    int noteEnd = noteStart;
+                    while (noteEnd + 1 < lines.length && !lines[noteEnd + 1].isBlank()
+                            && !STOP.matcher(lines[noteEnd + 1].strip()).matches()
+                            && !lines[noteEnd + 1].strip().matches("^[◦○●].*")) noteEnd++;
+                    String note = clean(String.join(" ", Arrays.copyOfRange(lines, noteStart, noteEnd + 1)));
+                    String extra = note.replaceFirst("^(?:단|다만)[,，]\\s*", "");
+                    if (!ParticipationDisplayQuality.readable(extra)) { unsupportedNote = true; break; }
+                    String exceptionPrefix = sentence.equals(value + particle(value) + " 지원 대상입니다.")
+                            ? value + "이며, 다만 " : sentence + " 또한, ";
+                    if (extra.endsWith("도 지원 가능"))
+                        sentence = exceptionPrefix + extra.replaceFirst("지원 가능$", "지원할 수 있습니다.");
+                    else if (extra.matches(".*신청\\s*대상에\\s*포함$"))
+                        sentence = exceptionPrefix + extra + "됩니다.";
+                    else if (note.matches("^(?:단|다만)[,，].*")
+                            || Pattern.compile("제외|예외|필수|불가|제한|하여야|해야").matcher(note).find()) {
+                        unsupportedNote = true; break;
+                    } else details.add(note);
+                    exact = raw.substring(exactStart, lineStarts[noteEnd] + lines[noteEnd].length());
+                    last = noteEnd;
+                    noteStart = last + 1;
+                    while (noteStart < lines.length && lines[noteStart].isBlank()) noteStart++;
                 }
-                if (sentence.length() > 320 || exact.length() > 600) continue;
-                var fields = ParticipationFocusCriterion.matching(value, "");
-                String code = fields.contains("REVENUE") ? "REVENUE" : fields.contains("BUSINESS_AGE") ? "BUSINESS_AGE"
-                        : fields.contains("BUSINESS_FORM") ? "BUSINESS_FORM" : fields.contains("SECTOR") ? "SECTOR" : null;
+                // An explicit numbered requirement list is additional eligibility, not a wrapped applicant noun.
+                if (noteStart < lines.length && lines[noteStart].strip().matches("^-\\s*신청\\s*조건.*(?:모두|충족).*")) {
+                    int listEnd = noteStart;
+                    while (listEnd + 1 < lines.length) {
+                        String next = lines[listEnd + 1].strip();
+                        if (next.matches("^(?:[<□■]|[가-하][.)]|\\d+[.)]).*")) break;
+                        listEnd++;
+                    }
+                    String additional = String.join("\n", Arrays.copyOfRange(lines, noteStart, listEnd + 1)).strip();
+                    // These are repeated row labels under the explicit '신청조건' heading, not applicant text.
+                    additional = additional.replaceAll("(?m)^\\h*\\[/?표\\]\\h*$", "")
+                            .replaceAll("(?m)^\\h*신청(?:\\h|⏎)*조건\\h*\\t", "")
+                            .replaceAll("(?m)^\\h*(?:신청|조건)\\h*$", "")
+                            .replaceAll("(?m)^\\h*신청\\h+(?=영위)", "")
+                            .replaceFirst("^-\\s*", "").replaceAll("\\s+", " ").strip();
+                    if (additional.length() > 500 || !additional.contains("①") || !additional.contains("②")
+                            || !ParticipationDisplayQuality.readable(additional)) continue;
+                    details.add(additional);
+                    exact = raw.substring(exactStart, lineStarts[listEnd] + lines[listEnd].length()).stripTrailing();
+                    last = listEnd;
+                }
+                if (unsupportedNote || sentence.length() > 320 || exact.length() > 600
+                        || !ParticipationDisplayQuality.sentence(sentence)
+                        || !ParticipationDisplayQuality.completeQuote(raw, exact)) continue;
+                String code = primaryCriterion(value);
                 if (code == null) continue;
-                String scope = cleanScope(rowScope != null ? rowScope : input.scopes().scope(List.of(source), exact));
+                String scope = cleanScope(rowScope != null ? rowScope : input.scopes().displayScope(List.of(source), exact));
                 String key = code + ":" + Objects.toString(scope, "") + ":" + clean(exact).replaceAll("\\s+", "");
                 var previous = result.get(key);
                 var sources = new ArrayList<RequirementSource>();
                 if (previous != null) sources.addAll(previous.rule().sources());
                 if (!sources.contains(source)) sources.add(source);
                 var rule = new ParticipationRule("BASIC", ParticipationFocusCriterion.valueOf(code).label, sentence, scope, null,
-                        List.of(), List.of(), List.of(), List.of(), sources);
+                        List.copyOf(details), List.of(), List.of(), List.of(), sources);
                 result.put(key, new Condition(code, rule, exact));
                 i = last;
             }
         }
         return List.copyOf(result.values());
+    }
+
+
+    private static void addStructuredConditions(RequirementSource source, ParticipationRewriteProjection.Input input,
+            Map<String, Condition> result) {
+        for (var target : ParticipationConditionStructure.tableTargets(source.excerpt())) {
+            String value = clean(target.quote().replace("⏎", " "));
+            String parent = cleanScope(input.scopes().displayScope(List.of(source), target.quote()));
+            String scope = parent == null ? target.title() : parent + " · " + target.title();
+            addStructured(source, result, value + particle(value) + " 지원 대상입니다.",
+                    target.quote(), scope, null, primaryCriterion(value));
+        }
+        for (var target : ParticipationConditionStructure.roleTargets(source.excerpt())) {
+            String value = target.value();
+            String sentence = target.audience() + "은 " + value + (particle(value).equals("가") ? "여야 합니다." : "이어야 합니다.");
+            String scope = cleanScope(input.scopes().displayScope(List.of(source), target.quote()));
+            addStructured(source, result, sentence, target.quote(), scope, target.audience(), primaryCriterion(value));
+        }
+    }
+
+    private static void addStructured(RequirementSource source, Map<String, Condition> result,
+            String sentence, String quote, String scope, String audience, String code) {
+        if (code == null || sentence.length() > 320 || result.size() >= 48 || !ParticipationDisplayQuality.sentence(sentence)) return;
+        String key = code + ":" + Objects.toString(scope, "") + ":" + Objects.toString(audience, "")
+                + ":" + clean(quote).replaceAll("\\s+", "");
+        var previous = result.get(key);
+        var sources = new ArrayList<RequirementSource>();
+        if (previous != null) sources.addAll(previous.rule().sources());
+        if (!sources.contains(source)) sources.add(source);
+        var rule = new ParticipationRule("BASIC", ParticipationFocusCriterion.valueOf(code).label, sentence, scope, audience,
+                List.of(), List.of(), List.of(), List.of(), sources);
+        result.put(key, new Condition(code, rule, quote));
+    }
+
+    private static String primaryCriterion(String value) {
+        var fields = ParticipationFocusCriterion.matching(value, "");
+        if (fields.contains("REVENUE")) return "REVENUE";
+        if (fields.contains("BUSINESS_AGE")) return "BUSINESS_AGE";
+        // A parenthetical worker-count definition describes the applicant's enterprise size.
+        if (value.matches(".*(?:기업|소공인|소상공인)\\s*\\([^()]*상시\\s*근로자[^()]*\\)$"))
+            return "BUSINESS_FORM";
+        if (Pattern.compile("업종|업태|KSIC|한국표준산업분류|(?:제조업|서비스업|정보통신업).*영위").matcher(value).find())
+            return "SECTOR";
+        // Explicit target clauses identify an applicant even when '중소·중견 제조기업' has no contiguous '중소기업'.
+        if (ParticipationConditionStructure.entity(value)) return "BUSINESS_FORM";
+        return fields.contains("SECTOR") ? "SECTOR" : null;
     }
 
     private static void addResearchCondition(RequirementSource source, ParticipationRewriteProjection.Input input,
@@ -111,7 +211,8 @@ final class ParticipationLocalConditions {
             if (!condition.matches()) continue;
             String sentence = condition.group(1) + ", " + condition.group(2) + "여야 하며, "
                     + condition.group(3) + " 보유해야 합니다. 연구개발전담부서는 인정되지 않습니다.";
-            String scope = cleanScope(input.scopes().scope(List.of(source), quote));
+            if (!ParticipationDisplayQuality.sentence(sentence)) continue;
+            String scope = cleanScope(input.scopes().displayScope(List.of(source), quote));
             String key = "BUSINESS_FORM:" + Objects.toString(scope, "") + ":" + value.replaceAll("\\s+", "");
             var previous = result.get(key);
             var sources = new ArrayList<RequirementSource>();

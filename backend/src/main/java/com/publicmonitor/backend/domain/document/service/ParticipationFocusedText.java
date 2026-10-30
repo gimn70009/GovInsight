@@ -18,6 +18,7 @@ final class ParticipationFocusedText {
 
     static Display prepare(String code, String text, String quote, String heading, String kind) {
         if (text == null || quote == null || (documentSection(heading) && !Pattern.compile("신청\\s*(?:자격|대상|요건)|지원\\s*(?:대상|자격|요건)|선정\\s*대상|우대|가점").matcher(quote).find())) return null;
+        if (ParticipationConditionStructure.multipleTargets(quote)) return null;
         boolean original = compact(text).equals(compact(quote));
         if (original && quote.contains("[표]")) {
             // Repair an old cached whole-table selection only when one unambiguous condition row exists.
@@ -39,11 +40,30 @@ final class ParticipationFocusedText {
         if (!allowed(code, quote) || !allowed(code, text)) return null;
         if (original) {
             if (text.length() > 600 || text.contains("[표]") || text.contains("\t")) return null;
-            return new Display(text, quote);
+            String sentence = originalSentence(text);
+            return sentence != null && facts(sentence, quote, kind) ? new Display(sentence, quote) : null;
         }
-        if (!text.matches("(?s).*(?:다|요)\\.$") || text.length() > 240 || text.matches("(?s).*\\[/?표\\].*")
+        if (!ParticipationDisplayQuality.sentence(text) || text.length() > 240 || text.matches("(?s).*\\[/?표\\].*")
                 || text.contains("\t") || text.matches("(?s).*https?://.*") || !facts(text, fieldQuote(text, quote, code), kind)) return null;
         return new Display(text, quote);
+    }
+
+    /** Old paid caches may contain an exact noun/predicate clause. Only add a known ending, then recheck facts. */
+    private static String originalSentence(String quote) {
+        String value = ParticipationLocalConditions.clean(quote);
+        if (!ParticipationDisplayQuality.readable(value)) return null;
+        if (ParticipationDisplayQuality.sentence(value)) return value;
+        String sentence;
+        var obligation = Pattern.compile("^(.*(?:이어야|여야|해야|하여야))\\s*함(\\([^()]*참조\\))?$").matcher(value);
+        if (obligation.matches()) sentence = obligation.group(1) + " 합니다" + Objects.toString(obligation.group(2), "") + ".";
+        else if (value.endsWith("수 있음")) sentence = value.replaceFirst("수 있음$", "수 있습니다.");
+        else if (value.endsWith("신청 가능")) sentence = value + "합니다.";
+        else if (value.matches(".*(?:이상|이하|미만|초과|이내)$")) sentence = value + "이어야 합니다.";
+        else if (ParticipationConditionStructure.entity(value)) sentence = value + "이어야 합니다.";
+        else if (value.endsWith("가점")) sentence = value + "을 부여합니다.";
+        else if (value.endsWith("우대")) sentence = value + "합니다.";
+        else return null;
+        return sentence.length() <= 320 && ParticipationDisplayQuality.sentence(sentence) ? sentence : null;
     }
 
     private static boolean allowed(String code, String text) {

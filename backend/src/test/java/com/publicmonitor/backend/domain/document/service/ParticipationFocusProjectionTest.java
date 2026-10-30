@@ -38,7 +38,7 @@ class ParticipationFocusProjectionTest {
                 .containsExactly("BUSINESS_AGE", "REVENUE", "IP", "SECTOR");
     }
 
-    @Test void exactSourceFragmentsNeedNoSentenceRewritingAndPreferenceStaysInItsOwnField() {
+    @Test void exactUnambiguousCachedClausesReceiveOnlyAKnownEndingAndKeepTheirField() {
         String age = "업력 7년 이내";
         String patent = "등록 특허 보유 시 2점 가점";
         var raw = raw(age, patent);
@@ -52,19 +52,20 @@ class ParticipationFocusProjectionTest {
                     .containsExactly("BUSINESS_AGE", "REVENUE", "IP", "SECTOR", "BUSINESS_FORM", "EXPERIENCE", "CREDIT");
         });
         assertThat(entries(guide)).extracting(e -> e.rule().section()).containsExactly("BASIC", "PREFERENCE");
-        assertThat(entries(guide)).extracting(e -> e.rule().text()).containsExactly(age, patent);
+        assertThat(entries(guide)).extracting(e -> e.rule().text()).containsExactly(age + "이어야 합니다.", patent + "을 부여합니다.");
         assertThat(guide.conditions()).isEmpty();
         assertThat(guide.rules()).hasSize(2);
     }
 
-    @Test void identicalQuotationCanBelongToBothFieldsAndRequirementKinds() {
+    @Test void preferenceWordsInAnOldExactQuoteCannotBecomeMandatoryThroughTheOriginalQuotePath() {
         String quote = "업력 7년 이내이며 매출액 10억원 이상인 기업은 신청 가능하며 평가 시 우대";
         var raw = raw(quote);
         var response = new Response(List.of(
                 new Statement(List.of("s0"), "BUSINESS_AGE", quote, "", List.of(quote), "ELIGIBILITY"),
                 new Statement(List.of("s0"), "BUSINESS_AGE", quote, "", List.of(quote), "PREFERENCE"),
                 new Statement(List.of("s0"), "REVENUE", quote, "", List.of(quote), "ELIGIBILITY")), List.of(), "READY");
-        assertThat(entries(project(raw, response))).hasSize(3).allMatch(e -> "VERIFIED".equals(e.displayStatus()));
+        assertThat(entries(project(raw, response)).stream().filter(e -> "VERIFIED".equals(e.displayStatus())))
+                .singleElement().satisfies(e -> assertThat(e.rule().section()).isEqualTo("PREFERENCE"));
     }
 
     @Test void unrelatedKindsAndRewrittenOrInventedTextCannotReachVerifiedCells() {
@@ -138,7 +139,7 @@ class ParticipationFocusProjectionTest {
         var response = new Response(List.of(new Statement(List.of("s0"), "REVENUE", quote,
                 source.sectionTitle(), List.of(quote), "ELIGIBILITY")), List.of(), "READY");
         assertThat(entries(project(raw, response))).singleElement().satisfies(entry -> {
-            assertThat(entry.rule().text()).isEqualTo(quote);
+            assertThat(entry.rule().text()).isEqualTo(quote + "이어야 합니다.");
             assertThat(entry.rule().scope()).isEqualTo("스케일업 100억 트랙");
         });
     }
@@ -157,14 +158,14 @@ class ParticipationFocusProjectionTest {
         });
     }
 
-    @Test void cachedCleanTableKeepsOnlyTheActualIndustryCell() throws Exception {
+    @Test void cachedCleanTableKeepsOnlyTheActualIndustryCellAndAddsAKnownEnding() throws Exception {
         String body = java.nio.file.Files.readString(java.nio.file.Path.of(
                 "src/test/resources/participation-conditions/clean-structured.txt"));
         String quote = body.substring(body.indexOf("가. 신청대상"), body.indexOf("1. “도시형소공인”")).strip();
         var guide = project(raw(quote), new Response(List.of(
                 new Statement(List.of("s0"), "SECTOR", quote, "", List.of(quote), "ELIGIBILITY")), List.of(), "READY"));
-        assertThat(entries(guide).stream().filter(e -> "VERIFIED".equals(e.displayStatus())).toList()).singleElement().satisfies(e -> {
-            assertThat(e.rule().text()).contains("C10~C34", "주된 사업").doesNotContain("[표]", "상시근로자", "제2조");
+        assertThat(entries(guide).stream().filter(e -> "VERIFIED".equals(e.displayStatus()))).singleElement().satisfies(e -> {
+            assertThat(e.rule().text()).contains("C10~C34", "주된 사업").contains("합니다").doesNotContain("[표]", "상시근로자", "제2조");
             assertThat(e.supportingQuotes()).singleElement().satisfies(q -> assertThat(quote).contains(q));
             assertThat(e.rule().sources().getFirst().excerpt()).isEqualTo(quote);
         });

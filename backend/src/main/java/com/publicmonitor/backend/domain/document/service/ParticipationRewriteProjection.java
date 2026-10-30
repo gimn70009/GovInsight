@@ -90,30 +90,43 @@ final class ParticipationRewriteProjection {
             var matchingLocal = localConditions.stream().filter(local ->
                     ParticipationLocalConditions.covers(local, directSources, quote)).toList();
             var display = directSources.stream()
+                    .filter(source -> ParticipationDisplayQuality.completeQuote(source.excerpt(), quote))
                     .map(source -> ParticipationFocusedText.prepare(item.criterion(), item.text(), quote, source.sectionTitle(), item.kind()))
                     .filter(Objects::nonNull).findFirst().orElse(null);
-            if (display == null || (input.scopes() != null && ParticipationAudience.recipient(directSources, input.scopes().context(directSources)))) {
+            if (display == null || (input.scopes() != null && ParticipationAudience.recipient(directSources, input.scopes().displayContext(directSources)))) {
                 unresolved.addAll(item.sourceIds());
                 continue;
             }
             if (!matchingLocal.isEmpty()) {
                 if (!display.text().matches("(?s).*(?:다|요)\\.$")
-                        || matchingLocal.stream().anyMatch(local -> !local.code().equals(item.criterion()))
                         || !ParticipationFacts.equivalent(display.text(), quote)) continue;
                 replacedLocal.addAll(matchingLocal);
             }
-            String identity = item.criterion() + ":" + item.kind() + ":" + compact(display.text());
+            var localContext = matchingLocal.size() == 1 ? matchingLocal.getFirst().rule() : null;
+            String audience = localContext == null ? null : localContext.audience();
+            String displayCode = matchingLocal.size() == 1 ? matchingLocal.getFirst().code() : item.criterion();
+            String identity = displayCode + ":" + item.kind() + ":" + compact(display.text()) + ":" + Objects.toString(audience, "");
             var previous = verifiedRules.get(identity);
             if (previous != null) {
                 var combined = new LinkedHashSet<>(previous.rule().sources());
                 combined.addAll(sources);
                 sources = List.copyOf(combined);
             }
-            var c = ParticipationFocusCriterion.valueOf(item.criterion());
+            var c = ParticipationFocusCriterion.valueOf(displayCode);
             String section = "PREFERENCE".equals(item.kind()) ? "PREFERENCE" : "BASIC";
-            String scope = input.scopes() == null ? displayScope(sources, display.quote()) : input.scopes().scope(sources, display.quote());
+            String scope = input.scopes() == null ? displayScope(sources, display.quote()) : input.scopes().displayScope(sources, display.quote());
+            if (localContext != null) {
+                scope = localContext.scope();
+                if (previous != null && !Objects.equals(previous.rule().scope(), scope)) {
+                    var scopes = new LinkedHashSet<String>();
+                    if (previous.rule().scope() != null) scopes.addAll(List.of(previous.rule().scope().split(" / ")));
+                    if (scope != null) scopes.addAll(List.of(scope.split(" / ")));
+                    if (previous.rule().scope() == null || scope == null) scopes.add("적용 범위 확인 필요");
+                    scope = String.join(" / ", scopes);
+                }
+            }
             scope = ParticipationLocalConditions.cleanScope(scope);
-            var rule = new ParticipationRule(section, c.label, display.text(), scope, null,
+            var rule = new ParticipationRule(section, c.label, display.text(), scope, audience,
                     List.of(), List.of(), List.of(), List.of(), sources);
             verifiedRules.put(identity, new Verified(c, rule, display.quote()));
             item.sourceIds().forEach(id -> covered.add(c.name() + ":" + id));

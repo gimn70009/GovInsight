@@ -53,21 +53,87 @@ export function companyConditionEmptyText(status: ParticipationGuide['rewriteSta
   return '확인된 조건 없음'
 }
 
-/** Show supplied scope labels explicitly; never infer a track from a numeric condition. */
+const genericScopeHeading = /^(?:신청\s*(?:자격|조건|요건|대상|방법)|지원\s*(?:자격|조건|요건|대상|내용|계획|유형)?|참여\s*(?:자격|조건|요건|대상)|사업\s*(?:개요|목적|내용)|공통\s*사항)$/u
+const scopeOrdinal = /^[①-⑳㉑-㉟㊱-㊿]\s*/u
+
+/** Scope is a supplied program/common label; ordinary section headings belong to source evidence. */
 export function companyConditionScope(entry: ParticipationCriterionEntry): string | null {
-  const scope = entry.rule.scope?.split(/ \/ /u).map(part => part.split(/ · /u)
-    .filter(label => !/^(?:[（(□■◦○ㅇ*※-]|20[0-9]{2}년)/u.test(label.trim()) && label.trim().length <= 60).join(' · ')).filter(Boolean).join(' / ').trim()
-  return scope || null
+  const parts = entry.rule.scope?.split(/ \/ /u).map(part => {
+    const labels = part.split(/ · /u).map(label => label.trim().replace(scopeOrdinal, '').trim())
+    const meaningful = labels.filter(label => label && !genericScopeHeading.test(label)
+      && !/^(?:[（(□■◦○ㅇ*※-]|20[0-9]{2}년)/u.test(label) && label.length <= 60)
+    // '공통 · 지원' may be a damaged section path, not proof that every program shares a condition.
+    if (meaningful.length === 1 && meaningful[0] === '공통' && labels.length !== 1) return null
+    return meaningful.length ? meaningful.join(' · ') : null
+  })
+  // Do not silently drop an unknown alternative from an otherwise known set of programs.
+  return parts && parts.every(Boolean) ? parts.join(' / ').trim() || null : null
+}
+
+/** Explicit user filter; common or unspecified scopes stay visible for every selected program. */
+export function companyConditionAppliesTo(entry: ParticipationCriterionEntry, selected: string): boolean {
+  if (!selected) return true
+  const scope = companyConditionScope(entry)
+  if (!scope || scope === '공통') return true
+  return scope.split(' / ').some(value => value === '공통' || value === selected
+    || (value.endsWith(' · 공통') && selected.startsWith(value.slice(0, -3))))
+}
+
+export function activeCompanyConditionProgram(
+  selection: { detectionId: number; program: string }, detectionId: number, programs: string[], total: number,
+): string {
+  return programs.length >= 3 && total >= 8 && selection.detectionId === detectionId
+    && programs.includes(selection.program) ? selection.program : ''
+}
+
+function conditionAudience(entry: ParticipationCriterionEntry): string | null {
+  return entry.rule.audience?.trim().replace(scopeOrdinal, '').trim() || null
+}
+
+function audienceSentence(text: string, audience: string): string {
+  const escape = audience.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+  const labelled = new RegExp(`^\\s*(?:[-•]\\s*)?[（(]\\s*${escape}\\s*[）)]\\s*`, 'u')
+  const body = text.replace(labelled, '')
+  // A role mentioned as an object or a registration requirement does not identify the sentence subject.
+  const subject = new RegExp(`^(?:(?:국내|국외|중소|중견|대|중소[·ㆍ․‧]중견)\\s+)*${escape}(?:은|는|이|가|의\\s*(?:조건|요건|자격))(?:\\s|$)`, 'u')
+  if (body === text && subject.test(text)) return text
+  const last = audience.charCodeAt(audience.length - 1)
+  const particle = last >= 0xac00 && last <= 0xd7a3 && (last - 0xac00) % 28 === 0 ? '는' : '은'
+  return `${audience}${particle} ${body}`
+}
+
+export function scopedCompanyConditionSentence(entry: ParticipationCriterionEntry, code: string): string {
+  const restored = restoreConditionScope(entry)
+  if (!restored) return ''
+  const text = companyConditionSentence(restored.rule.text, restored.rule.section === 'PREFERENCE', code)
+  if (!text) return ''
+  const scope = companyConditionScope(restored)
+  const audience = conditionAudience(restored)
+  const sentence = audience ? audienceSentence(text, audience) : text
+  if (!scope || text.startsWith(scope)) return sentence
+  if (scope === '공통') return `공통으로 ${sentence}`
+  const label = scope.replace(/ · 공통$/u, '')
+  if (audience) return `${label} 유형${sentence.startsWith(audience) ? '의' : '에서'} ${sentence}`
+  return `${label} 유형${entry.rule.section === 'PREFERENCE' ? '에서는' : '은'} ${text}`
 }
 
 
-export function scopedCompanyConditionSentence(entry: ParticipationCriterionEntry, code: string): string {
-  const text = companyConditionSentence(entry.rule.text, entry.rule.section === 'PREFERENCE', code)
-  const scope = companyConditionScope(entry)
-  if (!text || !scope || text.startsWith(scope)) return text
-  if (scope === '공통') return `공통으로 ${text}`
-  const label = scope.replace(/ · 공통$/u, '')
-  return `${label} 유형${entry.rule.section === 'PREFERENCE' ? '에서는' : '은'} ${text}`
+/** Split supplied context from the complete sentence; never edit context out of original text. */
+export function companyConditionPresentation(entry: ParticipationCriterionEntry, code: string) {
+  const restored = restoreConditionScope(entry)
+  if (!restored) return { scope: null, audience: null, sentence: '', notes: [] as string[] }
+  const text = companyConditionSentence(restored.rule.text, restored.rule.section === 'PREFERENCE', code)
+  const audience = conditionAudience(restored)
+  return {
+    scope: companyConditionScope(restored),
+    audience,
+    sentence: text && audience ? audienceSentence(text, audience) : text,
+    notes: [...new Map([
+      ...formatCompanyCondition(restored.rule.text).notes,
+      ...(restored.rule.details ?? []), ...(restored.rule.exceptions ?? []),
+    ].map(note => cleanConditionLine(note.replace(/^(?:※|[*＊]+)\s*/u, '')))
+      .filter(Boolean).map(note => [normalized(note), note])).values()],
+  }
 }
 
 
@@ -133,39 +199,182 @@ function restoreSpacing(entry: ParticipationCriterionEntry): ParticipationCriter
   return null
 }
 
+// A dangling particle is not a program name. Never turn a damaged scope into a common rule.
+function fragmentedScope(scope: string): boolean {
+  return /^(?:는|은|을|를|의|에서|으로)(?:\s|사업|기업|기관|단체)/u.test(scope.trim())
+}
+
+function restoreConditionScope(entry: ParticipationCriterionEntry): ParticipationCriterionEntry | null {
+  const scope = companyConditionScope(entry)
+  if (!scope) return entry.rule.scope?.trim() ? null : entry
+  if (!fragmentedScope(scope)) return scope === entry.rule.scope ? entry : { ...entry, rule: { ...entry.rule, scope } }
+  const candidates = new Set(entry.rule.sources.flatMap(source => {
+    const heading = (source.sectionTitle ?? '').split('[원문 구역]').at(-1)?.trim() ?? ''
+    const labelled = /^(?:사업\s*유형|유형|프로그램|트랙)\s*[:：]\s*(.+)$/u.exec(heading)?.[1].trim()
+    return labelled && labelled.length <= 60 && !fragmentedScope(labelled)
+      && normalized(labelled).endsWith(normalized(scope)) ? [labelled] : []
+  }))
+  if (candidates.size !== 1) return null
+  return { ...entry, rule: { ...entry.rule, scope: [...candidates][0] } }
+}
+
+// Compare the actual supplied clause, allowing only equivalent sentence endings.
+function conditionStem(text: string): string {
+  return conditionIdentity(text)
+    .replace(/^(?:공통으로|공통사항|신청자격은|신청요건은|지원대상은|신청대상은)/u, '')
+    .replace(/(?:이|가)?(?:지원|신청|참여)?대상입니다[.!]?$/u, '')
+    .replace(/(?:이어야합니다|여야합니다|해야합니다|입니다)[.!]?$/u, '')
+    .replace(/[.!]$/u, '')
+}
+
+function conditionFacts(text: string): string {
+  return JSON.stringify(normalized(text).match(/\d+(?:[,.]\d+)*|이상|이하|미만|초과|이내|이전|이후|공고일|접수마감일|신청일|또는|혹은|및|그리고|이면서|동시에|제외|예외|포함|불가|미해당|아닌|아니한|단[,，]|다만|등록|출원/gu) ?? [])
+}
+
+function sameConditionContext(left: ParticipationCriterionEntry, right: ParticipationCriterionEntry): boolean {
+  const context = (entry: ParticipationCriterionEntry) => JSON.stringify([
+    requiredSections.has(entry.rule.section) && entry.rule.section !== 'EXCLUSION' ? 'REQUIRED' : entry.rule.section,
+    entry.rule.audience, entry.relation,
+    [...(entry.relatedCriteria ?? [])].sort(),
+    ...[entry.rule.details, entry.rule.exceptions, entry.rule.guidance].map(values => values.map(normalized).sort()),
+    entry.rule.outcomes,
+    formatCompanyCondition(entry.rule.text).notes.map(normalized),
+  ])
+  return context(left) === context(right)
+}
+
+function sameClause(left: ParticipationCriterionEntry, right: ParticipationCriterionEntry): boolean {
+  return sameConditionContext(left, right) && conditionStem(left.rule.text) === conditionStem(right.rule.text)
+    && JSON.stringify(conditionKeys(left).map(conditionStem).sort())
+      === JSON.stringify(conditionKeys(right).map(conditionStem).sort())
+}
+
+function extendsClause(detailed: string, short: string): boolean {
+  return detailed.startsWith(short) && detailed.length > short.length
+    && /^(?:중|인(?:기업|기관|단체)|으로서|로서)/u.test(detailed.slice(short.length))
+}
+
+function moreDetailedCondition(detailed: ParticipationCriterionEntry, short: ParticipationCriterionEntry): boolean {
+  if (!sameConditionContext(detailed, short)
+    || conditionFacts(detailed.rule.text) !== conditionFacts(short.rule.text)
+    || !extendsClause(conditionStem(detailed.rule.text), conditionStem(short.rule.text))) return false
+  const detailedQuotes = conditionKeys(detailed).map(conditionStem)
+  return conditionKeys(short).map(conditionStem).every(quote => detailedQuotes.some(other =>
+    other === quote || extendsClause(other, quote)))
+}
+
+// Identical complete display contracts can share distinct originals (PDF/HWPX layout differences).
+// Preserve every quotation and keep different qualifiers or conflicting quoted numeric facts apart.
+function sameCompleteDisplay(left: ParticipationCriterionEntry, right: ParticipationCriterionEntry): boolean {
+  if (![left, right].every(entry => /(?:다|요)\.$/u.test(entry.rule.text.trim()))) return false
+  const contract = (entry: ParticipationCriterionEntry) => JSON.stringify([
+    entry.rule.section, normalized(entry.rule.scope ?? ''), normalized(entry.rule.audience ?? ''),
+    normalized(entry.rule.text), entry.context, entry.relation, entry.relatedCriteria,
+    ...[entry.rule.details, entry.rule.exceptions, entry.rule.guidance].map(values => values.map(normalized)),
+    entry.rule.outcomes,
+    (entry.supportingQuotes?.length ? entry.supportingQuotes : [entry.rule.text]).map(conditionFacts).sort(),
+  ])
+  return contract(left) === contract(right)
+}
+
 function readableConditions(entries: ParticipationCriterionEntry[], code: string) {
-  // Missing scope can join one uniquely matching scope, never multiple program alternatives.
+  const candidates = entries.flatMap(original => {
+    const restored = restoreConditionScope(original)
+    const entry = restored && (restoreSpacing(restored) ?? restored)
+    return entry ? [{ entry, original }] : []
+  })
+  const equivalent = (left: ParticipationCriterionEntry, right: ParticipationCriterionEntry) =>
+    sameCompleteDisplay(left, right)
+      || (sameConditionContext(left, right) && (sameCondition(left, right) || sameClause(left, right)))
+  const related = (left: ParticipationCriterionEntry, right: ParticipationCriterionEntry) =>
+    equivalent(left, right) || moreDetailedCondition(left, right) || moreDetailedCondition(right, left)
+  const sameScopedStatement = (left: ParticipationCriterionEntry, right: ParticipationCriterionEntry) =>
+    sameConditionContext(left, right) && conditionIdentity(left.rule.text) === conditionIdentity(right.rule.text)
+      && JSON.stringify(conditionKeys(left).sort()) === JSON.stringify(conditionKeys(right).sort())
+  const scopeParts = (entry: ParticipationCriterionEntry) => entry.rule.scope && !entry.rule.scope.includes(' / ')
+    ? entry.rule.scope.split(' · ').map(normalized) : null
+  const suffix = (full: string[], partial: string[]) => full.length > partial.length
+    && partial.every((part, index) => part === full[full.length - partial.length + index])
+  const suppliedScope = (entry: ParticipationCriterionEntry): string | null => {
+    const scope = entry.rule.scope
+    if (!scope) return null
+    const parts = scopeParts(entry)
+    if (!parts) return normalized(scope)
+    const parents = candidates.filter(other => sameScopedStatement(entry, other.entry))
+      .map(other => scopeParts(other.entry)).filter((value): value is string[] => Boolean(value && suffix(value, parts)))
+    const maximal = parents.filter(parent => !parents.some(other => suffix(other, parent)))
+    const unique = new Set(maximal.map(parent => parent.join('·')))
+    return unique.size === 1 ? [...unique][0] : normalized(scope)
+  }
+  // A partial hierarchy can join only one exact full path for the same statement and evidence.
+  // Unspecified scope keeps the existing uniquely matching supplied-scope rule.
   const effectiveScope = (entry: ParticipationCriterionEntry) => {
-    if (entry.rule.scope?.trim()) return entry.rule.scope.trim()
-    const scopes = new Set(entries.filter(other => sameCondition(entry, other))
-      .map(other => other.rule.scope?.trim()).filter(Boolean))
+    const supplied = suppliedScope(entry)
+    if (supplied) return supplied
+    const scopes = new Set(candidates.filter(other => related(entry, other.entry))
+      .map(other => suppliedScope(other.entry)).filter(Boolean))
     return scopes.size === 1 ? [...scopes][0] : null
   }
-  const groups: { entry: ParticipationCriterionEntry; originals: ParticipationCriterionEntry[] }[] = []
-  for (const entry of entries) {
-    const group = groups.find(group => sameCondition(group.entry, entry)
-      && effectiveScope(group.entry) === effectiveScope(entry))
-    if (!group) { groups.push({ entry, originals: [entry] }); continue }
-    group.originals.push(entry)
-    // Prefer an intact complete sentence; preserve every source in the merged evidence panel.
+  type Group = { entry: ParticipationCriterionEntry; originals: ParticipationCriterionEntry[] }
+  const groups: Group[] = []
+  const displayable = (entry: ParticipationCriterionEntry) => Boolean(
+    companyConditionSentence(entry.rule.text, entry.rule.section === 'PREFERENCE', code))
+  const preferred = (left: ParticipationCriterionEntry, right: ParticipationCriterionEntry) => {
+    if (displayable(left) !== displayable(right)) return displayable(left) ? left : right
+    if (moreDetailedCondition(left, right)) return left
+    if (moreDetailedCondition(right, left)) return right
     const score = (value: ParticipationCriterionEntry) =>
       (brokenSpacing(value.rule.text) ? 10 : 0) + (/(?:다|요)\.$/u.test(value.rule.text) ? 0 : 1)
-    const preferred = score(entry) < score(group.entry) ? entry : group.entry
-    group.entry = { ...preferred,
-      supportingQuotes: [...new Set(group.originals.flatMap(value => value.supportingQuotes ?? [value.rule.text]))],
-      rule: { ...preferred.rule, scope: effectiveScope(entry) ?? preferred.rule.scope,
-        sources: group.originals.flatMap(value => value.rule.sources) },
-    }
+    return score(left) !== score(right) ? (score(left) < score(right) ? left : right)
+      : left.rule.text.localeCompare(right.rule.text) <= 0 ? left : right
   }
-  return groups.flatMap(group => {
-    const entry = restoreSpacing(group.entry)
-    return entry && companyConditionSentence(entry.rule.text, entry.rule.section === 'PREFERENCE', code)
-      ? [{ ...group, entry }] : []
+  for (const { entry, original } of candidates) {
+    const group = groups.find(group => equivalent(group.entry, entry)
+      && effectiveScope(group.entry) === effectiveScope(entry))
+    if (!group) { groups.push({ entry, originals: [original] }); continue }
+    group.originals.push(original)
+    group.entry = preferred(group.entry, entry)
+  }
+  const covers = (detailed: Group, short: Group) => displayable(detailed.entry)
+    && effectiveScope(detailed.entry) === effectiveScope(short.entry)
+    && moreDetailedCondition(detailed.entry, short.entry)
+  const destinations = groups.map(group => {
+    const richer = groups.filter(other => other !== group && covers(other, group))
+    const maximal = richer.filter(other => !richer.some(candidate => candidate !== other && covers(candidate, other)))
+    // A shared summary must not be assigned arbitrarily to one of multiple different detailed conditions.
+    return maximal.length === 1 ? maximal[0] : group
   })
+  return groups.flatMap((group, index) => {
+    if (destinations[index] !== group
+      || !companyConditionSentence(group.entry.rule.text, group.entry.rule.section === 'PREFERENCE', code)) return []
+    const originals = groups.flatMap((other, position) => destinations[position] === group ? other.originals : [])
+    if (originals.length === 1) return [{ entry: group.entry, originals }]
+    return [{ originals, entry: { ...group.entry,
+      supportingQuotes: [...new Set(originals.flatMap(value => value.supportingQuotes?.length ? value.supportingQuotes : [value.rule.text]))],
+      rule: { ...group.entry.rule, scope: candidates.find(value =>
+        value.entry.rule.scope && normalized(value.entry.rule.scope) === effectiveScope(group.entry))?.entry.rule.scope ?? group.entry.rule.scope,
+        sources: originals.flatMap(value => value.rule.sources) },
+    } }]
+  })
+}
+
+const damagedDisplayCharacters = /[\uFFFD\p{Co}]/u
+const repeatedDisplayUnit = /\d[\d,.]*\s*(년|개월|억원|만원|천원|원|달러|명|개사|개|건|%|점|종)\s+\1(?=\s|$|[.,·])/u
+
+/** Same bounded display-quality contract as the server; never guess replacement words. */
+export function isReadableCompanyCondition(text: string): boolean {
+  const value = text.trim()
+  return Boolean(value) && !damagedDisplayCharacters.test(value) && !repeatedDisplayUnit.test(value)
+    && !/^(?:및|또는|혹은|와|과|은|는|을|를|의)(?:\s|[:：])/u.test(value)
+    && !/[□■]|(?:신청\s*자격|지원\s*대상|신청\s*방법)\s*[:：]/u.test(value)
+    && !/^[◦○●]\s+/u.test(value)
+    && !/(?<![가-힣])(?:의|은|는|을|를|및|또는|중|단,?|하는|해당하는|중인|있는|없는|보유한)\s*(?:이어야|여야|입니다|합니다)/u.test(value)
 }
 
 /** Convert only recognizable qualification clauses; never wrap an arbitrary source block. */
 export function companyConditionSentence(text: string, preference: boolean, code?: string): string {
+  if (damagedDisplayCharacters.test(text) || repeatedDisplayUnit.test(text)) return ''
+  if (text.split('\n').some(line => /[□■]/u.test(line.replace(/^[\s*□■]+/u, '')))) return ''
   let lead = formatCompanyCondition(text).lead
     .replace(/\(?\s*(?:\[참고\s*\d+\]\s*[,、]?\s*)+(?:참조)?\s*\)?/gu, '').trim()
   // Old cached blocks may contain eligibility, application dates and methods together.
@@ -179,11 +388,10 @@ export function companyConditionSentence(text: string, preference: boolean, code
     if (/(?:신청|접수)\s*(?:기간|방법)/u.test(lead)) return ''
   }
   lead = lead.replace(/^\s*(?:[가-하][.)]\s*)?(?:신청|지원)\s*대상\s*[:：]?\s*(?=\n)/u, '').trim()
-  if (!lead || brokenSpacing(lead) || vagueCondition(lead) || lead.length > 360) return ''
+  if (!isReadableCompanyCondition(lead) || brokenSpacing(lead) || vagueCondition(lead)) return ''
   // This exact conjunction permits a field-specific sentence; do not split alternatives/exceptions.
   const common = /^(?:신청 자격은 )?(?:(중소기업기본법 제 ?2조에 따라) )?공고일 기준 업력 (\d+년 (?:이상|이내))의 중소기업 중 세부 프로그램별 신청요건을 충족하는 기업(?:이어야 합니다\.)?$/u.exec(lead)
   if (common && code === 'BUSINESS_AGE') return `공고일 기준 업력이 ${common[2]}${common[2].endsWith('이내') ? '여야' : '이어야'} 합니다.`
-  if (common && code === 'BUSINESS_FORM') return '중소기업이어야 하며, 세부 프로그램별 신청 요건을 충족해야 합니다.'
   // Preserve OR lists explicitly instead of turning a list into a mandatory conjunction.
   const alternatives = /^다음 중 하나(?:를)? 충족\n(.+)$/su.exec(lead)
   if (alternatives) {
@@ -235,7 +443,7 @@ const headingLabels: Record<string, string> = {
 function cleanConditionLine(line: string): string {
   // Decorations only: never erase numbers, operators, qualification parentheses or clause text.
   let value = line.replace(/^(?:공통\s*사항)\s*(?=[□■(（])/u, '')
-    .replace(/[□■☐☑☒▣▢▪▫◦○●◆◇▶▷▸▹]+(?=\s|[（(가-힣])/gu, ' ')
+    .replace(/[□■☐☑☒▣▢▪▫◦◆◇▶▷▸▹]+(?=\s|[（(가-힣])/gu, ' ')
     .replace(/^[\s□■☐☑☒▣▢▪▫◦○●◆◇▶▷▸▹]+/u, '')
     .replace(/^[①-⑳]\s*/u, '')
     .replace(/[｢｣「」『』]/gu, '')
