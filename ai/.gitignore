@@ -4,3 +4,6 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 *.py[cod]
+
+# Pinned local HWP/HWPX WebAssembly renderer (installed explicitly)
+.hwp-renderer/

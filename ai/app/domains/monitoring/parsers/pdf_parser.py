@@ -15,7 +15,11 @@ class PdfParseError(AttachmentParseError):
 
 
 class PdfParser:
+    def __init__(self, ocr=None):
+        self.ocr = ocr
+
     def parse(self, file_path: Path) -> ParsedAttachment:
+        warning = None
         try:
             reader = PdfReader(file_path, strict=False)
             if reader.is_encrypted:
@@ -24,6 +28,8 @@ class PdfParser:
                 raise PdfParseError("PDF 페이지 수가 허용된 범위를 초과했습니다.")
 
             pages = [self._extract_page_text(page) for page in reader.pages]
+            if self.ocr is not None:
+                pages, warning = self.ocr.enhance(reader, pages)
         except PdfParseError:
             raise
         except (PdfReadError, OSError, TypeError, ValueError) as exception:
@@ -31,8 +37,10 @@ class PdfParser:
 
         text = "\n\n".join(page for page in pages if page).strip()
         if not text:
+            if warning:
+                raise PdfParseError(warning + " PDF에서 읽을 텍스트가 없습니다.")
             raise PdfParseError("PDF 파일에서 텍스트를 찾지 못했습니다.")
-        return ParsedAttachment(text=text)
+        return ParsedAttachment(text=text, warning=warning)
 
     def _extract_page_text(self, page: object) -> str:
         extract_text = getattr(page, "extract_text", None)

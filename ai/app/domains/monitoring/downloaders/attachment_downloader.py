@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import ATTACHMENT_DOWNLOAD_TIMEOUT_SECONDS, ATTACHMENT_MAX_SIZE_BYTES
 from app.domains.monitoring.parsers import AttachmentParseError, AttachmentParserRegistry
@@ -68,6 +69,8 @@ class AttachmentDownloader:
         client: httpx.AsyncClient,
         document: CollectedDocument,
     ) -> CollectedDocument:
+        document_key = hashlib.sha256(document.original_url.encode("utf-8")).hexdigest()[:12]
+        self.parser_registry.start_document(document_key)
         attachments = [
             await self._download(client, attachment, document.original_url)
             for attachment in document.attachments
@@ -91,7 +94,7 @@ class AttachmentDownloader:
                     file_path,
                 )
                 parser = self.parser_registry.find(attachment.file_name)
-                parsed = parser.parse(file_path) if parser is not None else None
+                parsed = await run_in_threadpool(parser.parse, file_path) if parser else None
             return attachment.model_copy(
                 update={
                     "content_type": metadata.content_type,
@@ -102,7 +105,8 @@ class AttachmentDownloader:
                     if parsed is not None and parsed.archive_entries else None,
                     "parse_status": _successful_parse_status(attachment.file_name, parsed),
                     "error_message": "ZIP 내부에서 읽을 수 있는 문서를 찾지 못했습니다."
-                    if parsed is not None and parsed.archive_entries and not parsed.text else None,
+                    if parsed is not None and parsed.archive_entries and not parsed.text
+                    else getattr(parsed, "warning", None),
                 }
             )
         except (
