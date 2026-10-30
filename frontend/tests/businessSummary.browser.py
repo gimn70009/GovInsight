@@ -49,10 +49,11 @@ async def table_and_tabs(browser):
         await expect(facts.get_by_role('row', name='지원규모')).to_contain_text(AMOUNT)
         await expect(facts.get_by_role('row', name='제출기한')).to_contain_text(DEADLINE)
         await expect(facts.get_by_role('row', name='사업 설명')).to_contain_text(PURPOSE)
-        await facts.get_by_role('button', name=re.compile('기관 근거 보기')).click()
+        await facts.get_by_role('button', name=re.compile('기관 원문 근거 (?:확인|접기)$')).click()
+        await expect(facts.get_by_role('button', name='검증 사업운영원 시행기관 기관 원문 근거 접기', exact=True)).to_have_attribute('aria-expanded', 'true')
         await expect(facts.locator('blockquote')).to_have_text('시행기관: 검증 사업운영원')
         await expect(facts.get_by_role('link', name='근거 문서 열기')).to_have_attribute('href', 'https://example.org/notice.pdf')
-        await facts.get_by_role('button', name=re.compile('기관 근거 보기')).click()
+        await facts.get_by_role('button', name=re.compile('기관 원문 근거 (?:확인|접기)$')).click()
         await expect(facts.get_by_role('row', name='사업 담당기관')).to_contain_text('검증 사업운영원')
         await expect(facts.get_by_role('row', name='사업 담당기관')).not_to_contain_text('확인 필요')
         await expect(facts.get_by_role('row', name='사업 담당기관')).not_to_contain_text('공고 게시기관')
@@ -63,10 +64,11 @@ async def table_and_tabs(browser):
         await expect(documents.get_by_role('row', name='이행보증보험증권')).to_contain_text('협약 시')
         await expect(documents).not_to_contain_text('추천 실적자료')
         await expect(documents).not_to_contain_text('참고자료.pdf')
-        await documents.get_by_role('button', name='사업계획서 근거 보기', exact=True).click()
+        await documents.get_by_role('button', name=re.compile('^사업계획서 원문 근거 (?:확인|접기)$')).click()
+        await expect(documents.get_by_role('button', name='사업계획서 원문 근거 접기', exact=True)).to_have_attribute('aria-expanded', 'true')
         await expect(documents.get_by_role('link', name='근거 문서 열기')).to_have_attribute('href', 'https://example.org/notice.pdf')
         await expect(documents.locator('blockquote').first).to_contain_text('모든 신청기업은')
-        await documents.get_by_role('button', name='사업계획서 근거 보기', exact=True).click()
+        await documents.get_by_role('button', name=re.compile('^사업계획서 원문 근거 (?:확인|접기)$')).click()
         OUT.mkdir(parents=True, exist_ok=True)
         for width in (1440, 768, 390, 320):
             await h.page.set_viewport_size(dict(width=width, height=1100))
@@ -76,6 +78,8 @@ async def table_and_tabs(browser):
                 assert await h.page.locator('.detail-tabs').evaluate('el => getComputedStyle(el).display') == 'grid'
             await h.page.locator('.drawer--detail').evaluate('el => { el.scrollTop = 0 }')
             await h.page.locator('.drawer--detail').screenshot(path=str(OUT / f'summary-{width}.png'))
+            await facts.screenshot(path=str(OUT / f'facts-{width}.png'))
+            await documents.screenshot(path=str(OUT / f'submissions-{width}.png'))
         await h.page.set_viewport_size(dict(width=1440, height=1100))
         for tab in ('공고 분석', '사업 제안', '유사 공고 비교 0', '사업 요약'):
             await h.page.get_by_role('button', name=tab, exact=True).click()
@@ -107,7 +111,8 @@ async def legacy_and_pending(browser):
     try:
         h.states[1] = refresh.detail(pending=False)
         await h.open(analysis_tab=False)
-        await expect(h.page.locator('.business-summary__status')).to_contain_text('AI 분석 결과가 없습니다')
+        await expect(h.page.locator('.business-summary__status')).to_contain_text(refresh.EMPTY)
+        await expect(h.page.locator('.business-summary__status')).to_contain_text(refresh.EMPTY_REASON)
         await expect(h.page.locator('.business-summary__status')).not_to_contain_text('자동으로')
         await h.stopped()
     finally:
@@ -141,9 +146,9 @@ async def organization_roles_without_analysis(browser):
             await h.page.set_viewport_size(dict(width=width, height=1100))
             assert await row.evaluate('el => el.scrollWidth <= el.clientWidth + 1')
             await row.screenshot(path=str(OUT / f'organizations-contact-{width}.png'))
-            await row.get_by_role('button', name=re.compile('기관 근거 보기')).click()
+            await row.get_by_role('button', name=re.compile('기관 원문 근거 (?:확인|접기)$')).click()
             await expect(row.locator('blockquote')).to_contain_text('협력재단')
-            await row.get_by_role('button', name=re.compile('기관 근거 보기')).click()
+            await row.get_by_role('button', name=re.compile('기관 원문 근거 (?:확인|접기)$')).click()
     finally:
         await h.close()
 
@@ -172,7 +177,7 @@ async def submission_guide_without_analysis(browser):
         await expect(table.get_by_text('유형2: 제출 대상 아님', exact=True)).to_be_visible()
         notes = h.page.get_by_role('complementary', name='제출 유의사항')
         await expect(notes).to_contain_text('1개월 이내')
-        await notes.get_by_text('근거 보기', exact=True).click()
+        await notes.get_by_role('button', name=re.compile(' 원문 근거 확인$')).click()
         await expect(notes.get_by_role('link', name='근거 문서 열기')).to_have_attribute('href', 'https://example.org/notice.pdf')
         for width in (1440, 390, 320):
             await h.page.set_viewport_size(dict(width=width, height=1100))
@@ -247,7 +252,7 @@ async def compact_organizations_and_amounts(browser):
         await expect(facts).not_to_contain_text('공고 게시기관')
         await expect(facts).not_to_contain_text('공고명 기준')
         await expect(h.page.locator('.business-summary__amount')).to_have_text('유형1은 기업당 최대 4,200만 원(보조율 70%)로 H/W·S/W 및 검증을 지원하고 유형2는 검증비용으로 기업당 최대 350만 원을 지원합니다.')
-        buttons = facts.get_by_role('button', name=re.compile('기관 근거 보기'))
+        buttons = facts.get_by_role('button', name=re.compile('기관 원문 근거 (?:확인|접기)$'))
         await expect(buttons).to_have_count(2)
         first, second = buttons.nth(0), buttons.nth(1)
         await first.focus()
@@ -262,10 +267,9 @@ async def compact_organizations_and_amounts(browser):
         for width in (1440, 768, 390, 320):
             await h.page.set_viewport_size(dict(width=width, height=1100))
             for organization in await facts.locator('.business-summary__organization').all():
-                name = await organization.locator('strong').bounding_box()
-                button = await organization.get_by_role('button').bounding_box()
-                assert button['x'] >= name['x'] + name['width'] - 1, (width, name, button)
-                assert abs((name['y'] + name['height'] / 2) - (button['y'] + button['height'] / 2)) < 2
+                await expect(organization.locator('strong')).to_be_visible()
+                await expect(organization.get_by_role('button')).to_be_visible()
+                assert await organization.evaluate('el => el.scrollWidth <= el.clientWidth + 1'), width
             assert await facts.evaluate('el => el.scrollWidth <= el.clientWidth + 1'), width
             await facts.screenshot(path=str(OUT / f'compact-summary-{width}.png'))
             await second.click()
@@ -354,21 +358,23 @@ async def readable_submission_notes(browser):
                 await expect(row.locator('.business-summary__note-scope')).to_have_text(note['appliesTo'])
             await expect(row.locator('.business-summary__note-source')).to_be_hidden()
         first = rows.first
-        button = first.get_by_role('button', name=re.compile('근거 보기'))
+        button = first.get_by_role('button', name=re.compile(' 원문 근거 (?:확인|접기)$'))
         evidence = first.locator('.business-summary__note-source')
         OUT.mkdir(parents=True, exist_ok=True)
         for width in (1440, 768, 390, 320):
             await h.page.set_viewport_size(dict(width=width, height=1100))
             await expect(button).to_have_attribute('aria-expanded', 'false')
+            await expect(button).to_have_accessible_name(re.compile(' 원문 근거 확인$'))
             for row in await rows.all():
-                paragraph = await row.locator('.business-summary__note-line > p').bounding_box()
-                toggle = await row.get_by_role('button').bounding_box()
-                assert toggle['x'] >= paragraph['x'] + paragraph['width'] - 1, (width, paragraph, toggle)
+                await expect(row.locator('.business-summary__note-line > p')).to_be_visible()
+                await expect(row.get_by_role('button')).to_be_visible()
+                assert await row.evaluate('el => el.scrollWidth <= el.clientWidth + 1'), width
             assert await notes.evaluate('el => el.scrollWidth <= el.clientWidth + 1')
             await notes.screenshot(path=str(OUT / f'readable-notes-{width}.png'))
             await button.focus()
             await h.page.keyboard.press('Enter')
             await expect(button).to_have_attribute('aria-expanded', 'true')
+            await expect(button).to_have_accessible_name(re.compile(' 원문 근거 접기$'))
             await expect(evidence.locator('blockquote')).to_have_text(guide['notes'][0]['source']['excerpt'])
             await expect(evidence.get_by_role('link', name='근거 문서 열기')).to_have_attribute('href', 'https://example.org/notice.pdf')
             assert await notes.evaluate('el => el.scrollWidth <= el.clientWidth + 1')
@@ -410,13 +416,13 @@ async def structured_submission_documents(browser):
         await expect(table.locator('.business-summary__document-row')).to_have_count(len(guide['documents']))
         conditional = table.get_by_role('button', name='기업신용평가등급 확인서 해당 시 제출 조건 보기', exact=True)
         condition = table.get_by_text('제출 대상: 민간기관', exact=True)
-        evidence = table.get_by_role('button', name='기업신용평가등급 확인서 근거 보기', exact=True)
+        evidence = table.get_by_role('button', name=re.compile('^기업신용평가등급 확인서 원문 근거 (?:확인|접기)$'))
         await expect(condition).to_be_hidden()
         await expect(table.locator('blockquote')).to_have_count(0)
         if fixture:
             await expect(table.locator('.business-summary__document-name')).to_have_text([
                 '제출 공문', '사업계획서', '증빙자료', '발표자료', '기업신용평가등급 확인서'])
-            await expect(table.get_by_role('button', name='증빙자료 근거 보기', exact=True)).to_be_visible()
+            await expect(table.get_by_role('button', name='증빙자료 원문 근거 확인', exact=True)).to_be_visible()
             presentation = table.get_by_role('button', name='발표자료 제출 조건 조건 보기', exact=True)
             await presentation.click()
             await expect(table.get_by_text('발표자료를 제출하지 않은 기관은 제출한 사업계획서로 발표합니다.', exact=True)).to_be_visible()
@@ -431,12 +437,17 @@ async def structured_submission_documents(browser):
             await h.page.keyboard.press('Enter')
             await expect(condition).to_be_visible()
             await expect(evidence).to_have_attribute('aria-expanded', 'false')
-            await evidence.click()
+            await expect(evidence).to_have_accessible_name('기업신용평가등급 확인서 원문 근거 확인')
+            await evidence.focus()
+            await h.page.keyboard.press('Enter')
+            await expect(evidence).to_have_accessible_name('기업신용평가등급 확인서 원문 근거 접기')
             await expect(table.locator('blockquote')).to_have_text(guide['documents'][-1]['source']['excerpt'])
             await expect(table.get_by_role('link', name='근거 문서 열기')).to_have_attribute('href', 'https://example.org/startup.hwpx')
             assert await table.evaluate('el => el.scrollWidth <= el.clientWidth + 1'), width
             await table.screenshot(path=str(OUT / f'documents-redesign-open-{width}.png'))
-            await evidence.click()
+            await evidence.focus()
+            await h.page.keyboard.press('Space')
+            await expect(evidence).to_have_attribute('aria-expanded', 'false')
             await conditional.focus()
             await h.page.keyboard.press('Space')
             await expect(condition).to_be_hidden()
@@ -468,7 +479,7 @@ async def main():
             await official_submission_fixtures(browser)
         finally:
             await browser.close()
-    print('PASS: structured document names, colored requirement/stage labels, independent condition/evidence disclosures, startup fixture, compact missing-organization disclosure, inline keyboard-accessible organization evidence, exact readable won amounts, removed redundant labels, summary fields, qualifiers, grounded documents, source links, four tabs, 1440/768/390/320px, legacy, live refresh and per-notice organization roles, independent submission guide, notes, conditional types and empty-guide switching')
+    print('PASS: structured document names, colored requirement/stage labels, independent condition/evidence disclosures, startup fixture, compact missing-organization disclosure, wrapping keyboard-accessible organization evidence with open/close labels, exact readable won amounts, removed redundant labels, summary fields, qualifiers, grounded documents, source links, four tabs, 1440/768/390/320px, legacy, live refresh and per-notice organization roles, independent submission guide, notes, conditional types and empty-guide switching')
 
 
 if __name__ == '__main__':

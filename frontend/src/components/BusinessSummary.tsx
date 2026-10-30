@@ -1,7 +1,7 @@
 import { BusinessTypeRow } from './BusinessTypeRow'
 import { ParticipationConditions } from './ParticipationConditions'
 import { Fragment, useId, useState } from 'react'
-import { CalendarDays, ChevronDown, CircleHelp, FileText, Banknote, ExternalLink, LayoutList } from 'lucide-react'
+import { CalendarDays, ChevronDown, CircleHelp, FileText, Banknote, ExternalLink, LayoutList, ListChecks } from 'lucide-react'
 import type { DocumentAttachment, DocumentDetail, ProposalPreparationItem, ResponsibleOrganization, SubmissionDocument, SubmissionGuide } from '../api/types'
 import { documentPresentation, evidenceAttachment, formatSummaryText, formatSupportScale, organizationEvidenceAttachment, summaryDocuments, summaryValue } from '../utils/businessSummary'
 import './BusinessSummary.css'
@@ -57,7 +57,7 @@ function SubmissionDocumentRow({ item, detail }: { item: SubmissionDocument; det
   const conditionToggle = (label: string, className: string) => <button type="button" className={className}
     aria-label={`${names.join(' · ')} ${label} 조건 보기`} aria-expanded={conditionsExpanded} aria-controls={conditionsId}
     onClick={() => setConditionsExpanded(value => !value)}>
-    {label}<ChevronDown size={13} aria-hidden="true" />
+    <ListChecks size={14} aria-hidden="true" /><span>{label}</span><ChevronDown size={13} aria-hidden="true" />
   </button>
   const unknownToggle = (field: keyof typeof submissionUnknownHelp, className: string) => <button type="button"
     id={`${unknownId}-${field}`} className={`${className} is-unknown`}
@@ -73,9 +73,9 @@ function SubmissionDocumentRow({ item, detail }: { item: SubmissionDocument; det
           {names.map(name => <span key={name} className="business-summary__document-name-group">
             <span className="business-summary__document-name">{name}</span>
             <button type="button" className="business-summary__organization-toggle"
-              aria-label={`${name} 근거 보기`} aria-expanded={evidenceName === name} aria-controls={evidenceId}
+              aria-label={`${name} 원문 근거 ${evidenceName === name ? '접기' : '확인'}`} aria-expanded={evidenceName === name} aria-controls={evidenceId}
               onClick={() => setEvidenceName(value => value === name ? null : name)}>
-              근거 보기<ChevronDown size={13} aria-hidden="true" />
+              <FileText size={15} aria-hidden="true" /><span>원문 근거 {evidenceName === name ? '접기' : '확인'}</span><ChevronDown size={14} aria-hidden="true" />
             </button>
           </span>)}
         </div>
@@ -95,7 +95,7 @@ function SubmissionDocumentRow({ item, detail }: { item: SubmissionDocument; det
           {unknownHelp && <>
             <strong>{unknownHelp.title}</strong>
             <p>{unknownHelp.description}</p>
-            <p>원문에 안내가 있어도 자동으로 구분하지 못했을 수 있습니다. 서류명 옆 ‘근거 보기’와 공고 원문을 함께 확인해 주세요.</p>
+            <p>원문에 안내가 있어도 자동으로 구분하지 못했을 수 있습니다. 서류명의 ‘원문 근거 확인’과 공고 원문을 함께 확인해 주세요.</p>
           </>}
         </div>
         {conditions.length > 0 && <div id={conditionsId} hidden={!conditionsExpanded} className="business-summary__document-conditions">
@@ -131,9 +131,9 @@ function SubmissionNoteRow({ note, detail }: { note: SubmissionGuide['notes'][nu
     <div className="business-summary__note-line">
       <p>{note.text.replace(/^[*※◦]+\s*/u, '')}</p>
       <button type="button" className="business-summary__organization-toggle"
-        aria-label={`${note.appliesTo ? `${note.appliesTo} · ` : ''}${note.text} 근거 보기`}
+        aria-label={`${note.appliesTo ? `${note.appliesTo} · ` : ''}${note.text} 원문 근거 ${expanded ? '접기' : '확인'}`}
         aria-expanded={expanded} aria-controls={evidenceId} onClick={() => setExpanded(value => !value)}>
-        근거 보기<ChevronDown size={13} aria-hidden="true" />
+        <FileText size={15} aria-hidden="true" /><span>원문 근거 {expanded ? '접기' : '확인'}</span><ChevronDown size={14} aria-hidden="true" />
       </button>
     </div>
     <div id={evidenceId} hidden={!expanded} className="business-summary__note-source">
@@ -151,9 +151,9 @@ function OrganizationRow({ item, attachments }: { item: ResponsibleOrganization;
       <span className="business-summary__organization-role">{item.role}</span>
       <strong>{item.name}</strong>
       <button type="button" className="business-summary__organization-toggle"
-        aria-label={`${item.name} ${item.role} 기관 근거 보기`} aria-expanded={expanded} aria-controls={evidenceId}
+        aria-label={`${item.name} ${item.role} 기관 원문 근거 ${expanded ? '접기' : '확인'}`} aria-expanded={expanded} aria-controls={evidenceId}
         onClick={() => setExpanded(value => !value)}>
-        근거 보기<ChevronDown size={13} aria-hidden="true" />
+        <FileText size={15} aria-hidden="true" /><span>원문 근거 {expanded ? '접기' : '확인'}</span><ChevronDown size={14} aria-hidden="true" />
       </button>
     </div>
     <div id={evidenceId} hidden={!expanded} className="business-summary__organization-source">
@@ -182,7 +182,11 @@ export function BusinessSummary({ detail }: { detail: DocumentDetail }) {
   const deadline = summaryValue(analysis?.applicationDeadline)
     ?? summaryValue(analysis?.proposal.preparation?.applicationDeadline)
   const documents = summaryDocuments(analysis, detail.submissionGuide)
-  const notes = (detail.submissionGuide?.notes ?? []).filter(note => note.text.trim() && note.source?.excerpt?.trim())
+  // Table parsing diagnostics are not submission instructions.
+  const notes = (detail.submissionGuide?.notes ?? []).filter(note =>
+    note.text.trim() && note.source?.excerpt?.trim()
+    && note.source.sectionTitle !== '제출서류 표 확인 필요',
+  )
   const preparingDocuments = detail.analysisPending && analysis?.proposal.draftStatus === 'GENERATING'
 
   return <div className="business-summary">
