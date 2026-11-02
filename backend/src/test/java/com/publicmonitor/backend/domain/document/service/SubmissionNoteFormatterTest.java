@@ -32,4 +32,12 @@ class SubmissionNoteFormatterTest {
         assertThat(SubmissionNoteFormatter.empty("개인기업은 제출서류 없음")).isFalse();
         assertThat(SubmissionNoteFormatter.actionable("개인기업은 제출서류 없음")).isTrue();
     }
+    @Test
+    void 전체_신청서류_공통_표현과_개별_서류_조건을_구별한다() {
+        for (String note : new String[]{"모든 제출서류는 PDF로 제출", "전체 신청 서류는 원본 제출", "공통 구비서류는 접수일까지 제출", "모든 작성서류는 서명 필수"}) {
+            assertThat(SubmissionNoteFormatter.common(note)).isTrue();
+        }
+        assertThat(SubmissionNoteFormatter.common("인증(지정) 유효기간은 공고일 기준 90일 이상")).isFalse();
+        assertThat(SubmissionNoteFormatter.common("신청서는 대표자 서명 후 제출")).isFalse();
+    }
 }

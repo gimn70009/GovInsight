@@ -331,62 +331,61 @@ async def compact_missing_organization(browser):
 
 
 async def readable_submission_notes(browser):
-    import json
     h = await refresh.Harness(browser).start()
     try:
         data = ready()
         source = dict(origin='ATTACHMENT', attachmentName='사업 공고문.pdf', sectionTitle='신청서류',
                       excerpt='□ 중소기업(소상공인) 확인서\n* 신청일 기준 기간유효 必, 소상공인 명시 必')
-        guide = dict(documents=[dict(title='중소기업(소상공인) 확인서', source=source)], notes=[
-            dict(text='신청일 기준으로 유효한 서류여야 합니다. ‘소상공인’임이 명시되어 있어야 합니다.', appliesTo='중소기업(소상공인) 확인서', source=source)])
-        fixture = refresh.os.environ.get('SUBMISSION_NOTE_CHECK_FIXTURE')
-        if fixture:
-            guide = json.loads(Path(fixture).read_text(encoding='utf-8'))
-            data['attachments'] = [dict(fileName='클린제조환경_공고.hwpx', fileExtension='hwpx', fileSize=1024, parseStatus='COMPLETED', downloadUrl='https://example.org/notice.pdf')]
-        data['submissionGuide'] = guide
+        local = dict(text='신청일 기준으로 유효한 서류여야 합니다. ‘소상공인’임이 명시되어 있어야 합니다.', appliesTo='중소기업(소상공인) 확인서', source=source)
+        common = dict(text='모든 서류는 PDF로 제출합니다.', source=dict(source, excerpt='모든 서류는 PDF로 제출합니다.'))
+        data['submissionGuide'] = dict(documents=[dict(title='중소기업(소상공인) 확인서', source=source,
+            documentNames=['중소기업(소상공인) 확인서'], requirementLevel='CONDITIONAL', conditions=[local['text'], common['text']]),
+            dict(title='사업계획서', source=dict(source, excerpt='사업계획서 제출'))], notes=[local, common])
         h.states[1] = data
         h.states[2] = dict(data, detectionId=2)
         await h.open(analysis_tab=False)
-        notes = h.page.get_by_role('complementary', name='제출 유의사항')
-        rows = notes.locator('li')
-        await expect(rows).to_have_count(len(guide['notes']))
-        await expect(notes).not_to_contain_text('제출서류 없음')
-        for index, note in enumerate(guide['notes']):
-            row = rows.nth(index)
-            await expect(row.locator('.business-summary__note-line > p')).to_have_text(note['text'])
-            if note.get('appliesTo'):
-                await expect(row.locator('.business-summary__note-scope')).to_have_text(note['appliesTo'])
-            await expect(row.locator('.business-summary__note-source')).to_be_hidden()
-        first = rows.first
-        button = first.get_by_role('button', name=re.compile(' 원문 근거 (?:확인|접기)$'))
-        evidence = first.locator('.business-summary__note-source')
+        common_box = h.page.get_by_role('complementary', name='제출 유의사항', exact=True)
+        await expect(common_box.locator('li')).to_have_count(1)
+        await expect(common_box).to_contain_text(common['text'])
+        await expect(common_box).not_to_contain_text('소상공인')
+        row = h.page.get_by_role('row', name=re.compile('^중소기업'))
+        local_box = row.get_by_role('list', name='중소기업(소상공인) 확인서 유의사항')
+        await expect(local_box.locator('.business-summary__note-line > p')).to_have_text(local['text'])
+        await expect(row.get_by_role('button', name=re.compile('조건 보기'))).to_have_count(0)
+        await expect(row.locator('.business-summary__requirement')).to_have_text('해당 시 제출')
+        await expect(h.page.get_by_role('row', name=re.compile('^사업계획서'))).not_to_contain_text('소상공인')
+        button = local_box.get_by_role('button')
+        evidence = local_box.locator('.business-summary__note-source')
         OUT.mkdir(parents=True, exist_ok=True)
         for width in (1440, 768, 390, 320):
             await h.page.set_viewport_size(dict(width=width, height=1100))
-            await expect(button).to_have_attribute('aria-expanded', 'false')
-            await expect(button).to_have_accessible_name(re.compile(' 원문 근거 확인$'))
-            for row in await rows.all():
-                await expect(row.locator('.business-summary__note-line > p')).to_be_visible()
-                await expect(row.get_by_role('button')).to_be_visible()
-                assert await row.evaluate('el => el.scrollWidth <= el.clientWidth + 1'), width
-            assert await notes.evaluate('el => el.scrollWidth <= el.clientWidth + 1')
-            await notes.screenshot(path=str(OUT / f'readable-notes-{width}.png'))
+            await expect(evidence).to_be_hidden()
+            if width >= 768:
+                centered = await common_box.locator('.business-summary__note-line').evaluate("""el => {
+                    const p = el.querySelector('p').getBoundingClientRect();
+                    const b = el.querySelector('button').getBoundingClientRect();
+                    return Math.abs(p.y + p.height / 2 - b.y - b.height / 2) < 2;
+                }""")
+                assert centered, width
+            for box in (common_box, local_box):
+                assert await box.evaluate('el => el.scrollWidth <= el.clientWidth + 1'), width
+            await common_box.screenshot(path=str(OUT / f'common-notes-{width}.png'))
+            await row.screenshot(path=str(OUT / f'document-notes-{width}.png'))
             await button.focus()
             await h.page.keyboard.press('Enter')
             await expect(button).to_have_attribute('aria-expanded', 'true')
-            await expect(button).to_have_accessible_name(re.compile(' 원문 근거 접기$'))
-            await expect(evidence.locator('blockquote')).to_have_text(guide['notes'][0]['source']['excerpt'])
+            await expect(evidence.locator('blockquote')).to_have_text(source['excerpt'])
             await expect(evidence.get_by_role('link', name='근거 문서 열기')).to_have_attribute('href', 'https://example.org/notice.pdf')
-            assert await notes.evaluate('el => el.scrollWidth <= el.clientWidth + 1')
-            await notes.screenshot(path=str(OUT / f'readable-notes-open-{width}.png'))
             await h.page.keyboard.press('Space')
             await expect(evidence).to_be_hidden()
         await button.click()
-        await expect(evidence).to_be_visible()
         await h.page.locator('.document-row').filter(has_text='상세 갱신 공고 2').evaluate('el => el.click()')
         await h.wait_request(2, 1)
         await expect(button).to_have_attribute('aria-expanded', 'false')
-        await expect(evidence).to_be_hidden()
+        h.states[2]['submissionGuide']['notes'] = [local]
+        await h.page.reload()
+        await h.open(analysis_tab=False)
+        await expect(h.page.get_by_role('complementary', name='제출 유의사항', exact=True)).to_have_count(0)
     finally:
         await h.close()
 

@@ -5,6 +5,7 @@ import { CalendarDays, ChevronDown, CircleHelp, FileText, Banknote, ExternalLink
 import type { DocumentAttachment, DocumentDetail, ProposalPreparationItem, ResponsibleOrganization, SubmissionDocument, SubmissionGuide } from '../api/types'
 import { documentPresentation, evidenceAttachment, formatSummaryText, formatSupportScale, organizationEvidenceAttachment, summaryDocuments, summaryValue } from '../utils/businessSummary'
 import './BusinessSummary.css'
+import { submissionNoteGroups, submissionNoteKey } from '../utils/submissionNotes'
 import { missingAnalysisNotice } from '../utils/analysisStatus'
 
 const requirementLabels = {
@@ -41,7 +42,7 @@ function MissingValue({ hint }: { hint?: string }) {
   </div> : <span className="business-summary__missing">{label}</span>
 }
 
-function SubmissionDocumentRow({ item, detail }: { item: SubmissionDocument; detail: DocumentDetail }) {
+function SubmissionDocumentRow({ item, detail, notes, commonNotes }: { item: SubmissionDocument; detail: DocumentDetail; notes: SubmissionGuide['notes']; commonNotes: SubmissionGuide['notes'] }) {
   const [evidenceName, setEvidenceName] = useState<string | null>(null)
   const [conditionsExpanded, setConditionsExpanded] = useState(false)
   const [unknownField, setUnknownField] = useState<keyof typeof submissionUnknownHelp | null>(null)
@@ -50,7 +51,9 @@ function SubmissionDocumentRow({ item, detail }: { item: SubmissionDocument; det
     : unknownField === 'requirement' && !item.requirementLevel ? submissionUnknownHelp.requirement : null
   const evidenceId = useId()
   const conditionsId = useId()
-  const { names, conditions, formats } = documentPresentation(item)
+  const { names, conditions: originalConditions, formats } = documentPresentation(item)
+  const displayedNotes = new Set([...notes, ...commonNotes].map(note => submissionNoteKey(note.text)))
+  const conditions = originalConditions.filter(condition => !displayedNotes.has(submissionNoteKey(condition)))
   const conditional = item.requirementLevel === 'CONDITIONAL'
   const level = item.requirementLevel?.toLowerCase() ?? 'unknown'
   const requirement = item.requirementLevel ? requirementLabels[item.requirementLevel] : '제출 여부 확인'
@@ -83,7 +86,7 @@ function SubmissionDocumentRow({ item, detail }: { item: SubmissionDocument; det
       <td>
         <div className="business-summary__document-meta">
           {!item.requirementLevel ? unknownToggle('requirement', 'business-summary__requirement')
-            : conditional ? conditionToggle(requirement, `business-summary__requirement is-${level}`)
+            : conditional && conditions.length > 0 ? conditionToggle(requirement, `business-summary__requirement is-${level}`)
               : <span className={`business-summary__requirement is-${level}`}>{requirement}</span>}
           {item.stage ? <span className="business-summary__stage">{stageLabels[item.stage]}</span>
             : unknownToggle('stage', 'business-summary__stage')}
@@ -102,6 +105,9 @@ function SubmissionDocumentRow({ item, detail }: { item: SubmissionDocument; det
           <strong>{conditional ? '이 경우에 제출해 주세요' : '함께 확인할 제출 조건'}</strong>
           <ul>{conditions.map(condition => <li key={condition}>{condition}</li>)}</ul>
         </div>}
+        {notes.length > 0 && <ul className="business-summary__document-notes" aria-label={`${names.join(' · ')} 유의사항`}>
+          {notes.map((note, index) => <SubmissionNoteRow key={`${note.text}-${index}`} note={note} detail={detail} showScope={false} />)}
+        </ul>}
       </td>
     </tr>
     {evidenceName && <tr className="business-summary__document-evidence-row">
@@ -123,11 +129,11 @@ function SubmissionSource({ source, detail }: { source: ProposalPreparationItem[
   </>
 }
 
-function SubmissionNoteRow({ note, detail }: { note: SubmissionGuide['notes'][number]; detail: DocumentDetail }) {
+function SubmissionNoteRow({ note, detail, showScope = true }: { note: SubmissionGuide['notes'][number]; detail: DocumentDetail; showScope?: boolean }) {
   const [expanded, setExpanded] = useState(false)
   const evidenceId = useId()
   return <li>
-    {note.appliesTo && <span className="business-summary__note-scope">{note.appliesTo}</span>}
+    {showScope && note.appliesTo && <span className="business-summary__note-scope">{note.appliesTo}</span>}
     <div className="business-summary__note-line">
       <p>{note.text.replace(/^[*※◦]+\s*/u, '')}</p>
       <button type="button" className="business-summary__organization-toggle"
@@ -182,11 +188,7 @@ export function BusinessSummary({ detail }: { detail: DocumentDetail }) {
   const deadline = summaryValue(analysis?.applicationDeadline)
     ?? summaryValue(analysis?.proposal.preparation?.applicationDeadline)
   const documents = summaryDocuments(analysis, detail.submissionGuide)
-  // Table parsing diagnostics are not submission instructions.
-  const notes = (detail.submissionGuide?.notes ?? []).filter(note =>
-    note.text.trim() && note.source?.excerpt?.trim()
-    && note.source.sectionTitle !== '제출서류 표 확인 필요',
-  )
+  const { common: notes, byDocument: documentNotes, unassigned } = submissionNoteGroups(documents, detail.submissionGuide?.notes)
   const preparingDocuments = detail.analysisPending && analysis?.proposal.draftStatus === 'GENERATING'
 
   return <div className="business-summary">
@@ -229,12 +231,16 @@ export function BusinessSummary({ detail }: { detail: DocumentDetail }) {
           <table className="business-summary__documents" aria-label="제출서류 안내">
             <thead><tr><th scope="col">서류명</th><th scope="col">제출 안내</th></tr></thead>
             <tbody>{documents.map((item, index) => <SubmissionDocumentRow
-              key={`${detail.detectionId}-${item.title}-${index}`} item={item} detail={detail} />)}</tbody>
+              key={`${detail.detectionId}-${item.title}-${index}`} item={item} detail={detail} notes={documentNotes[index]} commonNotes={notes} />)}</tbody>
           </table>
         </div> : <div className="business-summary__documents-empty">
           <FileText size={21} aria-hidden="true" /><div><strong>{preparingDocuments ? '제출서류를 정리하고 있습니다' : '제출서류 확인 필요'}</strong>
             <p>{preparingDocuments ? '분석이 완료되면 자동으로 표시됩니다.' : '저장된 공고 본문·첨부와 분석에서 제출서류를 확인하지 못했습니다. 공고 원문을 확인해 주세요.'}</p></div>
         </div>}
+        {unassigned.length > 0 && <aside className="business-summary__submission-notes business-summary__unassigned-notes" aria-label="서류별 추가 안내">
+          <strong>서류별 추가 안내</strong>
+          <ul>{unassigned.map((note, index) => <SubmissionNoteRow key={`${detail.detectionId}-${note.text}-${index}`} note={note} detail={detail} />)}</ul>
+        </aside>}
         {documents.length > 0 && <p className="business-summary__footnote">원문 근거가 확인된 서류입니다. 전체 제출 목록과 조건은 공고 원문을 함께 확인해 주세요.</p>}
       </div>
     </section>

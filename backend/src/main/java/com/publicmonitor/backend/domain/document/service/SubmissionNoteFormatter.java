@@ -27,7 +27,7 @@ final class SubmissionNoteFormatter {
     }
 
     static boolean common(String raw) {
-        return clean(raw).matches(".*(?:모든|전체|공통)\\h*(?:작성)?서류.*");
+        return clean(raw).matches(".*(?:모든|전체|공통)\\h*(?:(?:신청|제출|구비|작성)\\h*)?서류.*");
     }
 
     static boolean localCondition(String raw) {

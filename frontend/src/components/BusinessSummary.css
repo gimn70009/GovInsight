@@ -129,10 +129,10 @@
 
 .business-summary__submission-notes { margin-bottom: 16px; padding: 18px 20px; border: 1px solid #eed28c; border-radius: 10px; background: #fffbeb; color: #4b3a1c; font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
 .business-summary__submission-notes > strong { color: #775000; font-size: 13px; font-weight: 700; }
-.business-summary__submission-notes ul { display: grid; gap: 10px; list-style: none; margin: 12px 0 0; padding: 0; }
-.business-summary__submission-notes li { min-width: 0; padding: 14px; border: 1px solid #f0e2bc; border-radius: 7px; background: #fff; }
+.business-summary__submission-notes ul, .business-summary__document-notes { display: grid; gap: 10px; list-style: none; margin: 12px 0 0; padding: 0; }
+.business-summary__submission-notes li, .business-summary__document-notes > li { min-width: 0; padding: 14px; border: 1px solid #f0e2bc; border-radius: 7px; background: #fff; }
 .business-summary__note-scope { display: block; margin-bottom: 5px; color: #775000; font-size: 12px; font-weight: 600; }
-.business-summary__note-line { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 12px; min-width: 0; }
+.business-summary__note-line { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; min-width: 0; }
 .business-summary__note-line > p { flex: 1 1 320px; min-width: 0; margin: 0; color: #4b3a1c; white-space: pre-line; word-break: keep-all; }
 .business-summary__note-line > button { flex: 0 1 auto; }
 .business-summary__note-source { font-size: 12px; }
@@ -141,7 +141,7 @@
   .business-summary__submission-notes { padding: 14px; }
   .business-summary__note-line { gap: 8px; }
   .business-summary__note-line > p { flex-basis: 100%; }
-  .business-summary__submission-notes li { padding: 11px; }
+  .business-summary__submission-notes li, .business-summary__document-notes > li { padding: 11px; }
 }
 
 .business-summary__type-label { color: #263f5d; font-size: 15px; font-weight: 650; }
@@ -167,3 +167,8 @@
 @media (pointer: coarse) {
   .business-summary__organization-toggle, .business-summary__document-meta button { min-height: 44px; }
 }
+
+.business-summary__document-notes { color: #4b3a1c; font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
+.business-summary__document-notes > li { background: #fffbeb; }
+.business-summary__unassigned-notes { margin-top: 16px; }
+.business-summary__requirement.is-conditional:not(button) { cursor: default; }

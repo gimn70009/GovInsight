@@ -200,9 +200,24 @@ final class StructuredSubmissionTable {
             if (result.size() > priorCount) {
                 for (String note : footnotes) {
                     if (!SubmissionNoteFormatter.actionable(note)) continue;
-                    var source = new RequirementSource(fileName == null ? "NOTICE_BODY" : "ATTACHMENT",
-                            fileName, "제출서류 표 공통 유의사항", null, note);
-                    notes.add(new SubmissionNote(SubmissionNoteFormatter.format(note), null, source));
+                    if (SubmissionNoteFormatter.common(note)) {
+                        var source = new RequirementSource(fileName == null ? "NOTICE_BODY" : "ATTACHMENT",
+                                fileName, "제출서류 표 공통 유의사항", null, note);
+                        notes.add(new SubmissionNote(SubmissionNoteFormatter.format(note), null, source));
+                        continue;
+                    }
+                    // A footnote below one table is bounded by that table, not by the whole notice.
+                    var tableDocuments = result.subList(priorCount, result.size());
+                    var named = tableDocuments.stream().filter(item -> appliesTo(note, item.title())).toList();
+                    var targets = named.isEmpty() ? tableDocuments : named;
+                    int quoteEnd = text.indexOf(note, matcher.end()) + note.length();
+                    String quote = text.substring(matcher.start(), quoteEnd);
+                    for (var item : targets) {
+                        var source = new RequirementSource(fileName == null ? "NOTICE_BODY" : "ATTACHMENT",
+                                fileName, "제출서류 표 유의사항", item.source().location(),
+                                quote.length() <= 12_000 ? quote : note);
+                        notes.add(new SubmissionNote(SubmissionNoteFormatter.format(note), item.title(), source));
+                    }
                 }
             }
         }

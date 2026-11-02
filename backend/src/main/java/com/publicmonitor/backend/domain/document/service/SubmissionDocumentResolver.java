@@ -97,7 +97,10 @@ final class SubmissionDocumentResolver {
         String bounded = text.substring(0, Math.min(text.length(), MAX_TEXT));
         var structured = StructuredSubmissionTable.read(bounded, fileName);
         for (var note : structured.notes()) {
-            notes.putIfAbsent(note.text() + ":" + note.appliesTo(), note);
+            String identity = note.text() + ":" + note.appliesTo();
+            // Common wording can repeat in alternate attachments; scoped notes also need their row evidence.
+            if (note.appliesTo() != null) identity += ":" + note.source();
+            notes.putIfAbsent(identity, note);
         }
         for (var item : structured.documents()) {
             String identity = titleKey(item.title()) + ":" + item.stage() + ":" + item.requirementLevel() + ":" + key(item.appliesTo());
