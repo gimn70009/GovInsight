@@ -29,7 +29,9 @@ class EmailReportContentServiceTest {
         when(detections.findAllByMonitoringRunSourceMonitoringRunIdOrderByIdAsc(9L)).thenReturn(List.of(first, repeated));
         when(details.findSummaryById(1L)).thenReturn(BusinessSummaryEmailFixtures.jumpUp());
 
-        var content = new EmailReportContentService(detections, details).build(report);
+        var content = new EmailReportContentService(detections, details,
+                defaultSettings(),
+                java.time.Clock.fixed(java.time.Instant.parse("2026-11-03T00:00:00Z"), java.time.ZoneOffset.UTC), mock(com.publicmonitor.backend.domain.report.client.PythonEmailReviewClient.class)).build(report);
 
         assertThat(content.plainText()).contains("신규 1건  |  수정 0건  |  변경 없음 0건", "조사·컨설팅·전문지원", "2026-11-13 17:00");
         verify(details, times(1)).findSummaryById(1L);
@@ -52,7 +54,9 @@ class EmailReportContentServiceTest {
         when(details.findSummaryById(2L)).thenReturn(BusinessSummaryEmailFixtures.parse("{\"title\":\"첫번째\",\"analysis\":{\"opportunity\":{\"totalScore\":88}}}"));
         when(details.findSummaryById(3L)).thenReturn(BusinessSummaryEmailFixtures.parse("{\"title\":\"두번째\",\"analysis\":{\"opportunity\":{\"totalScore\":88}}}"));
         when(details.findSummaryById(4L)).thenReturn(BusinessSummaryEmailFixtures.parse("{\"title\":\"낮은점수\",\"analysis\":{\"opportunity\":{\"totalScore\":20}}}"));
-        String text = new EmailReportContentService(detections, details).build(report).plainText();
+        String text = new EmailReportContentService(detections, details,
+                defaultSettings(),
+                java.time.Clock.fixed(java.time.Instant.parse("2026-11-03T00:00:00Z"), java.time.ZoneOffset.UTC), mock(com.publicmonitor.backend.domain.report.client.PythonEmailReviewClient.class)).build(report).plainText();
         assertThat(text.indexOf("사업명: 첫번째")).isLessThan(text.indexOf("사업명: 두번째"));
         assertThat(text.indexOf("사업명: 두번째")).isLessThan(text.indexOf("사업명: 낮은점수"));
         assertThat(text.indexOf("사업명: 낮은점수")).isLessThan(text.indexOf("사업명: 미산정"));
@@ -83,7 +87,9 @@ class EmailReportContentServiceTest {
         when(detections.findAllByMonitoringRunSourceMonitoringRunIdOrderByIdAsc(9L)).thenReturn(List.of(detection));
         when(detailRepository.findById(1L)).thenReturn(java.util.Optional.of(detection));
 
-        var content = new EmailReportContentService(detections, details).build(report);
+        var content = new EmailReportContentService(detections, details,
+                defaultSettings(),
+                java.time.Clock.fixed(java.time.Instant.parse("2026-11-03T00:00:00Z"), java.time.ZoneOffset.UTC), mock(com.publicmonitor.backend.domain.report.client.PythonEmailReviewClient.class)).build(report);
 
         assertThat(content.plainText()).contains("중소기업 지원 공고");
         verifyNoInteractions(rewrites);
@@ -93,6 +99,99 @@ class EmailReportContentServiceTest {
             assertThat(invocation.getArguments()[0]).isSameAs(detection.getDocumentVersion());
         });
     }
+    @Test
+    void 현재_설정과_한국_발송일을_사용하고_재전송시_다시_계산한다() {
+        var detections = mock(AnalysisDocumentDetectionRepository.class);
+        var details = mock(DocumentDetectionDetailService.class);
+        var settings = mock(com.publicmonitor.backend.domain.settings.service.EvaluationSettingsService.class);
+        var data = mock(com.publicmonitor.backend.domain.settings.web.dto.EvaluationSettingsData.class, RETURNS_DEEP_STUBS);
+        when(data.criteria().preparationDays()).thenReturn(7);
+        when(settings.find()).thenReturn(new com.publicmonitor.backend.domain.settings.web.dto.EvaluationSettingsResponse(5, data, java.util.Map.of(), null));
+        var report = mock(MonitoringReport.class);
+        var run = mock(MonitoringRun.class);
+        when(run.getId()).thenReturn(9L);
+        when(report.getMonitoringRun()).thenReturn(run);
+        when(report.getTitle()).thenReturn("보고서");
+        var record = detection(1L, 10L);
+        when(detections.findAllByMonitoringRunSourceMonitoringRunIdOrderByIdAsc(9L)).thenReturn(List.of(record));
+        when(details.findSummaryById(1L)).thenReturn(BusinessSummaryEmailFixtures.parse("""
+                {"analysis":{"applicationDeadline":"2026-11-10 18:00"}}
+                """));
+        var clock = java.time.Clock.fixed(java.time.Instant.parse("2026-11-02T15:30:00Z"), java.time.ZoneOffset.UTC);
+        var service = new EmailReportContentService(detections, details, settings, clock, mock(com.publicmonitor.backend.domain.report.client.PythonEmailReviewClient.class));
+        assertThat(service.build(report).plainText()).contains("오늘 준비 착수 권장 · 마감까지 D-7일");
+        when(data.criteria().preparationDays()).thenReturn(4);
+        assertThat(service.build(report).plainText()).contains("3일 내 준비 착수 권장 · 마감까지 D-7일");
+        var nextDay = new EmailReportContentService(detections, details, settings,
+                java.time.Clock.offset(clock, java.time.Duration.ofDays(1)), mock(com.publicmonitor.backend.domain.report.client.PythonEmailReviewClient.class));
+        assertThat(nextDay.build(report).plainText()).contains("2일 내 준비 착수 권장 · 마감까지 D-6일");
+        when(data.criteria().preparationDays()).thenReturn((Integer) null);
+        assertThat(service.build(report).plainText()).contains("준비 기간을 설정해 주세요.");
+        verify(settings, times(4)).find();
+    }
+
+    @Test
+    void 메일_한번_생성할때_모든_공고를_묶어_요약하고_응답을_해당_카드에_연결한다() {
+        var detections = mock(AnalysisDocumentDetectionRepository.class);
+        var details = mock(DocumentDetectionDetailService.class);
+        var reviewClient = mock(com.publicmonitor.backend.domain.report.client.PythonEmailReviewClient.class);
+        var report = mock(MonitoringReport.class);
+        var run = mock(MonitoringRun.class);
+        when(run.getId()).thenReturn(9L);
+        when(report.getMonitoringRun()).thenReturn(run);
+        when(report.getTitle()).thenReturn("보고서");
+        var records = List.of(detection(1L, 10L), detection(2L, 10L), detection(3L, 20L));
+        when(detections.findAllByMonitoringRunSourceMonitoringRunIdOrderByIdAsc(9L)).thenReturn(records);
+        when(details.findSummaryById(1L)).thenReturn(BusinessSummaryEmailFixtures.jumpUp());
+        when(details.findSummaryById(3L)).thenReturn(BusinessSummaryEmailFixtures.jumpUp());
+        when(reviewClient.summarize(anyList())).thenReturn(java.util.Map.of(10L,
+                new com.publicmonitor.backend.domain.report.EmailReviewBrief.Result(10,
+                        "짧게 정리된 회사별 검토 이유입니다.", List.of("필수 공동기관의 참여 여부를 확인하세요."))));
+        var content = new EmailReportContentService(detections, details,
+                defaultSettings(),
+                java.time.Clock.fixed(java.time.Instant.parse("2026-11-03T00:00:00Z"), java.time.ZoneOffset.UTC),
+                reviewClient).build(report);
+        assertThat(content.plainText()).contains("짧게 정리된 회사별 검토 이유입니다.", "필수 공동기관의 참여 여부를 확인하세요.");
+        verify(reviewClient, times(1)).summarize(argThat(sources -> sources.size() == 2
+                && sources.getFirst().id() == 10 && sources.getLast().id() == 20));
+    }
+
+    @Test
+    void 설정을_저장하지_않아도_화면과_같은_기본_14일로_준비_일정을_계산한다() {
+        var detections = mock(AnalysisDocumentDetectionRepository.class);
+        var details = mock(DocumentDetectionDetailService.class);
+        var settings = defaultSettings();
+        assertThat(settings.currentSnapshot()).isNull();
+        assertThat(settings.find().data().criteria().preparationDays()).isEqualTo(14);
+        var report = mock(MonitoringReport.class);
+        var run = mock(MonitoringRun.class);
+        when(run.getId()).thenReturn(9L);
+        when(report.getMonitoringRun()).thenReturn(run);
+        when(report.getTitle()).thenReturn("보고서");
+        var record = detection(1L, 10L);
+        when(detections.findAllByMonitoringRunSourceMonitoringRunIdOrderByIdAsc(9L))
+                .thenReturn(List.of(record));
+        when(details.findSummaryById(1L)).thenReturn(BusinessSummaryEmailFixtures.parse("""
+                {"analysis":{"applicationDeadline":"2026-11-16 18:00"}}
+                """));
+        var clock = java.time.Clock.fixed(java.time.Instant.parse("2026-11-03T00:00:00Z"),
+                java.time.ZoneOffset.UTC);
+        var content = new EmailReportContentService(detections, details, settings, clock,
+                mock(com.publicmonitor.backend.domain.report.client.PythonEmailReviewClient.class)).build(report);
+
+        assertThat(content.plainText()).contains("최소 준비 기간보다 1일 부족 · 마감까지 D-13일")
+                .doesNotContain("준비 기간을 설정해 주세요.");
+        assertThat(content.html()).contains("최소 준비 기간보다 1일 부족", "마감까지 D-13일")
+                .doesNotContain("준비 기간을 설정해 주세요.");
+    }
+
+    private com.publicmonitor.backend.domain.settings.service.EvaluationSettingsService defaultSettings() {
+        return new com.publicmonitor.backend.domain.settings.service.EvaluationSettingsService(
+                mock(com.publicmonitor.backend.domain.settings.repository.EvaluationSettingsRepository.class),
+                mock(com.publicmonitor.backend.domain.settings.repository.EvaluationSettingsRevisionRepository.class),
+                tools.jackson.databind.json.JsonMapper.builder().build());
+    }
+
     private DocumentDetection detection(Long id, Long versionId) {
         var detection = mock(DocumentDetection.class);
         var version = mock(DocumentVersion.class);

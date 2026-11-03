@@ -57,6 +57,7 @@ public final class BusinessSummaryEmailTemplate {
             row(html, "사업 설명", escape(notice.purpose()), false, false);
             row(html, "제출기한", escape(notice.deadline()), true, false);
             html.append("</table>");
+            insights(html, notice.insights());
             if (BusinessSummaryEmailView.safeUrl(notice.originalUrl()) != null) {
                 html.append("<div style=\"margin:14px 0 16px\">")
                         .append(originalButton(notice.originalUrl())).append("</div>");
@@ -70,11 +71,57 @@ public final class BusinessSummaryEmailTemplate {
                         .collect(java.util.stream.Collectors.joining("\n")));
             plain.append("\n사업명: ").append(notice.title()).append("\n지원규모: ").append(notice.supportScale())
                     .append("\n사업 설명: ").append(notice.purpose()).append("\n제출기한: ").append(notice.deadline()).append("\n");
+            var insights = notice.insights();
+            plain.append("\n종합 검토: ").append(insights.reviewReason()).append("\n우선 확인사항:\n");
+            for (int i = 0; i < insights.priorityChecks().size(); i++) {
+                plain.append(i + 1).append(". ").append(insights.priorityChecks().get(i)).append("\n");
+            }
+            plain.append("준비 일정: ").append(insights.schedule().recommendation());
+            if (insights.schedule().deadlineBadge() != null) plain.append(" · ").append(insights.schedule().deadlineBadge());
+            plain.append("\n");
             if (BusinessSummaryEmailView.safeUrl(notice.originalUrl()) != null) plain.append("공고 원문: ").append(notice.originalUrl()).append("\n");
         }
         html.append("<tr><td style=\"padding:24px 16px;color:#65788f;font-size:12px;line-height:1.8;text-align:center\">")
                 .append("GovInsight · 공공기관 모니터링 보고서</td></tr></table></td></tr></table></body></html>");
         return new EmailMessageContent(YearNotation.display(plain.toString()), html.toString());
+    }
+
+    private static void insights(StringBuilder html, BusinessSummaryEmailInsights insights) {
+        // Spacing is a separate presentation row so email clients need neither flex nor CSS margins on tables.
+        html.append("<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\"><tr><td height=\"22\" style=\"height:22px;line-height:22px;font-size:1px\">&#8203;</td></tr></table>")
+                .append("<table data-business-review-table aria-label=\"회사 검토사항\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"table-layout:fixed;border:1px solid #d5e1ee;border-collapse:separate;border-spacing:0;background:#ffffff\">");
+        reviewRow(html, "종합 검토", escape(insights.reviewReason()), true);
+        var checks = new StringBuilder("<table data-priority-list role=\"list\" aria-label=\"우선 확인사항\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;table-layout:fixed\">");
+        for (int i = 0; i < insights.priorityChecks().size(); i++) {
+            String spacing = i == 0 ? "0" : "12px";
+            checks.append("<tr data-priority-item role=\"listitem\"><td width=\"30\" valign=\"top\" style=\"width:30px;padding:")
+                    .append(spacing).append(" 0 0;vertical-align:top\">")
+                    .append("<span data-priority-number style=\"display:inline-block;width:22px;height:22px;line-height:22px;text-align:center;background:#eaf2fc;border:1px solid #cbdcf1;border-radius:7px;color:#215fa8;font-size:12px;font-weight:700\">")
+                    .append(i + 1).append("</span></td><td data-priority-text valign=\"top\" style=\"padding:")
+                    .append(spacing).append(" 0 0;vertical-align:top;").append(TEXT)
+                    .append("font-size:14px;color:#294e75\">").append(escape(insights.priorityChecks().get(i)))
+                    .append("</td></tr>");
+        }
+        checks.append("</table>");
+        reviewRow(html, "우선 확인사항", checks.toString(), false);
+        var schedule = insights.schedule();
+        String scheduleHtml = "<strong data-preparation-recommendation style=\"display:inline-block;vertical-align:middle;margin-right:10px;color:#1760ad\">"
+                + escape(schedule.recommendation()) + "</strong>";
+        if (schedule.deadlineBadge() != null) {
+            scheduleHtml += "<span data-preparation-deadline style=\"display:inline-block;vertical-align:middle;padding:3px 8px;border-radius:4px;background:#fff0ee;color:#a6352d;font-size:12px;line-height:1.6;font-weight:700;white-space:nowrap\">"
+                    + escape(schedule.deadlineBadge()) + "</span>";
+        }
+        reviewRow(html, "준비 일정", scheduleHtml, false);
+        html.append("</table>");
+    }
+
+    private static void reviewRow(StringBuilder html, String label, String value, boolean first) {
+        String border = first ? "" : "border-top:1px solid #e1e9f3;";
+        html.append("<tr data-business-review-row><th scope=\"row\" width=\"92\" align=\"left\" valign=\"top\" style=\"width:92px;padding:15px 10px;")
+                .append(TEXT).append(border).append("background:#f5f8fc;font-size:13px;font-weight:700;color:#4b688b\">")
+                .append(escape(label)).append("</th><td valign=\"top\" style=\"padding:15px 12px;")
+                .append(TEXT).append(border).append("font-size:14px;color:#294e75;background:#ffffff\">")
+                .append(value).append("</td></tr>");
     }
 
     private static String overview(List<BusinessSummaryEmailView> notices, boolean missingRecords) {
