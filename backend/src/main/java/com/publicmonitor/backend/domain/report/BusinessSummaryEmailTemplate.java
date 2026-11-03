@@ -41,7 +41,7 @@ public final class BusinessSummaryEmailTemplate {
                     .append(String.format("%02d", index + 1)).append("</p>")
                     .append("<h2 style=\"margin:0;color:#153957;font-size:22px;line-height:1.5;font-weight:700;overflow-wrap:anywhere;word-break:keep-all\">")
                     .append(escape(notice.title())).append("</h2>")
-                    .append("<p data-report-institution style=\"margin:12px 0 0;color:#476581;font-size:14px;line-height:1.6;overflow-wrap:anywhere;word-break:keep-all\">")
+                    .append("<p data-report-institution style=\"margin:12px 0 0;color:#173f69;font-size:16px;font-weight:700;line-height:1.6;overflow-wrap:anywhere;word-break:keep-all\">")
                     .append(escape(notice.sourceOrganization())).append("</p><div style=\"margin-top:12px;line-height:2\">");
             badge(html, "score", score, palette.badge(), "#ffffff");
             badge(html, "change", notice.change(), "#ffffff", "#4d6480");
