@@ -34,14 +34,34 @@ final class SubmissionDocumentResolver {
 
     private SubmissionDocumentResolver() {}
 
+    static boolean eligibleFile(String name) {
+        return name != null && (!EXCLUDED_FILE.matcher(name).find() || name.matches(".*(?:공고|모집|안내).*"));
+    }
+
+    record Resolution(SubmissionGuide guide, List<DocumentAttachment> attachments) {}
+
     static SubmissionGuide resolve(String body, List<DocumentAttachment> attachments, Preparation preparation) {
+        return resolveWithSources(body, attachments, preparation).guide();
+    }
+
+    static Resolution resolveWithSources(String body, List<DocumentAttachment> attachments, Preparation preparation) {
+        var selected = SubmissionAttachmentSelector.select(attachments, file -> {
+            if (!eligibleFile(file.getFileName())) return false;
+            var documents = new LinkedHashMap<String, SubmissionDocument>();
+            collect(file.getExtractedText(), file.getFileName(), documents, new LinkedHashMap<>());
+            return !documents.isEmpty();
+        });
+        return new Resolution(resolveSelected(body, selected, preparation), selected);
+    }
+
+    private static SubmissionGuide resolveSelected(String body, List<DocumentAttachment> attachments, Preparation preparation) {
         var documents = new LinkedHashMap<String, SubmissionDocument>();
         var notes = new LinkedHashMap<String, SubmissionNote>();
         collect(body, null, documents, notes);
         for (var attachment : attachments) {
             String name = attachment.getFileName();
             if (attachment.getParseStatus() != AttachmentParseStatus.COMPLETED
-                    || (EXCLUDED_FILE.matcher(name).find() && !name.matches(".*(?:공고|모집|안내).*"))) continue;
+                    || !eligibleFile(name)) continue;
             collect(attachment.getExtractedText(), name, documents, notes);
         }
         var structured = documents.values().stream()
@@ -63,7 +83,37 @@ final class SubmissionDocumentResolver {
                         item.stage(), item.appliesTo(), item.source()));
             }
         }
-        return new SubmissionGuide(result.stream().map(SubmissionDocumentDisplay::prepare).toList(), List.copyOf(notes.values()));
+        return new SubmissionGuide(result.stream().filter(item -> !coveredCategory(item, result))
+                .map(SubmissionDocumentDisplay::prepare).toList(), List.copyOf(notes.values()));
+    }
+
+    private static boolean coveredCategory(SubmissionDocument candidate, List<SubmissionDocument> documents) {
+        // A named table row is an actual deliverable; only reconcile generic list/saved references.
+        if (!candidate.documentNames().isEmpty() || candidate.source() == null) return false;
+        String category = cleanTitle(candidate.title()).replaceAll("\\h*(?:각\\h*)?\\d+\\h*(?:부|매)$", "").strip();
+        if (!category.matches("(?:증빙|제출|구비)\\h*(?:서류|자료)")) return false;
+        String categoryKey = category.replaceAll("\\s+", "");
+        String quote = candidate.source().excerpt().replaceAll("\\s+", "");
+        var members = documents.stream().filter(item -> item != candidate && item.source() != null
+                && java.util.Objects.equals(candidate.source().origin(), item.source().origin())
+                && java.util.Objects.equals(candidate.source().attachmentName(), item.source().attachmentName())
+                && (candidate.stage() == null || item.stage() == null || candidate.stage().equals(item.stage()))
+                && cleanTitle(item.title()).replaceAll("\\s+", "")
+                    .matches("[（(\\[]" + Pattern.quote(categoryKey) + "[)）\\]].+")).toList();
+        if (members.isEmpty()) return false;
+        // All numbered references must resolve within the same submission stage.
+        var references = Pattern.compile("([①-⑳][①-⑳·ㆍ,/]*)(?:[（(])?" + Pattern.quote(categoryKey)).matcher(quote);
+        var numbers = new java.util.LinkedHashSet<String>();
+        while (references.find()) {
+            references.group(1).codePoints().filter(number -> number >= '①' && number <= '⑳')
+                    .mapToObj(Character::toString).forEach(numbers::add);
+        }
+        if (!numbers.isEmpty()) return numbers.stream().allMatch(number -> members.stream().anyMatch(member -> {
+            String name = cleanTitle(member.title()).replaceAll("\\s+", "");
+            return member.source().excerpt().replaceAll("\\s+", "").contains(number + name);
+        }));
+        // A saved category quoting a concrete named row is not another document.
+        return members.stream().anyMatch(member -> quote.contains(cleanTitle(member.title()).replaceAll("\\s+", "")));
     }
 
     private static boolean grounded(PreparationItem item, String body, List<DocumentAttachment> attachments) {
@@ -86,6 +136,8 @@ final class SubmissionDocumentResolver {
     private static boolean sameDocument(SubmissionDocument raw, String savedTitle, String savedStage) {
         boolean stage = raw.stage() == null || savedStage == null || raw.stage().equals(savedStage);
         String a = titleKey(raw.title()), b = titleKey(savedTitle);
+        // Generic groups need explicit category/reference reconciliation, not a substring match.
+        if (b.matches("(?:증빙|제출|구비)(?:서류|자료)") && !a.equals(b)) return false;
         return stage && (a.equals(b) || (b.length() >= 4 && a.contains(b))
                 || (!raw.documentNames().isEmpty() && b.length() >= 4 && key(raw.source().excerpt()).contains(b)));
     }

@@ -42,6 +42,7 @@ public class DocumentDetectionDetailService {
     private final DocumentAttachmentRepository attachmentRepository;
     private final ObjectMapper objectMapper;
     private final ParticipationRewriteService participationRewriteService;
+    private final SubmissionNotesService submissionNotesService;
 
     @Transactional(readOnly = true)
     public DocumentDetectionDetailResponse findById(Long detectionId) {
@@ -80,6 +81,9 @@ public class DocumentDetectionDetailService {
                 businessType.usableSourceCount(), businessType.failedAttachmentCount(), businessType.emptyAttachmentCount());
         var participation = includeParticipationGuide
                 ? ParticipationConditionResolver.candidatesWithScopes(version.getContentText(), storedAttachments, preparation) : null;
+        var submissionSources = SubmissionDocumentResolver.resolveWithSources(version.getContentText(), storedAttachments, preparation);
+        var submission = submissionSources.guide();
+        if (includeParticipationGuide) submission = submissionNotesService.resolve(version, submissionSources.attachments(), submission);
         return new DocumentDetectionDetailResponse(
                 detection.getId(),
                 detection.getMonitoringRunSource().getMonitoringSource().getOrganizationName(),
@@ -95,7 +99,7 @@ public class DocumentDetectionDetailService {
                 analysisStatus == DocumentAnalysisStatus.FAILED ? failureReason(version, storedAttachments) : null,
                 attachments,
                 ResponsibleOrganizationExtractor.extract(version.getContentText(), storedAttachments),
-                SubmissionDocumentResolver.resolve(version.getContentText(), storedAttachments, preparation),
+                submission,
                 includeParticipationGuide ? participationRewriteService.resolve(version,
                         participation.guide(),
                         ParticipationCategorySources.incomplete(version.getContentText(), storedAttachments), participation.scopes()) : null,

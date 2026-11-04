@@ -70,8 +70,9 @@ class EmailReportContentServiceTest {
         var tasks = mock(com.publicmonitor.backend.domain.analysis.repository.AnalysisTaskRepository.class);
         var attachments = mock(com.publicmonitor.backend.domain.document.repository.DocumentAttachmentRepository.class);
         var rewrites = mock(com.publicmonitor.backend.domain.document.service.ParticipationRewriteService.class);
+        var notes = com.publicmonitor.backend.domain.document.service.SubmissionNotesTestSupport.service();
         var details = new DocumentDetectionDetailService(detailRepository, analyses, tasks, attachments,
-                new tools.jackson.databind.ObjectMapper(), rewrites);
+                new tools.jackson.databind.ObjectMapper(), rewrites, notes);
         var report = mock(MonitoringReport.class);
         var run = mock(MonitoringRun.class);
         when(run.getId()).thenReturn(9L);
@@ -92,7 +93,7 @@ class EmailReportContentServiceTest {
                 java.time.Clock.fixed(java.time.Instant.parse("2026-11-03T00:00:00Z"), java.time.ZoneOffset.UTC), mock(com.publicmonitor.backend.domain.report.client.PythonEmailReviewClient.class)).build(report);
 
         assertThat(content.plainText()).contains("중소기업 지원 공고");
-        verifyNoInteractions(rewrites);
+        verifyNoInteractions(rewrites, notes);
         details.findById(1L);
         assertThat(org.mockito.Mockito.mockingDetails(rewrites).getInvocations()).singleElement().satisfies(invocation -> {
             assertThat(invocation.getMethod().getName()).isEqualTo("resolve");

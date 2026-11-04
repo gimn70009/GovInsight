@@ -9,9 +9,19 @@ final class SubmissionNoteFormatter {
     private static final Pattern VALID = Pattern.compile("^(.+?기준)\\h*기간\\h*유효\\h*(?:必|필수)(?:,\\h*(.+?)\\h*명시\\h*(?:必|필수))?[.!。]?$");
     private static final Pattern PAGE_GUIDE = Pattern.compile("^가점\\h*항목별\\h*제출서류가\\h*상이하므로,?\\h*(\\d+)(?:p|쪽)\\h*가점항목\\h*참고[.!。]?$");
 
+    // Flattened PDF/HWP text can join the next contact heading to a submission footnote.
+    // Recognize an explicit field label, not ordinary conditions containing the word "문의".
+    private static final Pattern CONTACT_HEADING = Pattern.compile(
+            "(?:^|[\\s⏎□■▣\\p{Co}\\uFFFD]+)"
+            + "(?:(?:신청[·ㆍ・/\\h]*접수|신청|접수)\\h*시스템"
+            + "(?:\\h*[（(][A-Za-z0-9 _-]{1,40}[)）]?)?\\h*)?"
+            + "(?:문의\\h*(?:처|전화|사항|연락처)?|연락처)\\h*[:：]");
+
     private SubmissionNoteFormatter() {}
 
     static String clean(String raw) {
+        var contact = CONTACT_HEADING.matcher(raw);
+        if (contact.find()) raw = raw.substring(0, contact.start());
         return raw.replace('⏎', ' ').replaceFirst("^[*※◦•]+\\h*", "").replaceAll("\\s+", " ").strip();
     }
 
@@ -48,6 +58,7 @@ final class SubmissionNoteFormatter {
 
     static String format(String raw) {
         String value = clean(raw.replaceAll("\\R\\h*-\\h*", ". "));
+        if (value.isEmpty()) return "";
         var issued = ISSUED.matcher(value);
         if (issued.matches()) return issued.group(1) + issued.group(2) + "에 발급된 서류여야 합니다.";
         var valid = VALID.matcher(value);

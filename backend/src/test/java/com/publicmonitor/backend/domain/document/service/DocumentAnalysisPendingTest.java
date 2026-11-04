@@ -182,7 +182,7 @@ class DocumentAnalysisPendingTest {
     }
 
     private DocumentDetectionDetailService service() {
-        return new DocumentDetectionDetailService(detections, analyses, tasks, attachments, new ObjectMapper(), rewriteService());
+        return new DocumentDetectionDetailService(detections, analyses, tasks, attachments, new ObjectMapper(), rewriteService(), com.publicmonitor.backend.domain.document.service.SubmissionNotesTestSupport.service());
     }
     private com.publicmonitor.backend.domain.document.service.ParticipationRewriteService rewriteService() {
         var service = org.mockito.Mockito.mock(com.publicmonitor.backend.domain.document.service.ParticipationRewriteService.class);

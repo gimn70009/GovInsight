@@ -301,3 +301,14 @@ POST /internal/monitoring/participation-rewrite와 /participation-rewrite/stream
 
 - 프롬프트와 양쪽 서버 검증으로 `—`·콜론·공백 사이 하이픈·목록 기호·명사형 조각을 차단합니다. 번호는 메일 템플릿이 붙입니다. 별도 근거가 있는 caveat는 위험 키워드가 다르다는 이유로 거절하지 않으며 review 실패/합계 길이 초과 때도 유효한 caveat를 남깁니다. Java는 필드별 검증으로 정상 항목을 보존합니다.
 - 진단 로그에는 배치 건수·미캐시 건수·시간 예산과 문서 ID·상태·소요 시간·검증 원인 코드만 남깁니다. API 응답의 `reviewReason` 이름은 유지하며 메일 표시 이름만 종합 검토입니다.
+
+
+## 제출 유의사항 전용 문맥 정리 (2026-11-04)
+
+`POST /internal/monitoring/submission-notes`는 OCR 결과인 저장 원문을 읽고 제출 유의사항만 추출합니다. 구현은 `app/domains/submission/`, 프롬프트는 `prompts.py`입니다. 문의처/예시/사업 소개를 제외하고 공통 조건·개별 서류·미연결 적용 대상을 구분합니다. 기존 보고서의 원문 문맥 선택기를 재사용합니다.
+
+요청은 `sources[{id,text}], documents[{id,title,sourceId,excerpt,stage,appliesTo}], incomplete`, 응답은 `notes[{sourceId,quote,text,scope,documentId,scopeQuote,appliesTo}], status`입니다. 상태는 READY/PARTIAL/UNAVAILABLE이며 Java가 작업 대기 상태 PENDING을 관리합니다. 각각의 인용과 범위를 검증하며 표시문에만 깨진 기호를 제외하고 저장 원문은 수정하지 않습니다.
+
+기본 `SUBMISSION_NOTES_ENABLED=true`, `SUBMISSION_NOTES_MODEL=gpt-5-mini`, 기존 `OPENAI_API_KEY`를 사용합니다. 모델 문맥은 최대 32,000자, 출력 6,000토큰, 전체 45초·동시 2개·재시도 없음입니다. 결과 영속화와 동일 입력의 단일 호출은 백엔드가 담당합니다. 모델/프롬프트 정책을 바꿔 기존 결과 재생성이 필요하면 Python `prompts.VERSION`과 Java `SubmissionNotesService.VERSION`을 함께 갱신하세요. 실패/부분 결과도 같은 정책·입력에서는 재사용합니다.
+
+모의 회귀는 `.venv\Scripts\python.exe -m pytest tests/domains/submission tests/domains/report -q`로 실행합니다. 실제 모델 검증 결과는 Git 제외 빌드 산출물에만 기록하며 키나 전체 원문을 일반 로그에 남기지 않습니다.

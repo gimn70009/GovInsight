@@ -253,6 +253,7 @@ export type SubmissionDocument = Pick<ProposalPreparationItem, 'title' | 'detail
 }
 
 export interface SubmissionGuide {
+  notesStatus?: 'PENDING' | 'READY' | 'PARTIAL' | 'UNAVAILABLE'
   documents: SubmissionDocument[]
   notes: { text: string; appliesTo?: string | null; source: ProposalPreparationItem['source'] }[]
 }

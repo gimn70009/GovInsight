@@ -127,7 +127,10 @@ public record DocumentDetectionDetailResponse(
         }
     }
 
-    public record SubmissionGuide(List<SubmissionDocument> documents, List<SubmissionNote> notes) {}
+    public record SubmissionGuide(List<SubmissionDocument> documents, List<SubmissionNote> notes,
+            @Schema(description = "제출 유의사항 정리 상태: PENDING, READY, PARTIAL, UNAVAILABLE") String notesStatus) {
+        public SubmissionGuide(List<SubmissionDocument> documents, List<SubmissionNote> notes) { this(documents, notes, null); }
+    }
 
     public record SubmissionDocument(
             String title, String detail, String requirementLevel, String stage, String appliesTo,

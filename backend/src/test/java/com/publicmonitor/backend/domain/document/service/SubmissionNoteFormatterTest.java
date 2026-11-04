@@ -6,6 +6,37 @@ import org.junit.jupiter.api.Test;
 
 class SubmissionNoteFormatterTest {
     @Test
+    void 제출조건_뒤에_붙은_문의_표제와_깨진_글머리표를_표시하지_않는다() {
+        String condition = "제출서류 등에 누락·착오가 있더라도 신청마감일 이후 수정·보완·교체 등 일체 불가";
+        for (String marker : new String[]{"□", "\uF06F", "\uFFFD", ""}) {
+            String raw = "* " + condition + " " + marker
+                    + " 신청·접수 시스템(K-Startup) 문의 :국번없이 1357 (시스템운영팀)";
+            assertThat(SubmissionNoteFormatter.format(raw)).isEqualTo(condition + ".");
+        }
+        assertThat(SubmissionNoteFormatter.format("※ " + condition + "\n문의처: 서류 제출 지원센터"))
+                .isEqualTo(condition + ".");
+        assertThat(SubmissionNoteFormatter.format("* " + condition
+                + " \uF06F 신청·접수 시스템(K-Startup 문의 :국번없이 1357"))
+                .isEqualTo(condition + ".");
+        assertThat(SubmissionNoteFormatter.format("* 문의처: 서류 제출 지원센터")).isEmpty();
+
+        assertThat(SubmissionNoteFormatter.actionable("* 문의처: 제출서류 확인 지원센터"))
+                .isFalse();
+    }
+
+    @Test
+    void 문의라는_단어가_포함된_실제_제출조건과_기호는_보존한다() {
+        for (String condition : new String[]{
+                "제출서류는 담당자에게 문의 후 보완하여 제출",
+                "문의처로 제출한 서류는 인정하지 않음",
+                "제출서류는 PDF·HWP 중 택 1, 10MB 이하이며 O/X를 표시",
+                "모든 서류는 제출하되, 장애가 발생한 경우 문의처 확인 후 2일 이내 보완"}) {
+            assertThat(SubmissionNoteFormatter.format(condition)).isEqualTo(condition + ".");
+        }
+    }
+
+
+    @Test
     void 날짜_기준과_숫자_범위_필수표현을_보존하면서_문장을_정리한다() {
         assertThat(SubmissionNoteFormatter.format("* 신청일 포함 2개월 이내 발급분"))
                 .isEqualTo("신청일 포함 2개월 이내에 발급된 서류여야 합니다.");
