@@ -12,7 +12,13 @@ public final class ParticipationRewriteContract {
                           @JsonProperty("business_types") List<String> businessTypes) {}
     public record Statement(@JsonProperty("source_ids") List<String> sourceIds, String criterion,
                             String text, @JsonProperty("group_label") String groupLabel,
-                            @JsonProperty("supporting_quotes") List<String> supportingQuotes, String kind) {}
+                            @JsonProperty("supporting_quotes") List<String> supportingQuotes, String kind,
+                            String scope, String audience) {
+        public Statement(List<String> sourceIds, String criterion, String text, String groupLabel,
+                         List<String> supportingQuotes, String kind) {
+            this(sourceIds, criterion, text, groupLabel, supportingQuotes, kind, null, null);
+        }
+    }
     public record Response(List<Statement> statements,
                            @JsonProperty("evidence_only_ids") List<String> evidenceOnlyIds, String status,
                            @JsonProperty("irrelevant_source_ids") List<String> irrelevantSourceIds) {

@@ -87,6 +87,8 @@ class Statement(StrictModel):
     group_label: str
     supporting_quotes: list[Annotated[str, Field(max_length=600)]] = Field(max_length=4)
     kind: Literal["ELIGIBILITY", "EXCLUSION", "PREFERENCE", "DEDUCTION", "FUNDING"]
+    scope: str | None = Field(default=None, max_length=100)
+    audience: str | None = Field(default=None, max_length=100)
 
 
 class Draft(StrictModel):

@@ -17,7 +17,7 @@ import tools.jackson.databind.ObjectMapper;
 class ParticipationRewriteServiceTest {
     final ObjectMapper mapper = new ObjectMapper();
     final String quote = "업력 7년 이내 창업기업만 신청 가능";
-    final String sentence = "업력 7년 이내 창업기업만 신청 가능합니다.";
+    final String sentence = quote + "합니다.";
     ParticipationGuide raw() {
         var source = new RequirementSource("NOTICE_BODY", null, "신청자격", null, quote);
         var rule = new ParticipationRule("BASIC", "대표자 조건", "잘못 붙인 문장입니다.", null, null,
@@ -37,7 +37,7 @@ class ParticipationRewriteServiceTest {
         return guide.categories().stream().flatMap(c -> c.rows().stream()).flatMap(r -> r.entries().stream()).toList();
     }
 
-    @Test void pendingUsesEvidenceOnlyAndSingleFlightThenReusesSavedResult() throws Exception {
+    @Test void pendingKeepsReadableOriginalAndSingleFlightThenReusesSavedResult() throws Exception {
         var client = mock(PythonParticipationRewriteClient.class);
         var store = mock(ParticipationRewriteStore.class);
         var entered = new CountDownLatch(1); var release = new CountDownLatch(1); var saved = new CountDownLatch(1);
@@ -48,8 +48,8 @@ class ParticipationRewriteServiceTest {
             var version = version();
             var pending = service.resolve(version, raw(), false);
             assertThat(pending.rewriteStatus()).isEqualTo("PENDING");
-            assertThat(entries(pending)).allSatisfy(entry -> {
-                assertThat(entry.displayStatus()).isEqualTo("EVIDENCE_ONLY");
+            assertThat(pending.rules()).singleElement().satisfies(rule -> assertThat(rule.text()).isEqualTo(sentence));
+            assertThat(entries(pending).stream().filter(entry -> entry.displayStatus().equals("EVIDENCE_ONLY"))).allSatisfy(entry -> {
                 assertThat(entry.rule().text()).isEmpty();
                 assertThat(entry.rule().details()).isEmpty();
                 assertThat(entry.rule().sources().getFirst().excerpt()).isEqualTo(quote);
@@ -59,6 +59,7 @@ class ParticipationRewriteServiceTest {
             verify(client, times(1)).rewrite(any(), any());
             release.countDown();
             assertThat(saved.await(3, TimeUnit.SECONDS)).isTrue();
+            awaitTerminal(service, version);
             var input = ParticipationRewriteProjection.input(raw(), false);
             ReflectionTestUtils.setField(version, "participationRewriteKey", service.fingerprint(input.request()));
             ReflectionTestUtils.setField(version, "participationRewriteJson", mapper.writeValueAsString(valid()));
@@ -73,14 +74,14 @@ class ParticipationRewriteServiceTest {
         } finally { release.countDown(); service.close(); }
     }
 
-    @Test void failedOrUnsupportedResultsRetainOriginalWithoutFabricatedFallback() {
+    @Test void failedOrUnsupportedResultsRecoverOnlyReadableOriginalWithoutUsingFabricatedText() {
         var input = ParticipationRewriteProjection.input(raw(), false);
         var failed = ParticipationRewriteProjection.guide(raw(), input, Response.unavailable(input.request()), "UNAVAILABLE");
-        assertThat(entries(failed)).allMatch(entry -> entry.rule().text().isEmpty());
+        assertThat(failed.rules()).singleElement().satisfies(rule -> assertThat(rule.text()).isEqualTo(sentence));
         assertThat(failed.categories().stream().flatMap(c -> c.rows().stream())).noneMatch(row -> row.status().equals("NOT_STATED"));
         var fabricated = new Response(List.of(new Statement(List.of("unknown"), "COMPANY_SIZE", "창작입니다.", "", List.of("창작 근거"), "ELIGIBILITY")), List.of(), "READY");
         var guide = ParticipationRewriteProjection.guide(raw(), input, fabricated, "READY");
-        assertThat(entries(guide)).allMatch(entry -> entry.displayStatus().equals("EVIDENCE_ONLY"));
+        assertThat(guide.rules()).singleElement().satisfies(rule -> assertThat(rule.text()).isEqualTo(sentence).doesNotContain("창작"));
     }
 
     @Test void unresolvedSectionsCannotMakeUnclassifiedRowsLookAbsent() {
@@ -144,58 +145,48 @@ class ParticipationRewriteServiceTest {
         } finally { release.countDown(); service.close(); }
     }
 
-    @Test void previousBroadReadyCacheGetsOneFocusedExtraction() throws Exception {
-        for (String policy : List.of("participation-llm-v5", "participation-economy-v1")) {
-            var client = mock(PythonParticipationRewriteClient.class);
-            var store = mock(ParticipationRewriteStore.class);
-            when(client.rewrite(any(), any())).thenReturn(valid());
-            var service = new ParticipationRewriteService(client, store, mapper);
-            try {
-                var version = version();
-                var request = ParticipationRewriteProjection.input(raw(), false).request();
-                String previousKey = ReflectionTestUtils.invokeMethod(service, "fingerprint", request, policy);
-                ReflectionTestUtils.setField(version, "participationRewriteKey", previousKey);
-                ReflectionTestUtils.setField(version, "participationRewriteJson", mapper.writeValueAsString(valid()));
-                assertThat(service.resolve(version, raw(), false).rewriteStatus()).isEqualTo("PENDING");
-                awaitTerminal(service, version);
-                var guide = service.resolve(version, raw(), false);
-                assertThat(guide.rewriteStatus()).isEqualTo("READY");
-                assertThat(entries(guide)).singleElement().satisfies(entry ->
-                        assertThat(entry.rule().text()).isEqualTo(sentence));
-                verify(client, times(1)).rewrite(any(), any());
-                verify(store).finish(eq(1L), eq(service.fingerprint(request)), anyString());
-            } finally { service.close(); }
+    @Test void unknownOlderTerminalPoliciesUseOnlyCurrentReadableOriginalWithoutRebilling() {
+        for (String policy : List.of("participation-llm-v5", "participation-economy-v1", "unknown-policy")) {
+            for (String status : List.of("READY", "UNAVAILABLE")) {
+                var client = mock(PythonParticipationRewriteClient.class);
+                var store = mock(ParticipationRewriteStore.class);
+                var service = new ParticipationRewriteService(client, store, mapper);
+                try {
+                    var version = version();
+                    var request = ParticipationRewriteProjection.input(raw(), false).request();
+                    String previousKey = ReflectionTestUtils.invokeMethod(service, "fingerprint", request, policy);
+                    ReflectionTestUtils.setField(version, "participationRewriteKey", previousKey);
+                    ReflectionTestUtils.setField(version, "participationRewriteJson", mapper.writeValueAsString(
+                            new Response(valid().statements(), List.of(), status)));
+                    for (int poll = 0; poll < 3; poll++) {
+                        var guide = service.resolve(version, raw(), false);
+                        assertThat(guide.rewriteStatus()).isEqualTo(status);
+                        assertThat(guide.rules()).singleElement().satisfies(rule -> assertThat(rule.text()).isEqualTo(sentence));
+                        assertThat(entries(guide)).isNotEmpty().allSatisfy(entry -> {
+                            assertThat(entry.rule().sources().getFirst().excerpt()).isEqualTo(quote);
+                        });
+                    }
+                    assertThat(version.getParticipationRewriteKey()).isEqualTo(previousKey);
+                    verifyNoInteractions(client, store);
+                } finally { service.close(); }
+            }
         }
     }
 
-    @Test void previousFailureGetsOneFocusedAttemptThenRemainsTerminalAcrossRestart() throws Exception {
+    @Test void unknownOldFailureRemainsTerminalAcrossRestartWithoutPayment() {
         var client = mock(PythonParticipationRewriteClient.class);
         var store = mock(ParticipationRewriteStore.class);
-        when(client.rewrite(any(), any())).thenAnswer(inv -> Response.unavailable(inv.getArgument(0)));
         var version = version();
-        doAnswer(inv -> {
-            ReflectionTestUtils.setField(version, "participationRewriteKey", inv.getArgument(1));
-            ReflectionTestUtils.setField(version, "participationRewriteJson", inv.getArgument(2));
-            return null;
-        }).when(store).finish(any(), anyString(), anyString());
-        var service = new ParticipationRewriteService(client, store, mapper);
-        try {
-            var request = ParticipationRewriteProjection.input(raw(), false).request();
-            String legacyKey = ReflectionTestUtils.invokeMethod(service, "fingerprint", request, "participation-llm-v5");
-            ReflectionTestUtils.setField(version, "participationRewriteKey", legacyKey);
-            ReflectionTestUtils.setField(version, "participationRewriteJson", mapper.writeValueAsString(Response.unavailable(request)));
-            assertThat(service.resolve(version, raw(), false).rewriteStatus()).isEqualTo("PENDING");
-            awaitTerminal(service, version);
-            assertThat(version.getParticipationRewriteKey()).isEqualTo(service.fingerprint(request));
-            for (int poll = 0; poll < 3; poll++) {
+        ReflectionTestUtils.setField(version, "participationRewriteKey", "older-source-identities");
+        ReflectionTestUtils.setField(version, "participationRewriteJson", mapper.writeValueAsString(
+                Response.unavailable(ParticipationRewriteProjection.input(raw(), false).request())));
+        for (int restart = 0; restart < 2; restart++) {
+            var service = new ParticipationRewriteService(client, store, mapper);
+            try {
                 assertThat(service.resolve(version, raw(), false).rewriteStatus()).isEqualTo("UNAVAILABLE");
-            }
-        } finally { service.close(); }
-        var restarted = new ParticipationRewriteService(client, store, mapper);
-        try {
-            assertThat(restarted.resolve(version, raw(), false).rewriteStatus()).isEqualTo("UNAVAILABLE");
-            verify(client, times(1)).rewrite(any(), any());
-        } finally { restarted.close(); }
+                verifyNoInteractions(client, store);
+            } finally { service.close(); }
+        }
     }
     @Test void persistedFailureDoesNotRetryOnRepeatedLookupOrAfterRestart() {
         var client = mock(PythonParticipationRewriteClient.class);
@@ -344,15 +335,16 @@ class ParticipationRewriteServiceTest {
                 ReflectionTestUtils.setField(version, "participationRewriteJson", mapper.writeValueAsString(response));
                 var result = service.resolve(version, candidates.guide(), false, candidates.scopes());
                 assertThat(result.rewriteStatus()).isEqualTo(response.status());
-                assertThat(result.rules()).anyMatch(rule -> rule.text().equals("전통시장 및 상점가가 지원 대상입니다."));
-                if (status.equals("READY")) assertThat(result.rules()).anyMatch(rule -> rule.text().equals(sentence));
-                else assertThat(result.rules()).noneMatch(rule -> rule.text().equals(sentence));
+                assertThat(result.rules()).noneMatch(rule -> rule.text().contains("전통시장"));
+                assertThat(entries(result)).flatExtracting(entry -> entry.rule().sources())
+                        .anyMatch(source -> source.excerpt().contains("전통시장 및 상점가"));
+                assertThat(result.rules()).anyMatch(rule -> rule.text().equals(sentence));
                 verifyNoInteractions(client, store);
             } finally { service.close(); }
         }
     }
 
-    @Test void terminalEmptyCacheGetsLocalTargetSentencesWithoutPayingAgain() throws Exception {
+    @Test void terminalEmptyCacheShowsOnlyOriginalEvidenceWithoutPayingAgain() throws Exception {
         var client = mock(PythonParticipationRewriteClient.class);
         var store = mock(ParticipationRewriteStore.class);
         var service = new ParticipationRewriteService(client, store, mapper);
@@ -364,13 +356,44 @@ class ParticipationRewriteServiceTest {
             for (String status : List.of("READY", "UNAVAILABLE")) {
                 ReflectionTestUtils.setField(version, "participationRewriteJson", mapper.writeValueAsString(new Response(List.of(), List.of(), status)));
                 var result = service.resolve(version, c.guide(), false, c.scopes());
-                assertThat(result.rules()).singleElement().satisfies(rule -> assertThat(rule.text()).contains("20억원 이상"));
+                assertThat(result.rules()).isEmpty();
+                assertThat(entries(result)).isNotEmpty().allMatch(entry -> entry.displayStatus().equals("EVIDENCE_ONLY"));
+                assertThat(entries(result)).flatExtracting(entry -> entry.rule().sources()).anyMatch(source -> source.excerpt().contains("20억원 이상"));
             }
             verifyNoInteractions(client, store);
         } finally { service.close(); }
     }
 
-    @Test void oldTerminalCacheKeepsOldSourceIdsAndUsesRecoveredLocalEvidenceWithoutPayment() {
+    @Test void savedEmptyQualificationCacheRecoversDisplayAcrossRestartWithoutChangingStoredResultOrCallingAi() {
+        var client = mock(PythonParticipationRewriteClient.class);
+        var store = mock(ParticipationRewriteStore.class);
+        for (String status : List.of("READY", "UNAVAILABLE")) {
+            var version = version();
+            String json = mapper.writeValueAsString(new Response(List.of(), List.of(), status));
+            String key = null;
+            for (int restart = 0; restart < 2; restart++) {
+                var service = new ParticipationRewriteService(client, store, mapper);
+                try {
+                    if (key == null) key = service.fingerprint(ParticipationRewriteProjection.input(raw(), false).request());
+                    ReflectionTestUtils.setField(version, "participationRewriteKey", key);
+                    ReflectionTestUtils.setField(version, "participationRewriteJson", json);
+                    for (int lookup = 0; lookup < 2; lookup++) {
+                        var guide = service.resolve(version, raw(), false);
+                        assertThat(guide.rewriteStatus()).isEqualTo(status);
+                        assertThat(guide.rules()).singleElement().satisfies(rule -> {
+                            assertThat(rule.text()).isEqualTo(sentence);
+                            assertThat(rule.sources()).singleElement().satisfies(source -> assertThat(source.excerpt()).isEqualTo(quote));
+                        });
+                        assertThat(version.getParticipationRewriteKey()).isEqualTo(key);
+                        assertThat(version.getParticipationRewriteJson()).isEqualTo(json);
+                    }
+                } finally { service.close(); }
+            }
+        }
+        verifyNoInteractions(client, store);
+    }
+
+    @Test void oldTerminalCacheKeepsOldSourceIdsAndDoesNotInterpretTablesOrSupportTargets() {
         for (String status : List.of("READY", "UNAVAILABLE")) {
             var client = mock(PythonParticipationRewriteClient.class);
             var store = mock(ParticipationRewriteStore.class);
@@ -389,7 +412,9 @@ class ParticipationRewriteServiceTest {
                 ReflectionTestUtils.setField(version, "participationRewriteJson", mapper.writeValueAsString(response));
                 var guide = service.resolve(version, candidates.guide(), false, candidates.scopes());
                 assertThat(guide.rewriteStatus()).isEqualTo(status);
-                assertThat(guide.rules()).anyMatch(rule -> rule.text().equals("중견기업이 지원 대상입니다."));
+                assertThat(guide.rules()).noneMatch(rule -> rule.text().contains("중견기업"));
+                assertThat(entries(guide)).flatExtracting(entry -> entry.rule().sources())
+                        .anyMatch(source -> source.excerpt().contains("중견기업"));
                 if (status.equals("READY")) assertThat(guide.rules()).anyMatch(rule -> rule.text().equals(sentence));
                 verifyNoInteractions(client, store);
             } finally { service.close(); }

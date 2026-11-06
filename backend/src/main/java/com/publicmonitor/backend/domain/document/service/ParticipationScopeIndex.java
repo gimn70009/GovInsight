@@ -30,6 +30,7 @@ final class ParticipationScopeIndex {
     private final Map<RequirementSource, List<Span>> sources = new LinkedHashMap<>();
 
     private final Map<RequirementSource, String> contexts = new LinkedHashMap<>();
+    private final Map<RequirementSource, Set<String>> originalContexts = new LinkedHashMap<>();
 
     record Line(String text, int from, int to) {}
     record Span(int from, int to, List<String> labels) {}
@@ -97,18 +98,27 @@ final class ParticipationScopeIndex {
             int start = document.indexOf(excerpt, cursor);
             if (start < 0) continue;
             String parent = parentSection(document.substring(0, start));
+            if (!parent.isBlank()) originalContexts.computeIfAbsent(source, ignored -> new LinkedHashSet<>()).add(parent);
             if (secondaryBuyer(forDisplay ? originalDocument(document) : document, parent)) parent += "\n[별도 참여 역할] 구매기관";
             contexts.put(source, parent);
             int end = start + excerpt.length();
             var local = sources.computeIfAbsent(source, ignored -> new ArrayList<>());
-            for (var span : spans) if (span.to() > start && span.from() < end)
+            for (var span : spans) if (span.to() > start && span.from() < end) {
                 local.add(new Span(Math.max(0, span.from() - start), Math.min(excerpt.length(), span.to() - start), span.labels()));
+                if (!span.labels().isEmpty()) originalContexts.computeIfAbsent(source, ignored -> new LinkedHashSet<>())
+                        .add(String.join(" · ", span.labels()));
+            }
             cursor = end;
         }
     }
 
     String context(List<RequirementSource> evidence) {
         return evidence.stream().map(contexts::get).filter(Objects::nonNull).filter(s -> !s.isBlank())
+                .distinct().collect(java.util.stream.Collectors.joining(" / "));
+    }
+
+    String originalContexts(List<RequirementSource> evidence) {
+        return evidence.stream().map(originalContexts::get).filter(Objects::nonNull).flatMap(Set::stream)
                 .distinct().collect(java.util.stream.Collectors.joining(" / "));
     }
 
@@ -161,7 +171,7 @@ final class ParticipationScopeIndex {
 
     private static boolean displayGeneric(String title) {
         String key = title.replaceAll("\\s+", "").replaceAll("[:：]$", "");
-        return key.matches("지원|신청자격|사업신청자격|지원(?:내용|조건|내용및조건|내용및지원조건|과제)|유의사항|사업별지원계획");
+        return key.matches("지원|운영비지원|사업비지원|신청자격|사업신청자격|지원(?:내용|조건|내용및조건|내용및지원조건|과제)|유의사항|사업별지원계획");
     }
 
     private static String displayTitle(String text) { return text.replaceAll("\\s+", " ").strip(); }

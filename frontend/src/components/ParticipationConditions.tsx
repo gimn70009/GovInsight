@@ -2,14 +2,12 @@ import { useId, useState } from 'react'
 import { ChevronDown, ClipboardCheck, ExternalLink, FileText, ListChecks } from 'lucide-react'
 import type { DocumentDetail, ParticipationRule, ParticipationCriterionEntry } from '../api/types'
 import { evidenceAttachment } from '../utils/businessSummary'
-import { companyParticipationRows, companyConditionPresentation, companyConditionScope, companyConditionAppliesTo, activeCompanyConditionProgram } from '../utils/companyParticipation'
+import { companyParticipationRows, companyConditionSourceKey, companyConditionPresentation, companyConditionScope, companyConditionAppliesTo, activeCompanyConditionProgram } from '../utils/companyParticipation'
 import './ParticipationConditions.css'
 
 type RuleSource = ParticipationRule['sources'][number]
 
-function sourceKey(source: RuleSource) {
-  return JSON.stringify([source.origin, source.attachmentName, source.sectionTitle, source.location, source.excerpt])
-}
+const sourceKey = companyConditionSourceKey
 
 function sourceName(source: RuleSource) {
   return source.origin === 'NOTICE_BODY' ? '공고 본문' : source.attachmentName || '첨부 문서'
@@ -124,7 +122,6 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
   const headingId = useId()
   const status = detail.participationGuide?.rewriteStatus
   const pending = status === 'PENDING'
-  const unavailable = status === 'UNAVAILABLE'
   return <section className="business-summary__card participation-guide" aria-labelledby={headingId}>
     <header className="business-summary__heading">
       <span className="business-summary__heading-icon" aria-hidden="true"><ClipboardCheck size={22} /></span>
@@ -137,7 +134,6 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
         <strong>공고의 신청 자격과 우대사항을 확인하고 있습니다.</strong>
         <p>확인이 끝나면 이 표에 자동으로 표시됩니다.</p>
       </div>}
-      {unavailable && visibleRows.length === 0 && <p className="participation-guide__progress">참여기업 조건 확인을 완료하지 못했습니다. 확인되지 않은 항목은 공고 원문을 참고해 주세요.</p>}
       {visibleRows.length > 0 ? <>
         {canFilter && <div className="participation-guide__filter">
           <label htmlFor={filterId}>적용 유형</label>
@@ -149,8 +145,8 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
           {activeProgram && <button type="button" onClick={() => selectProgram('')}>전체 보기</button>}
           {activeProgram && <p>선택한 유형과 공통·유형 미지정 조건을 함께 표시합니다.</p>}
         </div>}
-        <nav className="participation-guide__index" aria-label="신청 자격 분야 바로가기">
-          <span className="participation-guide__index-label" aria-hidden="true">분야 바로가기</span>
+        <nav className="participation-guide__index" aria-label="신청 자격 항목 바로가기">
+          <span className="participation-guide__index-label" aria-hidden="true">자격 항목 바로가기</span>
           <div className="participation-guide__index-links">{visibleRows.map(row => <a key={row.code} href={`#${headingId}-${row.code}`} onClick={event => {
             event.preventDefault()
             const target = document.getElementById(`${headingId}-${row.code}`)
@@ -161,13 +157,13 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
         <div className="participation-guide__table-wrap">
           <table className="participation-guide__table" aria-label="참여기업 필수 조건과 우대사항">
             <colgroup><col className="participation-guide__category-col" /><col className="participation-guide__kind-col" /><col className="participation-guide__program-col" /><col /></colgroup>
-            <thead><tr><th scope="col">분야</th><th scope="col">구분</th><th scope="col" className="participation-guide__type-heading">적용 유형</th><th scope="col">신청 조건</th></tr></thead>
+            <thead><tr><th scope="col">자격 항목</th><th scope="col">구분</th><th scope="col" className="participation-guide__type-heading">적용 유형</th><th scope="col">신청 조건</th></tr></thead>
             {visibleRows.map(row => {
               const conditions = [...row.mandatory.map(entry => ({ entry, kind: 'mandatory' as const })),
                 ...row.preference.map(entry => ({ entry, kind: 'preference' as const }))]
               return <tbody key={row.code} data-criterion={row.code} id={`${headingId}-${row.code}`} tabIndex={-1}>
                 {conditions.map(({ entry, kind }, index) => {
-                  const condition = companyConditionPresentation(entry, row.code)
+                  const condition = companyConditionPresentation(entry)
                   const excluded = entry.rule.section === 'EXCLUSION'
                   const label = excluded ? '신청 제외' : kind === 'mandatory' ? '필수' : '우대'
                   return <tr key={JSON.stringify([detail.detectionId, entry.rule.scope, entry.rule.audience, entry.rule.text, index])} data-condition-kind={excluded ? 'exclusion' : kind}>
@@ -186,7 +182,9 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
             })}
           </table>
         </div>
-      </> : !pending && <p className="participation-guide__missing">표시할 신청 조건을 확인하지 못했습니다. 공고 원문을 확인해 주세요.</p>}
+      </> : !pending && <p className="participation-guide__missing">{status === 'UNAVAILABLE'
+        ? '신청 조건 정리를 완료하지 못했습니다. 공고 원문을 확인해 주세요.'
+        : '정리된 신청 조건이 없습니다. 공고 원문을 확인해 주세요.'}</p>}
     </div>
   </section>
 }

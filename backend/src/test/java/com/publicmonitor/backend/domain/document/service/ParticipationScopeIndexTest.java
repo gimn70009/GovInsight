@@ -108,7 +108,7 @@ class ParticipationScopeIndexTest {
             assertThat(guide.categories().stream().flatMap(c -> c.rows().stream()).flatMap(r -> r.entries().stream())
                     .filter(e -> "VERIFIED".equals(e.displayStatus()))).singleElement().satisfies(entry -> {
                         assertThat(entry.rule().text()).isEqualTo(quote.replace("수 있음", "수 있습니다."));
-                        assertThat(entry.rule().scope()).isEqualTo("점프업1000");
+                        assertThat(entry.rule().scope()).isNull();
                     });
             ReflectionTestUtils.setField(version, "participationRewriteJson", mapper.writeValueAsString(Response.unavailable(oldInput.request())));
             assertThat(service.resolve(version, candidates.guide(), false, candidates.scopes()).rewriteStatus()).isEqualTo("UNAVAILABLE");
@@ -116,7 +116,7 @@ class ParticipationScopeIndexTest {
         } finally { service.close(); }
     }
 
-    @Test void duplicateSavedStatementsMergeTheirScopesAndSources() {
+    @Test void separateSavedStatementsDoNotInferAndMergeProgramScopes() {
         String body = "1. 점프업100\n□ 지원대상\n" + quote + "\n※ 첫 유형 설명\n"
                 + "2. 점프업500\n□ 지원대상\n" + quote + "\n※ 둘째 유형 설명\n";
         var candidates = ParticipationConditionResolver.candidatesWithScopes(body, List.of(), null);
@@ -124,9 +124,10 @@ class ParticipationScopeIndexTest {
         var statements = input.request().sources().stream().filter(s -> s.excerpt().contains(quote))
                 .map(s -> new Statement(List.of(s.id()), "BUSINESS_AGE", quote, "", List.of(quote), "ELIGIBILITY")).toList();
         var guide = ParticipationRewriteProjection.guide(candidates.guide(), input, new Response(statements, List.of(), "READY"), "READY");
-        assertThat(guide.rules()).singleElement().satisfies(rule -> {
-            assertThat(rule.scope()).isEqualTo("점프업100 / 점프업500");
-            assertThat(rule.sources()).hasSize(2);
+        assertThat(guide.rules()).hasSize(2).allSatisfy(rule -> {
+            assertThat(rule.scope()).isNull();
+            assertThat(rule.sources()).hasSize(1);
+            assertThat(rule.text()).isEqualTo(quote.replace("수 있음", "수 있습니다."));
         });
     }
     @Test void frozenParsingPreservesEveryOriginalSourceAndItsOrder() {
@@ -138,7 +139,7 @@ class ParticipationScopeIndexTest {
         assertThat(current.rules()).flatExtracting(ParticipationRule::sources).anyMatch(source -> source.sectionTitle().contains("3-1. 사업개요"));
     }
 
-    @Test void whitespaceVariantsKeepBothTrackLabelsWhenStatementsAreMerged() {
+    @Test void whitespaceVariantsDoNotCauseBackendScopeInference() {
         String a = "매출액100억원이상인기업";
         String b = "매출액 100억원 이상인 기업";
         String body = "1. 점프업100\n□ 지원대상\n" + a + "\n"
@@ -151,8 +152,7 @@ class ParticipationScopeIndexTest {
                     return new Statement(List.of(source.id()), "REVENUE", text, "", List.of(text), "ELIGIBILITY");
                 }).toList();
         var guide = ParticipationRewriteProjection.guide(candidates.guide(), input, new Response(statements, List.of(), "READY"), "READY");
-        assertThat(guide.rules()).allMatch(rule -> rule.scope().contains("점프업"));
-        assertThat(guide.rules().stream().map(rule -> rule.scope()).toList().toString()).contains("점프업100", "점프업500");
+        assertThat(guide.rules()).hasSize(2).allSatisfy(rule -> assertThat(rule.scope()).isNull());
     }
 
 
@@ -170,20 +170,9 @@ class ParticipationScopeIndexTest {
                 .extracting(Source::groupLabel).anyMatch(s -> s.contains("성장형")).anyMatch(s -> s.contains("확장형"));
     }
 
-    @Test void recipientRolesRequireDocumentContextAndDoNotHideBuyerRecruitment() {
-        String clause = "□ 신청자격\n공공기관만 신청 가능";
-        for (boolean buyerNotice : List.of(false, true)) {
-            String intro = buyerNotice ? "구매기관 모집 공고\n기업 제품의 판로 지원" : "중소기업 제품의 공공판로 개척을 지원하는 공고";
-            String body = intro + "\n4\n구매기관 현황 및 신청\n" + clause;
-            var c = ParticipationConditionResolver.candidatesWithScopes(body, List.of(), null);
-            var evidence = c.guide().rules().stream().flatMap(r -> r.sources().stream())
-                    .filter(src -> src.excerpt().contains("공공기관만")).toList();
-            assertThat(evidence).isNotEmpty();
-            assertThat(ParticipationAudience.recipient(evidence, c.scopes().context(evidence))).isEqualTo(!buyerNotice);
-        }
-    }
 
-    @Test void operatorBeneficiaryIsHiddenFromOldCachedResponseWithoutAnotherModelCall() {
+
+    @Test void savedModelClassificationIsNotOverruledByRecipientHeuristics() {
         String body = "본 모집 공고는 창업기업을 지원할 주관기관을 모집하는 공고문이며, 창업기업 모집은 별도 공고 예정\n"
                 + "2\n신청자격 및 제외대상\n□ 신청 자격\n전문 기관\n3\n사업 개요\n□ 지원대상 : 업력 10년 이내 기업";
         var c = ParticipationConditionResolver.candidatesWithScopes(body, List.of(), null);
@@ -192,8 +181,10 @@ class ParticipationScopeIndexTest {
         var saved = new Response(List.of(new Statement(List.of(id), "BUSINESS_AGE", "업력이 10년 이내인 기업이 지원 대상입니다.", "",
                 List.of("업력 10년 이내 기업"), "ELIGIBILITY")), List.of(), "READY");
         var result = ParticipationRewriteProjection.guide(c.guide(), old, saved, "READY");
-        assertThat(result.rules()).noneMatch(rule -> rule.text().contains("업력 10년"));
-        assertThat(result.rules()).anyMatch(rule -> rule.text().contains("전문 기관"));
+        assertThat(result.rules()).singleElement().satisfies(rule -> {
+            assertThat(rule.text()).isEqualTo(saved.statements().getFirst().text());
+            assertThat(rule.scope()).isNull();
+        });
     }
 
     @Test void wrappedSentenceTailIsNotADisplayTrackAndCannotReplaceItsParent() {
@@ -228,7 +219,7 @@ class ParticipationScopeIndexTest {
         }
     }
 
-    @Test void currentPaidCacheRepairsWrappedScopeWithoutCallingTheModelAgain() throws Exception {
+    @Test void currentPaidCacheKeepsMissingScopeWithoutCallingTheModelAgain() throws Exception {
         String text = "경제안보품목 및 경제안보서비스의 원활한 도입·생산 및 제공에 기여하고자 하는 사업자 또는 사업자단체";
         String body = "1. 경제안보지원사업\n□ 사업개요\n안정적인 공급망 확보를 지원하\n는사업\n□ 지원대상\n" + text;
         var candidates = ParticipationConditionResolver.candidatesWithScopes(body, List.of(), null);
@@ -249,7 +240,7 @@ class ParticipationScopeIndexTest {
             var guide = service.resolve(version, candidates.guide(), false, candidates.scopes());
             assertThat(guide.rewriteStatus()).isEqualTo("READY");
             assertThat(guide.rules()).isNotEmpty().allSatisfy(rule -> {
-                assertThat(rule.scope()).isEqualTo("경제안보지원사업");
+                assertThat(rule.scope()).isNull();
                 assertThat(rule.text()).contains("경제안보품목", "사업자 또는 사업자단체");
                 assertThat(rule.sources()).anySatisfy(evidence -> assertThat(evidence.excerpt()).contains(text));
             });
