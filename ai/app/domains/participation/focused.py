@@ -60,10 +60,11 @@ SECTOR 업종·품목·서비스, EXPERIENCE 계약·납품·수행역량, CREDI
 필수=ELIGIBILITY, 명시우대=PREFERENCE. 예외는 우대가 아닙니다.
 한 행에 한 자격과 그 예외를 담으세요. text는 주어가 있는 완성된 합니다체 문장(240자 이하)입니다.
 명사형·목록 원문을 그대로 복사하지 마세요. 수치·단위·법령·기준일·AND/OR·부정은 보존하세요.
-scope=실제 사업·과제유형(명시공통='공통'), audience=신청역할, 미확인=null. 절제목은 유형이 아닙니다.
+scope=유형명, 구분없음=null, 적용불명="확인 필요", 명시공통="공통".
+audience=신청주체명. 설명문·절제목 금지.
 quote=조건·예외의 연속 원문 줄(L3/L3-L5,600자 이하). 원문을 그대로 인용하세요.
-최대12개, 중복통합. 해당없으면 items=[]. 분야를 억지로 채우지 마세요.
-불완전한 원문은 추측하지 말고 unresolved_source_ids에 남기세요.
+최대12개, 중복통합. 해당없으면 items=[]. 분야 억지 채움 금지.
+불완전 원문은 추측 없이 unresolved_source_ids에 남기세요.
 """
 
 class ExtractedCondition(StrictModel):

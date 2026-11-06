@@ -80,11 +80,11 @@ async def check(browser, sample, original, readable=False, required_ids=()):
         for width in (1440, 390, 320):
             await h.page.set_viewport_size(dict(width=width, height=1100))
             if expected:
-                headers = ["자격 항목", "구분", "적용 유형", "신청 조건"] if width > 720 else ["자격 항목", "구분", "신청 조건"]
+                headers = ["자격 항목", "구분", "해당 사업", "신청 조건"] if width > 720 else ["자격 항목", "구분", "신청 조건"]
                 await expect(region.get_by_role("columnheader")).to_have_text(headers)
                 scopes = [entry["rule"]["scope"] for entry in expected if (entry["rule"].get("scope") or "").strip()]
                 roles = [entry["rule"]["audience"] for entry in expected if (entry["rule"].get("audience") or "").strip()]
-                await expect(region.locator(".participation-guide__program:visible")).to_have_text(scopes)
+                await expect(region.locator(".participation-guide__program:visible")).to_have_text([scope.replace("공통", "전체 사업 공통") if scope == "공통" else scope for scope in scopes])
                 await expect(region.locator(".participation-guide__audience:visible")).to_have_text(roles)
             assert await region.evaluate("e => e.scrollWidth <= e.clientWidth + 1"), (sample["id"], width)
             await region.evaluate("""element => {

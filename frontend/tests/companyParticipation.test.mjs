@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  companyParticipationRows, companyConditionScope,
+  companyParticipationRows, companyConditionScope, companyHasBusinessDivision,
   companyConditionPresentation, companyConditionAppliesTo, activeCompanyConditionProgram,
 } from '../src/utils/companyParticipation.ts'
 
@@ -77,16 +77,16 @@ test('server text, scope, audience and explicit notes are displayed verbatim', (
     exceptions: ['단, 추천기업은 예외', '* 최근 3개년 매출액 1회 이상 달성'],
   })
   assert.deepEqual(companyConditionPresentation(value), {
-    scope: value.rule.scope, audience: '도입기업', sentence: text,
+    scope: value.rule.scope, scopeReviewRequired: false, audience: '도입기업', sentence: text,
     notes: ['* 최근 3개년 매출액 1회 이상 달성', '  별도의 공백도 유지  ', '단, 추천기업은 예외'],
   })
   assert.equal(value.rule.text, text)
 })
 
-test('scope is never restored from a source heading, stripped or replaced by a guessed common scope', () => {
+test('scope is not inferred from source headings and only surrounding whitespace is normalized', () => {
   for (const scope of ['신청자격 및 신청요건', '① 점프업100', '는사업', '  실제 유형  ']) {
     const value = entry('국내 중소기업이 지원 대상입니다.', 'BASIC', { scope })
-    assert.equal(companyConditionScope(value), scope)
+    assert.equal(companyConditionScope(value), scope.trim())
     assert.equal(companyConditionPresentation(value).sentence, value.rule.text)
   }
   for (const scope of [null, '', '   ']) {
@@ -162,4 +162,52 @@ test('a hidden or stale program filter never hides conditions after a notice or 
   assert.equal(activeCompanyConditionProgram(selection, 1, programs, 7), '')
   assert.equal(activeCompanyConditionProgram(selection, 1, programs.slice(0, 2), 8), '')
   assert.equal(activeCompanyConditionProgram(selection, 1, ['특화형', '성장형', '도약형'], 8), '')
+})
+
+test('cached prompt descriptions do not become business filters or applicant labels', () => {
+  const text = '창업도시 조성 프로젝트를 추진하는 광역자치단체(시·도)를 모집합니다.'
+  for (const scope of ["실제 사업·과제유형(명시공통='공통')", '실제 사업·과제유형', 'scope', '유형 미지정', '적용 범위 확인 필요']) {
+    const value = entry(text, 'BASIC', { scope, audience: '신청역할' })
+    assert.equal(companyConditionScope(value), null)
+    assert.equal(companyConditionPresentation(value).audience, null)
+    assert.equal(companyConditionPresentation(value).sentence, text)
+    assert.equal(companyConditionAppliesTo(value, '초기창업패키지'), true)
+    assert.deepEqual(applicantRows([value]).mandatory, [value])
+    assert.equal(value.rule.scope, scope)
+  }
+  const known = entry(text, 'BASIC', { scope: '  초기창업패키지 · 일반형  ', audience: ' 광역자치단체 ' })
+  assert.equal(companyConditionPresentation(known).scope, '초기창업패키지 · 일반형')
+  assert.equal(companyConditionPresentation(known).audience, '광역자치단체')
+  assert.equal(companyConditionScope(entry(text, 'BASIC', { scope: '공통' })), '공통')
+})
+
+test('absence of a business division differs from an unknown scope within a divided notice', () => {
+  const unscoped = entry('광역자치단체가 신청할 수 있습니다.')
+  const single = guide([row('BUSINESS_FORM', [unscoped])])
+  assert.equal(companyHasBusinessDivision(single), false)
+  assert.equal(companyConditionPresentation(unscoped, false).scopeReviewRequired, false)
+  for (const explicit of [
+    guide([row('BUSINESS_FORM', [unscoped, entry('조건', 'BASIC', { scope: '일반형 / 성장형' })])]),
+    { ...single, variants: [{ name: '유형1', description: '일반형' }, { name: '유형2', description: '성장형' }] },
+  ]) {
+    assert.equal(companyHasBusinessDivision(explicit), true)
+    assert.equal(companyConditionPresentation(unscoped, true).scopeReviewRequired, true)
+  }
+  const common = entry('조건', 'BASIC', { scope: '공통' })
+  assert.equal(companyHasBusinessDivision(guide([row('BUSINESS_FORM', [common])])), false)
+  assert.equal(companyConditionPresentation(common, true).scope, '공통')
+  assert.equal(companyConditionPresentation(common, true).scopeReviewRequired, false)
+  assert.equal(companyHasBusinessDivision(guide([row('BUSINESS_FORM', [
+    entry('조건', 'BASIC', { scope: "실제 사업·과제유형(명시공통='공통')" }),
+  ])])), false)
+})
+
+test('explicit review markers survive old caches without becoming business filters or hiding conditions', () => {
+  for (const scope of ['확인 필요', '적용 범위 확인 필요', '일반형 / 적용 범위 확인 필요']) {
+    const value = entry('보유 요건을 확인해야 합니다.', 'BASIC', { scope })
+    assert.equal(companyConditionPresentation(value, false).scopeReviewRequired, true)
+    assert.equal(companyConditionScope(value), scope.startsWith('일반형') ? '일반형' : null)
+    assert.equal(companyConditionAppliesTo(value, '성장형'), true)
+    assert.equal(value.rule.scope, scope)
+  }
 })

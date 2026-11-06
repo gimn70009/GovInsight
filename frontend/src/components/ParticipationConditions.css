@@ -47,11 +47,11 @@
 .participation-guide__program { min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .participation-guide__program-path { display: block; }
 .participation-guide__program-path + .participation-guide__program-path { margin-top: 10px; }
-.participation-guide__program-parent { display: block; margin-bottom: 3px; color: #61748b; font-size: 11px; }
 .participation-guide__program-name { color: #1956a5; font-size: 14px; font-weight: 700; }
 .participation-guide__role { display: inline-flex; flex-wrap: wrap; gap: 3px; color: #61748b; font-size: 11px; }
 .participation-guide__audience { color: #405c7a; font-weight: 500; }
-.participation-guide__unscoped { color: #61748b; font-size: 12px; }
+.participation-guide__unscoped { color: #61748b; font-size: 14px; font-weight: 600; }
+.participation-guide__scope-review { color: #61748b; font-size: 12px; }
 .participation-guide__visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .participation-guide__main { margin: 0; color: #182638; font-size: 14px; line-height: 1.85; font-weight: 500; white-space: pre-line; }
 .participation-guide__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 13px; }
@@ -101,8 +101,7 @@
   .participation-guide__kind-badge { padding: 2px 4px; font-size: 10px; }
   .participation-guide__main { font-size: 13px; }
   .participation-guide__context { font-size: 11px; }
-  .participation-guide__program-name { font-size: 13px; }
-  .participation-guide__program-parent { font-size: 10px; }
+  .participation-guide__program-name, .participation-guide__unscoped { font-size: 13px; }
   .participation-guide__notes-button, .participation-guide__evidence-button { padding: 7px 9px; font-size: 11px; }
   .participation-guide__notes { padding: 10px; font-size: 12px; }
   .participation-guide__notes li { padding: 9px 9px 9px 23px; }

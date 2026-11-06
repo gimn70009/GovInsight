@@ -639,3 +639,19 @@ def test_paid_input_omits_unused_rule_classifications():
     selected = [source("one", "대학이 신청할 수 있습니다.").model_copy(update={"criteria": ["IP"]})]
     payload = json.loads(focused.model_messages(selected)[1].content)
     assert set(payload["sources"][0]) == {"id", "group_label", "excerpt"}
+
+
+@pytest.mark.parametrize("scope", [None, "공통", "확인 필요", "일반형"])
+def test_scope_absence_and_explicit_uncertainty_survive_projection(scope):
+    quote = "신청기업은 중소기업이어야 합니다."
+    src = source("one", quote)
+    result = focused.project(
+        Extraction(
+            items=[item("one", "BUSINESS_FORM", "L1", text=quote, scope=scope)],
+            unresolved_source_ids=[],
+        ),
+        [src], request(src),
+    )
+    assert len(result.statements) == 1
+    assert result.statements[0].scope == scope
+    assert result.statements[0].text == quote

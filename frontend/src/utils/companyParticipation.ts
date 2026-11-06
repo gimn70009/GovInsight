@@ -58,15 +58,39 @@ export function companyParticipationRows(guide: ParticipationGuide | null | unde
   })
 }
 
-/** Empty context is unspecified. Preserve all nonempty server-supplied labels verbatim. */
-export function companyConditionScope(entry: ParticipationCriterionEntry): string | null {
-  return entry.rule.scope?.trim() ? entry.rule.scope : null
+// Old cached outputs sometimes contain the prompt's field descriptions instead of values.
+function contextLabel(value: string | null | undefined): string | null {
+  const label = value?.trim()
+  if (!label) return null
+  const compact = label.replace(/\s+/g, '')
+  if (/^(?:scope|audience|null|신청역할|신청주체명|유형명|유형미지정|미확인|확인필요|적용범위확인필요)$/i.test(compact)
+    || /^실제사업[·ㆍ]과제유형(?:\(.*\))?$/.test(compact)) return null
+  return label
 }
 
-export function companyConditionPresentation(entry: ParticipationCriterionEntry) {
+function scopeReviewRequested(scope: string | null | undefined): boolean {
+  return (scope ?? '').split(' / ').some(part =>
+    /^(?:미확인|확인필요|적용범위확인필요)$/.test(part.replace(/\s+/g, '')))
+}
+
+export function companyConditionScope(entry: ParticipationCriterionEntry): string | null {
+  return (entry.rule.scope ?? '').split(' / ').map(contextLabel).filter(Boolean).join(' / ') || null
+}
+
+/** Use the whole notice, not the currently filtered rows, to recognize an explicit business division. */
+export function companyHasBusinessDivision(guide: ParticipationGuide | null | undefined): boolean {
+  const scopes = companyParticipationRows(guide).flatMap(row => [...row.mandatory, ...row.preference])
+    .map(companyConditionScope)
+  return [...scopes, ...(guide?.variants ?? []).map(variant => contextLabel(variant.name))]
+    .some(scope => scope?.split(' / ').some(part => part !== '공통'))
+}
+
+export function companyConditionPresentation(entry: ParticipationCriterionEntry, hasBusinessDivision = false) {
+  const scope = companyConditionScope(entry)
   return {
-    scope: companyConditionScope(entry),
-    audience: entry.rule.audience?.trim() ? entry.rule.audience : null,
+    scope,
+    scopeReviewRequired: scopeReviewRequested(entry.rule.scope) || (!scope && hasBusinessDivision),
+    audience: contextLabel(entry.rule.audience),
     sentence: entry.rule.text,
     notes: [...new Set([...(entry.rule.details ?? []), ...(entry.rule.exceptions ?? [])])]
       .filter(note => note.trim()),
@@ -75,7 +99,7 @@ export function companyConditionPresentation(entry: ParticipationCriterionEntry)
 
 /** Explicit user filter; common or unspecified scopes remain visible without another API call. */
 export function companyConditionAppliesTo(entry: ParticipationCriterionEntry, selected: string): boolean {
-  if (!selected) return true
+  if (!selected || scopeReviewRequested(entry.rule.scope)) return true
   const scope = companyConditionScope(entry)
   if (!scope || scope === '공통') return true
   return scope.split(' / ').some(value => value === '공통' || value === selected

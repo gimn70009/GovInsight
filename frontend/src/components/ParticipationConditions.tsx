@@ -2,7 +2,7 @@ import { useId, useState } from 'react'
 import { ChevronDown, ClipboardCheck, ExternalLink, FileText, ListChecks } from 'lucide-react'
 import type { DocumentDetail, ParticipationRule, ParticipationCriterionEntry } from '../api/types'
 import { evidenceAttachment } from '../utils/businessSummary'
-import { companyParticipationRows, companyConditionSourceKey, companyConditionPresentation, companyConditionScope, companyConditionAppliesTo, activeCompanyConditionProgram } from '../utils/companyParticipation'
+import { companyParticipationRows, companyHasBusinessDivision, companyConditionSourceKey, companyConditionPresentation, companyConditionScope, companyConditionAppliesTo, activeCompanyConditionProgram } from '../utils/companyParticipation'
 import './ParticipationConditions.css'
 
 type RuleSource = ParticipationRule['sources'][number]
@@ -44,21 +44,16 @@ type ConditionPresentation = ReturnType<typeof companyConditionPresentation>
 
 function ConditionContext({ condition, mobile = false }: { condition: ConditionPresentation; mobile?: boolean }) {
   return <div className={`participation-guide__context${mobile ? ' participation-guide__context--mobile' : ''}`}>
-    {mobile && <span className="participation-guide__context-label">적용 유형</span>}
+    {mobile && <span className="participation-guide__context-label">해당 사업</span>}
     {condition.scope ? <span className="participation-guide__program">
-      {condition.scope.split(' / ').map((path, index) => {
-        const parts = path.split(' · ')
-        return <span className="participation-guide__program-path" key={path}>
-          {index > 0 && <span className="participation-guide__visually-hidden"> / </span>}
-          {parts.length > 1 && <span className="participation-guide__program-parent">
-            {parts.slice(0, -1).join(' · ')}<span className="participation-guide__visually-hidden"> · </span>
-          </span>}
-          <strong className="participation-guide__program-name">{parts.at(-1)}</strong>
-        </span>
-      })}
-    </span> : <span className="participation-guide__unscoped">유형 미지정</span>}
+      {condition.scope.split(' / ').map((path, index) => <span className="participation-guide__program-path" key={path}>
+        {index > 0 && <span className="participation-guide__visually-hidden"> / </span>}
+        <strong className="participation-guide__program-name">{path === '공통' ? '전체 사업 공통' : path}</strong>
+      </span>)}
+    </span> : <span className="participation-guide__unscoped">{condition.scopeReviewRequired ? '원문 확인 필요' : '-'}</span>}
+    {condition.scope && condition.scopeReviewRequired && <span className="participation-guide__scope-review">원문 확인 필요</span>}
     {condition.audience && <span className="participation-guide__role">
-      <span>신청 역할:</span> <span className="participation-guide__audience">{condition.audience}</span>
+      <span>신청 대상:</span> <span className="participation-guide__audience">{condition.audience}</span>
     </span>}
   </div>
 }
@@ -104,6 +99,7 @@ function Rule({ entry, detail, label, condition }: {
 
 export function ParticipationConditions({ detail }: { detail: DocumentDetail }) {
   const rows = companyParticipationRows(detail.participationGuide)
+  const hasBusinessDivision = companyHasBusinessDivision(detail.participationGuide)
   const allRows = [...rows.filter(row => row.code === 'BUSINESS_FORM'), ...rows.filter(row => row.code !== 'BUSINESS_FORM')]
     .filter(row => row.mandatory.length || row.preference.length)
   const allEntries = allRows.flatMap(row => [...row.mandatory, ...row.preference])
@@ -136,14 +132,14 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
       </div>}
       {visibleRows.length > 0 ? <>
         {canFilter && <div className="participation-guide__filter">
-          <label htmlFor={filterId}>적용 유형</label>
+          <label htmlFor={filterId}>해당 사업</label>
           <select id={filterId} value={activeProgram} onChange={event => selectProgram(event.target.value)}>
-            <option value="">전체 유형</option>
+            <option value="">전체 사업</option>
             {programs.map(program => <option key={program} value={program}>{program}</option>)}
           </select>
           <span className="participation-guide__filter-count" aria-live="polite">{activeProgram ? `${visibleCount}개 표시 / 전체 ${allEntries.length}개 조건` : `전체 ${allEntries.length}개 조건`}</span>
           {activeProgram && <button type="button" onClick={() => selectProgram('')}>전체 보기</button>}
-          {activeProgram && <p>선택한 유형과 공통·유형 미지정 조건을 함께 표시합니다.</p>}
+          {activeProgram && <p>선택한 사업의 조건과 공통 조건을 표시합니다. 사업 구분이 확인되지 않은 조건도 포함합니다.</p>}
         </div>}
         <nav className="participation-guide__index" aria-label="신청 자격 항목 바로가기">
           <span className="participation-guide__index-label" aria-hidden="true">자격 항목 바로가기</span>
@@ -157,13 +153,13 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
         <div className="participation-guide__table-wrap">
           <table className="participation-guide__table" aria-label="참여기업 필수 조건과 우대사항">
             <colgroup><col className="participation-guide__category-col" /><col className="participation-guide__kind-col" /><col className="participation-guide__program-col" /><col /></colgroup>
-            <thead><tr><th scope="col">자격 항목</th><th scope="col">구분</th><th scope="col" className="participation-guide__type-heading">적용 유형</th><th scope="col">신청 조건</th></tr></thead>
+            <thead><tr><th scope="col">자격 항목</th><th scope="col">구분</th><th scope="col" className="participation-guide__type-heading">해당 사업</th><th scope="col">신청 조건</th></tr></thead>
             {visibleRows.map(row => {
               const conditions = [...row.mandatory.map(entry => ({ entry, kind: 'mandatory' as const })),
                 ...row.preference.map(entry => ({ entry, kind: 'preference' as const }))]
               return <tbody key={row.code} data-criterion={row.code} id={`${headingId}-${row.code}`} tabIndex={-1}>
                 {conditions.map(({ entry, kind }, index) => {
-                  const condition = companyConditionPresentation(entry)
+                  const condition = companyConditionPresentation(entry, hasBusinessDivision)
                   const excluded = entry.rule.section === 'EXCLUSION'
                   const label = excluded ? '신청 제외' : kind === 'mandatory' ? '필수' : '우대'
                   return <tr key={JSON.stringify([detail.detectionId, entry.rule.scope, entry.rule.audience, entry.rule.text, index])} data-condition-kind={excluded ? 'exclusion' : kind}>
