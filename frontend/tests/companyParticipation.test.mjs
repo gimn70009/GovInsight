@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  companyParticipationRows, companyConditionScope, companyHasBusinessDivision,
+  companyParticipationRows, companyParticipationExclusions, companyConditionScope, companyHasBusinessDivision,
   companyConditionPresentation, companyConditionAppliesTo, activeCompanyConditionProgram,
 } from '../src/utils/companyParticipation.ts'
 
@@ -26,7 +26,8 @@ test('mandatory, preference and exclusion remain distinct without changing suppl
   const preferred = entry('업력 3년 이내 초기기업 가점 2점', 'PREFERENCE')
   const excluded = entry('휴·폐업 중인 기업은 신청할 수 없습니다.', 'EXCLUSION')
   const actual = applicantRows([required, preferred, excluded])
-  assert.deepEqual(actual.mandatory, [required, excluded])
+  assert.deepEqual(actual.mandatory, [required])
+  assert.deepEqual(companyParticipationExclusions(guide([row('BUSINESS_FORM', [required, preferred, excluded])])), [excluded])
   assert.deepEqual(actual.preference, [preferred])
 })
 
@@ -84,7 +85,7 @@ test('server text, scope, audience and explicit notes are displayed verbatim', (
 })
 
 test('scope is not inferred from source headings and only surrounding whitespace is normalized', () => {
-  for (const scope of ['신청자격 및 신청요건', '① 점프업100', '는사업', '  실제 유형  ']) {
+  for (const scope of ['① 점프업100', '는사업', '  실제 유형  ']) {
     const value = entry('국내 중소기업이 지원 대상입니다.', 'BASIC', { scope })
     assert.equal(companyConditionScope(value), scope.trim())
     assert.equal(companyConditionPresentation(value).sentence, value.rule.text)
@@ -209,5 +210,29 @@ test('explicit review markers survive old caches without becoming business filte
     assert.equal(companyConditionScope(value), scope.startsWith('일반형') ? '일반형' : null)
     assert.equal(companyConditionAppliesTo(value, '성장형'), true)
     assert.equal(value.rule.scope, scope)
+  }
+})
+
+test('exclusions remain separate, deduplicate across categories and retain business filters and evidence', () => {
+  const excluded = entry('휴업 기업은 지원에서 제외됩니다.', 'EXCLUSION', { scope: '성장형' })
+  const second = { ...excluded, rule: { ...excluded.rule, sources: [{ origin: 'ATTACHMENT', excerpt: '추가 근거' }] } }
+  const unverified = { ...entry('검증되지 않은 제외 조건', 'EXCLUSION'), displayStatus: 'EVIDENCE_ONLY' }
+  const data = guide([row('CREDIT', [excluded, unverified]), row('EXPERIENCE', [second])])
+  assert.equal(companyParticipationRows(data).flatMap(r => [...r.mandatory, ...r.preference]).length, 0)
+  const actual = companyParticipationExclusions(data)
+  assert.equal(actual.length, 1)
+  assert.equal(actual[0].rule.sources.length, 2)
+  assert.equal(companyHasBusinessDivision(data), true)
+  assert.equal(companyConditionAppliesTo(actual[0], '성장형'), true)
+  assert.equal(companyConditionAppliesTo(actual[0], '일반형'), false)
+  assert.deepEqual(companyParticipationExclusions(), [])
+})
+
+test('internal section metadata never becomes an applied business label', () => {
+  for (const scope of ['상위 구역', '원문 구역', '신청자격 및 신청요건', '[상위 구역] 지원 대상', 'parent']) {
+    const value = entry('기업이 신청할 수 있습니다.', 'BASIC', { scope })
+    assert.equal(companyConditionScope(value), null)
+    assert.equal(companyHasBusinessDivision(guide([row('BUSINESS_FORM', [value])])), false)
+    assert.equal(companyConditionPresentation(value).sentence, value.rule.text)
   }
 })

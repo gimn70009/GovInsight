@@ -10,18 +10,26 @@ final class ParticipationDisplayStatements {
     private static final Pattern ITEM = Pattern.compile("(?m)^\\h*[◦○●•-]\\h*");
     private static final Pattern NOTE = Pattern.compile("(?m)^\\h*(?:[*※]+\\h*|-(?=\\h*(?:단[,，]|다만|예외|제외))\\h*)");
     private static final Pattern QUALIFICATION = Pattern.compile("^(?:사업)?신청(?:자격|요건)(?:및신청요건)?$");
+    private static final Pattern INLINE_ELIGIBILITY = Pattern.compile(
+            "^[\\h□■◦○●•-]*(?:신청|지원|참여|모집)\\h*(?:자격|대상|요건)\\h*[:：]\\h*");
 
     static List<Statement> prepare(ParticipationRewriteProjection.Input input, List<Statement> grounded) {
         var result = new LinkedHashMap<String, Statement>();
         for (var item : grounded) {
             String text = sentence(item.text()) ? item.text() : restore(item);
             if (text != null) add(result, new Statement(item.sourceIds(), item.criterion(), text, item.groupLabel(),
-                    item.supportingQuotes(), item.kind(), item.scope(), item.audience()));
+                    item.supportingQuotes(), item.kind(), item.scope(), item.audience(), item.details()));
         }
         var selected = ParticipationSourceSelection.select(input);
         for (var entry : input.evidence().entrySet()) for (var source : entry.getValue()) {
             if (!selected.includes(source) || !plainQualification(source)) continue;
             for (String quote : paragraphs(source)) {
+                // Explicit model-owned explanations must not be restored as standalone legacy rows.
+                if (grounded.stream().flatMap(item -> item.details().stream())
+                        .filter(detail -> detail.sourceIds() != null && detail.sourceIds().contains(entry.getKey()))
+                        .filter(detail -> detail.supportingQuotes() != null)
+                        .flatMap(detail -> detail.supportingQuotes().stream())
+                        .filter(Objects::nonNull).anyMatch(existing -> clause(existing).contains(clause(quote)))) continue;
                 String first = quote.split("\\R", 2)[0].replaceFirst("^\\h*[◦○●•-]\\h*", "");
                 String code = criterion(first);
                 if (code == null) continue;
@@ -55,7 +63,7 @@ final class ParticipationDisplayStatements {
                     if (!compact(text).contains(compact(tail))) text += (text.matches("(?s).*[.!?]$") ? " " : ". ") + tail;
                     var quotes = new LinkedHashSet<>(item.supportingQuotes()); quotes.add(quote);
                     entry.setValue(new Statement(item.sourceIds(), item.criterion(), text, item.groupLabel(),
-                            List.copyOf(quotes), item.kind(), item.scope(), item.audience()));
+                            List.copyOf(quotes), item.kind(), item.scope(), item.audience(), item.details()));
                 }
             }
             return true;
@@ -68,16 +76,23 @@ final class ParticipationDisplayStatements {
     private static String restore(Statement item) {
         if (item.supportingQuotes().size() != 1 || !readable(item.text())) return null;
         String quote = item.supportingQuotes().getFirst();
+        boolean inlineEligibility = "ELIGIBILITY".equals(item.kind()) && INLINE_ELIGIBILITY.matcher(quote).find();
+        String value = item.text().strip();
+        if (inlineEligibility) {
+            // Remove only an explicit applicant heading; the quoted original stays untouched.
+            quote = INLINE_ELIGIBILITY.matcher(quote).replaceFirst("");
+            value = INLINE_ELIGIBILITY.matcher(value).replaceFirst("");
+        }
         if (!readable(quote) || quote.contains("\t") || quote.contains("□") || quote.contains("■")
                 || ITEM.matcher(quote).results().count() > 1 || NOTE.matcher(quote).find()) return null;
-        String value = item.text().strip().replaceFirst("^[◦○●•-]\\h*", "").replaceAll("\\s+", " ");
+        value = value.replaceFirst("^[◦○●•-]\\h*", "").replaceAll("\\s+", " ");
         String original = quote.strip().replaceFirst("^[◦○●•-]\\h*", "").replaceAll("\\s+", " ");
         if (!compact(value).equals(compact(original))) return null;
         if (value.endsWith("우대")) return value + "합니다.";
         if (value.endsWith("가점")) return value + "을 부여합니다.";
         if ("PREFERENCE".equals(item.kind())) return null;
         String text = finish(value);
-        if (text != null && text.startsWith("신청 대상은 ")) return value + "이어야 합니다.";
+        if (!inlineEligibility && text != null && text.startsWith("신청 대상은 ")) return value + "이어야 합니다.";
         return text;
     }
 
@@ -88,7 +103,7 @@ final class ParticipationDisplayStatements {
         var ids = new LinkedHashSet<>(previous.sourceIds()); ids.addAll(item.sourceIds());
         var quotes = new LinkedHashSet<>(previous.supportingQuotes()); quotes.addAll(item.supportingQuotes());
         result.put(key, new Statement(List.copyOf(ids), previous.criterion(), previous.text(), previous.groupLabel(),
-                List.copyOf(quotes), previous.kind(), previous.scope(), previous.audience()));
+                List.copyOf(quotes), previous.kind(), previous.scope(), previous.audience(), java.util.stream.Stream.concat(previous.details().stream(), item.details().stream()).distinct().toList()));
     }
 
     static boolean fullyCovered(RequirementSource source, Collection<String> quotes) {

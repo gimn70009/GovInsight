@@ -1,4 +1,4 @@
-"""Server-owned eligibility wording, empty states and interactive table regression.
+"""Server-owned eligibility wording, empty states and grouped condition interaction regression.
 All APIs are mocked GET requests; extraction, retries and paid model APIs are blocked.
 """
 import asyncio
@@ -51,128 +51,117 @@ def guide(status="READY"):
                 categories=[dict(code="COMPANY_REQUIREMENTS", label="신청 자격", rows=rows)])
 
 
-async def assert_responsive_condition_table(region, width):
-    headers = ["자격 항목", "구분", "해당 사업", "신청 조건"] if width > 720 else ["자격 항목", "구분", "신청 조건"]
-    await expect(region.get_by_role("columnheader")).to_have_text(headers)
-    assert await region.locator("tbody tr").evaluate_all("""(rows, columns) => rows.every(row =>
-        [...row.querySelectorAll('td')].filter(cell => cell.getClientRects().length > 0).length === columns)
-    """, 3 if width > 720 else 2), (width, "visible condition columns")
-    content = region.locator(".participation-guide__program:visible, .participation-guide__audience:visible, .participation-guide__main, .participation-guide__notes:visible, .participation-guide__notes:visible li, .participation-guide__actions button")
+async def assert_responsive_condition_groups(region, width):
+    await expect(region.get_by_role("table")).to_have_count(0)
+    await expect(region.locator(".participation-guide__notes-button, .participation-guide__evidence-button")).to_have_count(0)
+    content=region.locator(".participation-guide__main, .participation-guide__context, .participation-guide__notes:visible")
     assert await content.evaluate_all("""elements => elements.every(element => {
-        const box = element.getBoundingClientRect();
-        const cell = element.closest('td').getBoundingClientRect();
-        return element.scrollHeight <= element.clientHeight + 1 && element.scrollWidth <= element.clientWidth + 1
-            && box.left >= cell.left - 1 && box.right <= cell.right + 1;
-    })"""), (width, "full type, role and condition text")
-    assert await region.evaluate("e => e.scrollWidth <= e.clientWidth + 1"), width
+        const box=element.getBoundingClientRect();
+        const group=element.closest('.participation-guide__group').getBoundingClientRect();
+        return element.scrollHeight<=element.clientHeight+1 && element.scrollWidth<=element.clientWidth+1
+            && box.left>=group.left-1 && box.right<=group.right+1;
+    })"""), (width,"unclipped conditions and business badges")
+    assert await region.evaluate("e=>e.scrollWidth<=e.clientWidth+1"),width
 
 
 async def assert_collapsed_notes(region):
-    buttons = region.locator(".participation-guide__notes-button")
-    await expect(buttons).to_have_count(await region.locator(".participation-guide__notes").count())
-    for button in await buttons.all():
-        panel = region.locator(f'[id="{await button.get_attribute("aria-controls")}"]')
-        count = await panel.locator("li").count()
-        assert count > 0
-        await expect(button).to_have_attribute("aria-expanded", "false")
-        await expect(button).to_have_attribute("aria-label", re.compile(rf" 예외·추가 조건 {count}개 펼치기$"))
-        await expect(button).to_contain_text("예외·추가 조건")
-        await expect(button.locator(".participation-guide__notes-count")).to_have_text(str(count))
-        await expect(panel).to_be_hidden()
+    for rule in await region.locator('.participation-guide__rule').filter(has=region.page.locator('.participation-guide__notes')).all():
+        button=rule.locator('.participation-guide__condition-toggle')
+        notes=rule.locator('.participation-guide__notes')
+        count=await notes.locator('li').count()
+        assert count>0
+        await expect(button).to_have_attribute('aria-expanded','false')
+        await expect(button).to_have_attribute('aria-label',re.compile(rf'세부 설명 {count}개$'))
+        await expect(notes).to_be_hidden()
 
 
 async def set_all_notes(region, opened):
-    for button in await region.locator(".participation-guide__notes-button").all():
-        panel = region.locator(f'[id="{await button.get_attribute("aria-controls")}"]')
-        originals = await panel.locator("li").all_text_contents()
-        if (await button.get_attribute("aria-expanded") == "true") != opened:
+    for rule in await region.locator('.participation-guide__rule').filter(has=region.page.locator('.participation-guide__notes')).all():
+        button=rule.locator('.participation-guide__condition-toggle')
+        notes=rule.locator('.participation-guide__notes')
+        originals=await notes.locator('li').all_text_contents()
+        if (await button.get_attribute('aria-expanded')=='true')!=opened:
             await button.click()
-        await expect(button).to_have_attribute("aria-expanded", str(opened).lower())
+        await expect(button).to_have_attribute('aria-expanded',str(opened).lower())
+        await expect(notes.locator('li')).to_have_text(originals)
         if opened:
-            await expect(panel).to_be_visible()
-            await expect(panel.locator("li")).to_have_text(originals)
+            await expect(notes).to_be_visible()
         else:
-            await expect(panel).to_be_hidden()
+            await expect(notes).to_be_hidden()
 
 
 async def check(browser):
-    h = await summary.refresh.Harness(browser).start()
+    h=await summary.refresh.Harness(browser).start()
     try:
-        data = summary.ready()
-        data["participationGuide"] = guide("PENDING")
-        h.states[1] = data
+        data=summary.ready()
+        data['participationGuide']=guide('PENDING')
+        h.states[1]=data
         await h.open(analysis_tab=False)
-        region = h.page.get_by_role("region", name="신청 자격", exact=True)
-        await expect(region.get_by_role("table")).to_have_count(0)
-        await expect(region.get_by_role("status")).to_be_visible()
-        await expect(region.locator(".participation-guide__unresolved")).to_have_count(0)
-        await expect(region.locator("blockquote")).to_have_count(0)
-        before = h.counts[1]
-        ready = copy.deepcopy(data)
-        ready["participationGuide"] = guide()
-        h.states[1] = ready
+        region=h.page.get_by_role('region',name='신청 자격',exact=True)
+        await expect(region.locator('.participation-guide__group')).to_have_count(0)
+        await expect(region.get_by_role('status')).to_be_visible()
+        await expect(region.locator('blockquote')).to_have_count(0)
+        before=h.counts[1]
+        ready=copy.deepcopy(data)
+        ready['participationGuide']=guide()
+        h.states[1]=ready
         await h.page.clock.run_for(3100)
-        await h.wait_request(1, before + 1)
-        expected = [value["entries"][0]["rule"]["text"] for value in ready["participationGuide"]["categories"][0]["rows"]]
-        await expect(region.locator(".participation-guide__main")).to_have_text(expected)
-        await expect(region.get_by_role("status")).to_have_count(0)
-        await expect(region.locator(".participation-guide__unresolved")).to_have_count(0)
-        await expect(region.locator(".participation-guide__evidence-button")).to_have_count(7)
+        await h.wait_request(1,before+1)
+        expected=[v['entries'][0]['rule']['text'] for v in ready['participationGuide']['categories'][0]['rows']]
+        await expect(region.locator('.participation-guide__main')).to_have_text(expected)
+        await expect(region.get_by_role('status')).to_have_count(0)
+        await expect(region.locator('.participation-guide__condition-toggle')).to_have_count(7)
+        await expect(region.locator('.participation-guide__group-heading h4')).to_have_text([
+            '신청 주체','업력','매출·수출','특허·인증·지정','업종·품목·서비스','실적·수행 역량','지원 제외 대상'])
+        await expect(region.locator('.participation-guide__number')).to_have_count(0)
         await expect(region.locator('[data-condition-kind="preference"]')).to_have_count(1)
         await expect(region.locator('[data-condition-kind="exclusion"]')).to_have_count(1)
-        await expect(region.locator(".participation-guide__unscoped:visible")).to_have_count(5)
-        await expect(region.locator(".participation-guide__audience:visible")).to_have_text(["주관기관"])
-        await region.get_by_role("navigation", name="신청 자격 항목 바로가기", exact=True).get_by_role("link", name="매출·수출", exact=True).click()
+        await expect(region.locator('[data-criterion] [data-condition-kind="exclusion"]')).to_have_count(0)
+        await expect(region.locator('.participation-guide__groups > section').last).to_have_class(re.compile('participation-guide__exclusions'))
+        await expect(region.locator('.participation-guide__unscoped:visible')).to_have_count(5)
+        await expect(region.locator('.participation-guide__audience')).to_have_count(0)
+        await region.get_by_role('navigation',name='신청 자격 항목 바로가기',exact=True).get_by_role('link',name='매출·수출',exact=True).click()
         await expect(region.locator('[data-criterion="REVENUE"]')).to_be_focused()
         await assert_collapsed_notes(region)
-
-        notes = region.get_by_role("button", name=re.compile(r"^업력 필수 조건 예외·추가 조건 1개 (?:펼치기|접기)$"))
-        age_notes = region.locator('[data-criterion="BUSINESS_AGE"] .participation-guide__notes')
-        evidence = region.get_by_role("button", name=re.compile(r"^업력 필수 조건 원문 근거 (?:확인|접기)$"))
-        await notes.focus()
-        await notes.press("Enter")
-        await expect(age_notes.locator("li")).to_have_text([AGE_NOTE])
-        await evidence.press("Enter")
-        await expect(region.locator("blockquote")).to_have_text(AGE_QUOTE)
-        await expect(age_notes).to_be_visible()
-        await region.get_by_label("원문 선택", exact=True).select_option("1")
-        await expect(region.get_by_role("link", name="근거 문서 열기")).to_have_attribute("href", "https://example.org/notice.pdf")
-        await notes.press("Space")
-        await expect(age_notes).to_be_hidden()
-        await expect(region.locator("blockquote")).to_be_visible()
-        await evidence.press("Space")
-        await expect(region.locator("blockquote")).to_have_count(0)
+        age=region.locator('[data-criterion="BUSINESS_AGE"]')
+        toggle=age.locator('.participation-guide__condition-toggle')
+        await toggle.focus()
+        await toggle.press('Enter')
+        await expect(age.locator('.participation-guide__notes li')).to_have_text([AGE_NOTE])
+        await expect(region.locator('blockquote')).to_have_count(0)
+        await age.locator('.participation-guide__source-toggle').press('Enter')
+        await expect(region.locator('blockquote')).to_have_text(AGE_QUOTE)
+        await region.get_by_label('원문 선택',exact=True).select_option('1')
+        await expect(region.get_by_role('link',name='근거 문서 열기')).to_have_attribute('href','https://example.org/notice.pdf')
+        await toggle.press('Space')
+        await expect(age.locator('.participation-guide__notes')).to_be_hidden()
+        await expect(region.locator('blockquote')).to_have_count(0)
         await h.stopped()
-        OUT.mkdir(parents=True, exist_ok=True)
-        for width in (1440, 768, 390, 320):
-            await h.page.set_viewport_size(dict(width=width, height=1100))
-            await assert_responsive_condition_table(region, width)
-            await expect(region.locator(".participation-guide__main")).to_have_text(expected)
-            await expect(region.locator("tbody tr")).to_have_count(7)
-            await region.evaluate("""element => {
-                const drawer = element.closest('.drawer');
-                drawer.scrollTop += element.getBoundingClientRect().top - drawer.getBoundingClientRect().top
-                    - drawer.querySelector('.drawer__top').offsetHeight - 12;
-            }""")
-            await h.page.screenshot(path=str(OUT / f"verified-{width}.png"))
-            await notes.press("Enter")
-            await evidence.press("Enter")
-            await expect(age_notes).to_be_visible()
-            await expect(region.locator("blockquote")).to_have_text(AGE_QUOTE)
-            await assert_responsive_condition_table(region, width)
-            await evidence.press("Space")
-            await notes.press("Space")
-        await notes.press("Enter")
-        await evidence.press("Enter")
-        second = copy.deepcopy(ready)
+        OUT.mkdir(parents=True,exist_ok=True)
+        for width in (1440,768,390,320):
+            await h.page.set_viewport_size(dict(width=width,height=1100))
+            await assert_responsive_condition_groups(region,width)
+            await expect(region.locator('.participation-guide__main')).to_have_text(expected)
+            await expect(region.locator('.participation-guide__rule')).to_have_count(7)
+            await region.scroll_into_view_if_needed()
+            await h.page.screenshot(path=str(OUT/f'verified-{width}.png'))
+            await toggle.press('Enter')
+            await expect(age.locator('.participation-guide__notes')).to_be_visible()
+            await expect(region.locator('blockquote')).to_have_count(0)
+            await age.locator('.participation-guide__source-toggle').press('Enter')
+            await expect(region.locator('blockquote')).to_have_text(AGE_QUOTE)
+            await assert_responsive_condition_groups(region,width)
+            await toggle.press('Space')
+        await toggle.press('Enter')
+        second=copy.deepcopy(ready)
         second.update(summary.refresh.row(2))
-        h.states[2] = second
-        await h.page.get_by_role("button", name="목록으로", exact=True).click()
-        await h.open(identifier=2, analysis_tab=False)
-        await expect(region.locator("blockquote")).to_have_count(0)
+        h.states[2]=second
+        await h.page.get_by_role('button',name='목록으로',exact=True).click()
+        await h.open(identifier=2,analysis_tab=False)
+        await expect(region.locator('blockquote')).to_have_count(0)
         await expect(region.locator('button[aria-expanded="true"]')).to_have_count(0)
         await assert_collapsed_notes(region)
-        assert not h.errors and not h.unexpected, (h.errors, h.unexpected)
+        assert not h.errors and not h.unexpected,(h.errors,h.unexpected)
     finally:
         await h.close()
 
@@ -192,7 +181,7 @@ async def source_only_states(browser):
             region = h.page.get_by_role("region", name="신청 자격", exact=True)
             await expect(region.get_by_role("table")).to_have_count(0)
             await expect(region.get_by_role("status")).to_have_count(0)
-            await expect(region).to_contain_text("완료하지 못했습니다" if status == "UNAVAILABLE" else "정리된 신청 조건이 없습니다")
+            await expect(region).to_contain_text("완료하지 못했습니다" if status == "UNAVAILABLE" else "정리된 신청 조건을 찾지 못했습니다")
             await expect(region).not_to_contain_text("재시도")
             await expect(region.locator("blockquote")).to_have_count(0)
             await expect(region.locator(".participation-guide__unresolved")).to_have_count(0)
@@ -229,9 +218,11 @@ async def server_text_and_exact_duplicates(browser):
         await h.open(analysis_tab=False)
         region = h.page.get_by_role("region", name="신청 자격", exact=True)
         await expect(region.locator(".participation-guide__main")).to_have_text([text, different["rule"]["text"], text])
+        await expect(region.locator(".participation-guide__number")).to_have_text(["1", "2", "3"])
+        await expect(region.get_by_role("navigation")).to_have_count(0)
         await expect(region.locator("img")).to_have_count(0)
         assert await h.page.evaluate("window.__injected === undefined")
-        await region.locator(".participation-guide__evidence-button").first.press("Enter")
+        await region.locator(".participation-guide__condition-toggle").first.press("Enter")
         await expect(region.get_by_label("원문 선택", exact=True).locator("option")).to_have_count(2)
         await region.get_by_label("원문 선택", exact=True).select_option("1")
         await expect(region.locator("blockquote")).to_have_text("다른 형식의 실제 원문")
@@ -265,6 +256,8 @@ async def selected_program_retains_common_conditions(browser):
         await expect(region.locator(".participation-guide__notes")).to_be_visible()
         await expect(region.locator(".participation-guide__notes li")).to_have_text(["최근 3개년(’23~’25년) 실적을 기준으로 확인", "창업 3년 미만 추천기업도 신청대상에 포함"])
         await expect(region.locator("blockquote")).to_have_count(0)
+        await region.locator('.participation-guide__source-toggle').press('Enter')
+        await expect(region.locator("blockquote")).to_have_count(1)
         await expect(region).to_contain_text("기업부설연구소를 보유한 기업이 지원 대상입니다.")
         await region.get_by_role("button", name="전체 보기", exact=True).focus()
         await h.page.keyboard.press("Enter")
@@ -320,18 +313,18 @@ async def cached_business_labels(browser):
         region = h.page.get_by_role("region", name="신청 자격", exact=True)
         for width in (1440, 390, 320):
             await h.page.set_viewport_size(dict(width=width, height=1100))
-            await assert_responsive_condition_table(region, width)
+            await assert_responsive_condition_groups(region, width)
             await expect(region).not_to_contain_text("실제 사업·과제유형")
             await expect(region).not_to_contain_text("신청역할")
             await expect(region).not_to_contain_text("적용 유형")
             await expect(region.locator(".participation-guide__unscoped:visible")).to_have_text("원문 확인 필요")
             await expect(region.locator(".participation-guide__program:visible")).to_have_text(["전체 사업 공통", "초기창업패키지 · 일반형"])
-            await expect(region.locator(".participation-guide__audience:visible")).to_have_text(["주관기관", "창업기업"])
-            await expect(region.locator(".participation-guide__role:visible")).to_have_text(["신청 대상: 주관기관", "신청 대상: 창업기업"])
+            await expect(region.locator(".participation-guide__audience:visible")).to_have_count(0)
+            await expect(region.locator(".participation-guide__role:visible")).to_have_count(0)
             await expect(region.locator(".participation-guide__main")).to_have_text([value["rule"]["text"] for value in values])
             await region.scroll_into_view_if_needed()
             await region.screenshot(path=str(OUT / f"business-labels-{width}.png"))
-        await region.locator(".participation-guide__evidence-button").first.press("Enter")
+        await region.locator(".participation-guide__condition-toggle").first.press("Enter")
         await expect(region.locator("blockquote")).to_have_text(text)
         await h.stopped()
         assert not h.errors and not h.unexpected, (h.errors, h.unexpected)
@@ -341,8 +334,8 @@ async def cached_business_labels(browser):
 
 async def business_scope_absence_and_uncertainty(browser):
     for case, scope, variants, expected in [
-        ("no-division", None, [], "-"),
-        ("cached-description", "실제 사업·과제유형(명시공통='공통')", [], "-"),
+        ("no-division", None, [], None),
+        ("cached-description", "실제 사업·과제유형(명시공통='공통')", [], None),
         ("explicit-review", "확인 필요", [], "원문 확인 필요"),
         ("declared-types", None, [dict(name="유형1", description="일반형"), dict(name="유형2", description="성장형")], "원문 확인 필요"),
     ]:
@@ -358,14 +351,17 @@ async def business_scope_absence_and_uncertainty(browser):
             region = h.page.get_by_role("region", name="신청 자격", exact=True)
             for width in (1440, 390, 320):
                 await h.page.set_viewport_size(dict(width=width, height=1100))
-                await assert_responsive_condition_table(region, width)
-                await expect(region.locator(".participation-guide__unscoped:visible")).to_have_text(expected)
+                await assert_responsive_condition_groups(region, width)
+                if expected:
+                    await expect(region.locator(".participation-guide__unscoped:visible")).to_have_text(expected)
+                else:
+                    await expect(region.locator(".participation-guide__context")).to_have_count(0)
                 await expect(region.locator(".participation-guide__main")).to_have_text(text)
                 await expect(region.locator(".participation-guide__program:visible")).to_have_count(0)
                 await expect(region.locator(".participation-guide__filter")).to_have_count(0)
                 await region.scroll_into_view_if_needed()
                 await region.screenshot(path=str(OUT / f"scope-{case}-{width}.png"))
-            await region.locator(".participation-guide__evidence-button").press("Enter")
+            await region.locator(".participation-guide__condition-toggle").press("Enter")
             await expect(region.locator("blockquote")).to_have_text(text)
             await h.stopped()
             assert not h.errors and not h.unexpected, (h.errors, h.unexpected)
@@ -373,11 +369,93 @@ async def business_scope_absence_and_uncertainty(browser):
             await h.close()
 
 
+async def exclusions_only(browser):
+    h = await summary.refresh.Harness(browser).start()
+    try:
+        data = summary.ready()
+        value = entry("휴업 중인 기업은 지원에서 제외됩니다.", "EXCLUSION", scope="상위 구역")
+        data["participationGuide"] = dict(conditions=[], rules=[], variants=[], rewriteStatus="READY",
+            categories=[dict(code="COMPANY_REQUIREMENTS", label="신청 자격", rows=[
+                dict(code="CREDIT", label="신용", status="STATED", entries=[value])])])
+        h.states[1] = data
+        await h.open(analysis_tab=False)
+        region = h.page.get_by_role("region", name="신청 자격", exact=True)
+        await expect(region.locator(".participation-guide__group-heading h4")).to_have_text(["지원 제외 대상"])
+        await expect(region.locator("[data-criterion]")).to_have_count(0)
+        await expect(region.locator(".participation-guide__context")).to_have_count(0)
+        await expect(region.get_by_text("정리된 신청 조건을 찾지 못했습니다.")).to_have_count(0)
+        await region.locator(".participation-guide__condition-toggle").press("Enter")
+        await expect(region.locator("blockquote")).to_have_text(value["rule"]["text"])
+        for width in (900, 390, 320):
+            await h.page.set_viewport_size(dict(width=width, height=1000))
+            await assert_responsive_condition_groups(region, width)
+        await h.stopped()
+        assert not h.errors and not h.unexpected, (h.errors, h.unexpected)
+    finally:
+        await h.close()
+
+
+async def parent_explanations(browser):
+    h = await summary.refresh.Harness(browser).start()
+    try:
+        main = "공급망안정품목 또는 전략물자를 생산하는 중소·중견기업이 신청할 수 있습니다."
+        explanations = ["공급망안정품목은 소부장특별법에 따라 선정된 품목입니다.",
+                        "전략물자는 대외무역법에 따라 지정·고시되는 품목입니다.",
+                        "공급망안정품목 해당 여부는 경제안보품목위원회의 확인서로 확인합니다."]
+        parent = entry(main)
+        parent['rule']['details'] = explanations
+        parent['rule']['sources'][0]['excerpt'] = main + "\n" + "\n".join(explanations)
+        data = summary.ready()
+        data['participationGuide'] = guide()
+        data['participationGuide']['categories'][0]['rows'] = [
+            dict(code='SECTOR', label='업종', status='STATED', entries=[parent]),
+            dict(code='BUSINESS_AGE', label='업력', status='STATED', entries=[entry(AGE)]),
+            dict(code='CREDIT', label='신용', status='STATED', entries=[entry('국세 체납기업은 지원에서 제외됩니다.', 'EXCLUSION')])]
+        h.states[1] = data
+        await h.open(analysis_tab=False)
+        region = h.page.get_by_role('region', name='신청 자격', exact=True)
+        await expect(region.locator('.participation-guide__main')).to_have_count(3)
+        await expect(region.locator('[data-criterion="IP"], [data-criterion="EXPERIENCE"]')).to_have_count(0)
+        rule = region.locator('[data-criterion="SECTOR"] .participation-guide__rule')
+        await expect(rule.locator('.participation-guide__group-count')).to_have_count(0)
+        await expect(rule.locator('.participation-guide__notes')).to_be_hidden()
+        button = rule.locator('button.participation-guide__condition-toggle')
+        await button.press('Enter')
+        await expect(rule.locator('.participation-guide__notes li')).to_have_text(explanations)
+        await expect(rule.locator('.participation-guide__notes')).to_be_visible()
+        await expect(rule.locator('blockquote')).to_have_count(0)
+        evidence_toggle = rule.get_by_role('button', name='원문 근거 펼치기', exact=True)
+        await expect(evidence_toggle).to_have_attribute('aria-expanded', 'false')
+        assert await rule.evaluate("""element => {
+            const notes = element.querySelector('.participation-guide__notes');
+            const evidence = element.querySelector('.participation-guide__evidence-panel');
+            return notes.parentElement === evidence.parentElement
+                && notes.getBoundingClientRect().bottom < evidence.getBoundingClientRect().top
+                && getComputedStyle(notes).backgroundColor !== getComputedStyle(evidence).backgroundColor;
+        }"""), 'explanations and sources have distinct sibling surfaces with whitespace'
+        await evidence_toggle.press('Space')
+        await expect(rule.locator('blockquote')).to_contain_text(explanations[0])
+        await rule.locator('.participation-guide__source-toggle').press('Enter')
+        await expect(rule.locator('blockquote')).to_have_count(0)
+        await expect(rule.locator('.participation-guide__notes')).to_be_visible()
+        await expect(region.locator('.participation-guide__exclusions .participation-guide__main')).to_have_count(1)
+        for width in (1440, 768, 390, 320):
+            await h.page.set_viewport_size(dict(width=width, height=1000))
+            await assert_responsive_condition_groups(region, width)
+        await button.press('Space')
+        await expect(rule.locator('.participation-guide__notes')).to_be_hidden()
+        assert not h.errors and not h.unexpected, (h.errors, h.unexpected)
+    finally:
+        await h.close()
+
+
 async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch(channel="msedge", headless=True)
         try:
+            await parent_explanations(browser)
             await check(browser)
+            await exclusions_only(browser)
             await cached_business_labels(browser)
             await business_scope_absence_and_uncertainty(browser)
             await source_only_states(browser)
@@ -386,7 +464,7 @@ async def main():
             await disappearing_program_filter_restores_all_conditions(browser)
         finally:
             await browser.close()
-    print("PASS seven server-owned fields; row evidence retained with no standalone card; empty/failed/pending states; exact duplicate citations; escaped text; independent notes/evidence; keyboard; four widths; filters without API calls; terminal polling stopped.")
+    print("PASS seven server-owned fields; row evidence retained with no standalone card; empty/failed/pending states; exact duplicate citations; escaped text; separate explanation and evidence disclosures; grouped numbering; no empty scope badge; keyboard; four widths; filters without API calls; terminal polling stopped.")
 
 
 asyncio.run(main())

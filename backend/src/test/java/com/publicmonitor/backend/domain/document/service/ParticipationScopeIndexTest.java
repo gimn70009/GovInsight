@@ -103,15 +103,10 @@ class ParticipationScopeIndexTest {
             String key = ReflectionTestUtils.invokeMethod(service, "fingerprint", oldInput.request(), "participation-seven-fields-v1");
             ReflectionTestUtils.setField(version, "participationRewriteKey", key);
             ReflectionTestUtils.setField(version, "participationRewriteJson", mapper.writeValueAsString(saved));
-            var guide = service.resolve(version, candidates.guide(), false, candidates.scopes());
-            assertThat(guide.rewriteStatus()).isEqualTo("READY");
-            assertThat(guide.categories().stream().flatMap(c -> c.rows().stream()).flatMap(r -> r.entries().stream())
-                    .filter(e -> "VERIFIED".equals(e.displayStatus()))).singleElement().satisfies(entry -> {
-                        assertThat(entry.rule().text()).isEqualTo(quote.replace("수 있음", "수 있습니다."));
-                        assertThat(entry.rule().scope()).isNull();
-                    });
-            ReflectionTestUtils.setField(version, "participationRewriteJson", mapper.writeValueAsString(Response.unavailable(oldInput.request())));
-            assertThat(service.resolve(version, candidates.guide(), false, candidates.scopes()).rewriteStatus()).isEqualTo("UNAVAILABLE");
+            assertThat(service.fingerprint(ParticipationRewriteProjection.input(
+                    candidates.guide(), false, candidates.scopes()).request())).isNotEqualTo(key);
+            var guide = ParticipationRewriteProjection.guide(candidates.guide(), newInput, saved, "READY");
+            assertThat(guide.rules()).singleElement().satisfies(rule -> assertThat(rule.scope()).isNull());
             verifyNoInteractions(client, store);
         } finally { service.close(); }
     }

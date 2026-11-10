@@ -10,7 +10,7 @@ export const companyFields = [
   { code: 'CREDIT', label: '신용·재무 요건' },
 ] as const
 
-const requiredSections = new Set(['BASIC', 'ELIGIBILITY', 'TARGETED', 'EXCLUSION'])
+const requiredSections = new Set(['BASIC', 'ELIGIBILITY', 'TARGETED'])
 
 export function companyConditionSourceKey(source: ParticipationRule['sources'][number]): string {
   return JSON.stringify([source.origin, source.attachmentName, source.sectionTitle, source.location, source.excerpt])
@@ -23,7 +23,7 @@ function uniqueSources(sources: ParticipationRule['sources']): ParticipationRule
 
 function displayable(entry: ParticipationCriterionEntry): boolean {
   return entry.displayStatus === 'VERIFIED' && Boolean(entry.rule.text.trim())
-    && (requiredSections.has(entry.rule.section) || entry.rule.section === 'PREFERENCE')
+    && (requiredSections.has(entry.rule.section) || entry.rule.section === 'PREFERENCE' || entry.rule.section === 'EXCLUSION')
 }
 
 /** Merge only exactly equal display contracts; interpreting meaning belongs to the server. */
@@ -58,12 +58,19 @@ export function companyParticipationRows(guide: ParticipationGuide | null | unde
   })
 }
 
+/** Exclusions form a single notice-level section, independent of the seven criteria. */
+export function companyParticipationExclusions(guide: ParticipationGuide | null | undefined) {
+  const entries = guide?.categories?.flatMap(category => category.rows.flatMap(row => row.entries)) ?? []
+  return identicalConditions(entries.filter(entry => displayable(entry) && entry.rule.section === 'EXCLUSION'))
+}
+
 // Old cached outputs sometimes contain the prompt's field descriptions instead of values.
 function contextLabel(value: string | null | undefined): string | null {
   const label = value?.trim()
   if (!label) return null
   const compact = label.replace(/\s+/g, '')
-  if (/^(?:scope|audience|null|신청역할|신청주체명|유형명|유형미지정|미확인|확인필요|적용범위확인필요)$/i.test(compact)
+  if (/^(?:scope|audience|parent|section|program|null|상위구역|원문구역|적용유형|신청자격|신청요건|신청자격및신청요건|지원대상|지원내용|사업개요|신청역할|신청주체명|유형명|유형미지정|미확인|확인필요|적용범위확인필요)$/i.test(compact)
+    || /^\[(?:상위구역|원문구역|적용유형)\]/.test(compact)
     || /^실제사업[·ㆍ]과제유형(?:\(.*\))?$/.test(compact)) return null
   return label
 }
@@ -79,7 +86,8 @@ export function companyConditionScope(entry: ParticipationCriterionEntry): strin
 
 /** Use the whole notice, not the currently filtered rows, to recognize an explicit business division. */
 export function companyHasBusinessDivision(guide: ParticipationGuide | null | undefined): boolean {
-  const scopes = companyParticipationRows(guide).flatMap(row => [...row.mandatory, ...row.preference])
+  const scopes = [...companyParticipationRows(guide).flatMap(row => [...row.mandatory, ...row.preference]),
+    ...companyParticipationExclusions(guide)]
     .map(companyConditionScope)
   return [...scopes, ...(guide?.variants ?? []).map(variant => contextLabel(variant.name))]
     .some(scope => scope?.split(' / ').some(part => part !== '공통'))

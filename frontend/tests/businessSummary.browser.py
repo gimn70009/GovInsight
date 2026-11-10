@@ -104,7 +104,7 @@ async def legacy_and_pending(browser):
         await expect(h.page.locator('.business-summary__description')).to_have_text('두 번째 공고의 분석입니다.')
         await expect(h.page.get_by_role('table', name='사업 핵심 정보').get_by_role('row', name='사업 담당기관')).to_contain_text('확인 필요')
         await expect(h.page.get_by_role('table', name='사업 핵심 정보').get_by_role('row', name='지원규모')).to_contain_text('확인 필요')
-        await expect(h.page.locator('.business-summary__documents-empty')).to_contain_text('제출서류 확인 필요')
+        await expect(h.page.get_by_role('region', name='제출서류', exact=True).locator('.section-status--empty')).to_contain_text('제출서류는 원문에서 확인해 주세요')
     finally:
         await h.close()
     h = await refresh.Harness(browser).start()
@@ -188,7 +188,7 @@ async def submission_guide_without_analysis(browser):
         await h.wait_request(2, 1)
         await expect(table).to_have_count(0)
         await expect(notes).to_have_count(0)
-        await expect(h.page.locator('.business-summary__documents-empty')).to_contain_text('제출서류 확인 필요')
+        await expect(h.page.get_by_role('region', name='제출서류', exact=True).locator('.section-status--empty')).to_contain_text('제출서류는 원문에서 확인해 주세요')
     finally:
         await h.close()
 
@@ -600,6 +600,45 @@ async def resolved_category_table(browser, guide_path=Path("backend/build/submis
         await h.close()
 
 
+async def grouped_document_names(browser):
+    h = await refresh.Harness(browser).start()
+    try:
+        names = ['투자이행확약서', '지자체지원금 부담 확약서']
+        label = ', '.join(names)
+        quote = '5  별첨 양식 제공 투자이행확약서, 지자체지원금 부담 확약서 공통 (필수제출)'
+        data = ready()
+        data['submissionGuide'] = dict(notesStatus='READY', notes=[], documents=[dict(
+            title=label, documentNames=names, requirementLevel='MANDATORY', stage='APPLICATION',
+            source=dict(origin='NOTICE_BODY', excerpt=quote))])
+        h.states[1] = data
+        await h.open(analysis_tab=False)
+        table = h.page.get_by_role('table', name='제출서류 안내')
+        row = table.locator('.business-summary__document-row')
+        await expect(row).to_have_count(1)
+        await expect(row.locator('.business-summary__document-name')).to_have_text(label)
+        await expect(row.locator('.business-summary__document-name-group')).to_have_count(0)
+        await expect(row.locator('.business-summary__stage')).to_have_text('신청 시')
+        await expect(row.locator('.business-summary__requirement')).to_have_text('필수')
+        toggle = row.get_by_role('button', name=re.compile('원문 근거 (?:확인|접기)$'))
+        await expect(toggle).to_have_count(1)
+        OUT.mkdir(parents=True, exist_ok=True)
+        for width in (1440, 768, 390, 320):
+            await h.page.set_viewport_size(dict(width=width, height=1000))
+            assert await table.evaluate('el => el.scrollWidth <= el.clientWidth + 1'), width
+            if width == 1440:
+                assert await row.locator('.business-summary__document-name').evaluate(
+                    'el => el.getBoundingClientRect().height <= parseFloat(getComputedStyle(el).lineHeight) + 1')
+            await toggle.focus()
+            await h.page.keyboard.press('Enter')
+            await expect(table.locator('blockquote')).to_have_text(quote)
+            await expect(table.locator('.business-summary__document-source > strong')).to_have_text(label + ' · 원문 근거')
+            await table.screenshot(path=str(OUT / f'grouped-documents-{width}.png'))
+            await h.page.keyboard.press('Space')
+            await expect(table.locator('blockquote')).to_have_count(0)
+    finally:
+        await h.close()
+
+
 async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch(channel=refresh.os.environ.get('BROWSER_CHANNEL', 'msedge'))
@@ -608,6 +647,7 @@ async def main():
             await resolved_category_table(browser, Path("backend/build/submission-actual/fixture-guide.json"))
             await resolved_category_table(browser, Path("backend/build/submission-actual/revised-fixture-guide.json"))
             await compact_submission_labels(browser)
+            await grouped_document_names(browser)
             await table_and_tabs(browser)
             await structured_submission_documents(browser)
             await compact_organizations_and_amounts(browser)

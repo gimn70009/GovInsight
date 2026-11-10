@@ -1,5 +1,6 @@
 import { BusinessTypeRow } from './BusinessTypeRow'
 import { ParticipationConditions } from './ParticipationConditions'
+import { SectionStatus } from './SectionStatus'
 import { Fragment, useId, useState } from 'react'
 import { CalendarDays, ChevronDown, CircleHelp, FileText, Banknote, ExternalLink, LayoutList } from 'lucide-react'
 import type { DocumentAttachment, DocumentDetail, ProposalPreparationItem, ResponsibleOrganization, SubmissionDocument, SubmissionGuide } from '../api/types'
@@ -30,13 +31,14 @@ function MissingValue({ hint }: { hint?: string }) {
 }
 
 function SubmissionDocumentRow({ item, detail, notes, commonNotes }: { item: SubmissionDocument; detail: DocumentDetail; notes: SubmissionGuide['notes']; commonNotes: SubmissionGuide['notes'] }) {
-  const [evidenceName, setEvidenceName] = useState<string | null>(null)
+  const [evidenceOpen, setEvidenceOpen] = useState(false)
   const [conditionsExpanded, setConditionsExpanded] = useState(false)
   const [formatsExpanded, setFormatsExpanded] = useState(false)
   const evidenceId = useId()
   const conditionsId = useId()
   const formatsId = useId()
   const { names, conditions: originalConditions, formats } = documentPresentation(item)
+  const documentLabel = names.join(', ')
   const displayedNotes = new Set([...notes, ...commonNotes].map(note => submissionNoteKey(note.text)))
   const conditions = originalConditions.filter(condition => !displayedNotes.has(submissionNoteKey(condition)))
   const hasGuidance = conditions.length > 0 || notes.length > 0
@@ -54,14 +56,12 @@ function SubmissionDocumentRow({ item, detail, notes, commonNotes }: { item: Sub
     <tr className="business-summary__document-row">
       <th scope="row">
         <div className="business-summary__document-names">
-          {names.map(name => <span key={name} className="business-summary__document-name-group">
-            <span className="business-summary__document-name">{name}</span>
-            <button type="button" className="business-summary__organization-toggle"
-              aria-label={`${name} 원문 근거 ${evidenceName === name ? '접기' : '확인'}`} aria-expanded={evidenceName === name} aria-controls={evidenceId}
-              onClick={() => setEvidenceName(value => value === name ? null : name)}>
-              <FileText size={15} aria-hidden="true" /><span>원문 근거 {evidenceName === name ? '접기' : '확인'}</span><ChevronDown size={14} aria-hidden="true" />
-            </button>
-          </span>)}
+          <span className="business-summary__document-name">{documentLabel}</span>
+          <button type="button" className="business-summary__organization-toggle"
+            aria-label={`${documentLabel} 원문 근거 ${evidenceOpen ? '접기' : '확인'}`} aria-expanded={evidenceOpen} aria-controls={evidenceId}
+            onClick={() => setEvidenceOpen(value => !value)}>
+            <FileText size={15} aria-hidden="true" /><span>원문 근거 {evidenceOpen ? '접기' : '확인'}</span><ChevronDown size={14} aria-hidden="true" />
+          </button>
         </div>
       </th>
       <td>
@@ -90,9 +90,9 @@ function SubmissionDocumentRow({ item, detail, notes, commonNotes }: { item: Sub
           role="region" aria-label={`${names.join(' · ')} 제출 조건`}>{guidance}</div>}
       </td>
     </tr>
-    {evidenceName && <tr className="business-summary__document-evidence-row">
+    {evidenceOpen && <tr className="business-summary__document-evidence-row">
       <td colSpan={2}><div id={evidenceId} className="business-summary__document-source">
-        <strong>{evidenceName} · 원문 근거</strong>
+        <strong>{documentLabel} · 원문 근거</strong>
         <SubmissionSource source={item.source} detail={detail} />
         {!conditional && hasGuidance && <div className="business-summary__document-details"
           role="region" aria-label={`${names.join(' · ')} 제출 안내`}>{guidance}</div>}
@@ -173,6 +173,7 @@ export function BusinessSummary({ detail }: { detail: DocumentDetail }) {
   const { common: notes, byDocument: documentNotes, unassigned } = submissionNoteGroups(documents, detail.submissionGuide?.notes)
   const notesStatus = detail.submissionGuide?.notesStatus
   const preparingDocuments = detail.analysisPending && analysis?.proposal.draftStatus === 'GENERATING'
+  const submissionPending = notesStatus === 'PENDING' || (documents.length === 0 && preparingDocuments)
 
   return <div className="business-summary">
     <section className="business-summary__card" aria-labelledby={headingId}>
@@ -206,9 +207,9 @@ export function BusinessSummary({ detail }: { detail: DocumentDetail }) {
         {documents.length > 0 && <span className="business-summary__heading-count">확인된 서류 {documents.length}건</span>}
       </header>
       <div className="business-summary__section-body">
-        {notesStatus === 'PENDING' && <p className="business-summary__footnote" role="status">
-          제출 유의사항을 정리하고 있습니다. 완료되면 자동으로 표시됩니다.
-        </p>}
+        {submissionPending && <SectionStatus state="loading" compact={documents.length > 0}
+          title={documents.length > 0 ? '제출 유의사항을 확인하고 있습니다' : '제출 정보를 확인하고 있습니다'}
+          description="확인이 끝나면 자동으로 반영됩니다." />}
         {notes.length > 0 && <aside className="business-summary__submission-notes" aria-label="제출 유의사항">
           <strong>제출 유의사항</strong>
           <ul>{notes.map((note, index) => <SubmissionNoteRow key={`${detail.detectionId}-${note.text}-${index}`} note={note} detail={detail} />)}</ul>
@@ -219,10 +220,8 @@ export function BusinessSummary({ detail }: { detail: DocumentDetail }) {
             <tbody>{documents.map((item, index) => <SubmissionDocumentRow
               key={`${detail.detectionId}-${item.title}-${index}`} item={item} detail={detail} notes={documentNotes[index]} commonNotes={notes} />)}</tbody>
           </table>
-        </div> : <div className="business-summary__documents-empty">
-          <FileText size={21} aria-hidden="true" /><div><strong>{preparingDocuments ? '제출서류를 정리하고 있습니다' : '제출서류 확인 필요'}</strong>
-            <p>{preparingDocuments ? '분석이 완료되면 자동으로 표시됩니다.' : '저장된 공고 본문·첨부와 분석에서 제출서류를 확인하지 못했습니다. 공고 원문을 확인해 주세요.'}</p></div>
-        </div>}
+        </div> : !submissionPending && <SectionStatus state="empty"
+          title="제출서류는 원문에서 확인해 주세요" description="정리된 제출서류 목록을 찾지 못했습니다." />}
         {unassigned.length > 0 && <aside className="business-summary__submission-notes business-summary__unassigned-notes" aria-label="서류별 추가 안내">
           <strong>서류별 추가 안내</strong>
           <ul>{unassigned.map((note, index) => <SubmissionNoteRow key={`${detail.detectionId}-${note.text}-${index}`} note={note} detail={detail} />)}</ul>

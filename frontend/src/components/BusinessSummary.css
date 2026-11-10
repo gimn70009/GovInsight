@@ -32,10 +32,8 @@
 .business-summary__documents th:first-child { width: 58%; }
 .business-summary__documents tbody th { color: #182638; background: #fff; font-size: 14px; font-weight: 600; }
 .business-summary__documents td { background: #fff; font-size: 13px; }
-.business-summary__document-names { display: grid; gap: 16px; min-width: 0; }
-.business-summary__document-name-group { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; min-width: 0; max-width: 100%; }
+.business-summary__document-names { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; min-width: 0; }
 .business-summary__document-name { min-width: 0; max-width: 100%; color: #182638; font-size: 14px; font-weight: 650; line-height: 1.8; white-space: normal; overflow-wrap: anywhere; }
-.business-summary__document-name-group > button { flex: 0 1 auto; }
 .business-summary__document-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; min-height: 30px; }
 .business-summary__requirement, .business-summary__stage, .business-summary__format, .business-summary__formats-toggle { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; min-height: 29px; padding: 4px 9px; border: 1px solid transparent; border-radius: 6px; font-size: 12px; font-weight: 650; line-height: 1.5; text-align: left; white-space: normal; overflow-wrap: anywhere; }
 .business-summary__requirement.is-mandatory { background: #e5efff; border-color: #b8d3fb; color: #1c55ac; }
@@ -60,11 +58,7 @@
 .business-summary__document-source blockquote, .business-summary__organization-source blockquote, .business-summary__note-source blockquote { margin: 10px 0 0; padding-left: 10px; border-left: 2px solid #cbd9eb; white-space: pre-line; }
 .business-summary__document-source a, .business-summary__organization-source a, .business-summary__note-source a { display: inline-flex; align-items: center; gap: 4px; margin-top: 10px; color: #2764a8; }
 .business-summary__document-source:not(.participation-guide__source) blockquote, .business-summary__organization-source blockquote, .business-summary__note-source blockquote { padding: 12px; border: 1px solid #dce7f6; border-radius: 7px; background: #fff; white-space: pre-wrap; }
-.business-summary__documents-empty { display: flex; align-items: flex-start; gap: 12px; padding: 21px; border: 1px dashed #d8e1ec; border-radius: 12px; color: #748196; background: #fbfcfe; }
-.business-summary__documents-empty > svg { flex: 0 0 auto; margin-top: 2px; }
-.business-summary__documents-empty strong { color: #586b83; font-size: 14px; font-weight: 600; }
-.business-summary__documents-empty p, .business-summary__footnote { margin: 6px 0 0; color: #61748b; font-size: 12px; line-height: 1.7; }
-.business-summary__footnote { margin-top: 11px; }
+.business-summary__footnote { margin: 11px 0 0; color: #61748b; font-size: 12px; line-height: 1.7; }
 .business-summary__status { padding: 12px 16px; margin: 0 0 16px; background: #f1f6fd; border-radius: 8px; font-size: 13px; line-height: 1.7; color: #566b88; }
 .detail-tabs.detail-tabs--summary { gap: 5px; padding-left: 6px; padding-right: 6px; }
 .detail-tabs.detail-tabs--summary button { white-space: nowrap; padding-left: 18px; padding-right: 18px; }
@@ -92,7 +86,6 @@
   .business-summary__documents .business-summary__document-row > th { border-bottom: 0; padding-bottom: 10px; }
   .business-summary__documents .business-summary__document-row > td { border-top: 0; padding-top: 0; padding-bottom: 17px; }
   .business-summary__documents .business-summary__document-evidence-row > td { padding-top: 0; }
-  .business-summary__document-names { gap: 9px; }
   .business-summary__document-name { font-size: 14px; }
   .business-summary__requirement, .business-summary__stage, .business-summary__formats-toggle { font-size: 11px; padding-inline: 7px; }
   .business-summary__documents tbody th { font-size: 13px; }
@@ -146,7 +139,6 @@
 .business-summary__organization-toggle > span, .business-summary__document-meta button > span { min-width: 0; }
 .business-summary__document-meta button { min-height: 36px; }
 .business-summary__organization > .business-summary__organization-toggle { flex: 0 1 auto; }
-.business-summary__document-name-group + .business-summary__document-name-group { padding-top: 14px; border-top: 1px solid #edf1f6; }
 @media (max-width: 600px) {
   .business-summary__organization-toggle { padding: 7px 9px; font-size: 11px; }
   .business-summary__document-conditions { font-size: 12px; }

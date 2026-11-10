@@ -80,6 +80,14 @@ class PreparedRow(StrictModel):
     criteria: list[Criterion]
 
 
+class ConditionDetail(StrictModel):
+    source_ids: list[str] = Field(min_length=1, max_length=4)
+    text: str = Field(min_length=1, max_length=240)
+    supporting_quotes: list[Annotated[str, Field(min_length=1, max_length=600)]] = Field(
+        min_length=1, max_length=4
+    )
+
+
 class Statement(StrictModel):
     source_ids: list[str]
     criterion: CriterionCode
@@ -89,6 +97,7 @@ class Statement(StrictModel):
     kind: Literal["ELIGIBILITY", "EXCLUSION", "PREFERENCE", "DEDUCTION", "FUNDING"]
     scope: str | None = Field(default=None, max_length=100)
     audience: str | None = Field(default=None, max_length=100)
+    details: list[ConditionDetail] = Field(default_factory=list, max_length=6)
 
 
 class Draft(StrictModel):

@@ -467,8 +467,8 @@ def test_participation_model_settings_do_not_inherit_other_sections(monkeypatch)
     monkeypatch.delenv("PARTICIPATION_REWRITE_REASONING_EFFORT", raising=False)
     monkeypatch.setenv("REPORT_BRIEF_MODEL", "unrelated-model")
     settings = RewriteSettings.from_env()
-    assert settings.model == "gpt-5-nano"
-    assert settings.reasoning_effort == "minimal"
+    assert settings.model == "gpt-5-mini"
+    assert settings.reasoning_effort == "low"
 
 
 def test_group_list_must_contain_only_real_source_tracks():

@@ -109,6 +109,7 @@ class ParticipationSourceSelectionTest {
         var mapper = new ObjectMapper();
         var client = mock(PythonParticipationRewriteClient.class);
         var store = mock(ParticipationRewriteStore.class);
+        when(store.claim(any(), anyString(), any(), anyString())).thenReturn(true);
         var saved = new CountDownLatch(1);
         when(client.rewrite(any(), any())).thenAnswer(invocation -> {
             Request request = invocation.getArgument(0);
@@ -125,7 +126,7 @@ class ParticipationSourceSelectionTest {
             assertThat(service.resolve(fresh, data, false).rewriteStatus()).isEqualTo("PENDING");
             assertThat(saved.await(3, TimeUnit.SECONDS)).isTrue();
             verify(client, times(1)).rewrite(any(), any());
-            verify(store).begin(97L, key);
+            verify(store).claim(eq(97L), eq(key), isNull(), anyString());
         } finally { service.close(); }
         var untouchedClient = mock(PythonParticipationRewriteClient.class);
         var untouchedStore = mock(ParticipationRewriteStore.class);
@@ -211,6 +212,7 @@ class ParticipationSourceSelectionTest {
     @Test void outboundSelectionKeepsOriginalFingerprintAndReusesTheResultAcrossRestart() throws Exception {
         var client = mock(PythonParticipationRewriteClient.class);
         var store = mock(ParticipationRewriteStore.class);
+        when(store.claim(any(), anyString(), any(), anyString())).thenReturn(true);
         var mapper = new ObjectMapper();
         var data = raw("공고.pdf", "공고.hwpx");
         var input = ParticipationRewriteProjection.input(data, false);
@@ -236,7 +238,7 @@ class ParticipationSourceSelectionTest {
             key = service.fingerprint(input.request());
             assertThat(service.resolve(version, data, false).rewriteStatus()).isEqualTo("PENDING");
             assertThat(saved.await(3, TimeUnit.SECONDS)).isTrue();
-            verify(store).begin(91L, key);
+            verify(store).claim(eq(91L), eq(key), isNull(), anyString());
             assertThat(version.getParticipationRewriteKey()).isEqualTo(key);
         } finally { service.close(); }
         var restarted = new ParticipationRewriteService(client, store, mapper);
@@ -253,16 +255,17 @@ class ParticipationSourceSelectionTest {
         } finally { restarted.close(); }
     }
 
-    @Test void malformedStoredCacheNeverTriggersPaidRepair() {
+    @Test void malformedStoredCacheForCurrentInputNeverTriggersPaidRepair() {
         for (String stored : List.of("{broken", "{\"status\":\"READY\"}", "{\"status\":\"PENDING\"}")) {
             var client = mock(PythonParticipationRewriteClient.class);
             var store = mock(ParticipationRewriteStore.class);
+            when(store.claim(any(), anyString(), any(), anyString())).thenReturn(true);
             var service = new ParticipationRewriteService(client, store, new ObjectMapper());
             try {
                 var data = raw("공고.hwpx", "공고.pdf");
                 var version = DocumentVersion.create(null, 1, "공고", "중소기업", "a".repeat(64), null, 0, null);
                 ReflectionTestUtils.setField(version, "id", 92L);
-                ReflectionTestUtils.setField(version, "participationRewriteKey", "old-cache");
+                ReflectionTestUtils.setField(version, "participationRewriteKey", service.fingerprint(ParticipationRewriteProjection.input(data, false).request()));
                 ReflectionTestUtils.setField(version, "participationRewriteJson", stored);
                 var result = service.resolve(version, data, false);
                 assertThat(result.rewriteStatus()).isNotEqualTo("PENDING");

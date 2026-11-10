@@ -41,7 +41,7 @@ async def states(browser):
     try:
         h.states[1] = ready("PENDING")
         await h.open(analysis_tab=False)
-        await expect(h.page.get_by_text("제출 유의사항을 정리하고 있습니다.", exact=False)).to_be_visible()
+        await expect(h.page.get_by_text("제출 유의사항을 확인하고 있습니다", exact=False)).to_be_visible()
         await expect(h.page.get_by_role("complementary", name="제출 유의사항", exact=True)).to_have_count(0)
         h.states[1] = ready()
         await h.tick()

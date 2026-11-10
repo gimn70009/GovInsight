@@ -186,7 +186,7 @@ async def main():
                     assert await documents.evaluate("el => el.scrollWidth <= el.clientWidth + 1"), width
                     await documents.screenshot(path=str(OUT / f"summary-documents-{mode}-{width}.png"))
             else:
-                await expect(page.get_by_text("제출서류 확인 필요", exact=True)).to_be_visible()
+                await expect(page.get_by_text("제출서류는 원문에서 확인해 주세요", exact=True)).to_be_visible()
             await page.get_by_role("button", name="사업 제안", exact=True).click()
             await expect(page.locator("#proposal-eligibility, #proposal-documents")).to_have_count(0)
         assert not errors, errors

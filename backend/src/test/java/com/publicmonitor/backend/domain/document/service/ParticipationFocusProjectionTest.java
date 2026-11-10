@@ -55,6 +55,21 @@ class ParticipationFocusProjectionTest {
         });
     }
 
+    @Test void exclusionsRetainTheirKindAndDiscardOnlyInternalScopeMarkers() {
+        String text = "기업신용평가등급이 B 미만인 기업은 지원에서 제외됩니다.";
+        for (String scope : List.of("상위 구역", "원문 구역", "[상위 구역] 지원 대상", "신청자격", "parent", "성장형")) {
+            var guide = project(raw(text), new Response(List.of(new Statement(List.of("s0"), "CREDIT", text,
+                    "", List.of(text), "EXCLUSION", scope, null)), List.of(), "READY"));
+            assertThat(entries(guide)).singleElement().satisfies(entry -> {
+                assertThat(entry.displayStatus()).isEqualTo("VERIFIED");
+                assertThat(entry.rule().section()).isEqualTo("EXCLUSION");
+                assertThat(entry.rule().text()).isEqualTo(text);
+                assertThat(entry.rule().scope()).isEqualTo("성장형".equals(scope) ? scope : null);
+                assertThat(entry.supportingQuotes()).containsExactly(text);
+            });
+        }
+    }
+
     @Test void oldCachedSingleClausesGainOnlyAnEndingAndKeepTheirMissingScope() {
         String age = "업력 7년 이내";
         String patent = "등록 특허 보유 시 2점 가점";
@@ -74,7 +89,7 @@ class ParticipationFocusProjectionTest {
         String quote = "특허를 보유한 기업 우대";
         var data = raw(quote);
         for (Statement statement : List.of(
-                new Statement(List.of("s0"), "IP", quote, "", List.of(quote), "EXCLUSION"),
+                new Statement(List.of("s0"), "IP", quote, "", List.of(quote), "FUNDING"),
                 new Statement(List.of("s0"), "TAX", quote, "", List.of(quote), "PREFERENCE"),
                 new Statement(List.of("missing"), "IP", quote, "", List.of(quote), "PREFERENCE"),
                 new Statement(List.of("s0"), "IP", quote, "", List.of("없는 근거"), "PREFERENCE"),

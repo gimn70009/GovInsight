@@ -95,7 +95,7 @@ def test_explicit_requirements_precede_parent_inherited_and_excluded_sections():
     assert focused.selection.prepare(excluded, focused.source_fields)[1] == 2
 
 
-def test_clear_sentence_prompt_keeps_the_previous_serialized_budget():
-    assert len(focused.PROMPT.encode()) <= 1535
+def test_clear_sentence_contract_fits_the_bounded_serialized_budget():
+    assert len(focused.PROMPT.encode()) <= 5500
     src = Source(id="one", excerpt="□ 신청자격\n업력 7년 이내 기업", group_label="신청자격")
-    assert focused.CallBudget().reserve(focused.model_messages([src]), focused.Extraction) <= 3081
+    assert focused.CallBudget().reserve(focused.model_messages([src]), focused.Extraction) <= 9000

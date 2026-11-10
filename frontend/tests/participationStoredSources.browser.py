@@ -32,7 +32,7 @@ async def check(browser, sample, original):
         region = h.page.get_by_role("region", name="신청 자격", exact=True)
         await expect(region.get_by_role("table")).to_have_count(0)
         await expect(region.locator(".participation-guide__main")).to_have_count(0)
-        await expect(region).to_contain_text("정리된 신청 조건이 없습니다.")
+        await expect(region).to_contain_text("정리된 신청 조건을 찾지 못했습니다.")
         await expect(region.get_by_role("status")).to_have_count(0)
         await expect(region.locator("blockquote")).to_have_count(0)
         await expect(region.locator(".participation-guide__unresolved")).to_have_count(0)

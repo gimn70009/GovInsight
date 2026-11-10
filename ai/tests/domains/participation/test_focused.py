@@ -142,21 +142,21 @@ def test_sdk_single_request_cheap_model_caps_and_usage_log(monkeypatch, caplog):
         result = asyncio.run(scenario())
     assert result.statements[0].text == quote
     assert len(payloads) == 1
-    assert payloads[0]["model"] == "gpt-5-nano"
-    assert payloads[0]["reasoning_effort"] == "minimal"
-    assert payloads[0]["max_completion_tokens"] == 2048
+    assert payloads[0]["model"] == "gpt-5-mini"
+    assert payloads[0]["reasoning_effort"] == "low"
+    assert payloads[0]["max_completion_tokens"] == 4096
     assert options[0]["max_retries"] == 0
     assert '"input_tokens": 120' in caplog.text
     assert quote not in caplog.text and "test-not-real" not in caplog.text
 
 
-def test_extended_budget_does_not_grow_and_qualification_gets_priority():
+def test_input_budget_stays_bounded_and_qualification_gets_priority():
     noise = [source(str(i), "산업 분야 소개 " * 20, "기관 소개") for i in range(15)]
     key = source("export", "지원대상 전년도 직접수출액 5,000만불 미만", "지원대상")
     selected = focused.select_sources(request(*noise, key))
     assert any(s.id == "export" for s in selected)
     assert sum(len(s.excerpt.encode("utf-8")) for s in selected) <= 8000
-    assert focused.MAX_OUTPUT_TOKENS <= 2048
+    assert focused.MAX_OUTPUT_TOKENS <= 4096
     assert len(selected) <= 12
 
 
@@ -388,7 +388,9 @@ def test_line_references_restore_exact_original_without_retyping_law_or_exceptio
     text = "□ 신청자격\r\n중소기업기본법 제2조에 따른 중소기업\r\n※ 단, 대기업은 제외"
     src = source("a", text)
     candidate = item(
-        "a", "BUSINESS_FORM", "L2-L3",
+        "a",
+        "BUSINESS_FORM",
+        "L2-L3",
         text="중소기업기본법 제2조에 따른 중소기업이 지원 대상입니다. 단, 대기업은 제외됩니다.",
     )
     result = focused.project(
@@ -407,9 +409,7 @@ def test_line_references_restore_exact_original_without_retyping_law_or_exceptio
 def test_invalid_line_reference_is_never_accepted(reference):
     src = source("a", "□ 신청자격\n중소기업")
     result = focused.project(
-        Extraction(
-            items=[item("a", "BUSINESS_FORM", reference)], unresolved_source_ids=[]
-        ),
+        Extraction(items=[item("a", "BUSINESS_FORM", reference)], unresolved_source_ids=[]),
         [src],
         request(src),
     )
@@ -421,9 +421,7 @@ def test_references_cannot_cross_synthetic_source_gap():
     req = request(source("a", raw, "공고"))
     selected = focused.select_sources(req)
     result = focused.project(
-        Extraction(
-            items=[item("a", "BUSINESS_FORM", "L2-L5")], unresolved_source_ids=[]
-        ),
+        Extraction(items=[item("a", "BUSINESS_FORM", "L2-L5")], unresolved_source_ids=[]),
         selected,
         req,
     )
@@ -478,9 +476,7 @@ def test_whitespace_only_evidence_never_reaches_model():
 def test_model_sentence_scope_role_and_exception_are_preserved_without_a_second_call():
     raw = "□ 신청자격\n주관기관은 지원역량을 보유한 대학 또는 연구기관. 단, 부설기관은 제외"
     text = "지원역량을 보유한 대학 또는 연구기관이 신청할 수 있습니다. 단, 부설기관은 제외됩니다."
-    candidate = item(
-        "one", "BUSINESS_FORM", "L2", text=text, scope="성장형", audience="주관기관"
-    )
+    candidate = item("one", "BUSINESS_FORM", "L2", text=text, scope="성장형", audience="주관기관")
     model = Fake([candidate])
     result = asyncio.run(service.rewrite(request(source("one", raw)), model))
     assert len(model.calls) == 1
@@ -548,9 +544,7 @@ def test_unfamiliar_terms_in_explicit_qualification_are_selected():
 
 def test_direct_qualification_does_not_spend_remaining_budget_on_other_roles():
     primary = source("main", "□ 신청자격\n공공기관", "신청자격")
-    secondary = source(
-        "buyer", "□ 신청자격\n공공기관", "[별도 참여 역할] 구매기관\n신청자격"
-    )
+    secondary = source("buyer", "□ 신청자격\n공공기관", "[별도 참여 역할] 구매기관\n신청자격")
     chosen = focused.select_sources(request(primary, secondary))
     assert [row.id for row in chosen] == ["main"]
     # When it is the only recruitment context, the model still receives the role.
@@ -563,7 +557,8 @@ def test_missing_scope_stays_unspecified_instead_of_using_section_title():
     src = source("one", "공공기관과 대학이 신청 가능", "신청자격 및 신청요건")
     result = focused.project(
         Extraction(items=[item(src.id, "BUSINESS_FORM", "L1")], unresolved_source_ids=[]),
-        [src], request(src),
+        [src],
+        request(src),
     )
     assert result.statements[0].scope is None
     assert result.statements[0].audience is None
@@ -571,8 +566,12 @@ def test_missing_scope_stays_unspecified_instead_of_using_section_title():
 
 def test_legacy_statement_without_scope_or_audience_remains_readable():
     value = {
-        "source_ids": ["one"], "criterion": "BUSINESS_FORM", "text": "중소기업입니다.",
-        "group_label": "신청자격", "supporting_quotes": ["중소기업"], "kind": "ELIGIBILITY",
+        "source_ids": ["one"],
+        "criterion": "BUSINESS_FORM",
+        "text": "중소기업입니다.",
+        "group_label": "신청자격",
+        "supporting_quotes": ["중소기업"],
+        "kind": "ELIGIBILITY",
     }
     statement = Statement.model_validate(value)
     assert statement.scope is None and statement.audience is None
@@ -588,16 +587,16 @@ def test_structure_enum_is_still_enforced(field, value):
         ExtractedCondition.model_validate(value_dict)
 
 
-def test_cost_limits_and_prompt_remain_within_the_previous_budget():
-    assert len(focused.PROMPT.encode("utf-8")) <= 2729
+def test_cost_limits_and_prompt_remain_bounded():
+    assert len(focused.PROMPT.encode("utf-8")) <= 5500
     assert focused.MAX_SOURCE_BYTES == 8000
     assert focused.MAX_INPUT_BYTES == 20000
-    assert focused.MAX_OUTPUT_TOKENS == 2048
+    assert focused.MAX_OUTPUT_TOKENS == 4096
     assert focused.MAX_SOURCES == 12
     assert focused.TIMEOUT_SECONDS == 45
     assert focused.DOCUMENT_TIMEOUT_SECONDS == 60
     assert "basis" not in ExtractedCondition.model_json_schema()["properties"]
-    assert Extraction.model_json_schema()["properties"]["items"]["maxItems"] == 12
+    assert Extraction.model_json_schema()["properties"]["items"]["maxItems"] == 32
 
 
 def test_empty_extraction_has_no_local_generated_conditions():
@@ -626,19 +625,17 @@ def test_selection_log_reports_counts_without_original_or_identifier(caplog):
     assert src.id not in caplog.text and src.excerpt not in caplog.text
 
 
-def test_serialized_prompt_source_and_schema_input_is_smaller_than_previous_contract():
+def test_serialized_prompt_source_and_schema_input_remains_bounded():
     selected = [source("one", "□ 신청자격\n업력 7년 이내 기업")]
-    # Baseline measured with the previous prompt/schema and these exact source fields.
-    previous_input_bytes = 4082
     actual = focused.CallBudget().reserve(focused.model_messages(selected), Extraction)
-    assert actual < previous_input_bytes
+    assert actual <= 9000
     assert actual <= focused.MAX_INPUT_BYTES
 
 
 def test_paid_input_omits_unused_rule_classifications():
     selected = [source("one", "대학이 신청할 수 있습니다.").model_copy(update={"criteria": ["IP"]})]
     payload = json.loads(focused.model_messages(selected)[1].content)
-    assert set(payload["sources"][0]) == {"id", "group_label", "excerpt"}
+    assert set(payload["sources"][0]) == {"id", "context", "excerpt"}
 
 
 @pytest.mark.parametrize("scope", [None, "공통", "확인 필요", "일반형"])
@@ -650,8 +647,75 @@ def test_scope_absence_and_explicit_uncertainty_survive_projection(scope):
             items=[item("one", "BUSINESS_FORM", "L1", text=quote, scope=scope)],
             unresolved_source_ids=[],
         ),
-        [src], request(src),
+        [src],
+        request(src),
     )
     assert len(result.statements) == 1
     assert result.statements[0].scope == scope
     assert result.statements[0].text == quote
+
+
+def test_generation_uses_line_references_but_legacy_quotes_still_ground():
+    import re
+
+    properties = ExtractedCondition.model_json_schema()["properties"]
+    pattern = properties["quote"]["pattern"]
+    for good in ("L1", "L2-L4", "L19-L23"):
+        assert re.fullmatch(pattern, good)
+    for bad in ("L2-L3-L3", "L1: 신청자격", "중소기업", "L0", "L2\nL3"):
+        assert re.fullmatch(pattern, bad) is None
+    # Provider generation is constrained; stored/mock original quotations remain usable.
+    src = source("one", "신청 대상은 중소기업입니다.")
+    value = item(src.id, "BUSINESS_FORM", src.excerpt)
+    result = focused.project(
+        Extraction(items=[value], unresolved_source_ids=[]), [src], request(src)
+    )
+    assert result.statements[0].supporting_quotes == [src.excerpt]
+    # Do not make a model append a forced ending to an incomplete or wrong condition.
+    assert "pattern" not in properties["text"]
+
+
+def test_exclusion_kind_and_exact_source_survive_projection():
+    quote = "국세 체납 기업은 지원에서 제외됩니다."
+    src = source("one", quote)
+    result = focused.project(
+        Extraction(
+            items=[item("one", "CREDIT", "L1", text=quote, kind="EXCLUSION")],
+            unresolved_source_ids=[],
+        ),
+        [src],
+        request(src),
+    )
+    assert result.statements[0].kind == "EXCLUSION"
+    assert result.statements[0].text == quote
+    assert result.statements[0].supporting_quotes == [quote]
+
+
+@pytest.mark.parametrize(
+    "scope", ["상위 구역", "원문 구역", "신청자격", "[상위 구역] 지원 대상", "parent"]
+)
+def test_internal_scope_metadata_does_not_hide_a_grounded_condition(scope):
+    quote = "중소기업이 신청할 수 있습니다."
+    src = source("one", quote)
+    result = focused.project(
+        Extraction(
+            items=[item("one", "BUSINESS_FORM", "L1", text=quote, scope=scope)],
+            unresolved_source_ids=[],
+        ),
+        [src],
+        request(src),
+    )
+    assert result.statements[0].scope is None
+    assert result.statements[0].text == quote
+
+
+def test_input_context_separates_actual_program_from_document_sections():
+    src = source("one", "신청 자격 원문").model_copy(
+        update={"group_label": "[상위 구역] 지원 대상\n[적용 유형] 성장형\n□ 신청자격"}
+    )
+    payload = json.loads(focused.model_messages([src])[1].content)
+    assert payload["sources"][0]["context"] == {
+        "parent": "지원 대상",
+        "program": "성장형",
+        "section": "□ 신청자격",
+    }

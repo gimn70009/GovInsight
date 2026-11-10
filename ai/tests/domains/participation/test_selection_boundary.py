@@ -135,10 +135,10 @@ def test_support_only_notice_does_not_start_an_unnecessary_model_call():
     assert result.evidence_only_ids == ["support"]
 
 
-def test_boundary_prompt_and_serialized_input_do_not_increase_the_previous_cost():
-    assert len(focused.PROMPT.encode()) <= 1562
+def test_boundary_prompt_and_schema_fit_the_bounded_input():
+    assert len(focused.PROMPT.encode()) <= 5500
     src = source("one", "□ 신청자격\n업력 7년 이내 기업", "신청자격")
-    assert focused.CallBudget().reserve(focused.model_messages([src]), focused.Extraction) <= 3106
+    assert focused.CallBudget().reserve(focused.model_messages([src]), focused.Extraction) <= 9000
 
 
 @pytest.mark.parametrize("body", [
@@ -198,3 +198,81 @@ def test_support_conditions_keep_actual_eligibility_without_inheriting_parent_pr
         request(src, direct), focused.source_fields, focused.CODES, 8000, 1,
     )
     assert limited == [direct]
+
+
+def test_public_manufacturing_keeps_specific_status_and_level_within_existing_budget():
+    notice = next(row for row in FIXTURES if row["id"] == 5)
+    originals = {row["id"]: Source.model_validate(row) for row in notice["sources"]}
+    selected = focused.select_sources(request(*originals.values()))
+    by_id = {row.id: row for row in selected}
+    assert "중간1" in by_id["s14"].excerpt
+    assert "도입기업" in by_id["s14"].excerpt and "공급기업" in by_id["s14"].excerpt
+    assert "제조데이터를 수집 중인" in by_id["s35"].excerpt
+    assert "사업 목적" not in by_id["s14"].excerpt + by_id["s35"].excerpt
+    for row in selected:
+        assert row.group_label == originals[row.id].group_label
+        for span in row.excerpt.split("\n[다음 원문 구간]\n"):
+            assert span in originals[row.id].excerpt
+    assert len(selected) <= 12
+    assert sum(len(row.excerpt.encode()) for row in selected) <= 8000
+    budget = focused.CallBudget().reserve(focused.model_messages(selected), focused.Extraction)
+    assert budget <= 20000
+
+
+@pytest.mark.parametrize("label", ["지원 대상", "신청대상", "참여 요건", "모집 자격"])
+def test_multiline_targets_keep_roles_exceptions_and_unknown_conditions(label):
+    target = (
+        f"◦ {label}\n- 도입기업: 수준 B 이상 기업\n- 공급기업: 전문인력 보유기관\n"
+        "◦ 다만, 신규 기업은 수준 요건을 적용하지 않습니다.\n"
+        "◦ 가나다 요건을 함께 충족해야 합니다.\n◦ 사업 목적에 부합하는 기업이어야 합니다.\n"
+        "※ 기준일은 접수 마감일입니다.\n"
+    )
+    raw = "□ 사업개요\n◦ (사업 목적) 장비 도입 촉진\n" + target + "◦ (지원내용) 장비 구입비 지원\n"
+    original = source("one", raw, "[상위 구역] 가 사업\n□ 사업개요")
+    selected = focused.select_sources(request(original))
+    assert len(selected) == 1
+    assert selected[0].excerpt == target
+    assert selected[0].group_label == original.group_label
+
+
+def test_overview_trimming_never_creates_a_false_contiguous_quote():
+    first = "◦ (지원대상) 기업\n"
+    second = "□ 신청자격\n업력 5년 이내 기업\n"
+    original = source(
+        "mixed", "□ 사업개요\n" + first + "◦ (지원내용) 장비 지원\n" + second, "사업개요",
+    )
+    selected = focused.select_sources(request(original))[0]
+    assert selected.excerpt == first + "\n[다음 원문 구간]\n" + second
+    for span in selected.excerpt.split("\n[다음 원문 구간]\n"):
+        assert span in original.excerpt
+
+
+def test_known_bounds_precede_bare_targets_without_dropping_their_exceptions():
+    bare = [source(str(i), "◦ (지원대상) 국내 기업", f"사업 {i}\n□ 사업개요") for i in range(15)]
+    detailed = source(
+        "later", "◦ 지원 대상\n- 업력 2년 이내 기업\n◦ 다만, 재창업 기업은 제외합니다.\n",
+        "후속 사업\n□ 사업개요",
+    )
+    selected = focused.select_sources(request(*bare, detailed))
+    assert detailed in selected
+    assert len(selected) <= 12
+
+
+def test_revised_prompt_preserves_input_caps_and_bounds_complete_output():
+    assert len(focused.PROMPT.encode()) <= 5500
+    assert focused.MAX_SOURCE_BYTES == 8000
+    assert focused.MAX_INPUT_BYTES == 20000
+    assert focused.MAX_SOURCES == 12
+    assert focused.MAX_OUTPUT_TOKENS == 4096
+
+
+@pytest.mark.parametrize("prefix", [
+    "신청기업은 국내에 소재해야 합니다.\n",
+    "◦ 공통요건: 국내 소재 기업\n",
+    "◦ 사업 목적에 부합하는 기업이어야 합니다.\n",
+])
+def test_unknown_leading_conditions_are_not_trimmed_as_overview(prefix):
+    raw = "□ 사업개요\n" + prefix + "◦ 지원 대상\n- 업력 2년 이내 기업\n"
+    original = source("common", raw, "사업개요")
+    selected = focused.select_sources(request(original))
+    assert selected == [original]

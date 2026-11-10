@@ -17,7 +17,9 @@ import static com.publicmonitor.backend.domain.document.client.ParticipationRewr
 @Service
 @org.springframework.context.annotation.Lazy
 public class ParticipationRewriteService {
-    private static final String VERSION = "participation-seven-fields-v3";
+    private static final String VERSION = "participation-condition-details-v5";
+    private static final long PENDING_TIMEOUT_MILLIS = 120_000;
+    record Pending(String status, long startedAt) {}
     private final PythonParticipationRewriteClient client;
     private final ParticipationRewriteStore store;
     private final ObjectMapper mapper;
@@ -38,59 +40,22 @@ public class ParticipationRewriteService {
     public ParticipationGuide resolve(DocumentVersion version, ParticipationGuide raw, boolean incomplete, ParticipationScopeIndex scopes) {
         var input = ParticipationRewriteProjection.input(raw, incomplete, scopes);
         var request = input.request();
-        var retained = retainedResult(version, raw, input, incomplete, scopes);
-        if (retained != null) return retained;
+        // v4 retires the old summary-like outputs and introduces explicit exclusions.
+        // A previous policy is refreshed once through the same database claim below.
         if (input.availableSources().isEmpty()) return ParticipationRewriteProjection.guide(raw, input,
                 new Response(java.util.List.of(), java.util.List.of(), "READY"), "READY");
-        // Old source ids belong to the frozen request, not the expanded seven-field request.
-        var legacyInput = ParticipationRewriteProjection.legacyInput(raw, incomplete, scopes);
-        String legacyKey = fingerprint(legacyInput.request(), "participation-four-fields-v1");
-        if (legacyKey.equals(version.getParticipationRewriteKey()) && version.getParticipationRewriteJson() != null) {
-            try {
-                var legacy = mapper.readValue(version.getParticipationRewriteJson(), Response.class);
-                if (legacy.statements() != null && legacy.evidenceOnlyIds() != null
-                        && ("READY".equals(legacy.status()) || "UNAVAILABLE".equals(legacy.status())))
-                    return ParticipationRewriteProjection.guide(raw, legacyInput, legacy, legacy.status(), input);
-            } catch (RuntimeException ignored) { /* Invalid stored JSON cannot be reused. */ }
-        }
-        var previousInput = ParticipationRewriteProjection.previousInput(raw, incomplete, scopes);
-        if (fingerprint(previousInput.request(), "participation-seven-fields-v1").equals(version.getParticipationRewriteKey())
-                && version.getParticipationRewriteJson() != null) {
-            try {
-                var previous = mapper.readValue(version.getParticipationRewriteJson(), Response.class);
-                if (previous.statements() != null && previous.evidenceOnlyIds() != null
-                        && ("READY".equals(previous.status()) || "UNAVAILABLE".equals(previous.status())))
-                    return ParticipationRewriteProjection.guide(raw, previousInput, previous, previous.status(), input);
-            } catch (RuntimeException ignored) { /* Invalid stored JSON cannot be reused. */ }
-        }
         String key = fingerprint(request);
         String cacheId = version.getId() + ":" + key;
         if (version.getId() != null && key.equals(running.get(version.getId()))) {
             return ParticipationRewriteProjection.guide(raw, input,
                     progress.getOrDefault(cacheId, Response.unavailable(request)), "PENDING");
         }
-        Response cached = null;
-        boolean currentCache = key.equals(version.getParticipationRewriteKey());
-        if (currentCache && version.getParticipationRewriteJson() != null) {
-            try { cached = mapper.readValue(version.getParticipationRewriteJson(), Response.class); }
-            catch (RuntimeException ignored) { /* Fall back to original evidence below without charging to repair the cache. */ }
-        }
-        if (cached == null) cached = completed.get(version.getId() + ":" + key);
-        if (cached != null && cached.statements() != null && cached.evidenceOnlyIds() != null
-                && ("READY".equals(cached.status()) || "UNAVAILABLE".equals(cached.status())))
+        Response cached = completed.get(cacheId);
+        if (cached == null && key.equals(version.getParticipationRewriteKey())) cached = storedResult(version, request);
+        if (cached != null)
             return ParticipationRewriteProjection.guide(raw, input, cached, cached.status());
-        // A terminal cache from an unknown old policy must not trigger another paid extraction.
-        // Its source ids cannot safely be mapped to the current request, so retain only current raw evidence.
-        if (version.getParticipationRewriteJson() != null) {
-            try {
-                var previous = mapper.readValue(version.getParticipationRewriteJson(), Response.class);
-                if ("READY".equals(previous.status()) || "UNAVAILABLE".equals(previous.status())) {
-                    var evidenceOnly = new Response(java.util.List.of(), request.sources().stream().map(Source::id).toList(), previous.status());
-                    return ParticipationRewriteProjection.guide(raw, input, evidenceOnly, previous.status());
-                }
-            } catch (RuntimeException ignored) { /* Preserve a stored result without silently charging to repair it. */ }
-            return ParticipationRewriteProjection.guide(raw, input, Response.unavailable(request), "UNAVAILABLE");
-        }
+        // Unmatched source identities are stale, not an empty extraction for the current input.
+        // Refresh once under a database claim; never remap old sequential ids using a partial quote.
         var outbound = ParticipationSourceSelection.select(input).outbound(input);
         if (outbound.sources().isEmpty()) return ParticipationRewriteProjection.guide(raw, input,
                 new Response(java.util.List.of(), java.util.List.of(), "READY"), "READY");
@@ -104,55 +69,54 @@ public class ParticipationRewriteService {
             // Preserve terminal results instead of evicting failures and charging for them again.
             if (completed.size() + running.size() >= 256) status = "UNAVAILABLE";
             else if (running.putIfAbsent(version.getId(), key) == null) {
-                try { executor.execute(() -> run(version.getId(), key, outbound)); }
+                try { executor.execute(() -> run(version.getId(), key, version.getParticipationRewriteKey(), outbound)); }
                 catch (RejectedExecutionException exception) { running.remove(version.getId(), key); status = "UNAVAILABLE"; }
             }
         }
         return ParticipationRewriteProjection.guide(raw, input, Response.unavailable(request), status);
     }
 
-    private ParticipationGuide retainedResult(DocumentVersion version, ParticipationGuide raw,
-            ParticipationRewriteProjection.Input current, boolean incomplete, ParticipationScopeIndex scopes) {
-        if (scopes == null || scopes.compatibility() == null || version.getParticipationRewriteJson() == null) return null;
-        var old = scopes.compatibility();
-        var oldRaw = new ParticipationGuide(raw.conditions(), old.rules(), raw.variants(), java.util.List.of());
-        var inputs = java.util.List.of(
-                ParticipationRewriteProjection.input(oldRaw, incomplete, old.scopes()),
-                ParticipationRewriteProjection.previousInput(oldRaw, incomplete, old.scopes()),
-                ParticipationRewriteProjection.legacyInput(oldRaw, incomplete, old.scopes()));
-        var policies = java.util.List.of("participation-seven-fields-v2", "participation-seven-fields-v1", "participation-four-fields-v1");
-        for (int i = 0; i < inputs.size(); i++) {
-            var oldInput = inputs.get(i);
-            if (!fingerprint(oldInput.request(), policies.get(i)).equals(version.getParticipationRewriteKey())) continue;
-            try {
-                var response = mapper.readValue(version.getParticipationRewriteJson(), Response.class);
-                if (response.statements() != null && response.evidenceOnlyIds() != null
-                        && ("READY".equals(response.status()) || "UNAVAILABLE".equals(response.status())))
-                    return ParticipationRewriteProjection.guide(raw, oldInput, response, response.status(), current);
-            } catch (RuntimeException ignored) { /* Invalid cache cannot establish a paid terminal result. */ }
-        }
-        return null;
+    private Response storedResult(DocumentVersion version, Request request) {
+        try {
+            var json = mapper.readTree(version.getParticipationRewriteJson());
+            if (json != null && "PENDING".equals(json.path("status").asText())) {
+                long startedAt = json.path("startedAt").asLong(0);
+                String status = startedAt > 0 && System.currentTimeMillis() - startedAt < PENDING_TIMEOUT_MILLIS
+                        ? "PENDING" : "UNAVAILABLE";
+                return new Response(java.util.List.of(), request.sources().stream().map(Source::id).toList(), status);
+            }
+            var response = mapper.treeToValue(json, Response.class);
+            if (response != null && response.statements() != null && response.evidenceOnlyIds() != null
+                    && ("READY".equals(response.status()) || "UNAVAILABLE".equals(response.status()))) return response;
+        } catch (RuntimeException ignored) { /* An interrupted or corrupt attempt for this exact input must not charge again. */ }
+        return Response.unavailable(request);
     }
 
-    private void run(Long id, String key, Request request) {
+    private void run(Long id, String key, String previousKey, Request request) {
         Response result = Response.unavailable(request);
+        boolean claimed = false;
+        boolean otherWorker = false;
         try {
-            store.begin(id, key);
+            claimed = store.claim(id, key, previousKey, mapper.writeValueAsString(new Pending("PENDING", System.currentTimeMillis())));
+            if (!claimed) { otherWorker = true; return; }
             log.info("Participation rewrite started. version_id={} sources={}", id, request.sources().size());
-            result = client.rewrite(request, partial -> progress.put(id + ":" + key, partial));
+            var extracted = client.rewrite(request, partial -> progress.put(id + ":" + key, partial));
+            if (extracted != null && extracted.statements() != null && extracted.evidenceOnlyIds() != null
+                    && ("READY".equals(extracted.status()) || "UNAVAILABLE".equals(extracted.status()))) result = extracted;
         } catch (RuntimeException exception) {
             log.warn("Participation rewrite unavailable. version_id={} error_type={}", id, exception.getClass().getSimpleName());
         } finally {
-            try { store.finish(id, key, mapper.writeValueAsString(result)); }
-            catch (RuntimeException exception) {
-                log.warn("Participation rewrite result persistence failed. version_id={} error_type={}",
-                        id, exception.getClass().getSimpleName());
+            if (claimed) {
+                try { store.finish(id, key, mapper.writeValueAsString(result)); }
+                catch (RuntimeException exception) {
+                    log.warn("Participation rewrite result persistence failed. version_id={} error_type={}", id, exception.getClass().getSimpleName());
+                }
             }
             progress.remove(id + ":" + key);
             log.info("Participation rewrite finished. version_id={} status={} statements={}",
                     id, result.status(), result.statements().size());
             synchronized (completed) {
-                completed.put(id + ":" + key, result);
+                if (!otherWorker) completed.put(id + ":" + key, result);
                 running.remove(id, key);
             }
         }

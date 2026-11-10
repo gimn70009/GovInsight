@@ -10,10 +10,19 @@ public final class ParticipationRewriteContract {
                          List<String> criteria) {}
     public record Request(List<Source> sources, List<Criterion> criteria,
                           @JsonProperty("business_types") List<String> businessTypes) {}
+    public record Detail(@JsonProperty("source_ids") List<String> sourceIds, String text,
+                         @JsonProperty("supporting_quotes") List<String> supportingQuotes) {}
     public record Statement(@JsonProperty("source_ids") List<String> sourceIds, String criterion,
                             String text, @JsonProperty("group_label") String groupLabel,
                             @JsonProperty("supporting_quotes") List<String> supportingQuotes, String kind,
-                            String scope, String audience) {
+                            String scope, String audience, List<Detail> details) {
+        public Statement {
+            details = details == null ? List.of() : List.copyOf(details);
+        }
+        public Statement(List<String> sourceIds, String criterion, String text, String groupLabel,
+                         List<String> supportingQuotes, String kind, String scope, String audience) {
+            this(sourceIds, criterion, text, groupLabel, supportingQuotes, kind, scope, audience, List.of());
+        }
         public Statement(List<String> sourceIds, String criterion, String text, String groupLabel,
                          List<String> supportingQuotes, String kind) {
             this(sourceIds, criterion, text, groupLabel, supportingQuotes, kind, null, null);

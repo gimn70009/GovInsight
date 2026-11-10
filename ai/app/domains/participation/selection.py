@@ -7,6 +7,12 @@ QUALIFICATION = re.compile(
     r"|지원\s*(?:대상|자격|요건)|선정\s*대상|자격\s*요건|입찰\s*참가\s*자격)"
     r"(?=\s|[:：()（）·ㆍ]|$)"
 )
+EXCLUSION_HEADING = re.compile(r"(?:지원|신청|참여)\s*제외|제외\s*대상")
+# Preserve explicit applicant exclusions even when nested under general precautions.
+APPLICANT_EXCLUSION = re.compile(
+    r"(?:기업|기관|사업자|대표자|참여하는\s*자)[^\n]{0,100}"
+    r"(?:지원\s*대상에서\s*제외|지원\s*제외|신청(?:이|할\s*수)?\s*(?:불가|없))"
+)
 PREFERENCE = re.compile(r"우대|가점|가산점")
 EXTRACTION_BOUNDARY = re.compile(
     r"\[(?:PDF\s+\d+페이지\s+시각\s*판독|문서\s*전체\s*텍스트\s*추출)\]"
@@ -22,7 +28,8 @@ IRRELEVANT = re.compile(
     r"|제출\s*서류|신청\s*방법|접수\s*방법|지원\s*내용|지원\s*규모|사업\s*목적"
     r"|입찰\s*보증금|과업\s*수행\s*계획|주요\s*과업|평가\s*항목|성과\s*보고|계약\s*체결\s*후"
     r"|지원\s*(?:기간|한도|비율|예산|과제\s*수)|선정\s*(?:규모|기준|절차|방법)"
-    r"|모집\s*규모|최종\s*선정"
+    r"|모집\s*규모|최종\s*선정|지원\s*범위|신청서\s*제출\s*전"
+    r"|추진\s*체계|관련\s*규정|운영\s*규정|신청\s*절차|접수\s*기간"
 )
 
 
@@ -51,6 +58,8 @@ def recipient(source):
 def boundary(line):
     value = line.strip()
     if EXTRACTION_BOUNDARY.fullmatch(value):
+        return True
+    if EXCLUSION_HEADING.match(re.sub(r"^[\s□■◦○●•ㅇ*-]+", "", value)):
         return True
     if value in {"[표]", "[/표]"} or not value or len(value) > 180:
         return False
@@ -82,14 +91,48 @@ def applicant_labels(text, *, table_only=False):
         if "\t" in line and any(re.fullmatch(label, cell.strip()) for cell in line.split("\t")):
             return True
         if not table_only and re.match(
-            r"^[\s◦○●•ㅇ*\-]*(?:\(\s*" + label + r"\s*\)|" + label + r"\s*[:：])", line
+            r"^[\s◦○●•ㅇ*\-]*(?:\(\s*" + label + r"\s*\)|" + label + r"(?:\s*[:：]|\s*$))", line
         ):
             return True
     return False
 
 
+def bullet_title(line):
+    match = re.match(r"^\s*[◦○●•ㅇ]\s*(?:\(([^)]+)\)|([^:：\n]+))", line)
+    return (match[1] or match[2]).strip() if match else ""
+
+
+def applicant_span(chunk):
+    """Keep a labelled applicant paragraph and its nested roles/notes, verbatim."""
+    if "[표]" in chunk or "\t" in chunk:
+        return chunk
+    lines = chunk.splitlines(keepends=True)
+    spans, offset, start = [], 0, None
+    for line in lines:
+        labelled = applicant_labels(line)
+        sibling_title = bullet_title(line)
+        if start is not None and IRRELEVANT.fullmatch(sibling_title) and not labelled:
+            spans.append(chunk[start:offset])
+            start = None
+        if labelled and start is None:
+            if not spans:
+                prefix = re.sub(r"\A\s*[□■]\s*사업\s*개요\s*\n", "", chunk[:offset])
+                blocks = re.split(r"(?m)(?=^[ \t]*[◦○●•ㅇ]\s*)", prefix)
+                # Unknown leading content may be a common condition. Never discard it.
+                if any(block.strip() and not IRRELEVANT.fullmatch(bullet_title(block))
+                       for block in blocks):
+                    return chunk
+            start = offset
+        offset += len(line)
+    if start is not None:
+        spans.append(chunk[start:])
+    return "\n[다음 원문 구간]\n".join(spans) if spans else chunk
+
+
 def prepare(source, source_fields):
     if not source.excerpt.strip():
+        return None
+    if QUALIFICATION.fullmatch(source.excerpt.strip()):
         return None
     # Find real nested qualification sections in a coarse parsed block; do not cut inside tables.
     lines = source.excerpt.splitlines(keepends=True)
@@ -107,12 +150,14 @@ def prepare(source, source_fields):
     for start, end in zip(starts, starts[1:]):
         chunk = source.excerpt[start:end]
         first = chunk.strip().splitlines()[0] if chunk.strip() else ""
-        if qualification_heading(first):
+        if qualification_heading(first) or EXCLUSION_HEADING.search(first):
             # Adjacent original sections stay adjacent; never insert a fake gap into an exact quote.
             if qualified and qualified[-1][1] == start:
                 qualified[-1] = (qualified[-1][0], end)
             else:
                 qualified.append((start, end))
+        elif APPLICANT_EXCLUSION.search(chunk):
+            contextual.append((start, end))
         elif (
             PARTICIPATION_CONTEXT.search(chunk)
             and not SELECTION_OUTCOME.search(heading(source) + "\n" + first)
@@ -125,11 +170,16 @@ def prepare(source, source_fields):
     if qualified or contextual or mixed:
         spans = []
         for start, end in sorted(qualified + contextual + mixed):
-            if spans and spans[-1][1] == start:
-                spans[-1] = (spans[-1][0], end)
+            chunk = source.excerpt[start:end]
+            # Trim overview prose only; preserve every subordinate condition/exception.
+            if (start, end) in mixed:
+                chunk = applicant_span(chunk)
+            if (spans and spans[-1][1] == start and chunk == source.excerpt[start:end]
+                    and spans[-1][2] == source.excerpt[spans[-1][0]:start]):
+                spans[-1] = (spans[-1][0], end, spans[-1][2] + chunk)
             else:
-                spans.append((start, end))
-        excerpt = "\n[다음 원문 구간]\n".join(source.excerpt[a:b] for a, b in spans)
+                spans.append((start, end, chunk))
+        excerpt = "\n[다음 원문 구간]\n".join(chunk for _, _, chunk in spans)
         source = source.model_copy(update={"excerpt": excerpt})
         priority = 1 if qualified else 2 if contextual else 3
     elif any(EXTRACTION_BOUNDARY.fullmatch(line.strip()) for line in lines):
@@ -211,6 +261,11 @@ def select(request, source_fields, codes, max_bytes, max_sources):
             queue.sort(key=lambda item: (
                 item[0] in noisy,
                 priority == 3 and not applicant_labels(item[1].excerpt, table_only=True),
+                # Within mixed target blocks, explicit bounds/status precede bare target names.
+                priority == 3 and not re.search(
+                    r"이상|이하|미만|초과|이내|한하여|한해|중인", item[1].excerpt
+                ),
+                -min(len(item[1].excerpt.strip()), 600) if priority == 3 else 0,
             ))
         while any(queues.values()) and len(selected) < max_sources:
             for code in queues:

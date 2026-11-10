@@ -96,17 +96,29 @@ final class ParticipationRewriteProjection {
         var displayedRules = new ArrayList<ParticipationRule>();
         var grounded = new ArrayList<Statement>();
         if ("READY".equals(result.status()) && result.statements() != null) for (var item : result.statements()) {
-            if (valid(item, input.evidence())) grounded.add(item);
+            if (valid(item, input.evidence())) {
+                var details = item.details().stream().filter(detail -> validDetail(detail, input.evidence())).limit(6).toList();
+                grounded.add(new Statement(item.sourceIds(), item.criterion(), item.text(), item.groupLabel(),
+                        item.supportingQuotes(), item.kind(), item.scope(), item.audience(), details));
+            }
             else if (item != null && item.sourceIds() != null) unresolved.addAll(item.sourceIds());
         }
         for (var item : ParticipationDisplayStatements.prepare(input, grounded)) {
             // Paid statements retain every grounded citation; export selection must not trim their meaning.
-            var sources = item.sourceIds().stream().map(input.evidence()::get).flatMap(List::stream).distinct().toList();
-            var quotes = item.supportingQuotes().stream().distinct().toList();
+            var sourceIds = new LinkedHashSet<>(item.sourceIds());
+            var allQuotes = new LinkedHashSet<>(item.supportingQuotes());
+            for (var detail : item.details()) {
+                sourceIds.addAll(detail.sourceIds());
+                allQuotes.addAll(detail.supportingQuotes());
+                for (String id : detail.sourceIds()) displayedQuotes.computeIfAbsent(id, ignored -> new ArrayList<>()).addAll(detail.supportingQuotes());
+            }
+            var sources = sourceIds.stream().map(input.evidence()::get).flatMap(List::stream).distinct().toList();
+            var quotes = List.copyOf(allQuotes);
             var criterion = ParticipationFocusCriterion.valueOf(item.criterion());
-            var rule = new ParticipationRule("PREFERENCE".equals(item.kind()) ? "PREFERENCE" : "BASIC",
-                    criterion.label, item.text(), item.scope(), item.audience(),
-                    List.of(), List.of(), List.of(), List.of(), sources);
+            var rule = new ParticipationRule("EXCLUSION".equals(item.kind()) ? "EXCLUSION"
+                    : "PREFERENCE".equals(item.kind()) ? "PREFERENCE" : "BASIC",
+                    criterion.label, item.text(), displayScope(item.scope()), item.audience(),
+                    item.details().stream().map(Detail::text).distinct().toList(), List.of(), List.of(), List.of(), sources);
             entries.computeIfAbsent(criterion.name(), ignored -> new ArrayList<>()).add(
                     new ParticipationCriterionEntry(rule, null, null, List.of(), "VERIFIED", quotes));
             displayedRules.add(rule);
@@ -138,7 +150,7 @@ final class ParticipationRewriteProjection {
 
     private static boolean valid(Statement item, Map<String, List<RequirementSource>> evidence) {
         if (item == null || !ParticipationFocusCriterion.supports(item.criterion())
-                || !("ELIGIBILITY".equals(item.kind()) || "PREFERENCE".equals(item.kind()))
+                || !("ELIGIBILITY".equals(item.kind()) || "EXCLUSION".equals(item.kind()) || "PREFERENCE".equals(item.kind()))
                 || item.text() == null || item.text().isBlank() || item.sourceIds() == null || item.sourceIds().isEmpty()
                 || item.sourceIds().stream().anyMatch(id -> !evidence.containsKey(id))
                 || item.supportingQuotes() == null || item.supportingQuotes().isEmpty()
@@ -147,6 +159,25 @@ final class ParticipationRewriteProjection {
         return item.supportingQuotes().stream().allMatch(quote -> sources.stream().anyMatch(source -> source.excerpt().contains(quote)))
                 && item.sourceIds().stream().allMatch(id -> evidence.get(id).stream().anyMatch(source ->
                         item.supportingQuotes().stream().anyMatch(quote -> source.excerpt().contains(quote))));
+    }
+
+    private static boolean validDetail(Detail detail, Map<String, List<RequirementSource>> evidence) {
+        if (detail == null || detail.text() == null || detail.text().isBlank() || detail.text().length() > 240
+                || detail.supportingQuotes() == null || detail.supportingQuotes().size() > 4
+                || detail.supportingQuotes().stream().anyMatch(quote -> quote == null || quote.length() > 600)) return false;
+        // Validate each explanation independently; a bad explanation cannot erase a grounded parent.
+        return valid(new Statement(detail.sourceIds(), "BUSINESS_FORM", detail.text(), "",
+                detail.supportingQuotes(), "ELIGIBILITY"), evidence);
+    }
+
+    private static String displayScope(String value) {
+        if (value == null || value.isBlank()) return null;
+        String compact = compact(value);
+        if (Set.of("상위구역", "원문구역", "적용유형", "유형명", "신청역할", "신청주체명",
+                "신청자격", "신청요건", "신청자격및신청요건", "지원대상", "지원내용", "사업개요",
+                "scope", "parent", "section", "program", "null").contains(compact)
+                || compact.matches("^\\[(?:상위구역|원문구역|적용유형)\\].*")) return null;
+        return value.strip();
     }
 
     private static List<String> matching(RequirementSource source, boolean legacy, boolean previous) {
