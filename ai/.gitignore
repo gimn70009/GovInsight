@@ -5,5 +5,8 @@ __pycache__/
 .ruff_cache/
 *.py[cod]
 
+# 의존성은 requirements*.txt로 관리하며 로컬 실행 중 생성된 lock은 제외
+/uv.lock
+
 # Pinned local HWP/HWPX WebAssembly renderer (installed explicitly)
 .hwp-renderer/
