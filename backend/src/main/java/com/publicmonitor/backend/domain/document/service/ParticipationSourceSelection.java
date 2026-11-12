@@ -66,6 +66,11 @@ final class ParticipationSourceSelection {
                         heading = heading == null ? "" : heading.replaceAll("(?m)^\\[상위 구역] [^\\r\\n]*(?:\\R|$)", "");
                         heading = "[상위 구역] " + context + "\n" + heading;
                     }
+                    String recruitment = input.scopes() == null ? "" : input.scopes().recruitmentContext(original);
+                    if (!recruitment.isBlank()) {
+                        heading = Objects.toString(heading, "").replaceAll("(?m)^\\[공고 대상] [^\\r\\n]*(?:\\R|$)", "");
+                        heading = "[공고 대상] " + recruitment + "\n" + heading;
+                    }
                     return new Source(source.id(), original.excerpt(), heading, source.criteria());
                 })
                 .toList();

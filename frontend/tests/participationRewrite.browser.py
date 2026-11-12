@@ -118,8 +118,8 @@ async def check(browser):
         await expect(region.locator('[data-condition-kind="exclusion"]')).to_have_count(1)
         await expect(region.locator('[data-criterion] [data-condition-kind="exclusion"]')).to_have_count(0)
         await expect(region.locator('.participation-guide__groups > section').last).to_have_class(re.compile('participation-guide__exclusions'))
-        await expect(region.locator('.participation-guide__unscoped:visible')).to_have_count(5)
-        await expect(region.locator('.participation-guide__audience')).to_have_count(0)
+        await expect(region.locator('.participation-guide__unscoped:visible')).to_have_count(0)
+        await expect(region.locator('.participation-guide__audience')).to_have_text('주관기관')
         await region.get_by_role('navigation',name='신청 자격 항목 바로가기',exact=True).get_by_role('link',name='매출·수출',exact=True).click()
         await expect(region.locator('[data-criterion="REVENUE"]')).to_be_focused()
         await assert_collapsed_notes(region)
@@ -317,9 +317,9 @@ async def cached_business_labels(browser):
             await expect(region).not_to_contain_text("실제 사업·과제유형")
             await expect(region).not_to_contain_text("신청역할")
             await expect(region).not_to_contain_text("적용 유형")
-            await expect(region.locator(".participation-guide__unscoped:visible")).to_have_text("원문 확인 필요")
+            await expect(region.locator(".participation-guide__unscoped:visible")).to_have_count(0)
             await expect(region.locator(".participation-guide__program:visible")).to_have_text(["전체 사업 공통", "초기창업패키지 · 일반형"])
-            await expect(region.locator(".participation-guide__audience:visible")).to_have_count(0)
+            await expect(region.locator(".participation-guide__audience:visible")).to_have_text(["주관기관", "창업기업"])
             await expect(region.locator(".participation-guide__role:visible")).to_have_count(0)
             await expect(region.locator(".participation-guide__main")).to_have_text([value["rule"]["text"] for value in values])
             await region.scroll_into_view_if_needed()
@@ -332,12 +332,55 @@ async def cached_business_labels(browser):
         await h.close()
 
 
+async def mixed_recruitment_scopes(browser):
+    h = await summary.refresh.Harness(browser).start()
+    try:
+        data = summary.ready()
+        applicants = [entry(text) for text in (
+            "협회·단체는 주무부처에 등록된 비영리법인이어야 합니다.",
+            "연구기관은 법령에 따른 연구기관이어야 합니다.",
+            "기업지원기관은 해당 사업을 수행하는 비영리기관이어야 합니다.",
+        )]
+        exclusions = [entry(text, "EXCLUSION") for text in (
+            "국가연구개발사업에 참여제한 중인 기관은 신청이 불가합니다.",
+            "보고서 제출 등 의무사항을 불이행한 경우 제외될 수 있습니다.",
+            "기존 지원 과제와 유사한 경우 제외될 수 있습니다.",
+            "해당사업의 요건을 충족하지 못한 경우 제외될 수 있습니다.",
+        )]
+        references = [entry(text, scope="일반 유형 / DX 유형") for text in (
+            "세부과제 주관기관은 국내 공급기업 또는 수요기업이어야 합니다.",
+            "세부과제 공동기관은 국내 기업, 연구기관, 대학 등이 될 수 있습니다.",
+        )]
+        data["participationGuide"] = dict(conditions=[], rules=[], variants=[], rewriteStatus="READY", categories=[
+            dict(code="COMPANY_REQUIREMENTS", label="신청 자격", rows=[
+                dict(code="BUSINESS_FORM", label="신청 주체", status="STATED", entries=applicants),
+                dict(code="SECTOR", label="업종", status="STATED", entries=references),
+                dict(code="CREDIT", label="신용", status="STATED", entries=exclusions),
+            ])])
+        h.states[1] = data
+        await h.open(analysis_tab=False)
+        region = h.page.get_by_role("region", name="신청 자격", exact=True)
+        await expect(region.locator(".participation-guide__main")).to_have_count(9)
+        await expect(region.locator(".participation-guide__unscoped")).to_have_count(0)
+        await expect(region.locator(".participation-guide__exclusions .participation-guide__main")).to_have_count(4)
+        await expect(region.locator(".participation-guide__program")).to_have_count(2)
+        for width in (1440, 390, 320):
+            await h.page.set_viewport_size(dict(width=width, height=1100))
+            await assert_responsive_condition_groups(region, width)
+            await region.screenshot(path=str(OUT / f"mixed-recruitment-{width}.png"))
+        assert not h.errors and not h.unexpected, (h.errors, h.unexpected)
+    finally:
+        await h.close()
+
+
 async def business_scope_absence_and_uncertainty(browser):
     for case, scope, variants, expected in [
         ("no-division", None, [], None),
         ("cached-description", "실제 사업·과제유형(명시공통='공통')", [], None),
+        ("numbered-section", "아. 세부과제 지원유형", [], None),
+        ("generic-variant", None, [dict(name="2. 사업 유형", description="구역 제목")], None),
         ("explicit-review", "확인 필요", [], "원문 확인 필요"),
-        ("declared-types", None, [dict(name="유형1", description="일반형"), dict(name="유형2", description="성장형")], "원문 확인 필요"),
+        ("declared-types", None, [dict(name="유형1", description="일반형"), dict(name="유형2", description="성장형")], None),
     ]:
         h = await summary.refresh.Harness(browser).start()
         try:
@@ -355,7 +398,7 @@ async def business_scope_absence_and_uncertainty(browser):
                 if expected:
                     await expect(region.locator(".participation-guide__unscoped:visible")).to_have_text(expected)
                 else:
-                    await expect(region.locator(".participation-guide__context")).to_have_count(0)
+                    await expect(region.locator(".participation-guide__business-context")).to_have_count(0)
                 await expect(region.locator(".participation-guide__main")).to_have_text(text)
                 await expect(region.locator(".participation-guide__program:visible")).to_have_count(0)
                 await expect(region.locator(".participation-guide__filter")).to_have_count(0)
@@ -382,7 +425,7 @@ async def exclusions_only(browser):
         region = h.page.get_by_role("region", name="신청 자격", exact=True)
         await expect(region.locator(".participation-guide__group-heading h4")).to_have_text(["지원 제외 대상"])
         await expect(region.locator("[data-criterion]")).to_have_count(0)
-        await expect(region.locator(".participation-guide__context")).to_have_count(0)
+        await expect(region.locator(".participation-guide__business-context")).to_have_count(0)
         await expect(region.get_by_text("정리된 신청 조건을 찾지 못했습니다.")).to_have_count(0)
         await region.locator(".participation-guide__condition-toggle").press("Enter")
         await expect(region.locator("blockquote")).to_have_text(value["rule"]["text"])
@@ -390,6 +433,36 @@ async def exclusions_only(browser):
             await h.page.set_viewport_size(dict(width=width, height=1000))
             await assert_responsive_condition_groups(region, width)
         await h.stopped()
+        assert not h.errors and not h.unexpected, (h.errors, h.unexpected)
+    finally:
+        await h.close()
+
+
+async def applicant_categories(browser):
+    h = await summary.refresh.Harness(browser).start()
+    try:
+        labels = ["협회·단체", "연구기관", "기업지원기관"]
+        values = [entry(f"{label}의 자격 조건을 충족해야 합니다.", audience=label,
+                        scope="실제 지원사업" if i == 1 else None,
+                        quote=f"{label}\t원문의 신청 자격 조건") for i, label in enumerate(labels)]
+        data = summary.ready()
+        data["participationGuide"] = dict(conditions=[], rules=[], variants=[], rewriteStatus="READY", categories=[
+            dict(code="COMPANY_REQUIREMENTS", label="신청 자격", rows=[
+                dict(code="BUSINESS_FORM", label="신청 주체", status="STATED", entries=values)])])
+        h.states[1] = data
+        await h.open(analysis_tab=False)
+        region = h.page.get_by_role("region", name="신청 자격", exact=True)
+        await expect(region.locator(".participation-guide__audience")).to_have_text(labels)
+        await expect(region.locator(".participation-guide__applicant .participation-guide__context-label")).to_have_text(["신청 구분"] * 3)
+        await expect(region.locator(".participation-guide__program")).to_have_text("실제 지원사업")
+        await expect(region.locator(".participation-guide__filter, .participation-guide__unscoped")).to_have_count(0)
+        for width in (1440, 768, 390, 320):
+            await h.page.set_viewport_size(dict(width=width, height=1100))
+            await assert_responsive_condition_groups(region, width)
+            await region.screenshot(path=str(OUT / f"applicant-categories-{width}.png"))
+        await region.locator(".participation-guide__condition-toggle").last.press("Enter")
+        await expect(region.locator("blockquote")).to_have_text(values[-1]["rule"]["sources"][0]["excerpt"])
+        await expect(region.locator(".participation-guide__audience")).to_have_text(labels)
         assert not h.errors and not h.unexpected, (h.errors, h.unexpected)
     finally:
         await h.close()
@@ -453,10 +526,12 @@ async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch(channel="msedge", headless=True)
         try:
+            await applicant_categories(browser)
             await parent_explanations(browser)
             await check(browser)
             await exclusions_only(browser)
             await cached_business_labels(browser)
+            await mixed_recruitment_scopes(browser)
             await business_scope_absence_and_uncertainty(browser)
             await source_only_states(browser)
             await server_text_and_exact_duplicates(browser)

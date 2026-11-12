@@ -76,28 +76,34 @@ function contextLabel(value: string | null | undefined): string | null {
 }
 
 function scopeReviewRequested(scope: string | null | undefined): boolean {
-  return (scope ?? '').split(' / ').some(part =>
+  return (scope ?? '').split(' / ').flatMap(path => path.split(' · ')).some(part =>
     /^(?:미확인|확인필요|적용범위확인필요)$/.test(part.replace(/\s+/g, '')))
 }
 
+function businessScopeLabel(value: string | null | undefined): string | null {
+  const paths = (value ?? '').split(' / ').map(path => path.split(' · ').map(part => {
+    const label = contextLabel(part)
+    if (!label) return null
+    const heading = label.replace(/\s+/g, '')
+      .replace(/^(?:\(?(?:[0-9]+(?:-[0-9]+)*|[가-힣]|[IVXⅠ-Ⅻ]+)[.)]|[①-⑳])/, '')
+    if (!contextLabel(heading)
+      || /^(?:(?:총괄|세부)?(?:주관|공동|위탁)(?:연구개발)?기관|총괄기관|운영기관|수행기관|공급기업|수요기업|도입기업)$/.test(heading)
+      || /^(?:(?:(?:세부|내역)?(?:사업|과제))?(?:지원)?(?:유형|구분)|(?:사업|유형)별(?:지원계획|지원내용|신청자격)|신청자격및선정기준)$/.test(heading)) return null
+    return label
+  }).filter(Boolean).join(' · ')).filter(Boolean)
+  return [...new Set(paths)].join(' / ') || null
+}
+
 export function companyConditionScope(entry: ParticipationCriterionEntry): string | null {
-  return (entry.rule.scope ?? '').split(' / ').map(contextLabel).filter(Boolean).join(' / ') || null
+  return businessScopeLabel(entry.rule.scope)
 }
 
-/** Use the whole notice, not the currently filtered rows, to recognize an explicit business division. */
-export function companyHasBusinessDivision(guide: ParticipationGuide | null | undefined): boolean {
-  const scopes = [...companyParticipationRows(guide).flatMap(row => [...row.mandatory, ...row.preference]),
-    ...companyParticipationExclusions(guide)]
-    .map(companyConditionScope)
-  return [...scopes, ...(guide?.variants ?? []).map(variant => contextLabel(variant.name))]
-    .some(scope => scope?.split(' / ').some(part => part !== '공통'))
-}
-
-export function companyConditionPresentation(entry: ParticipationCriterionEntry, hasBusinessDivision = false) {
+export function companyConditionPresentation(entry: ParticipationCriterionEntry) {
   const scope = companyConditionScope(entry)
   return {
     scope,
-    scopeReviewRequired: scopeReviewRequested(entry.rule.scope) || (!scope && hasBusinessDivision),
+    // A missing narrower scope is not uncertainty; only an explicit marker requests review.
+    scopeReviewRequired: scopeReviewRequested(entry.rule.scope),
     audience: contextLabel(entry.rule.audience),
     sentence: entry.rule.text,
     notes: [...new Set([...(entry.rule.details ?? []), ...(entry.rule.exceptions ?? [])])]

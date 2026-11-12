@@ -30,6 +30,7 @@ final class ParticipationScopeIndex {
     private final Map<RequirementSource, List<Span>> sources = new LinkedHashMap<>();
 
     private final Map<RequirementSource, String> contexts = new LinkedHashMap<>();
+    private final Map<RequirementSource, String> recruitments = new LinkedHashMap<>();
     private final Map<RequirementSource, Set<String>> originalContexts = new LinkedHashMap<>();
 
     record Line(String text, int from, int to) {}
@@ -92,6 +93,7 @@ final class ParticipationScopeIndex {
             spans.add(new Span(line.from(), line.to(), labels(stack)));
             if (text.equals("[/표]")) table = false;
         }
+        String recruitment = ParticipationRecruitmentContext.from(document);
         int cursor = 0;
         for (var rule : rules) for (var source : rule.sources()) {
             String excerpt = source.excerpt();
@@ -101,6 +103,7 @@ final class ParticipationScopeIndex {
             if (!parent.isBlank()) originalContexts.computeIfAbsent(source, ignored -> new LinkedHashSet<>()).add(parent);
             if (secondaryBuyer(forDisplay ? originalDocument(document) : document, parent)) parent += "\n[별도 참여 역할] 구매기관";
             contexts.put(source, parent);
+            if (!recruitment.isBlank()) recruitments.put(source, recruitment);
             int end = start + excerpt.length();
             var local = sources.computeIfAbsent(source, ignored -> new ArrayList<>());
             for (var span : spans) if (span.to() > start && span.from() < end) {
@@ -110,6 +113,10 @@ final class ParticipationScopeIndex {
             }
             cursor = end;
         }
+    }
+
+    String recruitmentContext(RequirementSource source) {
+        return recruitments.getOrDefault(source, "");
     }
 
     String context(List<RequirementSource> evidence) {

@@ -115,9 +115,12 @@ final class ParticipationRewriteProjection {
             var sources = sourceIds.stream().map(input.evidence()::get).flatMap(List::stream).distinct().toList();
             var quotes = List.copyOf(allQuotes);
             var criterion = ParticipationFocusCriterion.valueOf(item.criterion());
+            var mainSources = item.sourceIds().stream().map(input.evidence()::get).flatMap(List::stream).distinct().toList();
+            String applicant = ParticipationApplicantLabel.from(item, mainSources);
+            String audience = item.audience() == null || item.audience().isBlank() ? applicant : item.audience();
             var rule = new ParticipationRule("EXCLUSION".equals(item.kind()) ? "EXCLUSION"
                     : "PREFERENCE".equals(item.kind()) ? "PREFERENCE" : "BASIC",
-                    criterion.label, item.text(), displayScope(item.scope()), item.audience(),
+                    criterion.label, item.text(), displayScope(item.scope(), applicant), audience,
                     item.details().stream().map(Detail::text).distinct().toList(), List.of(), List.of(), List.of(), sources);
             entries.computeIfAbsent(criterion.name(), ignored -> new ArrayList<>()).add(
                     new ParticipationCriterionEntry(rule, null, null, List.of(), "VERIFIED", quotes));
@@ -170,14 +173,30 @@ final class ParticipationRewriteProjection {
                 detail.supportingQuotes(), "ELIGIBILITY"), evidence);
     }
 
-    private static String displayScope(String value) {
+    private static String displayScope(String value, String applicant) {
         if (value == null || value.isBlank()) return null;
+        var paths = new LinkedHashSet<String>();
+        for (String path : value.split(" / ")) {
+            var parts = Arrays.stream(path.split(" · ")).map(String::strip)
+                    .filter(part -> !genericScopeLabel(part))
+                    .filter(part -> applicant == null || !compact(part).equals(compact(applicant))).toList();
+            if (!parts.isEmpty()) paths.add(String.join(" · ", parts));
+        }
+        return paths.isEmpty() ? null : String.join(" / ", paths);
+    }
+
+    private static boolean genericScopeLabel(String value) {
         String compact = compact(value);
-        if (Set.of("상위구역", "원문구역", "적용유형", "유형명", "신청역할", "신청주체명",
+        // Compare headings without numbering, but preserve the original spelling of real programs.
+        String heading = compact.replaceFirst("^(?:\\(?(?:[0-9]+(?:-[0-9]+)*|[가-힣]|[IVXⅠ-Ⅻ]+)[.)]|[①-⑳])", "");
+        return compact.isEmpty() || Set.of("상위구역", "원문구역", "적용유형", "유형명", "신청역할", "신청주체명",
                 "신청자격", "신청요건", "신청자격및신청요건", "지원대상", "지원내용", "사업개요",
-                "scope", "parent", "section", "program", "null").contains(compact)
-                || compact.matches("^\\[(?:상위구역|원문구역|적용유형)\\].*")) return null;
-        return value.strip();
+                "scope", "parent", "section", "program", "null").contains(heading.toLowerCase(Locale.ROOT))
+                || compact.matches("^\\[(?:상위구역|원문구역|적용유형)\\].*")
+                || compact.matches("실제사업[·ㆍ]과제유형(?:\\(.*\\))?")
+                || heading.matches("(?:(?:총괄|세부)?(?:주관|공동|위탁)(?:연구개발)?기관|총괄기관|운영기관|수행기관|공급기업|수요기업|도입기업)")
+                || heading.matches("(?:(?:세부|내역)?(?:사업|과제))?(?:지원)?(?:유형|구분)"
+                        + "|(?:사업|유형)별(?:지원계획|지원내용|신청자격)|신청자격및선정기준|유형미지정");
     }
 
     private static List<String> matching(RequirementSource source, boolean legacy, boolean previous) {

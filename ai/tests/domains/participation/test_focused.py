@@ -719,3 +719,132 @@ def test_input_context_separates_actual_program_from_document_sections():
         "program": "성장형",
         "section": "□ 신청자격",
     }
+
+
+@pytest.mark.parametrize("label", [
+    "아. 세부과제 지원유형", "2. 사업 유형", "① 지원대상", "(가) 신청자격",
+    "3-1. 사업개요", "유형별 지원내용", "내역사업 구분", "신청자격 및 선정기준",
+])
+def test_structural_scope_does_not_invent_a_program_or_change_grounded_conditions(label):
+    quote = "협회·단체, 연구기관, 기업지원기관이 단독 또는 컨소시엄으로 신청할 수 있습니다."
+    req = request(source("a", quote, label))
+    result = focused.project(Extraction(items=[
+        item("a", "BUSINESS_FORM", quote, scope=label, audience="총괄주관기관")
+    ], unresolved_source_ids=[]), req.sources, req)
+    assert len(result.statements) == 1
+    value = result.statements[0]
+    assert value.scope is None
+    assert value.text == quote
+    assert value.audience == "총괄주관기관"
+    assert value.supporting_quotes == [quote]
+
+
+@pytest.mark.parametrize(("label", "expected"), [
+    (None, None),
+    ("일반 유형 / DX 유형", "일반 유형 / DX 유형"),
+    ("① 점프업100", "① 점프업100"),
+    ("스마트공장 구축 · 자율형공장", "스마트공장 구축 · 자율형공장"),
+    ("소재·부품·장비", "소재·부품·장비"),
+    ("성장형 · 2. 신청자격 / 일반형", "성장형 / 일반형"),
+    ("아. 세부과제 지원유형 / 적용 범위 확인 필요", "적용 범위 확인 필요"),
+    ("공통", "공통"),
+])
+def test_real_types_and_explicit_uncertainty_survive_scope_cleanup(label, expected):
+    assert focused.scope_label(label) == expected
+
+
+def test_table_columns_and_recruitment_context_reach_the_single_model_call():
+    table = (
+        "아. 세부과제 지원유형\n[표]\n구분\t일반 유형\tDX 유형\n"
+        "지원대상\t국내 소재·부품·장비 공급기업\t국내 소재·부품·장비 공급기업\n[/표]"
+    )
+    req = request(source("a", table,
+        "[상위 구역] 총괄주관기관 모집\n[적용 유형] 아. 세부과제 지원유형\n지원대상"))
+    quote = table.splitlines()[3]
+    model = Fake([item("a", "SECTOR", quote,
+        text="국내 소재·부품·장비 공급기업이 지원 대상입니다.", scope="일반 유형 / DX 유형",
+        audience="세부과제 주관연구개발기관")])
+    result = asyncio.run(service.rewrite(req, model))
+    assert len(model.calls) == 1
+    payload = json.loads(model.calls[0][1][1].content)["sources"][0]
+    assert payload["context"]["parent"] == "총괄주관기관 모집"
+    assert "program" not in payload["context"]
+    assert "구분\t일반 유형\tDX 유형" in payload["excerpt"]
+    assert result.statements[0].scope == "일반 유형 / DX 유형"
+    assert result.statements[0].supporting_quotes == [quote]
+
+
+def test_recruitment_context_is_sent_once_and_never_assigned_to_other_notices():
+    recruitment = "총괄주관연구개발기관 모집 / 세부주관연구개발기관은 별도 모집 예정"
+    heading = f"[공고 대상] {recruitment}\n[원문 구역] 신청자격"
+    selected = [
+        source("a", "비영리법인인 협회·단체", heading),
+        source("b", "국공립 연구기관", heading),
+        source("c", "업력 7년 이내 기업", "[공고 대상] 창업기업 모집\n[원문 구역] 신청자격"),
+        source("d", "특허 보유기업", "신청자격"),
+    ]
+    messages = focused.model_messages(selected)
+    payload = json.loads(messages[1].content)
+    assert payload["recruitments"] == [recruitment, "창업기업 모집"]
+    assert [s["context"].get("recruitment") for s in payload["sources"]] == [0, 0, 1, None]
+    assert messages[1].content.count(recruitment) == 1
+    assert [s["excerpt"] for s in payload["sources"]] == [f"L1: {s.excerpt}" for s in selected]
+    assert focused.CallBudget().reserve(messages, Extraction) <= 9000
+
+
+def test_recruitment_context_and_compact_prompt_keep_existing_cost_contract():
+    # Leave room for deduplicated original context without expanding the paid schema or caps.
+    assert len(focused.PROMPT.encode("utf-8")) <= 5000
+    assert set(Extraction.model_fields) == {"items", "unresolved_source_ids"}
+    assert set(ExtractedCondition.model_fields) == {
+        "source_id", "criterion", "kind", "text", "quote", "scope", "audience", "details"
+    }
+
+
+@pytest.mark.parametrize(
+    "role", ["총괄주관연구개발기관", "주관연구개발기관", "수요기업", "공급기업"]
+)
+def test_applicant_role_is_not_a_business_type(role):
+    assert focused.scope_label(role) is None
+    assert focused.scope_label("공급기업 역량진단") == "공급기업 역량진단"
+
+
+def test_procedural_account_setup_is_not_an_applicant_qualification():
+    text = (
+        "기관대표자는 IRIS 회원가입 및 연구자전환 동의(국가연구자번호 발급)를 "
+        "반드시 이행해야 합니다."
+    )
+    src = source("account", text, "가. 신청방법 : 서류접수(IRIS)")
+    req = request(src, source("qualified", "국공립 연구기관이 신청할 수 있습니다."))
+    result = focused.project(Extraction(items=[
+        item("account", "BUSINESS_FORM", "L1", text=text),
+        item("qualified", "BUSINESS_FORM", "L1", text=req.sources[1].excerpt),
+    ], unresolved_source_ids=[]), req.sources, req)
+    assert [s.source_ids for s in result.statements] == [["qualified"]]
+    assert "account" in result.evidence_only_ids
+
+
+@pytest.mark.parametrize("text", [
+    "중소기업은 IRIS 회원가입을 해야 합니다.",
+    "국공립 연구기관은 IRIS 기관등록을 해야 합니다.",
+    "IRIS 기관등록과 함께 매출액 10억원 이상 요건을 충족해야 합니다.",
+    "IRIS 기관등록 및 전담 인력 보유가 필수입니다.",
+])
+def test_mixed_real_qualifications_are_not_discarded_as_account_setup(text):
+    assert not focused.account_setup_only(source("a", text, "가. 신청방법"), text)
+
+
+def test_applicant_table_categories_survive_the_existing_single_call_contract():
+    labels = ["협회·단체", "연구기관", "기업지원기관"]
+    rows = [f"{label}\t법령에 따른 비영리기관이어야 합니다." for label in labels]
+    src = source("table", "[표]\n구 분\t자 격\n" + "\n".join(rows) + "\n[/표]")
+    model = Fake([item("table", "BUSINESS_FORM", f"L{i + 3}",
+                       text=f"{label}는 법령에 따른 비영리기관이어야 합니다.", audience=label)
+                  for i, label in enumerate(labels)])
+    result = asyncio.run(service.rewrite(request(src), model))
+    assert len(model.calls) == 1
+    assert [s.audience for s in result.statements] == labels
+    assert [s.scope for s in result.statements] == [None] * 3
+    assert [s.supporting_quotes for s in result.statements] == [[row] for row in rows]
+    payload = json.loads(model.calls[0][1][1].content)
+    assert "구 분\t자 격" in payload["sources"][0]["excerpt"]

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  companyParticipationRows, companyParticipationExclusions, companyConditionScope, companyHasBusinessDivision,
+  companyParticipationRows, companyParticipationExclusions, companyConditionScope,
   companyConditionPresentation, companyConditionAppliesTo, activeCompanyConditionProgram,
 } from '../src/utils/companyParticipation.ts'
 
@@ -182,31 +182,24 @@ test('cached prompt descriptions do not become business filters or applicant lab
   assert.equal(companyConditionScope(entry(text, 'BASIC', { scope: '공통' })), '공통')
 })
 
-test('absence of a business division differs from an unknown scope within a divided notice', () => {
-  const unscoped = entry('광역자치단체가 신청할 수 있습니다.')
-  const single = guide([row('BUSINESS_FORM', [unscoped])])
-  assert.equal(companyHasBusinessDivision(single), false)
-  assert.equal(companyConditionPresentation(unscoped, false).scopeReviewRequired, false)
-  for (const explicit of [
-    guide([row('BUSINESS_FORM', [unscoped, entry('조건', 'BASIC', { scope: '일반형 / 성장형' })])]),
-    { ...single, variants: [{ name: '유형1', description: '일반형' }, { name: '유형2', description: '성장형' }] },
-  ]) {
-    assert.equal(companyHasBusinessDivision(explicit), true)
-    assert.equal(companyConditionPresentation(unscoped, true).scopeReviewRequired, true)
-  }
-  const common = entry('조건', 'BASIC', { scope: '공통' })
-  assert.equal(companyHasBusinessDivision(guide([row('BUSINESS_FORM', [common])])), false)
-  assert.equal(companyConditionPresentation(common, true).scope, '공통')
-  assert.equal(companyConditionPresentation(common, true).scopeReviewRequired, false)
-  assert.equal(companyHasBusinessDivision(guide([row('BUSINESS_FORM', [
-    entry('조건', 'BASIC', { scope: "실제 사업·과제유형(명시공통='공통')" }),
-  ])])), false)
+test('missing scope never becomes uncertainty because another role has business types', () => {
+  const unscoped = entry('협회·단체는 비영리법인으로서 주무부처에 등록되어야 합니다.')
+  const excluded = entry('참여제한 중인 기관은 신청이 불가합니다.', 'EXCLUSION')
+  const subproject = entry('국내 소재·부품·장비 공급기업이 지원 대상입니다.', 'BASIC', { scope: '일반 유형 / DX 유형' })
+  const data = { ...guide([row('BUSINESS_FORM', [unscoped]), row('SECTOR', [subproject]), row('CREDIT', [excluded])]),
+    variants: [{ name: '일반 유형' }, { name: 'DX 유형' }] }
+  const items = [...companyParticipationRows(data).flatMap(r => r.mandatory), ...companyParticipationExclusions(data)]
+  assert.equal(items.length, 3)
+  assert.equal(items.filter(value => companyConditionPresentation(value).scopeReviewRequired).length, 0)
+  assert.equal(companyConditionPresentation(unscoped).scope, null)
+  assert.equal(companyConditionPresentation(subproject).scope, '일반 유형 / DX 유형')
+  assert.equal(companyConditionPresentation(entry('조건', 'BASIC', { scope: '공통' })).scope, '공통')
 })
 
 test('explicit review markers survive old caches without becoming business filters or hiding conditions', () => {
-  for (const scope of ['확인 필요', '적용 범위 확인 필요', '일반형 / 적용 범위 확인 필요']) {
+  for (const scope of ['확인 필요', '적용 범위 확인 필요', '일반형 / 적용 범위 확인 필요', '일반형 · 적용 범위 확인 필요']) {
     const value = entry('보유 요건을 확인해야 합니다.', 'BASIC', { scope })
-    assert.equal(companyConditionPresentation(value, false).scopeReviewRequired, true)
+    assert.equal(companyConditionPresentation(value).scopeReviewRequired, true)
     assert.equal(companyConditionScope(value), scope.startsWith('일반형') ? '일반형' : null)
     assert.equal(companyConditionAppliesTo(value, '성장형'), true)
     assert.equal(value.rule.scope, scope)
@@ -222,7 +215,6 @@ test('exclusions remain separate, deduplicate across categories and retain busin
   const actual = companyParticipationExclusions(data)
   assert.equal(actual.length, 1)
   assert.equal(actual[0].rule.sources.length, 2)
-  assert.equal(companyHasBusinessDivision(data), true)
   assert.equal(companyConditionAppliesTo(actual[0], '성장형'), true)
   assert.equal(companyConditionAppliesTo(actual[0], '일반형'), false)
   assert.deepEqual(companyParticipationExclusions(), [])
@@ -232,7 +224,40 @@ test('internal section metadata never becomes an applied business label', () => 
   for (const scope of ['상위 구역', '원문 구역', '신청자격 및 신청요건', '[상위 구역] 지원 대상', 'parent']) {
     const value = entry('기업이 신청할 수 있습니다.', 'BASIC', { scope })
     assert.equal(companyConditionScope(value), null)
-    assert.equal(companyHasBusinessDivision(guide([row('BUSINESS_FORM', [value])])), false)
     assert.equal(companyConditionPresentation(value).sentence, value.rule.text)
   }
+})
+
+
+test('numbered section headings cannot create a divided notice or false review badges', () => {
+  const applicant = entry('협회·단체, 연구기관, 기업지원기관이 단독 또는 컨소시엄으로 신청할 수 있습니다.')
+  for (const scope of ['아. 세부과제 지원유형', '2. 사업 유형', '① 지원대상', '(가) 신청자격',
+    '3-1. 사업개요', '유형별 지원내용', '내역사업 구분', '신청자격 및 선정기준']) {
+    const cached = entry('국내 소재·부품·장비 공급기업이 지원 대상입니다.', 'BASIC', { scope })
+    assert.equal(companyConditionPresentation(applicant).scopeReviewRequired, false)
+    assert.equal(companyConditionScope(cached), null)
+    assert.equal(companyConditionPresentation(cached).sentence, cached.rule.text)
+    assert.equal(cached.rule.scope, scope)
+  }
+})
+
+test('real table types and hierarchy survive generic sections without losing uncertainty', () => {
+  const scoped = entry('조건', 'BASIC', { scope: '일반 유형 / DX 유형' })
+  assert.equal(companyConditionAppliesTo(scoped, 'DX 유형'), true)
+  assert.equal(companyConditionAppliesTo(scoped, '성장형'), false)
+  assert.equal(companyConditionScope(entry('조건', 'BASIC', { scope: '성장형 · 2. 신청자격 / 일반형' })), '성장형 / 일반형')
+  const unknown = entry('조건', 'BASIC', { scope: '아. 세부과제 지원유형 / 적용 범위 확인 필요' })
+  assert.equal(companyConditionPresentation(unknown).scopeReviewRequired, true)
+  assert.equal(companyConditionScope(unknown), null)
+  assert.equal(companyConditionAppliesTo(unknown, '성장형'), true)
+})
+
+test('applicant roles never become business scopes while real named programs remain intact', () => {
+  for (const scope of ['총괄주관연구개발기관', '주관연구개발기관', '수요기업', '공급기업']) {
+    const value = entry('비영리법인이 신청할 수 있습니다.', 'BASIC', { scope, audience: scope })
+    assert.equal(companyConditionPresentation(value).scope, null)
+    assert.equal(companyConditionPresentation(value).scopeReviewRequired, false)
+    assert.equal(companyConditionPresentation(value).audience, scope)
+  }
+  assert.equal(companyConditionScope(entry('조건', 'BASIC', { scope: '공급기업 역량진단' })), '공급기업 역량진단')
 })

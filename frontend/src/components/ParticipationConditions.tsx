@@ -3,7 +3,7 @@ import { useId, useState } from 'react'
 import { BadgeCheck, BriefcaseBusiness, Building2, CalendarDays, ChevronDown, ClipboardCheck, ExternalLink, Factory, FileText, Landmark, TriangleAlert, TrendingUp } from 'lucide-react'
 import type { DocumentDetail, ParticipationRule, ParticipationCriterionEntry } from '../api/types'
 import { evidenceAttachment } from '../utils/businessSummary'
-import { companyParticipationRows, companyParticipationExclusions, companyHasBusinessDivision, companyConditionSourceKey, companyConditionPresentation, companyConditionScope, companyConditionAppliesTo, activeCompanyConditionProgram } from '../utils/companyParticipation'
+import { companyParticipationRows, companyParticipationExclusions, companyConditionSourceKey, companyConditionPresentation, companyConditionScope, companyConditionAppliesTo, activeCompanyConditionProgram } from '../utils/companyParticipation'
 import './ParticipationConditions.css'
 
 type RuleSource = ParticipationRule['sources'][number]
@@ -72,7 +72,7 @@ const criterionIcons = {
 
 function ConditionContext({ condition }: { condition: ConditionPresentation }) {
   if (!condition.scope && !condition.scopeReviewRequired) return null
-  return <span className="participation-guide__context">
+  return <span className="participation-guide__context participation-guide__business-context">
     <span className="participation-guide__context-label">적용 사업</span>
     {condition.scope ? <span className="participation-guide__program">
       {condition.scope.split(' / ').map((path, index) => <span className="participation-guide__program-path" key={path}>
@@ -101,6 +101,10 @@ function Rule({ entry, detail, label, condition, number, kind }: {
       <span className="participation-guide__meta">
         <span className={`participation-guide__kind-badge participation-guide__kind-badge--${kind}`}>{kindLabel}</span>
         <ConditionContext condition={condition} />
+        {condition.audience && <span className="participation-guide__context participation-guide__applicant">
+          <span className="participation-guide__context-label">신청 구분</span>
+          <span className="participation-guide__audience">{condition.audience}</span>
+        </span>}
       </span>
       <span className="participation-guide__main">{condition.sentence}</span>
     </span>
@@ -127,7 +131,6 @@ function Rule({ entry, detail, label, condition, number, kind }: {
 
 export function ParticipationConditions({ detail }: { detail: DocumentDetail }) {
   const rows = companyParticipationRows(detail.participationGuide)
-  const hasBusinessDivision = companyHasBusinessDivision(detail.participationGuide)
   const allRows = [...rows.filter(row => row.code === 'BUSINESS_FORM'), ...rows.filter(row => row.code !== 'BUSINESS_FORM')]
     .filter(row => row.mandatory.length || row.preference.length)
   const exclusions = companyParticipationExclusions(detail.participationGuide)
@@ -192,7 +195,7 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
               </header>
               <ol className="participation-guide__conditions">
                 {conditions.map((entry, index) => {
-                  const condition = companyConditionPresentation(entry, hasBusinessDivision)
+                  const condition = companyConditionPresentation(entry)
                   const kind = entry.rule.section === 'PREFERENCE' ? 'preference' : 'mandatory'
                   return <li key={JSON.stringify([detail.detectionId, entry.rule.scope, entry.rule.audience, entry.rule.text, index])}>
                     <Rule entry={entry} detail={detail} condition={condition} kind={kind}
@@ -211,7 +214,7 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
             </header>
             <ol className="participation-guide__conditions">
               {visibleExclusions.map((entry, index) => <li key={JSON.stringify([detail.detectionId, entry.rule.scope, entry.rule.text, index])}>
-                <Rule entry={entry} detail={detail} condition={companyConditionPresentation(entry, hasBusinessDivision)}
+                <Rule entry={entry} detail={detail} condition={companyConditionPresentation(entry)}
                   kind="exclusion" number={visibleExclusions.length > 1 ? index + 1 : undefined}
                   label={`지원 제외 ${index + 1}번 조건`} />
               </li>)}
