@@ -164,7 +164,7 @@ def test_sdk_requests_use_cheap_model_strict_output_caps_and_safe_usage_logs(mon
         result = asyncio.run(scenario())
     assert result.statements == draft().statements
     assert len(payloads) == 2
-    assert all(p["model"] == "gpt-5-nano" and p["reasoning_effort"] == "minimal" for p in payloads)
+    assert all(p["model"] == "gpt-5-mini" and p["reasoning_effort"] == "low" for p in payloads)
     assert [p["max_completion_tokens"] for p in payloads] == [2048, 1024]
     assert all(o["max_retries"] == 0 for o in options)
     assert '"input_tokens": 120' in caplog.text and '"output_tokens": 30' in caplog.text

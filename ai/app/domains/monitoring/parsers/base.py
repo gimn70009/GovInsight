@@ -7,6 +7,7 @@ from typing import Protocol
 class ParsedAttachment:
     text: str
     archive_entries: tuple[dict, ...] = ()
+    warning: str | None = None
 
 
 class AttachmentParseError(Exception):

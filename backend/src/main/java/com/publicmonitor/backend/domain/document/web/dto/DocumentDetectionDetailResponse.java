@@ -77,7 +77,7 @@ public record DocumentDetectionDetailResponse(
         }
     }
 
-    @Schema(description = "상세 응답은 참여기업 조건 그룹의 업력·매출·특허·유관산업 4행을 반환")
+    @Schema(description = "신청 주체·업력·매출·특허·업종·실적·신용 7개 자격 항목")
     public record ParticipationCategory(String code, String label, List<ParticipationCriterionRow> rows) {}
     public record ParticipationCriterionRow(String code, String label,
             @Schema(description = "STATED / NOT_STATED / REVIEW_REQUIRED") String status,
@@ -85,7 +85,9 @@ public record DocumentDetectionDetailResponse(
     public record ParticipationCriterionEntry(ParticipationRule rule,
             @Schema(description = "분리 전 연결 문장. 조건의 대상·기준일·논리관계 보존") String context,
             @Schema(description = "ALTERNATIVE: 선택 관계, LINKED: 같은 문장에서 분리, null: 독립 항목") String relation,
-            List<String> relatedCriteria, String displayStatus, List<String> supportingQuotes) {
+            List<String> relatedCriteria,
+            @Schema(description = "VERIFIED: 정리된 자격 문장 / EVIDENCE_ONLY: 표시하지 않는 미정리 원문")
+            String displayStatus, List<String> supportingQuotes) {
         public ParticipationCriterionEntry(ParticipationRule rule, String context, String relation,
                                            List<String> relatedCriteria, String displayStatus) {
             this(rule, context, relation, relatedCriteria, displayStatus, List.of());
@@ -127,7 +129,10 @@ public record DocumentDetectionDetailResponse(
         }
     }
 
-    public record SubmissionGuide(List<SubmissionDocument> documents, List<SubmissionNote> notes) {}
+    public record SubmissionGuide(List<SubmissionDocument> documents, List<SubmissionNote> notes,
+            @Schema(description = "제출 유의사항 정리 상태: PENDING, READY, PARTIAL, UNAVAILABLE") String notesStatus) {
+        public SubmissionGuide(List<SubmissionDocument> documents, List<SubmissionNote> notes) { this(documents, notes, null); }
+    }
 
     public record SubmissionDocument(
             String title, String detail, String requirementLevel, String stage, String appliesTo,

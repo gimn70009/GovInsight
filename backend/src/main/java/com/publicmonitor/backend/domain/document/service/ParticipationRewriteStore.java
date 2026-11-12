@@ -11,7 +11,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class ParticipationRewriteStore {
     private final DocumentVersionRepository versions;
     @Transactional
-    public void begin(Long id, String key) { versions.beginParticipationRewrite(id, key); }
+    public boolean claim(Long id, String key, String previousKey, String json) {
+        return versions.claimParticipationRewrite(id, key, previousKey, json) == 1;
+    }
     @Transactional
     public void finish(Long id, String key, String json) { versions.finishParticipationRewrite(id, key, json); }
 }

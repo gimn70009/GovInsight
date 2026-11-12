@@ -9,7 +9,12 @@ public final class BusinessSummaryEmailFixtures {
         return parse("""
                 {"detectionId":1,"organizationName":"중소벤처기업부","title":"2027년 도약(Jump-Up) 프로그램 참여기업 모집 공고",
                  "changeType":"NEW_DOCUMENT","originalUrl":"https://example.org/notice?a=1&b=2",
-                 "analysis":{"summary":"이전의 긴 보고서용 요약","opportunity":{"totalScore":72},
+                 "analysis":{"summary":"이전의 긴 보고서용 요약","opportunity":{"totalScore":72,"dimensions":[
+                    {"type":"COMPANY_FIT","reason":"등록된 제조 기술과 사업의 성장 지원 분야가 연결됩니다."},
+                    {"type":"BUSINESS_VALUE","reason":"사업화와 시장 확대를 위한 지원을 검토할 수 있습니다."}]},
+                   "proposal":{"preparation":{"strategy":{"criticalGaps":[
+                    {"gap":"신청 요건 확인","nextAction":"기업 규모와 매출 요건을 확인합니다."},
+                    {"gap":"서류 준비","nextAction":"필수 증빙을 기한 내 확보할 수 있는지 확인합니다."}]}}},
                    "businessSummary":{"purpose":"성장역량이 높은 중소기업의 단계별 맞춤전략 수립과 이행을 패키지로 지원하여 중견기업으로 도약시키는 것입니다.",
                     "supportScale":"총 선정규모 220개사 이내. 점프업100 100개사·점프업500 100개사·점프업1000 20개사, 오픈바우처는 점프업100 연 2억원(3년), 점프업500 연 2.8억원(3년), 점프업1000 연 7.5억원(2년) 등으로 제시되어 있습니다."},
                    "applicationDeadline":"2026-11-13 17:00 (온라인 통합정보관리시스템 제출 완료 기준)."},

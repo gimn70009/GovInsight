@@ -6,7 +6,8 @@ import static com.publicmonitor.backend.domain.document.client.ParticipationRewr
 
 /** Only source quotations classified into the supported eligibility fields reach the table. */
 final class ParticipationRewriteProjection {
-    record Input(Request request, Map<String, List<RequirementSource>> evidence, boolean incomplete, ParticipationScopeIndex scopes) {}
+    record Input(Request request, Map<String, List<RequirementSource>> evidence, boolean incomplete,
+                 ParticipationScopeIndex scopes, List<Source> availableSources) {}
 
     static Input input(ParticipationGuide raw, boolean incomplete) {
         return input(raw, incomplete, null);
@@ -54,7 +55,31 @@ final class ParticipationRewriteProjection {
         var catalog = legacy
                 ? Arrays.stream(ParticipationLegacyCriteria.values()).map(c -> new Criterion(c.name(), c.label, "참여기업 조건")).toList()
                 : Arrays.stream(ParticipationFocusCriterion.values()).map(c -> new Criterion(c.name(), c.label, "참여기업 조건")).toList();
-        return new Input(new Request(sources, catalog, raw.variants().stream().map(ParticipationVariant::name).toList()), evidence, incomplete, scopes);
+        // The frozen request determines paid-cache identity. Explicit sections outside its old vocabulary
+        // are offered only to new requests, with content-stable ids that cannot shift existing s ids.
+        var available = new ArrayList<>(sources);
+        if (!legacy && !previous) {
+            var known = new HashSet<RequirementSource>();
+            evidence.values().forEach(known::addAll);
+            for (var rule : raw.rules()) for (var source : rule.sources()) {
+                if (known.contains(source) || source.excerpt() == null || source.excerpt().isBlank()
+                        || !(ParticipationSourceSelection.compatibleCandidate(source)
+                        || ParticipationSourceSelection.explicit(source))) continue;
+                String parent = scopes == null ? "" : scopes.originalContexts(List.of(source));
+                String identity = compact(Objects.toString(source.sectionTitle(), "")) + ":" + compact(source.excerpt()) + ":" + parent;
+                String id = supplementalId(identity);
+                if (!evidence.containsKey(id)) {
+                    String heading = (parent.isBlank() ? "" : "[상위 구역] " + parent + "\n")
+                            + Objects.toString(source.sectionTitle(), "");
+                    available.add(new Source(id, source.excerpt(), heading,
+                            Arrays.stream(ParticipationFocusCriterion.values()).map(Enum::name).toList()));
+                }
+                var originals = evidence.computeIfAbsent(id, ignored -> new ArrayList<>());
+                if (!originals.contains(source)) originals.add(source);
+            }
+        }
+        return new Input(new Request(sources, catalog, raw.variants().stream().map(ParticipationVariant::name).toList()),
+                evidence, incomplete, scopes, List.copyOf(available));
     }
 
     static ParticipationGuide guide(ParticipationGuide raw, Input input, Response result, String status) {
@@ -62,80 +87,54 @@ final class ParticipationRewriteProjection {
     }
 
     static ParticipationGuide guide(ParticipationGuide raw, Input input, Response result, String status, Input currentInput) {
-        var localConditions = ParticipationLocalConditions.extract(currentInput);
+        var selected = ParticipationSourceSelection.select(currentInput);
         var entries = new LinkedHashMap<String, List<ParticipationCriterionEntry>>();
-        var covered = new HashSet<String>();
-        var replacedLocal = new HashSet<ParticipationLocalConditions.Condition>();
-        var irrelevant = new HashSet<String>();
-        if ("READY".equals(result.status()) && result.irrelevantSourceIds() != null)
-            irrelevant.addAll(result.irrelevantSourceIds());
-        var unresolved = new LinkedHashSet<>(result.evidenceOnlyIds());
-        var verifiedRules = new LinkedHashMap<String, Verified>();
+        var displayedQuotes = new LinkedHashMap<String, List<String>>();
+        var unresolved = new HashSet<>(result.evidenceOnlyIds() == null ? List.<String>of() : result.evidenceOnlyIds());
+        var irrelevant = "READY".equals(result.status()) && result.irrelevantSourceIds() != null
+                ? new HashSet<>(result.irrelevantSourceIds()) : Set.<String>of();
         var displayedRules = new ArrayList<ParticipationRule>();
-        if ("READY".equals(result.status())) for (var item : result.statements()) {
-            List<RequirementSource> sources = item.sourceIds() == null ? List.of() : item.sourceIds().stream()
-                    .map(input.evidence()::get).filter(Objects::nonNull).flatMap(List::stream).distinct().toList();
-            final var quoteSources = sources;
-            boolean criterion = ParticipationFocusCriterion.supports(item.criterion());
-            boolean kind = "ELIGIBILITY".equals(item.kind()) || "PREFERENCE".equals(item.kind());
-            if (!criterion || !kind || sources.isEmpty() || item.sourceIds().stream().anyMatch(id -> !input.evidence().containsKey(id))
-                    || item.text() == null || item.text().isBlank() || item.supportingQuotes() == null
-                    || item.supportingQuotes().isEmpty() || item.supportingQuotes().stream().anyMatch(quote ->
-                        quote == null || quote.isBlank() || quoteSources.stream().noneMatch(source -> source.excerpt().contains(quote)))) {
-                if (item.sourceIds() != null) unresolved.addAll(item.sourceIds());
-                continue;
+        var grounded = new ArrayList<Statement>();
+        if ("READY".equals(result.status()) && result.statements() != null) for (var item : result.statements()) {
+            if (valid(item, input.evidence())) {
+                var details = item.details().stream().filter(detail -> validDetail(detail, input.evidence())).limit(6).toList();
+                grounded.add(new Statement(item.sourceIds(), item.criterion(), item.text(), item.groupLabel(),
+                        item.supportingQuotes(), item.kind(), item.scope(), item.audience(), details));
             }
-            String quote = item.supportingQuotes().getFirst();
-            var directSources = sources.stream().filter(source -> source.excerpt().contains(quote)).toList();
-            var matchingLocal = localConditions.stream().filter(local ->
-                    ParticipationLocalConditions.covers(local, directSources, quote)).toList();
-            var display = directSources.stream()
-                    .map(source -> ParticipationFocusedText.prepare(item.criterion(), item.text(), quote, source.sectionTitle(), item.kind()))
-                    .filter(Objects::nonNull).findFirst().orElse(null);
-            if (display == null || (input.scopes() != null && ParticipationAudience.recipient(directSources, input.scopes().context(directSources)))) {
-                unresolved.addAll(item.sourceIds());
-                continue;
-            }
-            if (!matchingLocal.isEmpty()) {
-                if (!display.text().matches("(?s).*(?:다|요)\\.$")
-                        || matchingLocal.stream().anyMatch(local -> !local.code().equals(item.criterion()))
-                        || !ParticipationFacts.equivalent(display.text(), quote)) continue;
-                replacedLocal.addAll(matchingLocal);
-            }
-            String identity = item.criterion() + ":" + item.kind() + ":" + compact(display.text());
-            var previous = verifiedRules.get(identity);
-            if (previous != null) {
-                var combined = new LinkedHashSet<>(previous.rule().sources());
-                combined.addAll(sources);
-                sources = List.copyOf(combined);
-            }
-            var c = ParticipationFocusCriterion.valueOf(item.criterion());
-            String section = "PREFERENCE".equals(item.kind()) ? "PREFERENCE" : "BASIC";
-            String scope = input.scopes() == null ? displayScope(sources, display.quote()) : input.scopes().scope(sources, display.quote());
-            scope = ParticipationLocalConditions.cleanScope(scope);
-            var rule = new ParticipationRule(section, c.label, display.text(), scope, null,
-                    List.of(), List.of(), List.of(), List.of(), sources);
-            verifiedRules.put(identity, new Verified(c, rule, display.quote()));
-            item.sourceIds().forEach(id -> covered.add(c.name() + ":" + id));
+            else if (item != null && item.sourceIds() != null) unresolved.addAll(item.sourceIds());
         }
-        for (var item : verifiedRules.values()) {
-            entries.computeIfAbsent(item.criterion().name(), ignored -> new ArrayList<>()).add(
-                    new ParticipationCriterionEntry(item.rule(), null, null, List.of(), "VERIFIED", List.of(item.quote())));
-            displayedRules.add(item.rule());
+        for (var item : ParticipationDisplayStatements.prepare(input, grounded)) {
+            // Paid statements retain every grounded citation; export selection must not trim their meaning.
+            var sourceIds = new LinkedHashSet<>(item.sourceIds());
+            var allQuotes = new LinkedHashSet<>(item.supportingQuotes());
+            for (var detail : item.details()) {
+                sourceIds.addAll(detail.sourceIds());
+                allQuotes.addAll(detail.supportingQuotes());
+                for (String id : detail.sourceIds()) displayedQuotes.computeIfAbsent(id, ignored -> new ArrayList<>()).addAll(detail.supportingQuotes());
+            }
+            var sources = sourceIds.stream().map(input.evidence()::get).flatMap(List::stream).distinct().toList();
+            var quotes = List.copyOf(allQuotes);
+            var criterion = ParticipationFocusCriterion.valueOf(item.criterion());
+            var rule = new ParticipationRule("EXCLUSION".equals(item.kind()) ? "EXCLUSION"
+                    : "PREFERENCE".equals(item.kind()) ? "PREFERENCE" : "BASIC",
+                    criterion.label, item.text(), displayScope(item.scope()), item.audience(),
+                    item.details().stream().map(Detail::text).distinct().toList(), List.of(), List.of(), List.of(), sources);
+            entries.computeIfAbsent(criterion.name(), ignored -> new ArrayList<>()).add(
+                    new ParticipationCriterionEntry(rule, null, null, List.of(), "VERIFIED", quotes));
+            displayedRules.add(rule);
+            for (String id : item.sourceIds()) displayedQuotes.computeIfAbsent(id, ignored -> new ArrayList<>()).addAll(item.supportingQuotes());
         }
-        for (var local : localConditions) {
-            if (replacedLocal.contains(local)) continue;
-            entries.computeIfAbsent(local.code(), ignored -> new ArrayList<>()).add(
-                    new ParticipationCriterionEntry(local.rule(), null, null, List.of(), "VERIFIED", List.of(local.quote())));
-            displayedRules.add(local.rule());
-        }
-        for (var source : input.request().sources()) {
+        for (var source : currentInput.availableSources()) {
+            // Legacy ids belong only to their original request, never to newly recovered raw sections.
+            if (input == currentInput && !unresolved.contains(source.id())
+                    && (irrelevant.contains(source.id()) || currentInput.evidence().get(source.id()).stream().allMatch(original ->
+                        ParticipationDisplayStatements.fullyCovered(original, displayedQuotes.getOrDefault(source.id(), List.of()))))) continue;
+            var sources = currentInput.evidence().get(source.id()).stream().filter(selected::includes).toList();
+            if (sources.isEmpty()) continue;
             for (String code : source.criteria()) {
                 if (!ParticipationFocusCriterion.supports(code)) continue;
-                if ((covered.contains(code + ":" + source.id()) || irrelevant.contains(source.id()))
-                        && !unresolved.contains(source.id())) continue;
                 var rule = new ParticipationRule("EVIDENCE", ParticipationFocusCriterion.valueOf(code).label, "", null, null,
-                        List.of(), List.of(), List.of(), List.of(), input.evidence().get(source.id()));
+                        List.of(), List.of(), List.of(), List.of(), sources);
                 entries.computeIfAbsent(code, ignored -> new ArrayList<>()).add(
                         new ParticipationCriterionEntry(rule, null, null, List.of(), "EVIDENCE_ONLY"));
             }
@@ -143,32 +142,53 @@ final class ParticipationRewriteProjection {
         var rows = Arrays.stream(ParticipationFocusCriterion.values()).map(c -> {
             var items = entries.getOrDefault(c.name(), List.of());
             boolean verified = items.stream().anyMatch(e -> "VERIFIED".equals(e.displayStatus()));
-            // A bounded extraction cannot establish that an entire notice has no condition for a field.
             return new ParticipationCriterionRow(c.name(), c.label, verified ? "STATED" : "REVIEW_REQUIRED", items);
         }).toList();
-        var category = new ParticipationCategory("COMPANY_REQUIREMENTS", "참여기업 조건", rows);
-        return new ParticipationGuide(List.of(), displayedRules, raw.variants(), List.of(category), status);
+        return new ParticipationGuide(List.of(), displayedRules, raw.variants(),
+                List.of(new ParticipationCategory("COMPANY_REQUIREMENTS", "참여기업 조건", rows)), status);
     }
+
+    private static boolean valid(Statement item, Map<String, List<RequirementSource>> evidence) {
+        if (item == null || !ParticipationFocusCriterion.supports(item.criterion())
+                || !("ELIGIBILITY".equals(item.kind()) || "EXCLUSION".equals(item.kind()) || "PREFERENCE".equals(item.kind()))
+                || item.text() == null || item.text().isBlank() || item.sourceIds() == null || item.sourceIds().isEmpty()
+                || item.sourceIds().stream().anyMatch(id -> !evidence.containsKey(id))
+                || item.supportingQuotes() == null || item.supportingQuotes().isEmpty()
+                || item.supportingQuotes().stream().anyMatch(quote -> quote == null || quote.isBlank())) return false;
+        var sources = item.sourceIds().stream().map(evidence::get).flatMap(List::stream).toList();
+        return item.supportingQuotes().stream().allMatch(quote -> sources.stream().anyMatch(source -> source.excerpt().contains(quote)))
+                && item.sourceIds().stream().allMatch(id -> evidence.get(id).stream().anyMatch(source ->
+                        item.supportingQuotes().stream().anyMatch(quote -> source.excerpt().contains(quote))));
+    }
+
+    private static boolean validDetail(Detail detail, Map<String, List<RequirementSource>> evidence) {
+        if (detail == null || detail.text() == null || detail.text().isBlank() || detail.text().length() > 240
+                || detail.supportingQuotes() == null || detail.supportingQuotes().size() > 4
+                || detail.supportingQuotes().stream().anyMatch(quote -> quote == null || quote.length() > 600)) return false;
+        // Validate each explanation independently; a bad explanation cannot erase a grounded parent.
+        return valid(new Statement(detail.sourceIds(), "BUSINESS_FORM", detail.text(), "",
+                detail.supportingQuotes(), "ELIGIBILITY"), evidence);
+    }
+
+    private static String displayScope(String value) {
+        if (value == null || value.isBlank()) return null;
+        String compact = compact(value);
+        if (Set.of("상위구역", "원문구역", "적용유형", "유형명", "신청역할", "신청주체명",
+                "신청자격", "신청요건", "신청자격및신청요건", "지원대상", "지원내용", "사업개요",
+                "scope", "parent", "section", "program", "null").contains(compact)
+                || compact.matches("^\\[(?:상위구역|원문구역|적용유형)\\].*")) return null;
+        return value.strip();
+    }
+
     private static List<String> matching(RequirementSource source, boolean legacy, boolean previous) {
         return legacy ? ParticipationLegacyCriteria.matching(source.excerpt(), source.sectionTitle())
                 : ParticipationFocusCriterion.matching(source.excerpt(), source.sectionTitle(), previous);
     }
-    private record Verified(ParticipationFocusCriterion criterion, ParticipationRule rule, String quote) {}
-
-    private static String displayScope(List<RequirementSource> sources, String text) {
-        var headings = new LinkedHashSet<String>();
-        for (var source : sources) {
-            String heading = Objects.toString(source.sectionTitle(), "");
-            int section = heading.indexOf("[원문 구역] ");
-            if (section >= 0) heading = heading.substring(section + "[원문 구역] ".length());
-            heading = heading.strip().replaceFirst("^(?:[□■○◦●•]|[0-9]+[.)])\\s*", "");
-            heading = heading.replaceFirst("^(?:신청|지원|참여|모집)\\s*(?:자격|대상|요건|조건)\\s*[:：]\\s*", "");
-            String key = compact(heading);
-            if (key.isEmpty() || compact(text).contains(key) || ParticipationScopeIndex.generic(heading)
-                    || key.matches("(?:(?:신청|지원|참여|모집)(?:자격|대상|요건|조건)|필수(?:요건|조건)|우대(?:사항|조건|항목)?|가점(?:사항|항목)?)")) continue;
-            headings.add(heading);
-        }
-        return headings.isEmpty() ? null : String.join(" / ", headings);
+    private static String supplementalId(String identity) {
+        try {
+            return "u" + HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(identity.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException exception) { throw new IllegalStateException(exception); }
     }
     private static String compact(String value) { return value.replaceAll("\\s+", ""); }
 }

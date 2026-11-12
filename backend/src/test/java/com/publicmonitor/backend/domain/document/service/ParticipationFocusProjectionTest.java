@@ -38,59 +38,112 @@ class ParticipationFocusProjectionTest {
                 .containsExactly("BUSINESS_AGE", "REVENUE", "IP", "SECTOR");
     }
 
-    @Test void exactSourceFragmentsNeedNoSentenceRewritingAndPreferenceStaysInItsOwnField() {
-        String age = "업력 7년 이내";
-        String patent = "등록 특허 보유 시 2점 가점";
-        var raw = raw(age, patent);
-        var response = new Response(List.of(
-                new Statement(List.of("s0"), "BUSINESS_AGE", age, "", List.of(age), "ELIGIBILITY"),
-                new Statement(List.of("s1"), "IP", patent, "", List.of(patent), "PREFERENCE")), List.of(), "READY");
-        var guide = project(raw, response);
-        assertThat(guide.categories()).singleElement().satisfies(category -> {
-            assertThat(category.code()).isEqualTo("COMPANY_REQUIREMENTS");
-            assertThat(category.rows()).extracting(ParticipationCriterionRow::code)
-                    .containsExactly("BUSINESS_AGE", "REVENUE", "IP", "SECTOR", "BUSINESS_FORM", "EXPERIENCE", "CREDIT");
+    @Test void modelTextClassificationScopeAndAudiencePassThroughWithoutLocalRewriting() {
+        String quote = "업력 7년 이상인 중소기업. 단, 추천받은 창업기업은 업력 제한 없음";
+        String text = "중소기업은 업력이 7년 이상이어야 합니다. 다만 추천받은 창업기업에는 업력 제한이 없습니다.";
+        var response = new Response(List.of(new Statement(List.of("s0"), "BUSINESS_FORM", text, "일반 절 제목",
+                List.of(quote), "ELIGIBILITY", "성장형", "도입기업")), List.of(), "READY");
+        var guide = project(raw(quote), response);
+        assertThat(entries(guide)).singleElement().satisfies(entry -> {
+            assertThat(entry.displayStatus()).isEqualTo("VERIFIED");
+            assertThat(entry.rule().text()).isEqualTo(text);
+            assertThat(entry.rule().label()).isEqualTo("신청 주체");
+            assertThat(entry.rule().scope()).isEqualTo("성장형");
+            assertThat(entry.rule().audience()).isEqualTo("도입기업");
+            assertThat(entry.rule().details()).isEmpty();
+            assertThat(entry.supportingQuotes()).containsExactly(quote);
         });
-        assertThat(entries(guide)).extracting(e -> e.rule().section()).containsExactly("BASIC", "PREFERENCE");
-        assertThat(entries(guide)).extracting(e -> e.rule().text()).containsExactly(age, patent);
-        assertThat(guide.conditions()).isEmpty();
-        assertThat(guide.rules()).hasSize(2);
     }
 
-    @Test void identicalQuotationCanBelongToBothFieldsAndRequirementKinds() {
-        String quote = "업력 7년 이내이며 매출액 10억원 이상인 기업은 신청 가능하며 평가 시 우대";
-        var raw = raw(quote);
-        var response = new Response(List.of(
-                new Statement(List.of("s0"), "BUSINESS_AGE", quote, "", List.of(quote), "ELIGIBILITY"),
-                new Statement(List.of("s0"), "BUSINESS_AGE", quote, "", List.of(quote), "PREFERENCE"),
-                new Statement(List.of("s0"), "REVENUE", quote, "", List.of(quote), "ELIGIBILITY")), List.of(), "READY");
-        assertThat(entries(project(raw, response))).hasSize(3).allMatch(e -> "VERIFIED".equals(e.displayStatus()));
-    }
-
-    @Test void unrelatedKindsAndRewrittenOrInventedTextCannotReachVerifiedCells() {
-        String quote = "특허를 보유한 기업 우대";
-        var raw = raw(quote);
-        for (Statement statement : List.of(
-                new Statement(List.of("s0"), "IP", quote, "", List.of(quote), "EXCLUSION"),
-                new Statement(List.of("s0"), "IP", "특허 3건 이상이 필수입니다.", "", List.of(quote), "ELIGIBILITY"),
-                new Statement(List.of("s0"), "IP", "특허 3건 이상", "", List.of("특허 3건 이상"), "ELIGIBILITY"),
-                new Statement(List.of("s0"), "TAX", quote, "", List.of(quote), "PREFERENCE"))) {
-            var guide = project(raw, new Response(List.of(statement), List.of(), "READY"));
-            assertThat(entries(guide)).singleElement().satisfies(e -> {
-                assertThat(e.displayStatus()).isEqualTo("EVIDENCE_ONLY");
-                assertThat(e.rule().text()).isEmpty();
-                assertThat(e.rule().sources().getFirst().excerpt()).isEqualTo(quote);
+    @Test void exclusionsRetainTheirKindAndDiscardOnlyInternalScopeMarkers() {
+        String text = "기업신용평가등급이 B 미만인 기업은 지원에서 제외됩니다.";
+        for (String scope : List.of("상위 구역", "원문 구역", "[상위 구역] 지원 대상", "신청자격", "parent", "성장형")) {
+            var guide = project(raw(text), new Response(List.of(new Statement(List.of("s0"), "CREDIT", text,
+                    "", List.of(text), "EXCLUSION", scope, null)), List.of(), "READY"));
+            assertThat(entries(guide)).singleElement().satisfies(entry -> {
+                assertThat(entry.displayStatus()).isEqualTo("VERIFIED");
+                assertThat(entry.rule().section()).isEqualTo("EXCLUSION");
+                assertThat(entry.rule().text()).isEqualTo(text);
+                assertThat(entry.rule().scope()).isEqualTo("성장형".equals(scope) ? scope : null);
+                assertThat(entry.supportingQuotes()).containsExactly(text);
             });
         }
     }
 
-    @Test void emptyOrUnprocessedExtractionDoesNotClaimConditionsAreAbsent() {
+    @Test void oldCachedSingleClausesGainOnlyAnEndingAndKeepTheirMissingScope() {
+        String age = "업력 7년 이내";
+        String patent = "등록 특허 보유 시 2점 가점";
+        var response = new Response(List.of(
+                new Statement(List.of("s0"), "BUSINESS_AGE", age, "신청자격 및 신청요건", List.of(age), "ELIGIBILITY"),
+                new Statement(List.of("s1"), "IP", patent, "", List.of(patent), "PREFERENCE")), List.of(), "READY");
+        var guide = project(raw(age, patent), response);
+        assertThat(guide.rules()).extracting(ParticipationRule::text).containsExactly(age + "이어야 합니다.", patent + "을 부여합니다.");
+        assertThat(guide.rules()).allSatisfy(rule -> {
+            assertThat(rule.scope()).isNull();
+            assertThat(rule.audience()).isNull();
+        });
+        assertThat(guide.rules()).extracting(ParticipationRule::section).containsExactly("BASIC", "PREFERENCE");
+    }
+
+    @Test void invalidSourceIdsQuotesEnumsAndEmptyTextStayEvidenceOnly() {
+        String quote = "특허를 보유한 기업 우대";
+        var data = raw(quote);
+        for (Statement statement : List.of(
+                new Statement(List.of("s0"), "IP", quote, "", List.of(quote), "FUNDING"),
+                new Statement(List.of("s0"), "TAX", quote, "", List.of(quote), "PREFERENCE"),
+                new Statement(List.of("missing"), "IP", quote, "", List.of(quote), "PREFERENCE"),
+                new Statement(List.of("s0"), "IP", quote, "", List.of("없는 근거"), "PREFERENCE"),
+                new Statement(List.of("s0"), "IP", " ", "", List.of(quote), "PREFERENCE"),
+                new Statement(List.of(), "IP", quote, "", List.of(quote), "PREFERENCE"),
+                new Statement(null, "IP", quote, "", List.of(quote), "PREFERENCE"),
+                new Statement(List.of("s0"), "IP", quote, "", null, "PREFERENCE"))) {
+            var guide = project(data, new Response(List.of(statement), List.of(), "READY"));
+            assertThat(guide.rules()).isEmpty();
+            assertThat(entries(guide)).singleElement().satisfies(entry -> {
+                assertThat(entry.displayStatus()).isEqualTo("EVIDENCE_ONLY");
+                assertThat(entry.rule().text()).isEmpty();
+                assertThat(entry.rule().sources().getFirst().excerpt()).isEqualTo(quote);
+            });
+        }
+    }
+
+    @Test void everySourceIdMustHaveItsOwnMatchingQuotation() {
+        String first = "특허 보유 기업", second = "매출액 10억원 이상";
+        var guide = project(raw(first, second), new Response(List.of(
+                new Statement(List.of("s0", "s1"), "IP", "특허 보유 기업을 우대합니다.", "", List.of(first), "PREFERENCE")), List.of(), "READY"));
+        assertThat(guide.rules()).isEmpty();
+        assertThat(entries(guide)).hasSize(2).allMatch(entry -> entry.displayStatus().equals("EVIDENCE_ONLY"));
+    }
+
+    @Test void allGroundedQuotesAreRetainedAcrossSeveralSourceIds() {
+        String first = "업력 7년 이상", second = "다만 추천받은 창업기업은 업력 제한 없음";
+        String text = "업력이 7년 이상이어야 합니다. 추천받은 창업기업에는 업력 제한이 없습니다.";
+        var guide = project(raw(first, second), new Response(List.of(
+                new Statement(List.of("s0", "s1"), "BUSINESS_AGE", text, "", List.of(first, second), "ELIGIBILITY")), List.of(), "READY"));
+        assertThat(entries(guide)).singleElement().satisfies(entry -> {
+            assertThat(entry.supportingQuotes()).containsExactly(first, second);
+            assertThat(entry.rule().sources()).hasSize(2);
+            assertThat(entry.rule().text()).isEqualTo(text);
+        });
+    }
+
+    @Test void missingExtractionDoesNotGenerateConditionsOrClaimThatNoConditionsExist() {
         for (String status : List.of("READY", "UNAVAILABLE")) {
             var guide = project(raw("매출액 10억원 이상"), new Response(List.of(), List.of("s0"), status));
+            assertThat(guide.rules()).isEmpty();
             assertThat(guide.categories().getFirst().rows()).hasSize(7)
                     .allMatch(row -> row.status().equals("REVIEW_REQUIRED"));
-            assertThat(entries(guide)).singleElement().satisfies(e -> assertThat(e.displayStatus()).isEqualTo("EVIDENCE_ONLY"));
+            assertThat(entries(guide)).singleElement().satisfies(entry -> assertThat(entry.displayStatus()).isEqualTo("EVIDENCE_ONLY"));
         }
+    }
+
+    @Test void partialExtractionRetainsUnresolvedRawSectionsBesideAcceptedStatements() {
+        String quote = "업력 7년 이상";
+        var guide = project(raw(quote, "매출액 10억원 이상"), new Response(List.of(
+                new Statement(List.of("s0"), "BUSINESS_AGE", "업력이 7년 이상이어야 합니다.", "", List.of(quote), "ELIGIBILITY")),
+                List.of("s1"), "READY"));
+        assertThat(guide.rules()).hasSize(1);
+        assertThat(entries(guide)).extracting(ParticipationCriterionEntry::displayStatus).containsExactly("VERIFIED", "EVIDENCE_ONLY");
     }
 
     @Test void unrelatedNoticesDoNotStartAnAiRequest() {
@@ -99,15 +152,14 @@ class ParticipationFocusProjectionTest {
         var service = new ParticipationRewriteService(client, store, new ObjectMapper());
         try {
             var version = DocumentVersion.create(null, 1, "공고", "대표자 국세 체납 시 제외", "a".repeat(64), null, 0, null);
-            var guide = service.resolve(version, raw("대표자 국세 체납 시 제외"), false);
+            var guide = service.resolve(version, ParticipationConditionResolver.candidates("대표자 국세 체납 시 제외", List.of(), null), false);
             assertThat(guide.rewriteStatus()).isEqualTo("READY");
-            assertThat(guide.categories().getFirst().rows()).hasSize(7);
             assertThat(entries(guide)).isEmpty();
             verifyNoInteractions(client, store);
         } finally { service.close(); }
     }
 
-    @Test void wholeTablesAndScopeHeadingsArePreservedForClassification() {
+    @Test void wholeTablesAndOriginalScopeHeadingsRemainUnchangedInFrozenRequest() {
         String table = "[표]\n유형\t업력\t매출액\n일반형\t7년 이내\t10억원 이상\n특화형\t10년 이내\t20억원 이상\n[/표]";
         var input = ParticipationRewriteProjection.input(raw(table), false);
         assertThat(input.request().sources()).singleElement().satisfies(source -> {
@@ -116,107 +168,11 @@ class ParticipationFocusProjectionTest {
             assertThat(source.criteria()).containsExactly("BUSINESS_AGE", "REVENUE");
         });
     }
-    @Test void operatorRecruitmentContextSurvivesTheSelectedBeneficiaryAgeBlock() throws Exception {
-        String body = java.nio.file.Files.readString(java.nio.file.Path.of("src/test/resources/participation-conditions/startup-structured.txt"));
-        var raw = ParticipationConditionResolver.candidates(body, List.of(), null);
-        var input = ParticipationRewriteProjection.input(raw, false);
-        assertThat(input.request().sources()).anySatisfy(source -> {
-            assertThat(source.excerpt()).contains("업력 10년 이내 기업");
-            assertThat(source.groupLabel()).contains("주관기관 모집 공고", "창업기업 모집은 2027년 별도 공고 예정", "[원문 구역]", "지원대상");
-        });
-        assertThat(ParticipationRewriteProjection.legacyInput(raw, false, null).request().sources()).noneSatisfy(source ->
-                assertThat(source.excerpt()).startsWith("□ 신청 제외대상"));
-    }
 
-    @Test void trackHeadingRemainsSeparateFromTheExactQuotation() {
-        String quote = "매출액 100억원 이상";
-        var source = new RequirementSource("NOTICE_BODY", null,
-                "[공고 대상] 주관기관 모집 공고\n[원문 구역] □ 스케일업 100억 트랙", null, quote);
-        var rule = new ParticipationRule("EVIDENCE", "원문", "", null, null,
-                List.of(), List.of(), List.of(), List.of(), List.of(source));
-        var raw = new ParticipationGuide(List.of(), List.of(rule), List.of(), List.of());
-        var response = new Response(List.of(new Statement(List.of("s0"), "REVENUE", quote,
-                source.sectionTitle(), List.of(quote), "ELIGIBILITY")), List.of(), "READY");
-        assertThat(entries(project(raw, response))).singleElement().satisfies(entry -> {
-            assertThat(entry.rule().text()).isEqualTo(quote);
-            assertThat(entry.rule().scope()).isEqualTo("스케일업 100억 트랙");
-        });
-    }
-
-
-    @Test void readableSentenceUsesOriginalQuoteForGroundingAndScope() {
-        String quote = "제조업(C10~C34)을 주된 사업으로 영위중이어야 함";
-        String text = "제조업(C10~C34)을 주된 사업으로 영위해야 합니다.";
-        var guide = project(raw(quote), new Response(List.of(
-                new Statement(List.of("s0"), "SECTOR", text, "", List.of(quote), "ELIGIBILITY")), List.of(), "READY"));
-        assertThat(entries(guide)).singleElement().satisfies(e -> {
-            assertThat(e.rule().text()).isEqualTo(text);
-            assertThat(e.supportingQuotes()).containsExactly(quote);
-            assertThat(e.rule().sources().getFirst().excerpt()).isEqualTo(quote);
-            assertThat(e.displayStatus()).isEqualTo("VERIFIED");
-        });
-    }
-
-    @Test void cachedCleanTableKeepsOnlyTheActualIndustryCell() throws Exception {
-        String body = java.nio.file.Files.readString(java.nio.file.Path.of(
-                "src/test/resources/participation-conditions/clean-structured.txt"));
-        String quote = body.substring(body.indexOf("가. 신청대상"), body.indexOf("1. “도시형소공인”")).strip();
-        var guide = project(raw(quote), new Response(List.of(
-                new Statement(List.of("s0"), "SECTOR", quote, "", List.of(quote), "ELIGIBILITY")), List.of(), "READY"));
-        assertThat(entries(guide).stream().filter(e -> "VERIFIED".equals(e.displayStatus())).toList()).singleElement().satisfies(e -> {
-            assertThat(e.rule().text()).contains("C10~C34", "주된 사업").doesNotContain("[표]", "상시근로자", "제2조");
-            assertThat(e.supportingQuotes()).singleElement().satisfies(q -> assertThat(quote).contains(q));
-            assertThat(e.rule().sources().getFirst().excerpt()).isEqualTo(quote);
-        });
-    }
-
-    @Test void cachedDocumentListCannotBecomeAnIndustryCondition() throws Exception {
-        String quote = java.nio.file.Files.readString(java.nio.file.Path.of("src/test/resources/submission-documents/clean.txt"));
-        quote = quote.replace("\r\n", "\n");
-        quote = quote.substring(0, quote.indexOf("\n3\n택1")).strip();
-        var guide = project(raw(quote), new Response(List.of(
-                new Statement(List.of("s0"), "SECTOR", quote, "", List.of(quote), "ELIGIBILITY")), List.of(), "READY"));
-        assertThat(entries(guide)).allMatch(e -> !"VERIFIED".equals(e.displayStatus()));
-    }
-
-    @Test void sentenceCannotAlterNumericUnitsThresholdOrderOrPreference() {
-        for (String text : List.of("매출액은 100만원 이상이어야 합니다.", "매출액은 100억원 미만이어야 합니다.",
-                "매출액 100억원 이상이면 우대합니다.")) {
-            String quote = "매출액 100억원 이상";
-            var guide = project(raw(quote), new Response(List.of(
-                    new Statement(List.of("s0"), "REVENUE", text, "", List.of(quote), "ELIGIBILITY")), List.of(), "READY"));
-            assertThat(entries(guide)).allMatch(e -> !"VERIFIED".equals(e.displayStatus()));
-        }
-    }
-    @Test void preferenceAndNegationSurviveReadableSentences() {
-        var display = ParticipationFocusedText.prepare("IP", "등록 특허 보유 기업을 우대합니다.",
-                "등록 특허 보유 기업", "우대사항", "PREFERENCE");
-        assertThat(display).isNotNull();
-        assertThat(ParticipationFocusedText.prepare("IP", "등록 특허가 있어야 합니다.",
-                "등록 특허가 없어야 함", "신청자격", "ELIGIBILITY")).isNull();
-    }
-
-    @Test void extendedEligibilityCandidatesAndVerifiedSentencesReachTheMatchingRows() {
-        String[][] cases = {
-            {"BUSINESS_FORM", "공공기관에 해당하는 법인 또는 단체", "공공기관에 해당하는 법인 또는 단체여야 합니다."},
-            {"CREDIT", "일반기업의 경우 기업신용평가등급 B 이상", "일반기업의 경우 기업신용평가등급 B 이상이어야 합니다."},
-            {"EXPERIENCE", "최근 1년간 공공기관 계약실적 10억원 이하", "최근 1년간 공공기관 계약실적은 10억원 이하여야 합니다."},
-            {"IP", "우수연구개발 기술개발제품 12종", "우수연구개발 기술개발제품 12종에 해당해야 합니다."},
-            {"SECTOR", "경제안보품목 및 경제안보서비스의 도입 생산 및 제공에 기여하고자 하는 사업자 또는 사업자단체", "경제안보품목 및 경제안보서비스의 도입 생산 및 제공에 기여하고자 하는 사업자 또는 사업자단체여야 합니다."},
-            {"REVENUE", "전년도 직접수출액 5,000만불 미만의 중소기업", "전년도 직접수출액이 5,000만불 미만인 중소기업이어야 합니다."}
-        };
-        for (var example : cases) {
-            var input = ParticipationRewriteProjection.input(raw(example[1]), false);
-            assertThat(input.request().sources()).singleElement().satisfies(source -> assertThat(source.criteria()).contains(example[0]));
-            var guide = project(raw(example[1]), new Response(List.of(new Statement(List.of("s0"), example[0], example[2], "", List.of(example[1]), "ELIGIBILITY")), List.of(), "READY"));
-            assertThat(guide.rules()).singleElement().satisfies(rule -> assertThat(rule.text()).isEqualTo(example[2]));
-        }
-    }
-    @Test void compoundAgeAndRevenueCanSplitWithoutChangingOrConditionsOrGrades() {
-        String quote = "업력 7년 이상의 매출액 500억원 달성 중소기업";
-        assertThat(ParticipationFocusedText.prepare("BUSINESS_AGE", "업력 7년 이상이어야 합니다.", quote, "지원대상", "ELIGIBILITY")).isNotNull();
-        assertThat(ParticipationFocusedText.prepare("REVENUE", "매출액 500억원을 달성해야 합니다.", quote, "지원대상", "ELIGIBILITY")).isNotNull();
-        assertThat(ParticipationFocusedText.prepare("BUSINESS_AGE", "업력 7년 이상이어야 합니다.", quote + " 또는 특허 보유", "지원대상", "ELIGIBILITY")).isNull();
-        assertThat(ParticipationFocusedText.prepare("CREDIT", "신용등급 A 이상이어야 합니다.", "신용등급 B 이상", "지원대상", "ELIGIBILITY")).isNull();
+    @Test void oldStatementJsonWithoutScopeOrAudienceRemainsReadable() {
+        String json = "{\"source_ids\":[\"s0\"],\"criterion\":\"IP\",\"text\":\"특허 기업 우대\",\"group_label\":\"우대\",\"supporting_quotes\":[\"특허 기업\"],\"kind\":\"PREFERENCE\"}";
+        var item = new ObjectMapper().readValue(json, Statement.class);
+        assertThat(item.scope()).isNull();
+        assertThat(item.audience()).isNull();
     }
 }

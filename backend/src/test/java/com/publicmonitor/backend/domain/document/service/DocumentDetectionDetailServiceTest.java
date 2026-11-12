@@ -161,6 +161,26 @@ class DocumentDetectionDetailServiceTest {
             assertThat(item.kind().name()).isEqualTo("MANDATORY");
             assertThat(item.source().attachmentName()).isEqualTo("공고문.hwpx");
         });
+
+        var alternate = DocumentAttachment.create(version, "공고문.pdf", "https://example.com/file/2", "pdf",
+                "application/pdf", 100L, "c".repeat(64), "평가 시 제출서류\n① 사업계획서",
+                AttachmentParseStatus.COMPLETED, null);
+        given(attachmentRepository.findAllByDocumentVersionId(3L)).willReturn(List.of(alternate, attachment));
+        var notes = SubmissionNotesTestSupport.service();
+        var selectedService = new DocumentDetectionDetailService(detectionRepository, analysisRepository,
+                analysisTaskRepository, attachmentRepository, new ObjectMapper(), rewriteService(), notes);
+        var selectedResponse = selectedService.findById(4L);
+        assertThat(selectedResponse.attachments()).extracting(item -> item.fileName())
+                .containsExactly("공고문.pdf", "공고문.hwpx");
+        assertThat(selectedResponse.submissionGuide().documents()).singleElement().satisfies(item -> {
+            assertThat(item.stage()).isEqualTo("APPLICATION");
+            assertThat(item.source().attachmentName()).isEqualTo("공고문.hwpx");
+        });
+        org.mockito.Mockito.verify(notes).resolve(org.mockito.ArgumentMatchers.eq(version),
+                org.mockito.ArgumentMatchers.eq(List.of(attachment)), org.mockito.ArgumentMatchers.any());
+        assertThat(selectedService.findSummaryById(4L).submissionGuide().documents())
+                .isEqualTo(selectedResponse.submissionGuide().documents());
+        org.mockito.Mockito.verifyNoMoreInteractions(notes);
     }
 
     @Test
@@ -346,7 +366,7 @@ class DocumentDetectionDetailServiceTest {
                 analysisRepository,
                 analysisTaskRepository,
                 attachmentRepository,
-                new ObjectMapper(), rewriteService()
+                new ObjectMapper(), rewriteService(), com.publicmonitor.backend.domain.document.service.SubmissionNotesTestSupport.service()
         );
     }
     private com.publicmonitor.backend.domain.document.service.ParticipationRewriteService rewriteService() {
