@@ -161,7 +161,7 @@ test('a hidden or stale program filter never hides conditions after a notice or 
   assert.equal(activeCompanyConditionProgram(selection, 1, programs, 8), '일반형')
   assert.equal(activeCompanyConditionProgram(selection, 2, programs, 8), '')
   assert.equal(activeCompanyConditionProgram(selection, 1, programs, 7), '')
-  assert.equal(activeCompanyConditionProgram(selection, 1, programs.slice(0, 2), 8), '')
+  assert.equal(activeCompanyConditionProgram(selection, 1, programs.slice(0, 1), 8), '')
   assert.equal(activeCompanyConditionProgram(selection, 1, ['특화형', '성장형', '도약형'], 8), '')
 })
 
@@ -252,12 +252,30 @@ test('real table types and hierarchy survive generic sections without losing unc
   assert.equal(companyConditionAppliesTo(unknown, '성장형'), true)
 })
 
-test('applicant roles never become business scopes while real named programs remain intact', () => {
+test('scope and applicant category are separate model-owned values without a role dictionary', () => {
   for (const scope of ['총괄주관연구개발기관', '주관연구개발기관', '수요기업', '공급기업']) {
     const value = entry('비영리법인이 신청할 수 있습니다.', 'BASIC', { scope, audience: scope })
-    assert.equal(companyConditionPresentation(value).scope, null)
+    assert.equal(companyConditionPresentation(value).scope, scope)
     assert.equal(companyConditionPresentation(value).scopeReviewRequired, false)
     assert.equal(companyConditionPresentation(value).audience, scope)
   }
   assert.equal(companyConditionScope(entry('조건', 'BASIC', { scope: '공급기업 역량진단' })), '공급기업 역량진단')
+})
+
+
+test('two real programs retain shared requirements and nested explanations when filtered', () => {
+  const a = '1인 창조기업 지원센터', b = '중장년 기술창업센터'
+  const shared = entry('전용공간을 갖추어야 합니다.', 'BASIC', { scope: `${a} / ${b}` })
+  const manager = entry('총괄매니저는 자격을 갖추어야 합니다.', 'BASIC', {
+    scope: '공통', details: ['별도의 상근 행정매니저를 두면 상근 겸직이 가능합니다.'],
+  })
+  for (const selected of [a, b]) {
+    assert.equal(activeCompanyConditionProgram({ detectionId: 1, program: selected }, 1, [a, b], 17), selected)
+    assert.equal(companyConditionAppliesTo(shared, selected), true)
+    assert.equal(companyConditionAppliesTo(manager, selected), true)
+    assert.equal(companyConditionScope(manager), '공통')
+    assert.equal(companyConditionPresentation(manager).notes.length, 1)
+  }
+  assert.equal(companyConditionAppliesTo(entry('15석 이상입니다.', 'BASIC', { scope: a }), b), false)
+  assert.equal(companyConditionScope(entry('사업 조건입니다.', 'BASIC', { scope: '매니저 양성 지원사업' })), '매니저 양성 지원사업')
 })

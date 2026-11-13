@@ -588,7 +588,7 @@ def test_structure_enum_is_still_enforced(field, value):
 
 
 def test_cost_limits_and_prompt_remain_bounded():
-    assert len(focused.PROMPT.encode("utf-8")) <= 5500
+    assert len(focused.PROMPT.encode("utf-8")) <= 3600
     assert focused.MAX_SOURCE_BYTES == 8000
     assert focused.MAX_INPUT_BYTES == 20000
     assert focused.MAX_OUTPUT_TOKENS == 4096
@@ -628,7 +628,8 @@ def test_selection_log_reports_counts_without_original_or_identifier(caplog):
 def test_serialized_prompt_source_and_schema_input_remains_bounded():
     selected = [source("one", "□ 신청자격\n업력 7년 이내 기업")]
     actual = focused.CallBudget().reserve(focused.model_messages(selected), Extraction)
-    assert actual <= 9000
+    # Includes the strict output schema: duplicated field descriptions also consume input.
+    assert actual <= 6000
     assert actual <= focused.MAX_INPUT_BYTES
 
 
@@ -792,9 +793,7 @@ def test_recruitment_context_is_sent_once_and_never_assigned_to_other_notices():
     assert focused.CallBudget().reserve(messages, Extraction) <= 9000
 
 
-def test_recruitment_context_and_compact_prompt_keep_existing_cost_contract():
-    # Leave room for deduplicated original context without expanding the paid schema or caps.
-    assert len(focused.PROMPT.encode("utf-8")) <= 5000
+def test_recruitment_context_keeps_existing_output_contract():
     assert set(Extraction.model_fields) == {"items", "unresolved_source_ids"}
     assert set(ExtractedCondition.model_fields) == {
         "source_id", "criterion", "kind", "text", "quote", "scope", "audience", "details"
@@ -804,12 +803,12 @@ def test_recruitment_context_and_compact_prompt_keep_existing_cost_contract():
 @pytest.mark.parametrize(
     "role", ["총괄주관연구개발기관", "주관연구개발기관", "수요기업", "공급기업"]
 )
-def test_applicant_role_is_not_a_business_type(role):
-    assert focused.scope_label(role) is None
+def test_scope_names_are_not_classified_by_a_role_dictionary(role):
+    assert focused.scope_label(role) == role
     assert focused.scope_label("공급기업 역량진단") == "공급기업 역량진단"
 
 
-def test_procedural_account_setup_is_not_an_applicant_qualification():
+def test_projection_does_not_override_model_semantics_based_on_account_words():
     text = (
         "기관대표자는 IRIS 회원가입 및 연구자전환 동의(국가연구자번호 발급)를 "
         "반드시 이행해야 합니다."
@@ -820,8 +819,8 @@ def test_procedural_account_setup_is_not_an_applicant_qualification():
         item("account", "BUSINESS_FORM", "L1", text=text),
         item("qualified", "BUSINESS_FORM", "L1", text=req.sources[1].excerpt),
     ], unresolved_source_ids=[]), req.sources, req)
-    assert [s.source_ids for s in result.statements] == [["qualified"]]
-    assert "account" in result.evidence_only_ids
+    assert [s.source_ids for s in result.statements] == [["account"], ["qualified"]]
+    assert not result.evidence_only_ids
 
 
 @pytest.mark.parametrize("text", [
@@ -831,7 +830,12 @@ def test_procedural_account_setup_is_not_an_applicant_qualification():
     "IRIS 기관등록 및 전담 인력 보유가 필수입니다.",
 ])
 def test_mixed_real_qualifications_are_not_discarded_as_account_setup(text):
-    assert not focused.account_setup_only(source("a", text, "가. 신청방법"), text)
+    src = source("a", text, "가. 신청방법")
+    value = item("a", "BUSINESS_FORM", "L1", text=text)
+    result = focused.project(
+        Extraction(items=[value], unresolved_source_ids=[]), [src], request(src),
+    )
+    assert result.statements[0].text == text
 
 
 def test_applicant_table_categories_survive_the_existing_single_call_contract():

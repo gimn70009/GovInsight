@@ -5,7 +5,7 @@ import com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionDetail
 import java.util.*;
 import java.util.regex.Pattern;
 
-/** Recover an omitted applicant label only from an unambiguous, cited qualification table row. */
+/** Resolve applicant labels from explicit table structure, without a dictionary of job titles. */
 final class ParticipationApplicantLabel {
     private static final Pattern TABLE = Pattern.compile("\\[표](.*?)\\[/표]", Pattern.DOTALL);
     private static final Set<String> APPLICANT_HEADERS = Set.of(
@@ -33,6 +33,45 @@ final class ParticipationApplicantLabel {
             labels.add(matches.getFirst());
         }
         return labels.size() == 1 ? labels.iterator().next() : null;
+    }
+
+    // A title's explicit personnel context and the cited row, not the role's name, decide this.
+    static boolean isPersonnelAudience(Statement item, List<RequirementSource> sources) {
+        if (!"EXPERIENCE".equals(item.criterion()) || item.audience() == null
+                || item.audience().isBlank() || item.supportingQuotes().isEmpty()) return false;
+        String label = compact(item.audience()).replaceFirst("\\([^()]*\\)$", "");
+        if (label.isBlank()) return false;
+        return item.supportingQuotes().stream().allMatch(quote -> sources.stream()
+                .anyMatch(source -> personnelRow(source.excerpt(), label, quote)));
+    }
+
+    private static boolean personnelRow(String excerpt, String label, String quote) {
+        if (excerpt == null || compact(quote).length() < 8) return false;
+        var tables = TABLE.matcher(excerpt);
+        int previousEnd = 0;
+        while (tables.find()) {
+            String prefix = excerpt.substring(previousEnd, tables.start());
+            String heading = prefix.lines().filter(line -> !line.isBlank())
+                    .reduce((first, last) -> last).orElse("");
+            String region = excerpt.substring(previousEnd, tables.end());
+            previousEnd = tables.end();
+            if (!heading.matches(".*[（(]\\s*(?:전담\\s*)?인력\\s*[)）].*")) continue;
+            String firstRow = tables.group(1).lines().filter(line -> !line.isBlank())
+                    .findFirst().orElse("");
+            if (Arrays.stream(firstRow.split("\\t")).map(ParticipationApplicantLabel::compact)
+                    .anyMatch(Set.of("신청주체", "신청기관", "신청대상", "신청구분")::contains)) continue;
+            String cited = compact(quote);
+            if (!compact(region).contains(cited)) continue;
+            for (String row : tables.group(1).split("\\R")) {
+                String[] cells = row.split("\\t", -1);
+                if (cells.length < 2) continue;
+                boolean ownLabel = Arrays.stream(cells, 0, cells.length - 1)
+                        .anyMatch(cell -> compact(cell).equals(label));
+                String rowText = compact(row);
+                if (ownLabel && (cited.contains(rowText) || rowText.contains(cited))) return true;
+            }
+        }
+        return false;
     }
 
     private static List<Row> rows(String excerpt) {

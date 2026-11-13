@@ -87,7 +87,6 @@ function businessScopeLabel(value: string | null | undefined): string | null {
     const heading = label.replace(/\s+/g, '')
       .replace(/^(?:\(?(?:[0-9]+(?:-[0-9]+)*|[가-힣]|[IVXⅠ-Ⅻ]+)[.)]|[①-⑳])/, '')
     if (!contextLabel(heading)
-      || /^(?:(?:총괄|세부)?(?:주관|공동|위탁)(?:연구개발)?기관|총괄기관|운영기관|수행기관|공급기업|수요기업|도입기업)$/.test(heading)
       || /^(?:(?:(?:세부|내역)?(?:사업|과제))?(?:지원)?(?:유형|구분)|(?:사업|유형)별(?:지원계획|지원내용|신청자격)|신청자격및선정기준)$/.test(heading)) return null
     return label
   }).filter(Boolean).join(' · ')).filter(Boolean)
@@ -123,6 +122,6 @@ export function companyConditionAppliesTo(entry: ParticipationCriterionEntry, se
 export function activeCompanyConditionProgram(
   selection: { detectionId: number; program: string }, detectionId: number, programs: string[], total: number,
 ): string {
-  return programs.length >= 3 && total >= 8 && selection.detectionId === detectionId
+  return programs.length >= 2 && total >= 8 && selection.detectionId === detectionId
     && programs.includes(selection.program) ? selection.program : ''
 }

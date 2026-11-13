@@ -522,12 +522,46 @@ async def parent_explanations(browser):
         await h.close()
 
 
+async def long_detail_notes(browser):
+    h = await summary.refresh.Harness(browser).start()
+    try:
+        notes = ["자격요건(하나 이상 충족): 전문자격 보유; 관련 분야 학위 보유; 또는 관련 기관에서 5년 이상 근무",
+                 "* 별도 상근 인력이 있으면 겸직할 수 있습니다."]
+        data = summary.ready()
+        data['participationGuide'] = guide()
+        data['participationGuide']['categories'][0]['rows'] = [dict(
+            code='EXPERIENCE', label='실적·수행 역량', status='STATED',
+            entries=[entry('담당자는 다음 자격 중 하나 이상을 충족해야 합니다.', scope='공통', notes=notes)])]
+        h.states[1] = data
+        await h.open(analysis_tab=False)
+        region = h.page.get_by_role('region', name='신청 자격', exact=True)
+        rule = region.locator('.participation-guide__rule')
+        await rule.locator('.participation-guide__condition-toggle').press('Enter')
+        await expect(rule.locator('.participation-guide__notes li')).to_have_count(2)
+        await expect(rule.locator('.participation-guide__note-line')).to_have_text([
+            '자격요건(하나 이상 충족): 전문자격 보유;', '관련 분야 학위 보유;',
+            '또는 관련 기관에서 5년 이상 근무', '별도 상근 인력이 있으면 겸직할 수 있습니다.'])
+        await expect(rule.locator('.participation-guide__applicant')).to_have_count(0)
+        await expect(rule.locator('.participation-guide__business-context')).to_contain_text('전체 사업 공통')
+        for width in (1440, 768, 390, 320):
+            await h.page.set_viewport_size(dict(width=width, height=1000))
+            await assert_responsive_condition_groups(region, width)
+            assert await rule.locator('.participation-guide__note-line').evaluate_all("""elements =>
+                elements.every((element, index) => index === 0 ||
+                    element.getBoundingClientRect().top > elements[index - 1].getBoundingClientRect().top)
+            """)
+        assert not h.errors and not h.unexpected, (h.errors, h.unexpected)
+    finally:
+        await h.close()
+
+
 async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch(channel="msedge", headless=True)
         try:
             await applicant_categories(browser)
             await parent_explanations(browser)
+            await long_detail_notes(browser)
             await check(browser)
             await exclusions_only(browser)
             await cached_business_labels(browser)

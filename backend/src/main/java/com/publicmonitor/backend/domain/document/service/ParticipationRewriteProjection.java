@@ -103,7 +103,10 @@ final class ParticipationRewriteProjection {
             }
             else if (item != null && item.sourceIds() != null) unresolved.addAll(item.sourceIds());
         }
-        for (var item : ParticipationDisplayStatements.prepare(input, grounded)) {
+        var displayItems = ParticipationDisplayStatements.prepare(input, grounded);
+        var knownPrograms = displayItems.stream().map(item -> displayScope(item.scope(), null))
+                .filter(Objects::nonNull).flatMap(value -> Arrays.stream(value.split(" / "))).distinct().toList();
+        for (var item : displayItems) {
             // Paid statements retain every grounded citation; export selection must not trim their meaning.
             var sourceIds = new LinkedHashSet<>(item.sourceIds());
             var allQuotes = new LinkedHashSet<>(item.supportingQuotes());
@@ -117,10 +120,11 @@ final class ParticipationRewriteProjection {
             var criterion = ParticipationFocusCriterion.valueOf(item.criterion());
             var mainSources = item.sourceIds().stream().map(input.evidence()::get).flatMap(List::stream).distinct().toList();
             String applicant = ParticipationApplicantLabel.from(item, mainSources);
-            String audience = item.audience() == null || item.audience().isBlank() ? applicant : item.audience();
+            String audience = ParticipationApplicantLabel.isPersonnelAudience(item, mainSources) ? null
+                    : item.audience() == null || item.audience().isBlank() ? applicant : item.audience();
             var rule = new ParticipationRule("EXCLUSION".equals(item.kind()) ? "EXCLUSION"
                     : "PREFERENCE".equals(item.kind()) ? "PREFERENCE" : "BASIC",
-                    criterion.label, item.text(), displayScope(item.scope(), applicant), audience,
+                    criterion.label, item.text(), ParticipationNamedPrograms.expand(displayScope(item.scope(), applicant), knownPrograms), audience,
                     item.details().stream().map(Detail::text).distinct().toList(), List.of(), List.of(), List.of(), sources);
             entries.computeIfAbsent(criterion.name(), ignored -> new ArrayList<>()).add(
                     new ParticipationCriterionEntry(rule, null, null, List.of(), "VERIFIED", quotes));
@@ -194,7 +198,6 @@ final class ParticipationRewriteProjection {
                 "scope", "parent", "section", "program", "null").contains(heading.toLowerCase(Locale.ROOT))
                 || compact.matches("^\\[(?:상위구역|원문구역|적용유형)\\].*")
                 || compact.matches("실제사업[·ㆍ]과제유형(?:\\(.*\\))?")
-                || heading.matches("(?:(?:총괄|세부)?(?:주관|공동|위탁)(?:연구개발)?기관|총괄기관|운영기관|수행기관|공급기업|수요기업|도입기업)")
                 || heading.matches("(?:(?:세부|내역)?(?:사업|과제))?(?:지원)?(?:유형|구분)"
                         + "|(?:사업|유형)별(?:지원계획|지원내용|신청자격)|신청자격및선정기준|유형미지정");
     }

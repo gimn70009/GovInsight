@@ -103,3 +103,34 @@ def test_independent_requirements_and_exclusions_keep_their_own_rows_in_one_call
     assert result.statements[1].scope == "성장형"
     assert len(result.statements[0].details) == 2
     assert result.statements[1].details == result.statements[2].details == []
+
+
+def test_separate_main_and_detail_spans_preserve_long_evidence_within_each_quote_limit():
+    request, parent = fixture()
+    definition = ("전략물자는 대외무역법에 따라 지정·고시되는 품목입니다. " * 9).strip()
+    confirmation = ("공급망안정품목 해당 여부는 관련 확인서로 확인합니다. " * 12).strip()
+    excerpt = "\n".join([MAIN, definition, confirmation])
+    assert len(excerpt) > 600
+    assert max(len(definition), len(confirmation)) <= 600
+    request.sources = [Source(id="a", excerpt=excerpt, group_label="지원대상")]
+    parent.details = [
+        focused.ExtractedDetail(source_id="a", text=DEFINITION, quote="L2"),
+        focused.ExtractedDetail(source_id="a", text=CONFIRMATION, quote="L3"),
+    ]
+    result = focused.project(
+        focused.Extraction(items=[parent], unresolved_source_ids=[]), request.sources, request
+    )
+    assert len(result.statements) == 1
+    assert result.statements[0].supporting_quotes == [MAIN]
+    assert [d.supporting_quotes for d in result.statements[0].details] == [
+        [definition], [confirmation]
+    ]
+    assert result.evidence_only_ids == []
+
+    # A broad main span is rejected even though the line-reference string itself is short.
+    parent.quote = "L1-L3"
+    too_broad = focused.project(
+        focused.Extraction(items=[parent], unresolved_source_ids=[]), request.sources, request
+    )
+    assert too_broad.statements == []
+    assert too_broad.evidence_only_ids == ["a"]

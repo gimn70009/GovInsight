@@ -24,7 +24,7 @@ class ParticipationBusinessScopeTest {
         var service = new ParticipationRewriteService(client, store, mapper);
         try {
             for (String label : List.of("아. 세부과제 지원유형", "2. 사업 유형", "① 지원대상", "(가) 신청자격",
-                    "3-1. 사업개요", "유형별 지원내용", "내역사업 구분", "신청자격 및 선정기준", "총괄주관연구개발기관", "주관연구개발기관", "수요기업")) {
+                    "3-1. 사업개요", "유형별 지원내용", "내역사업 구분", "신청자격 및 선정기준")) {
                 var saved = new Response(List.of(new Statement(List.of(source.id()), "BUSINESS_FORM", quote, "",
                         List.of(quote), "ELIGIBILITY", label, "총괄주관기관", List.of())), List.of(), "READY");
                 var version = DocumentVersion.create(null, 1, "공고", quote, "b".repeat(64), null, 0, null);
@@ -60,6 +60,8 @@ class ParticipationBusinessScopeTest {
                 {"아. 세부과제 지원유형 / 적용 범위 확인 필요", "적용 범위 확인 필요"},
                 {"공통", "공통"},
                 {"공급기업 역량진단", "공급기업 역량진단"},
+                {"공급기업", "공급기업"},
+                {"큐레이터", "큐레이터"},
                 {null, null}
         };
         for (String[] scope : scopes) {

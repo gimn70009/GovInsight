@@ -23,6 +23,11 @@ PARTICIPATION_CONTEXT = re.compile(
     r"|(?:기|이미)\s*선정[^\n]{0,60}(?:계속|수행)"
 )
 SELECTION_OUTCOME = re.compile(r"(?:선정|모집)\s*규모|최종\s*선정")
+# Preserve explicit applicant restrictions even under capacity/funding headings.
+EXPLICIT_APPLICANT = re.compile(
+    r"(?:기업|기관|법인|단체|사업자|대학|연구소)(?:만|에\s*한해|에\s*한하여)?\s*"
+    r"(?:신청|참여)(?:이|할\s*수)?\s*(?:가능|있음|있다)"
+)
 IRRELEVANT = re.compile(
     r"(?:선정|협약)\s*후|유의\s*사항|문의|주요\s*용어|정의|향후\s*절차|평가\s*(?:절차|내용|방법)"
     r"|제출\s*서류|신청\s*방법|접수\s*방법|지원\s*내용|지원\s*규모|사업\s*목적"
@@ -156,7 +161,7 @@ def prepare(source, source_fields):
                 qualified[-1] = (qualified[-1][0], end)
             else:
                 qualified.append((start, end))
-        elif APPLICANT_EXCLUSION.search(chunk):
+        elif APPLICANT_EXCLUSION.search(chunk) or EXPLICIT_APPLICANT.search(chunk):
             contextual.append((start, end))
         elif (
             PARTICIPATION_CONTEXT.search(chunk)

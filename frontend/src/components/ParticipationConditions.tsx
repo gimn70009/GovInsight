@@ -4,6 +4,7 @@ import { BadgeCheck, BriefcaseBusiness, Building2, CalendarDays, ChevronDown, Cl
 import type { DocumentDetail, ParticipationRule, ParticipationCriterionEntry } from '../api/types'
 import { evidenceAttachment } from '../utils/businessSummary'
 import { companyParticipationRows, companyParticipationExclusions, companyConditionSourceKey, companyConditionPresentation, companyConditionScope, companyConditionAppliesTo, activeCompanyConditionProgram } from '../utils/companyParticipation'
+import { conditionDetailLines } from '../utils/conditionDetailLines'
 import './ParticipationConditions.css'
 
 type RuleSource = ParticipationRule['sources'][number]
@@ -121,8 +122,11 @@ function Rule({ entry, detail, label, condition, number, kind }: {
     </button> : <div className={className}>{content}</div>}
     {expandable && <div id={id} hidden={!open} className={`participation-guide__details${number != null ? " participation-guide__details--numbered" : ""}`}>
       {hasNotes && <div className="participation-guide__notes">
-        <strong>세부 설명</strong>
-        <ul>{condition.notes.map((note, index) => <li key={index}>{note}</li>)}</ul>
+        <strong className="participation-guide__notes-heading">세부 설명</strong>
+        <ul>{condition.notes.map((note, index) => <li key={index}>
+          <span className="participation-guide__note-copy">{conditionDetailLines(note).map((line, lineIndex) =>
+            <span className="participation-guide__note-line" key={lineIndex}>{line}</span>)}</span>
+        </li>)}</ul>
       </div>}
       {open && hasEvidence && <EvidencePanel item={item} detail={detail} defaultOpen={!hasNotes} />}
     </div>}
@@ -137,7 +141,7 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
   const allEntries = [...allRows.flatMap(row => [...row.mandatory, ...row.preference]), ...exclusions]
   const programs = [...new Set(allEntries.flatMap(entry => companyConditionScope(entry)?.split(' / ') ?? []))]
     .filter(value => value !== '공통' && !value.endsWith(' · 공통'))
-  const canFilter = programs.length >= 3 && allEntries.length >= 8
+  const canFilter = programs.length >= 2 && allEntries.length >= 8
   const [programSelection, setProgramSelection] = useState({ detectionId: detail.detectionId, program: '' })
   const activeProgram = activeCompanyConditionProgram(programSelection, detail.detectionId, programs, allEntries.length)
   const selectProgram = (program: string) => setProgramSelection({ detectionId: detail.detectionId, program })
