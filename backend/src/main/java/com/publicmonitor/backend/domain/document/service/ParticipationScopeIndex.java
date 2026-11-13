@@ -94,14 +94,18 @@ final class ParticipationScopeIndex {
             if (text.equals("[/표]")) table = false;
         }
         String recruitment = ParticipationRecruitmentContext.from(document);
+        var parentSections = parentSections(document);
+        String recruitmentDocument = forDisplay ? originalDocument(document) : document;
         int cursor = 0;
         for (var rule : rules) for (var source : rule.sources()) {
             String excerpt = source.excerpt();
             int start = document.indexOf(excerpt, cursor);
             if (start < 0) continue;
-            String parent = parentSection(document.substring(0, start));
+            // Raw blocks start at line boundaries. Index their preceding headings once per document.
+            String parent = parentSections.get(start);
+            if (parent == null) parent = parentSection(document.substring(0, start));
             if (!parent.isBlank()) originalContexts.computeIfAbsent(source, ignored -> new LinkedHashSet<>()).add(parent);
-            if (secondaryBuyer(forDisplay ? originalDocument(document) : document, parent)) parent += "\n[별도 참여 역할] 구매기관";
+            if (secondaryBuyer(recruitmentDocument, parent)) parent += "\n[별도 참여 역할] 구매기관";
             contexts.put(source, parent);
             if (!recruitment.isBlank()) recruitments.put(source, recruitment);
             int end = start + excerpt.length();
@@ -146,30 +150,57 @@ final class ParticipationScopeIndex {
         return introduction.matches(".*(?:기업|제품).{0,60}(?:판로|납품).{0,30}지원.*");
     }
 
+    private static final Pattern LINE_BREAK = Pattern.compile("\\R");
+    private static final Pattern PARENT_NUMBER = Pattern.compile("[0-9]{1,2}");
+    private static final Pattern PARENT_HEADING = Pattern.compile("^[0-9]{1,2}[.)]?\\s+([가-힣].*)$");
+    private static final Pattern PARENT_TITLE = Pattern.compile(".*(?:개요|자격|대상|안내|신청|요건|절차|내용|과제|프로그램|제외대상)$");
+    private static final Pattern PARENT_INVALID = Pattern.compile(".*[0-9%:：].*");
+
+    private Map<Integer, String> parentSections(String document) {
+        var result = new HashMap<Integer, String>();
+        result.put(0, "");
+        String current = "", previous = "";
+        int from = 0;
+        var breaks = LINE_BREAK.matcher(document);
+        while (breaks.find()) {
+            String line = document.substring(from, breaks.start()).strip();
+            current = parentAfterLine(current, previous, line);
+            result.put(breaks.end(), current);
+            previous = line;
+            from = breaks.end();
+        }
+        if (from < document.length())
+            current = parentAfterLine(current, previous, document.substring(from).strip());
+        result.put(document.length(), current);
+        return result;
+    }
+
     private String parentSection(String prefix) {
-        String[] lines = prefix.split("\\R");
-        String current = "";
-        for (int i = 0; i < lines.length; i++) {
-            String line = lines[i].strip();
-            if (line.startsWith("[파일:")) current = "";
-            String title = null;
-            if (!frozen) {
-                var subsection = JOINED_SUBSECTION.matcher(line);
-                if (subsection.matches() && generic(subsection.group(2))) {
-                    current = subsection.group(2).replaceAll("\\s+", " ").strip();
-                    continue;
-                }
-            }
-            if (line.matches("[0-9]{1,2}") && i + 1 < lines.length) title = lines[i + 1].strip();
-            else {
-                var match = Pattern.compile("^[0-9]{1,2}[.)]?\\s+([가-힣].*)$").matcher(line);
-                if (match.matches()) title = match.group(1).strip();
-            }
-            if (title != null && title.length() <= 60 && !title.matches(".*[0-9%:：].*")
-                    && title.matches(".*(?:개요|자격|대상|안내|신청|요건|절차|내용|과제|프로그램|제외대상)$"))
-                current = title.replaceAll("\\s+", " ");
+        String current = "", previous = "";
+        for (String raw : LINE_BREAK.split(prefix)) {
+            String line = raw.strip();
+            current = parentAfterLine(current, previous, line);
+            previous = line;
         }
         return current;
+    }
+
+    private String parentAfterLine(String current, String previous, String line) {
+        // A standalone number gains a title only after the next line is present in the prefix.
+        if (PARENT_NUMBER.matcher(previous).matches()) current = parentTitle(current, line);
+        if (line.startsWith("[파일:")) current = "";
+        if (!frozen) {
+            var subsection = JOINED_SUBSECTION.matcher(line);
+            if (subsection.matches() && generic(subsection.group(2)))
+                return subsection.group(2).replaceAll("\\s+", " ").strip();
+        }
+        var heading = PARENT_HEADING.matcher(line);
+        return heading.matches() ? parentTitle(current, heading.group(1).strip()) : current;
+    }
+
+    private static String parentTitle(String current, String title) {
+        return title.length() <= 60 && !PARENT_INVALID.matcher(title).matches()
+                && PARENT_TITLE.matcher(title).matches() ? title.replaceAll("\\s+", " ") : current;
     }
 
     private boolean isGeneric(String title) {
