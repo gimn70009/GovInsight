@@ -3,7 +3,7 @@ import { useId, useState } from 'react'
 import { BadgeCheck, BriefcaseBusiness, Building2, CalendarDays, ChevronDown, ClipboardCheck, ExternalLink, Factory, FileText, Landmark, TriangleAlert, TrendingUp } from 'lucide-react'
 import type { DocumentDetail, ParticipationRule, ParticipationCriterionEntry } from '../api/types'
 import { evidenceAttachment } from '../utils/businessSummary'
-import { companyParticipationRows, companyParticipationExclusions, companyConditionSourceKey, companyConditionPresentation, companyConditionScope, companyConditionAppliesTo, activeCompanyConditionProgram } from '../utils/companyParticipation'
+import { companyParticipationRows, companyParticipationGuidance, companyParticipationExclusions, companyConditionSourceKey, companyConditionPresentation, companyConditionScope, companyConditionAppliesTo, activeCompanyConditionProgram } from '../utils/companyParticipation'
 import { conditionDetailLines } from '../utils/conditionDetailLines'
 import './ParticipationConditions.css'
 
@@ -87,21 +87,22 @@ function ConditionContext({ condition }: { condition: ConditionPresentation }) {
 
 function Rule({ entry, detail, label, condition, number, kind }: {
   entry: ParticipationCriterionEntry; detail: DocumentDetail; label: string; condition: ConditionPresentation
-  number?: number; kind: 'mandatory' | 'preference' | 'exclusion'
+  number?: number; kind: 'mandatory' | 'preference' | 'exclusion' | 'guidance'
 }) {
   const item = entry.rule
   const [open, setOpen] = useState(false)
   const id = useId()
   const hasEvidence = item.sources.some(source => source.excerpt?.trim())
   const hasNotes = condition.notes.length > 0
-  const expandable = hasNotes || hasEvidence
-  const kindLabel = kind === 'exclusion' ? '지원 제외' : kind === 'preference' ? '우대' : '필수'
+  const expandable = hasNotes || hasEvidence || condition.notices.length > 0
+  const kindLabel = kind === 'guidance' ? '접수 준비' : kind === 'exclusion' ? '지원 제외' : kind === 'preference' ? '우대' : '신청 요건'
   const content = <>
     {number != null && <span className="participation-guide__number" aria-hidden="true">{number}</span>}
     <span className="participation-guide__copy">
       <span className="participation-guide__meta">
         <span className={`participation-guide__kind-badge participation-guide__kind-badge--${kind}`}>{kindLabel}</span>
         <ConditionContext condition={condition} />
+        {(condition.reviewRequired || condition.notices.length > 0) && <span className="participation-guide__scope-review">원문 확인 필요</span>}
         {condition.audience && <span className="participation-guide__context participation-guide__applicant">
           <span className="participation-guide__context-label">신청 구분</span>
           <span className="participation-guide__audience">{condition.audience}</span>
@@ -121,6 +122,7 @@ function Rule({ entry, detail, label, condition, number, kind }: {
       {content}
     </button> : <div className={className}>{content}</div>}
     {expandable && <div id={id} hidden={!open} className={`participation-guide__details${number != null ? " participation-guide__details--numbered" : ""}`}>
+      {condition.notices.map((notice, index) => <p className="participation-guide__quality-notice" key={index}>{notice}</p>)}
       {hasNotes && <div className="participation-guide__notes">
         <strong className="participation-guide__notes-heading">세부 설명</strong>
         <ul>{condition.notes.map((note, index) => <li key={index}>
@@ -128,7 +130,7 @@ function Rule({ entry, detail, label, condition, number, kind }: {
             <span className="participation-guide__note-line" key={lineIndex}>{line}</span>)}</span>
         </li>)}</ul>
       </div>}
-      {open && hasEvidence && <EvidencePanel item={item} detail={detail} defaultOpen={!hasNotes} />}
+      {open && hasEvidence && <EvidencePanel item={item} detail={detail} defaultOpen={!hasNotes || condition.notices.length > 0 || condition.reviewRequired} />}
     </div>}
   </div>
 }
@@ -137,6 +139,7 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
   const rows = companyParticipationRows(detail.participationGuide)
   const allRows = [...rows.filter(row => row.code === 'BUSINESS_FORM'), ...rows.filter(row => row.code !== 'BUSINESS_FORM')]
     .filter(row => row.mandatory.length || row.preference.length)
+  const guidance = companyParticipationGuidance(detail.participationGuide)
   const exclusions = companyParticipationExclusions(detail.participationGuide)
   const allEntries = [...allRows.flatMap(row => [...row.mandatory, ...row.preference]), ...exclusions]
   const programs = [...new Set(allEntries.flatMap(entry => companyConditionScope(entry)?.split(' / ') ?? []))]
@@ -228,6 +231,18 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
       </> : !pending && <SectionStatus state={status === 'UNAVAILABLE' ? 'unavailable' : 'empty'}
         title={status === 'UNAVAILABLE' ? '신청 자격 확인을 완료하지 못했습니다' : '신청 자격은 원문에서 확인해 주세요'}
         description={status === 'UNAVAILABLE' ? '공고 원문에서 지원 대상과 신청 요건을 확인해 주세요.' : '정리된 신청 조건을 찾지 못했습니다.'} />}
+      {guidance.length > 0 && <section className="participation-guide__group participation-guide__application-guidance"
+        aria-labelledby={`${headingId}-guidance`}>
+        <header className="participation-guide__group-heading">
+          <FileText size={18} aria-hidden="true" /><h4 id={`${headingId}-guidance`}>접수 준비 안내</h4>
+        </header>
+        <ul className="participation-guide__conditions">
+          {guidance.map((entry, index) => <li key={index}>
+            <Rule entry={entry} detail={detail} condition={companyConditionPresentation(entry)}
+              kind="guidance" label={`접수 준비 ${index + 1}번 안내`} />
+          </li>)}
+        </ul>
+      </section>}
     </div>
   </section>
 }

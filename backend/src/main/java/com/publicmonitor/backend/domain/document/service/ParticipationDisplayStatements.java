@@ -5,21 +5,16 @@ import com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionDetail
 import java.util.*;
 import java.util.regex.Pattern;
 
-/** A display-only repair of explicit, readable prose; stored results and paid request identity stay intact. */
+/** Preserve validated model statements and supplement uncovered legacy qualification prose. */
 final class ParticipationDisplayStatements {
     private static final Pattern ITEM = Pattern.compile("(?m)^\\h*[◦○●•-]\\h*");
     private static final Pattern NOTE = Pattern.compile("(?m)^\\h*(?:[*※]+\\h*|-(?=\\h*(?:단[,，]|다만|예외|제외))\\h*)");
     private static final Pattern QUALIFICATION = Pattern.compile("^(?:사업)?신청(?:자격|요건)(?:및신청요건)?$");
-    private static final Pattern INLINE_ELIGIBILITY = Pattern.compile(
-            "^[\\h□■◦○●•-]*(?:신청|지원|참여|모집)\\h*(?:자격|대상|요건)\\h*[:：]\\h*");
 
     static List<Statement> prepare(ParticipationRewriteProjection.Input input, List<Statement> grounded) {
         var result = new LinkedHashMap<String, Statement>();
-        for (var item : grounded) {
-            String text = sentence(item.text()) ? item.text() : restore(item);
-            if (text != null) add(result, new Statement(item.sourceIds(), item.criterion(), text, item.groupLabel(),
-                    item.supportingQuotes(), item.kind(), item.scope(), item.audience(), item.details()));
-        }
+        // Preserve wording and review flags; the projection checks presentation separately from grounding.
+        for (var item : separatePrograms(input, grounded)) add(result, item);
         var selected = ParticipationSourceSelection.select(input);
         for (var entry : input.evidence().entrySet()) for (var source : entry.getValue()) {
             if (!selected.includes(source) || !plainQualification(source)) continue;
@@ -44,6 +39,38 @@ final class ParticipationDisplayStatements {
         return List.copyOf(result.values());
     }
 
+    private static List<Statement> separatePrograms(ParticipationRewriteProjection.Input input, List<Statement> items) {
+        var result = new ArrayList<Statement>();
+        for (var item : items) {
+            String program = citedProgram(input, item);
+            var details = new ArrayList<Detail>();
+            var independent = new ArrayList<Statement>();
+            for (var detail : item.details()) {
+                var candidate = new Statement(detail.sourceIds(), item.criterion(), detail.text(), item.groupLabel(),
+                        detail.supportingQuotes(), item.kind(), null, null, List.of(), detail.reviewRequired());
+                String other = citedProgram(input, candidate);
+                // A separate program's qualification cannot remain a note under this program.
+                // Unknown headings and same-program definitions/exceptions keep their original owner.
+                if (program != null && other != null && !program.equals(other)
+                        && !program.contains("확인 필요") && !other.contains("확인 필요"))
+                    independent.add(new Statement(candidate.sourceIds(), candidate.criterion(), candidate.text(),
+                            candidate.groupLabel(), candidate.supportingQuotes(), candidate.kind(), other, null,
+                            List.of(), candidate.reviewRequired()));
+                else details.add(detail);
+            }
+            result.add(new Statement(item.sourceIds(), item.criterion(), item.text(), item.groupLabel(),
+                    item.supportingQuotes(), item.kind(), item.scope(), item.audience(), details, item.reviewRequired()));
+            result.addAll(independent);
+        }
+        return result;
+    }
+
+    private static String citedProgram(ParticipationRewriteProjection.Input input, Statement item) {
+        var sources = item.sourceIds().stream().map(input.evidence()::get).filter(Objects::nonNull)
+                .flatMap(List::stream).toList();
+        return ParticipationProgramScope.resolve(null, item, sources, input.scopes());
+    }
+
     private static boolean coveredOrCompleted(Map<String, Statement> result, String sourceId,
             String code, String scope, String quote) {
         var note = NOTE.matcher(quote);
@@ -63,7 +90,7 @@ final class ParticipationDisplayStatements {
                     if (!compact(text).contains(compact(tail))) text += (text.matches("(?s).*[.!?]$") ? " " : ". ") + tail;
                     var quotes = new LinkedHashSet<>(item.supportingQuotes()); quotes.add(quote);
                     entry.setValue(new Statement(item.sourceIds(), item.criterion(), text, item.groupLabel(),
-                            List.copyOf(quotes), item.kind(), item.scope(), item.audience(), item.details()));
+                            List.copyOf(quotes), item.kind(), item.scope(), item.audience(), item.details(), item.reviewRequired()));
                 }
             }
             return true;
@@ -73,29 +100,6 @@ final class ParticipationDisplayStatements {
 
     private static String clause(String value) { return compact(value.strip().replaceFirst("^[◦○●•-]\\h*", "")); }
 
-    private static String restore(Statement item) {
-        if (item.supportingQuotes().size() != 1 || !readable(item.text())) return null;
-        String quote = item.supportingQuotes().getFirst();
-        boolean inlineEligibility = "ELIGIBILITY".equals(item.kind()) && INLINE_ELIGIBILITY.matcher(quote).find();
-        String value = item.text().strip();
-        if (inlineEligibility) {
-            // Remove only an explicit applicant heading; the quoted original stays untouched.
-            quote = INLINE_ELIGIBILITY.matcher(quote).replaceFirst("");
-            value = INLINE_ELIGIBILITY.matcher(value).replaceFirst("");
-        }
-        if (!readable(quote) || quote.contains("\t") || quote.contains("□") || quote.contains("■")
-                || ITEM.matcher(quote).results().count() > 1 || NOTE.matcher(quote).find()) return null;
-        value = value.replaceFirst("^[◦○●•-]\\h*", "").replaceAll("\\s+", " ");
-        String original = quote.strip().replaceFirst("^[◦○●•-]\\h*", "").replaceAll("\\s+", " ");
-        if (!compact(value).equals(compact(original))) return null;
-        if (value.endsWith("우대")) return value + "합니다.";
-        if (value.endsWith("가점")) return value + "을 부여합니다.";
-        if ("PREFERENCE".equals(item.kind())) return null;
-        String text = finish(value);
-        if (!inlineEligibility && text != null && text.startsWith("신청 대상은 ")) return value + "이어야 합니다.";
-        return text;
-    }
-
     private static void add(Map<String, Statement> result, Statement item) {
         String key = item.criterion() + ":" + item.kind() + ":" + compact(item.text()) + ":" + Objects.toString(item.scope(), String.join(",", item.sourceIds())) + ":" + Objects.toString(item.audience(), "");
         var previous = result.get(key);
@@ -103,7 +107,7 @@ final class ParticipationDisplayStatements {
         var ids = new LinkedHashSet<>(previous.sourceIds()); ids.addAll(item.sourceIds());
         var quotes = new LinkedHashSet<>(previous.supportingQuotes()); quotes.addAll(item.supportingQuotes());
         result.put(key, new Statement(List.copyOf(ids), previous.criterion(), previous.text(), previous.groupLabel(),
-                List.copyOf(quotes), previous.kind(), previous.scope(), previous.audience(), java.util.stream.Stream.concat(previous.details().stream(), item.details().stream()).distinct().toList()));
+                List.copyOf(quotes), previous.kind(), previous.scope(), previous.audience(), java.util.stream.Stream.concat(previous.details().stream(), item.details().stream()).distinct().toList(), previous.reviewRequired() || item.reviewRequired()));
     }
 
     static boolean fullyCovered(RequirementSource source, Collection<String> quotes) {

@@ -86,7 +86,7 @@ public record DocumentDetectionDetailResponse(
             @Schema(description = "분리 전 연결 문장. 조건의 대상·기준일·논리관계 보존") String context,
             @Schema(description = "ALTERNATIVE: 선택 관계, LINKED: 같은 문장에서 분리, null: 독립 항목") String relation,
             List<String> relatedCriteria,
-            @Schema(description = "VERIFIED: 정리된 자격 문장 / EVIDENCE_ONLY: 표시하지 않는 미정리 원문")
+            @Schema(description = "VERIFIED: 인용·문장 형식 확인 / REVIEW_REQUIRED: 인용 보존·문장 정리 필요 / EVIDENCE_ONLY: 미분류 원문")
             String displayStatus, List<String> supportingQuotes) {
         public ParticipationCriterionEntry(ParticipationRule rule, String context, String relation,
                                            List<String> relatedCriteria, String displayStatus) {

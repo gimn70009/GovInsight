@@ -57,16 +57,16 @@ class ParticipationSupportConditionBoundaryTest {
         assertThat(input.evidence().get(funding.source().id())).containsExactlyElementsOf(funding.evidence());
     }
 
-    @Test void copiedFundingTablesAndSelectionHeadingsRemainRawEvidenceInsteadOfQualificationSentences() throws Exception {
+    @Test void legacyGroundedRowsAreNotSemanticallyReclassifiedByTheDisplay() throws Exception {
         var samples = observed();
         var input = capturedInput(samples);
         var response = new Response(samples.stream().map(Observed::statement).toList(), List.of(), "READY");
         var guide = ParticipationRewriteProjection.guide(raw(), input, response, "READY");
-        assertThat(guide.rules()).isEmpty();
-        assertThat(guide.categories().stream().flatMap(category -> category.rows().stream()).flatMap(row -> row.entries().stream())
-                .flatMap(entry -> entry.rule().sources().stream()).distinct())
-                .containsExactlyInAnyOrderElementsOf(samples.stream().flatMap(sample -> sample.evidence().stream())
-                        .filter(ParticipationSourceSelection.select(input)::includes).distinct().toList());
+        // These are historical extraction errors, not gold labels for applicant eligibility.
+        assertThat(guide.rules()).extracting(ParticipationRule::text)
+                .containsExactlyElementsOf(response.statements().stream().map(Statement::text).toList());
+        assertThat(guide.rules()).flatExtracting(ParticipationRule::sources).containsExactlyInAnyOrderElementsOf(
+                samples.stream().flatMap(sample -> sample.evidence().stream()).toList());
     }
 
     @Test void oldSupplementalEligibilityUnderGenericSupportHeadingRetainsItsIdAndPaidCache() throws Exception {

@@ -107,7 +107,7 @@ def test_public_manufacturing_notice_keeps_real_applicants_and_mixed_target_tabl
     model_context = next(row for row in payload["sources"] if row["id"] == "s43")
     assert "기 선정된 전문연구기관이 `28년까지 계속 수행" in model_context["excerpt"]
     assert "제조현장진단 참여기업 중" in model_context["excerpt"]
-    assert len(selected) <= 12
+    assert len(selected) <= 24
     assert "s39" not in ids
     assert not any("총사업비의 30~100%" in row.excerpt for row in selected)
     assert not any("진단비용 80% 지원" in row.excerpt for row in selected)
@@ -213,7 +213,7 @@ def test_public_manufacturing_keeps_specific_status_and_level_within_existing_bu
         assert row.group_label == originals[row.id].group_label
         for span in row.excerpt.split("\n[다음 원문 구간]\n"):
             assert span in originals[row.id].excerpt
-    assert len(selected) <= 12
+    assert len(selected) <= 24
     assert sum(len(row.excerpt.encode()) for row in selected) <= 8000
     budget = focused.CallBudget().reserve(focused.model_messages(selected), focused.Extraction)
     assert budget <= 20000
@@ -255,14 +255,14 @@ def test_known_bounds_precede_bare_targets_without_dropping_their_exceptions():
     )
     selected = focused.select_sources(request(*bare, detailed))
     assert detailed in selected
-    assert len(selected) <= 12
+    assert len(selected) <= 24
 
 
 def test_revised_prompt_preserves_input_caps_and_bounds_complete_output():
     assert len(focused.PROMPT.encode()) <= 5500
     assert focused.MAX_SOURCE_BYTES == 8000
     assert focused.MAX_INPUT_BYTES == 20000
-    assert focused.MAX_SOURCES == 12
+    assert focused.MAX_SOURCES == 24
     assert focused.MAX_OUTPUT_TOKENS == 4096
 
 

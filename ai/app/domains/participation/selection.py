@@ -219,7 +219,14 @@ def prepare(source, source_fields):
     return source, priority
 
 
-def select(request, source_fields, codes, max_bytes, max_sources):
+def program_key(source):
+    """Balance explicit program contexts without interpreting their eligibility."""
+    match = re.search(r"\[(?:적용 유형|상위 구역)\]([^\n]+)", source.group_label)
+    label = match[1].strip() if match else ""
+    return label if label and " / " not in label and not qualification_heading(label) else None
+
+
+def select(request, source_fields, codes, max_bytes, max_sources, fits=None):
     candidates = []
     seen = set()
     for index, original in enumerate(request.sources):
@@ -252,6 +259,7 @@ def select(request, source_fields, codes, max_bytes, max_sources):
     }
 
     selected, used = {}, 0
+    represented = set()
     # Exhaust actual qualification sections before filling capacity with any other topic.
     priorities = (0, 1, 2, 3, 4) if any(rank <= 4 for rank, *_ in candidates) else (5,)
     for priority in priorities:
@@ -273,12 +281,30 @@ def select(request, source_fields, codes, max_bytes, max_sources):
                 -min(len(item[1].excerpt.strip()), 600) if priority == 3 else 0,
             ))
         while any(queues.values()) and len(selected) < max_sources:
+            def novel(candidate):
+                index, source, _ = candidate
+                key = program_key(source)
+                return index not in selected and key and key not in represented
+
+            pending_program = priority == 3 and any(
+                novel(item) for queue in queues.values() for item in queue
+            )
             for code in queues:
                 if not queues[code] or len(selected) >= max_sources:
                     continue
-                index, source, size = queues[code].pop(0)
-                if index not in selected and used + size <= max_bytes:
+                queue = queues[code]
+                # Within mixed support sections, cover another program before a second
+                # block of an already represented one. Direct qualification ranks stay first.
+                choice = (next((i for i, candidate in enumerate(queue) if novel(candidate)), None)
+                          if pending_program else 0)
+                if choice is None:
+                    continue
+                index, source, size = queue.pop(choice)
+                if (index not in selected and used + size <= max_bytes
+                        and (fits is None or fits([*selected.values(), source]))):
                     selected[index] = source
                     used += size
+                    if key := program_key(source):
+                        represented.add(key)
     ordered = sorted(selected.items(), key=lambda item: (item[0] in noisy, item[0]))
     return [source for _, source in ordered]

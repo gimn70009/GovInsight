@@ -39,7 +39,7 @@ def test_latest_notices_keep_both_program_requirements_and_normal_applicant_sour
     if notice_id == 3:
         assert "[문서 전체 텍스트 추출]" in original["s2"].excerpt
         assert "s2" not in ids
-    assert len(selected) <= 12
+    assert len(selected) <= 24
     assert sum(len(s.excerpt.encode()) for s in selected) <= 8000
     input_bytes = focused.CallBudget().reserve(focused.model_messages(selected), focused.Extraction)
     assert input_bytes <= 20000

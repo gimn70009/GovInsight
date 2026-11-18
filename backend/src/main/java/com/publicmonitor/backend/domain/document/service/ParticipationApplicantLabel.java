@@ -77,6 +77,12 @@ final class ParticipationApplicantLabel {
     private static List<Row> rows(String excerpt) {
         var rows = new ArrayList<Row>();
         if (excerpt == null) return rows;
+        // Inline labels carry the same explicit role relationship as two-column applicant tables.
+        for (String line : excerpt.split("\\R")) {
+            var labelled = Pattern.compile("^[\\h◦○●•-]*[（(]([^()（）]+)[)）]\\h*(.+)$").matcher(line);
+            if (labelled.matches() && APPLICANT.matcher(compact(labelled.group(1))).matches())
+                rows.add(new Row(labelled.group(1).strip(), line));
+        }
         var tables = TABLE.matcher(excerpt);
         while (tables.find()) {
             var lines = tables.group(1).lines().filter(line -> !line.isBlank()).toList();

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  companyParticipationRows, companyParticipationExclusions, companyConditionScope,
+  companyParticipationRows, companyParticipationExclusions, companyParticipationGuidance, companyConditionScope,
   companyConditionPresentation, companyConditionAppliesTo, activeCompanyConditionProgram,
 } from '../src/utils/companyParticipation.ts'
 
@@ -79,6 +79,7 @@ test('server text, scope, audience and explicit notes are displayed verbatim', (
   })
   assert.deepEqual(companyConditionPresentation(value), {
     scope: value.rule.scope, scopeReviewRequired: false, audience: '도입기업', sentence: text,
+    reviewRequired: false, notices: [],
     notes: ['* 최근 3개년 매출액 1회 이상 달성', '  별도의 공백도 유지  ', '단, 추천기업은 예외'],
   })
   assert.equal(value.rule.text, text)
@@ -278,4 +279,42 @@ test('two real programs retain shared requirements and nested explanations when 
   }
   assert.equal(companyConditionAppliesTo(entry('15석 이상입니다.', 'BASIC', { scope: a }), b), false)
   assert.equal(companyConditionScope(entry('사업 조건입니다.', 'BASIC', { scope: '매니저 양성 지원사업' })), '매니저 양성 지원사업')
+})
+
+
+test('legacy English common scopes normalize without rewriting applicant names or evidence', () => {
+  for (const scope of ['common', ' COMMON ', '공통']) {
+    const value = entry('신청 자격을 갖춘 기관이 신청할 수 있습니다.', 'BASIC', { scope, audience: 'Common Ground 기관' })
+    assert.equal(companyConditionPresentation(value).scope, '공통')
+    assert.equal(companyConditionPresentation(value).audience, 'Common Ground 기관')
+    assert.equal(companyConditionAppliesTo(value, '성장사업'), true)
+    assert.equal(value.rule.scope, scope)
+  }
+  const scoped = entry('신청 조건입니다.', 'BASIC', { scope: '성장사업 · common' })
+  assert.equal(companyConditionScope(scoped), '성장사업 · 공통')
+  assert.equal(companyConditionAppliesTo(scoped, '성장사업 · 일반형'), true)
+  assert.equal(companyConditionAppliesTo(scoped, '다른사업 · 일반형'), false)
+  assert.equal(companyConditionScope(entry('신청 조건입니다.', 'BASIC', { scope: 'Common Ground 지원사업' })), 'Common Ground 지원사업')
+})
+
+
+test('format failures retain evidence and show an explicit review sentence', () => {
+  const value = { ...entry('기관 등 단독 또는 컨소시엄'), displayStatus: 'REVIEW_REQUIRED' }
+  const presented = companyConditionPresentation(value)
+  assert.equal(presented.reviewRequired, true)
+  assert.match(presented.sentence, /원문 근거를 확인/)
+  assert.doesNotMatch(presented.sentence, /컨소시엄/)
+  assert.deepEqual(applicantRows([value]).mandatory, [value])
+  assert.equal(value.rule.sources[0].excerpt, '기관 등 단독 또는 컨소시엄')
+})
+
+test('administrative setup is separated from eligibility without losing its explanation', () => {
+  const admin = entry('담당자는 전산등록을 완료해야 합니다.', 'APPLICATION_GUIDANCE', {
+    guidance: ['일부 세부 조건은 원문 근거를 확인해 주세요.'],
+  })
+  const required = entry('사업자등록이 된 기관이어야 합니다.')
+  const data = guide([row('BUSINESS_FORM', [required, admin])])
+  assert.deepEqual(companyParticipationRows(data)[4].mandatory, [required])
+  assert.deepEqual(companyParticipationGuidance(data), [admin])
+  assert.equal(companyConditionPresentation(admin).notices.length, 1)
 })

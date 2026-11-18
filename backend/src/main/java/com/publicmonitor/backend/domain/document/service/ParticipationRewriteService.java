@@ -17,7 +17,7 @@ import static com.publicmonitor.backend.domain.document.client.ParticipationRewr
 @Service
 @org.springframework.context.annotation.Lazy
 public class ParticipationRewriteService {
-    private static final String VERSION = "participation-condition-details-v5";
+    private static final String VERSION = "participation-condition-contract-v6";
     private static final long PENDING_TIMEOUT_MILLIS = 120_000;
     record Pending(String status, long startedAt) {}
     private final PythonParticipationRewriteClient client;
@@ -40,7 +40,7 @@ public class ParticipationRewriteService {
     public ParticipationGuide resolve(DocumentVersion version, ParticipationGuide raw, boolean incomplete, ParticipationScopeIndex scopes) {
         var input = ParticipationRewriteProjection.input(raw, incomplete, scopes);
         var request = input.request();
-        // v4 retires the old summary-like outputs and introduces explicit exclusions.
+        // v6 aligns required text and line references with the generation contract.
         // A previous policy is refreshed once through the same database claim below.
         if (input.availableSources().isEmpty()) return ParticipationRewriteProjection.guide(raw, input,
                 new Response(java.util.List.of(), java.util.List.of(), "READY"), "READY");

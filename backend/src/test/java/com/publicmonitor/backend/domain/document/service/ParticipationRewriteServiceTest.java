@@ -30,7 +30,7 @@ class ParticipationRewriteServiceTest {
         return version;
     }
     Response valid() {
-        return new Response(List.of(new Statement(List.of("s0"), "BUSINESS_AGE", quote,
+        return new Response(List.of(new Statement(List.of("s0"), "BUSINESS_AGE", sentence,
                 "", List.of(quote), "ELIGIBILITY")), List.of(), "READY");
     }
     List<ParticipationCriterionEntry> entries(ParticipationGuide guide) {

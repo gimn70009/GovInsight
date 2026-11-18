@@ -111,3 +111,6 @@
 .participation-guide__exclusions .participation-guide__number { color: #a5352c; background: #fce8e4; }
 .participation-guide__exclusions .participation-guide__main { color: #743d38; }
 .participation-guide__exclusions .participation-guide__condition-toggle:is(:hover, [aria-expanded="true"]) { background: #fff4f2; }
+
+.participation-guide__quality-notice { margin: 10px 0; padding: 12px 14px; border: 1px solid #e4d7b9; border-radius: 8px; background: #fffbef; color: #74521c; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.participation-guide__application-guidance { margin-top: 20px; }

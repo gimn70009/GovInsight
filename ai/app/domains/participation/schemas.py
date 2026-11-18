@@ -81,6 +81,7 @@ class PreparedRow(StrictModel):
 
 
 class ConditionDetail(StrictModel):
+    review_required: bool = False
     source_ids: list[str] = Field(min_length=1, max_length=4)
     text: str = Field(min_length=1, max_length=240)
     supporting_quotes: list[Annotated[str, Field(min_length=1, max_length=600)]] = Field(
@@ -89,6 +90,7 @@ class ConditionDetail(StrictModel):
 
 
 class Statement(StrictModel):
+    review_required: bool = False
     source_ids: list[str]
     criterion: CriterionCode
     text: str
@@ -130,6 +132,7 @@ class Review(StrictModel):
 
 
 class RewriteResponse(StrictModel):
+    diagnostics: dict[str, int] = Field(default_factory=dict)
     statements: list[Statement]
     evidence_only_ids: list[str]
     status: Literal["READY", "UNAVAILABLE"]

@@ -55,14 +55,14 @@ class Fake:
 
 
 def test_field_balancing_does_not_spend_every_slot_on_age():
-    sources = [source(str(i), f"창업 후 {i + 1}년 이내 기업") for i in range(20)]
+    sources = [source(str(i), f"창업 후 {i + 1}년 이내 기업") for i in range(40)]
     sources += [
         source("r", "매출액 5억원 미만 기업"),
         source("p", "특허 보유기업"),
         source("s", "자동차 제조업 영위기업"),
     ]
     selected = focused.select_sources(request(*sources))
-    assert len(selected) == 12
+    assert len(selected) == 24
     assert {"r", "p", "s"} <= {s.id for s in selected}
 
 
@@ -157,7 +157,7 @@ def test_input_budget_stays_bounded_and_qualification_gets_priority():
     assert any(s.id == "export" for s in selected)
     assert sum(len(s.excerpt.encode("utf-8")) for s in selected) <= 8000
     assert focused.MAX_OUTPUT_TOKENS <= 4096
-    assert len(selected) <= 12
+    assert len(selected) <= 24
 
 
 def test_actual_operator_and_export_fixture_qualifications_fit_the_reduced_input_budget():
@@ -325,12 +325,13 @@ def test_real_public_notice_sections_fit_one_request_and_keep_expected_eligibili
         assert all(label in headings for label in ["점프업100", "점프업500", "점프업1000"])
     fake = Fake()
     result = asyncio.run(service.rewrite(req, fake))
-    assert result.status == "READY"
+    # Input selection is successful, but an empty model answer is not proof of no eligibility.
+    assert result.status == ("READY" if notice_id == 4 else "UNAVAILABLE")
     assert len(fake.calls) == 1
     schema, messages = fake.calls[0]
     assert focused.CallBudget().reserve(messages, schema) <= 20000
     assert sum(len(s.excerpt.encode()) for s in selected) <= 8000
-    assert len(selected) <= 12
+    assert len(selected) <= 24
 
 
 def test_synthetic_join_between_qualification_sections_cannot_ground_a_quote():
@@ -592,7 +593,7 @@ def test_cost_limits_and_prompt_remain_bounded():
     assert focused.MAX_SOURCE_BYTES == 8000
     assert focused.MAX_INPUT_BYTES == 20000
     assert focused.MAX_OUTPUT_TOKENS == 4096
-    assert focused.MAX_SOURCES == 12
+    assert focused.MAX_SOURCES == 24
     assert focused.TIMEOUT_SECONDS == 45
     assert focused.DOCUMENT_TIMEOUT_SECONDS == 60
     assert "basis" not in ExtractedCondition.model_json_schema()["properties"]
@@ -749,6 +750,10 @@ def test_structural_scope_does_not_invent_a_program_or_change_grounded_condition
     ("성장형 · 2. 신청자격 / 일반형", "성장형 / 일반형"),
     ("아. 세부과제 지원유형 / 적용 범위 확인 필요", "적용 범위 확인 필요"),
     ("공통", "공통"),
+    (" common ", "공통"),
+    ("COMMON", "공통"),
+    ("성장사업 · Common", "성장사업 · 공통"),
+    ("Common Ground 지원사업", "Common Ground 지원사업"),
 ])
 def test_real_types_and_explicit_uncertainty_survive_scope_cleanup(label, expected):
     assert focused.scope_label(label) == expected

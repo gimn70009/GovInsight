@@ -1,5 +1,7 @@
 import asyncio
 
+import pytest
+
 from app.domains.participation import focused
 from app.domains.participation.schemas import Criterion, RewriteRequest, Source
 
@@ -134,3 +136,75 @@ def test_separate_main_and_detail_spans_preserve_long_evidence_within_each_quote
     )
     assert too_broad.statements == []
     assert too_broad.evidence_only_ids == ["a"]
+
+
+def test_complete_main_without_extra_details_keeps_evidence_in_one_call():
+    main = (
+        "협회·단체는 업종별로 대표성을 보유한 비영리법인으로서 "
+        "주무부처에 등록된 협회 또는 단체여야 합니다."
+    )
+    quote = (
+        "협회·단체: 업종별로 대표성을 보유한 협회 또는 단체. "
+        "비영리법인으로서 주무부처에 등록된 협회 또는 단체에 한함."
+    )
+    request, _ = fixture()
+    request.sources = [Source(id="a", excerpt=quote, group_label="신청자격")]
+    item = focused.ExtractedCondition(
+        source_id="a", criterion="BUSINESS_FORM", kind="ELIGIBILITY",
+        audience="협회·단체", text=main, quote="L1", details=[],
+    )
+
+    class Model:
+        calls = 0
+
+        def with_structured_output(self, *args, **kwargs):
+            return self
+
+        async def ainvoke(self, *args, **kwargs):
+            self.calls += 1
+            return focused.Extraction(items=[item], unresolved_source_ids=[])
+
+    # The fake response checks integration, not whether a live model follows the prompt.
+    model = Model()
+    result = asyncio.run(focused.extract(request, model))
+    assert model.calls == 1
+    assert len(result.statements) == 1
+    parent = result.statements[0]
+    assert parent.text == main and parent.audience == "협회·단체"
+    assert parent.source_ids == ["a"] and parent.supporting_quotes == [quote]
+    assert parent.details == []
+    assert result.evidence_only_ids == []
+
+
+@pytest.mark.parametrize(
+    ("main", "extra", "criterion"),
+    [
+        (MAIN, DEFINITION, "SECTOR"),
+        (MAIN, CONFIRMATION, "SECTOR"),
+        (
+            "특허 보유기업이 신청할 수 있으며, 공동특허는 지분 요건을 충족해야 합니다.",
+            "공동특허는 신청기업 지분이 50% 이상인 경우에 인정합니다.",
+            "IP",
+        ),
+    ],
+    ids=["definition", "proof", "exception-condition"],
+)
+def test_same_quote_can_support_additional_detail_not_present_in_main(main, extra, criterion):
+    request, _ = fixture()
+    quote = main + " " + extra
+    request.sources = [Source(id="a", excerpt=quote, group_label="신청자격")]
+    item = focused.ExtractedCondition(
+        source_id="a", criterion=criterion, kind="ELIGIBILITY", text=main, quote="L1",
+        details=[focused.ExtractedDetail(source_id="a", text=extra, quote="L1")],
+    )
+    result = focused.project(
+        focused.Extraction(items=[item], unresolved_source_ids=[]), request.sources, request
+    )
+    assert len(result.statements) == 1
+    parent = result.statements[0]
+    assert parent.text == main and parent.supporting_quotes == [quote]
+    assert len(parent.details) == 1
+    assert parent.details[0].text == extra
+    assert parent.details[0].source_ids == ["a"]
+    assert parent.details[0].supporting_quotes == parent.supporting_quotes
+    assert result.evidence_only_ids == []
