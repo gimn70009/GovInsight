@@ -54,8 +54,15 @@ final class ParticipationSourceSelection {
 
     Request outbound(ParticipationRewriteProjection.Input input) {
         var frozenIds = new HashSet<>(input.request().sources().stream().map(Source::id).toList());
+        var linked = input.evidence().values().stream().flatMap(List::stream).filter(this::includes)
+                .filter(source -> Objects.toString(source.sectionTitle(), "").startsWith(ParticipationReferencedSources.MARKER)).toList();
         var sources = input.availableSources().stream().filter(source ->
                 input.evidence().get(source.id()).stream().anyMatch(this::includes))
+                .filter(source -> !ParticipationRecruitmentScope.referenceOnly(input, List.of(source.id())))
+                .filter(source -> input.evidence().get(source.id()).stream().filter(this::includes).anyMatch(original ->
+                        linked.stream().noneMatch(full -> !full.equals(original)
+                                && Objects.equals(full.attachmentName(), original.attachmentName())
+                                && full.excerpt().contains(original.excerpt()))))
                 .filter(source -> frozenIds.contains(source.id()) || input.evidence().get(source.id()).stream()
                         .filter(this::includes).anyMatch(ParticipationSourceSelection::explicit))
                 .map(source -> {
@@ -85,7 +92,10 @@ final class ParticipationSourceSelection {
     static boolean explicit(RequirementSource source) {
         // A funding/period section named "지원 조건" is not an applicant eligibility heading.
         // Mixed tables remain candidates when an actual applicant/target column is present.
-        return APPLICANT_SECTION.matcher(originalHeading(source)).find()
+        return Objects.toString(source.sectionTitle(), "").startsWith(ParticipationChecklistSources.MARKER)
+                || Objects.toString(source.sectionTitle(), "").startsWith(ParticipationChecklistSources.EXCEPTION)
+                || Objects.toString(source.sectionTitle(), "").startsWith(ParticipationReferencedSources.MARKER)
+                || APPLICANT_SECTION.matcher(originalHeading(source)).find()
                 || source.excerpt().lines().flatMap(line -> Arrays.stream(line.split("\\t")))
                         .anyMatch(cell -> APPLICANT_SECTION.matcher(cell.strip()).find());
     }

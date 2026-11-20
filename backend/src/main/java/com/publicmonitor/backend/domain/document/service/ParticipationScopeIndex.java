@@ -28,6 +28,12 @@ final class ParticipationScopeIndex {
     void compatibility(ParticipationRawSources.ScopedSources value) { compatibility = value; }
     ParticipationRawSources.ScopedSources compatibility() { return compatibility; }
     private final Map<RequirementSource, List<Span>> sources = new LinkedHashMap<>();
+    private final List<RequirementSource> supplementalSources = new ArrayList<>();
+    List<RequirementSource> supplementalSources() { return List.copyOf(supplementalSources); }
+    void addSupplemental(RequirementSource source, String recruitment) {
+        if (!supplementalSources.contains(source)) supplementalSources.add(source);
+        if (recruitment != null && !recruitment.isBlank()) recruitments.put(source, recruitment);
+    }
 
     private final Map<RequirementSource, String> contexts = new LinkedHashMap<>();
     private final Map<RequirementSource, String> recruitments = new LinkedHashMap<>();
@@ -52,7 +58,9 @@ final class ParticipationScopeIndex {
         for (int i = 0; i < lines.size(); i++) {
             var line = lines.get(i);
             String text = forDisplay ? displayTitle(line.text()) : line.text().strip();
-            if (text.startsWith("[파일:")) { stack.clear(); contents = false; table = false; }
+            if (text.startsWith("[파일:") || (forDisplay && text.equals("[문서 전체 텍스트 추출]"))) {
+                stack.clear(); contents = false; table = false; skipTitle = -1;
+            }
             if (text.replaceAll("\\s+", "").matches("(?:목차|차례)")) {
                 contents = true;
                 stack.clear();
@@ -67,7 +75,8 @@ final class ParticipationScopeIndex {
                         skipTitle = i + 1;
                     }
                 }
-                if (forDisplay && heading != null && fragmentTitle(heading.title())) heading = null;
+                if (forDisplay && heading != null && (fragmentTitle(heading.title())
+                        || administrativeHeading(heading.title()))) heading = null;
                 boolean contentsPage = contents && text.matches(".*\\s\\d+\\s*$");
                 if (contents && heading != null && !contentsPage && !TOC_ENTRY.matcher(text).matches() && hasContent(lines, i + 1))
                     contents = false;
@@ -94,6 +103,14 @@ final class ParticipationScopeIndex {
             if (text.equals("[/표]")) table = false;
         }
         String recruitment = ParticipationRecruitmentContext.from(document);
+        if (!forDisplay && !frozen && !rules.isEmpty()) {
+            String file = rules.stream().flatMap(rule -> rule.sources().stream()).findFirst()
+                    .map(RequirementSource::attachmentName).orElse(null);
+            for (var source : ParticipationReferencedSources.collect(document, file)) {
+                supplementalSources.add(source);
+                if (!recruitment.isBlank()) recruitments.put(source, recruitment);
+            }
+        }
         var parentSections = parentSections(document);
         String recruitmentDocument = forDisplay ? originalDocument(document) : document;
         int cursor = 0;
@@ -188,7 +205,7 @@ final class ParticipationScopeIndex {
     private String parentAfterLine(String current, String previous, String line) {
         // A standalone number gains a title only after the next line is present in the prefix.
         if (PARENT_NUMBER.matcher(previous).matches()) current = parentTitle(current, line);
-        if (line.startsWith("[파일:")) current = "";
+        if (line.startsWith("[파일:") || (forDisplay && line.equals("[문서 전체 텍스트 추출]"))) return "";
         if (!frozen) {
             var subsection = JOINED_SUBSECTION.matcher(line);
             if (subsection.matches() && generic(subsection.group(2)))
@@ -345,6 +362,10 @@ final class ParticipationScopeIndex {
             if (next.matches(".*(?:신청|지원|참여).*(?:기업|대상|요건|자격).*")) return true;
         }
         return false;
+    }
+
+    static boolean administrativeHeading(String value) {
+        return value.strip().matches("^(?:\\((?:제출서류|신청방법|접수방법|유의사항|평가방법)\\)|(?:제출서류|신청방법|접수방법|유의사항|평가방법)(?:\\s|[:：]|$)).*");
     }
 
     static boolean generic(String title) {

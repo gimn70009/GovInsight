@@ -18,7 +18,8 @@ import static com.publicmonitor.backend.domain.document.client.ParticipationRewr
 @org.springframework.context.annotation.Lazy
 public class ParticipationRewriteService {
     private static final String VERSION = "participation-condition-contract-v6";
-    private static final long PENDING_TIMEOUT_MILLIS = 120_000;
+    // Allow the AI document deadline (150 seconds) plus transport/persistence overhead.
+    private static final long PENDING_TIMEOUT_MILLIS = 180_000;
     record Pending(String status, long startedAt) {}
     private final PythonParticipationRewriteClient client;
     private final ParticipationRewriteStore store;
@@ -87,7 +88,7 @@ public class ParticipationRewriteService {
             }
             var response = mapper.treeToValue(json, Response.class);
             if (response != null && response.statements() != null && response.evidenceOnlyIds() != null
-                    && ("READY".equals(response.status()) || "UNAVAILABLE".equals(response.status()))) return response;
+                    && ("READY".equals(response.status()) || "PARTIAL".equals(response.status()) || "UNAVAILABLE".equals(response.status()))) return response;
         } catch (RuntimeException ignored) { /* An interrupted or corrupt attempt for this exact input must not charge again. */ }
         return Response.unavailable(request);
     }
@@ -102,7 +103,7 @@ public class ParticipationRewriteService {
             log.info("Participation rewrite started. version_id={} sources={}", id, request.sources().size());
             var extracted = client.rewrite(request, partial -> progress.put(id + ":" + key, partial));
             if (extracted != null && extracted.statements() != null && extracted.evidenceOnlyIds() != null
-                    && ("READY".equals(extracted.status()) || "UNAVAILABLE".equals(extracted.status()))) result = extracted;
+                    && ("READY".equals(extracted.status()) || "PARTIAL".equals(extracted.status()) || "UNAVAILABLE".equals(extracted.status()))) result = extracted;
         } catch (RuntimeException exception) {
             log.warn("Participation rewrite unavailable. version_id={} error_type={}", id, exception.getClass().getSimpleName());
         } finally {

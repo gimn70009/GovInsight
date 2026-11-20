@@ -55,19 +55,19 @@ class Fake:
 
 
 def test_field_balancing_does_not_spend_every_slot_on_age():
-    sources = [source(str(i), f"창업 후 {i + 1}년 이내 기업") for i in range(40)]
+    sources = [source(str(i), f"창업 후 {i + 1}년 이내 기업") for i in range(80)]
     sources += [
         source("r", "매출액 5억원 미만 기업"),
         source("p", "특허 보유기업"),
         source("s", "자동차 제조업 영위기업"),
     ]
     selected = focused.select_sources(request(*sources))
-    assert len(selected) == 24
+    assert len(selected) == min(len(sources), focused.MAX_SOURCES)
     assert {"r", "p", "s"} <= {s.id for s in selected}
 
 
 def test_unselected_whole_source_remains_evidence():
-    huge = source("huge", "특허 보유 조건 " * 1500)
+    huge = source("huge", "특허 보유 조건 " * 5000)
     model = Fake()
     result = asyncio.run(service.rewrite(request(huge), model))
     assert not model.calls
@@ -144,7 +144,7 @@ def test_sdk_single_request_cheap_model_caps_and_usage_log(monkeypatch, caplog):
     assert len(payloads) == 1
     assert payloads[0]["model"] == "gpt-5-mini"
     assert payloads[0]["reasoning_effort"] == "low"
-    assert payloads[0]["max_completion_tokens"] == 4096
+    assert payloads[0]["max_completion_tokens"] == 8192
     assert options[0]["max_retries"] == 0
     assert '"input_tokens": 120' in caplog.text
     assert quote not in caplog.text and "test-not-real" not in caplog.text
@@ -155,9 +155,9 @@ def test_input_budget_stays_bounded_and_qualification_gets_priority():
     key = source("export", "지원대상 전년도 직접수출액 5,000만불 미만", "지원대상")
     selected = focused.select_sources(request(*noise, key))
     assert any(s.id == "export" for s in selected)
-    assert sum(len(s.excerpt.encode("utf-8")) for s in selected) <= 8000
-    assert focused.MAX_OUTPUT_TOKENS <= 4096
-    assert len(selected) <= 24
+    assert sum(len(s.excerpt.encode("utf-8")) for s in selected) <= focused.MAX_SOURCE_BYTES
+    assert focused.MAX_OUTPUT_TOKENS <= 8192
+    assert len(selected) <= focused.MAX_SOURCES
 
 
 def test_actual_operator_and_export_fixture_qualifications_fit_the_reduced_input_budget():
@@ -176,17 +176,17 @@ def test_actual_operator_and_export_fixture_qualifications_fit_the_reduced_input
         src = source("real", block, marker)
         selected = focused.select_sources(request(src))
         assert len(selected) == 1
-        assert len(selected[0].excerpt.encode("utf-8")) <= 8000
+        assert len(selected[0].excerpt.encode("utf-8")) <= focused.MAX_SOURCE_BYTES
         assert expected <= focused.source_fields(selected[0])
 
 
 def test_expanded_serialized_input_guard_stops_before_any_model_request():
-    src = source("x", "업력 7년 이상", "신청자격 " + "x" * 20_000)
+    src = source("x", "업력 7년 이상", "신청자격 " + "x" * 48_000)
     model = Fake()
     result = asyncio.run(service.rewrite(request(src), model))
     assert result.status == "UNAVAILABLE"
     assert not model.calls
-    assert focused.MAX_INPUT_BYTES == 20_000
+    assert focused.MAX_INPUT_BYTES == 48_000
 
 
 @pytest.mark.parametrize(
@@ -247,7 +247,7 @@ def test_all_qualification_scopes_precede_large_other_sections(labels):
     ]
     selected = focused.select_sources(request(*sources))
     assert {s.id for s in selected} == {"0", "1", "2"}
-    assert sum(len(s.excerpt.encode()) for s in selected) <= 8000
+    assert sum(len(s.excerpt.encode()) for s in selected) <= focused.MAX_SOURCE_BYTES
 
 
 def test_nested_qualification_retains_wrapped_sentence_table_and_exception():
@@ -290,13 +290,14 @@ def test_large_attachment_collection_still_uses_one_bounded_call_for_short_quali
     key = source("key", "□ 신청자격\n전년도 직접수출액 4,000만불 미만인 중소기업")
     req = request(*noise, key)
     assert sum(len(s.excerpt) for s in req.sources) > 64000
-    fake = Fake([item("key", "REVENUE", "전년도 직접수출액 4,000만불 미만인 중소기업")])
+    fake = Fake([item("key", "REVENUE", "전년도 직접수출액 4,000만불 미만인 중소기업",
+                      text="전년도 직접수출액이 4,000만불 미만인 중소기업이 신청할 수 있습니다.")])
     result = asyncio.run(service.rewrite(req, fake))
     assert result.status == "READY"
     assert len(result.statements) == 1
     assert len(fake.calls) == 1
     schema, messages = fake.calls[0]
-    assert focused.CallBudget().reserve(messages, schema) <= focused.MAX_INPUT_BYTES
+    assert focused.call_budget().reserve(messages, schema) <= focused.MAX_INPUT_BYTES
     assert len(json.loads(messages[1].content)["sources"]) == 1
 
 
@@ -326,12 +327,12 @@ def test_real_public_notice_sections_fit_one_request_and_keep_expected_eligibili
     fake = Fake()
     result = asyncio.run(service.rewrite(req, fake))
     # Input selection is successful, but an empty model answer is not proof of no eligibility.
-    assert result.status == ("READY" if notice_id == 4 else "UNAVAILABLE")
+    assert result.status == "UNAVAILABLE"
     assert len(fake.calls) == 1
     schema, messages = fake.calls[0]
-    assert focused.CallBudget().reserve(messages, schema) <= 20000
-    assert sum(len(s.excerpt.encode()) for s in selected) <= 8000
-    assert len(selected) <= 24
+    assert focused.call_budget().reserve(messages, schema) <= focused.MAX_INPUT_BYTES
+    assert sum(len(s.excerpt.encode()) for s in selected) <= focused.MAX_SOURCE_BYTES
+    assert len(selected) <= focused.MAX_SOURCES
 
 
 def test_synthetic_join_between_qualification_sections_cannot_ground_a_quote():
@@ -445,7 +446,7 @@ def test_direct_eligibility_is_not_starved_by_large_target_and_financial_section
     assert focused.selection.prepare(req.sources[-1], focused.source_fields)[1] == 0
     assert focused.selection.prepare(req.sources[0], focused.source_fields)[1] == 1
     assert "core" in [s.id for s in selected]
-    assert sum(len(s.excerpt.encode()) for s in selected) <= 8000
+    assert sum(len(s.excerpt.encode()) for s in selected) <= focused.MAX_SOURCE_BYTES
 
 
 def test_line_prefix_with_model_comment_only_uses_the_referenced_original():
@@ -590,14 +591,14 @@ def test_structure_enum_is_still_enforced(field, value):
 
 def test_cost_limits_and_prompt_remain_bounded():
     assert len(focused.PROMPT.encode("utf-8")) <= 3600
-    assert focused.MAX_SOURCE_BYTES == 8000
-    assert focused.MAX_INPUT_BYTES == 20000
-    assert focused.MAX_OUTPUT_TOKENS == 4096
-    assert focused.MAX_SOURCES == 24
-    assert focused.TIMEOUT_SECONDS == 45
-    assert focused.DOCUMENT_TIMEOUT_SECONDS == 60
+    assert focused.MAX_SOURCE_BYTES == 32000
+    assert focused.MAX_INPUT_BYTES == 48000
+    assert focused.MAX_OUTPUT_TOKENS == 8192
+    assert focused.MAX_SOURCES == 64
+    assert focused.TIMEOUT_SECONDS == 120
+    assert focused.DOCUMENT_TIMEOUT_SECONDS == 150
     assert "basis" not in ExtractedCondition.model_json_schema()["properties"]
-    assert Extraction.model_json_schema()["properties"]["items"]["maxItems"] == 32
+    assert Extraction.model_json_schema()["properties"]["items"]["maxItems"] == 64
 
 
 def test_empty_extraction_has_no_local_generated_conditions():
@@ -628,9 +629,9 @@ def test_selection_log_reports_counts_without_original_or_identifier(caplog):
 
 def test_serialized_prompt_source_and_schema_input_remains_bounded():
     selected = [source("one", "□ 신청자격\n업력 7년 이내 기업")]
-    actual = focused.CallBudget().reserve(focused.model_messages(selected), Extraction)
+    actual = focused.call_budget().reserve(focused.model_messages(selected), Extraction)
     # Includes the strict output schema: duplicated field descriptions also consume input.
-    assert actual <= 6000
+    assert actual <= 7000
     assert actual <= focused.MAX_INPUT_BYTES
 
 
@@ -720,6 +721,7 @@ def test_input_context_separates_actual_program_from_document_sections():
         "parent": "지원 대상",
         "program": "성장형",
         "section": "□ 신청자격",
+        "required_spans": ["L1"],
     }
 
 
@@ -795,7 +797,7 @@ def test_recruitment_context_is_sent_once_and_never_assigned_to_other_notices():
     assert [s["context"].get("recruitment") for s in payload["sources"]] == [0, 0, 1, None]
     assert messages[1].content.count(recruitment) == 1
     assert [s["excerpt"] for s in payload["sources"]] == [f"L1: {s.excerpt}" for s in selected]
-    assert focused.CallBudget().reserve(messages, Extraction) <= 9000
+    assert focused.call_budget().reserve(messages, Extraction) <= 9000
 
 
 def test_recruitment_context_keeps_existing_output_contract():

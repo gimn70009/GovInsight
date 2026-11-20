@@ -11,14 +11,17 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import tools.jackson.databind.json.JsonMapper;
 
 class ParticipationRewriteStreamingTest {
-    @Test void deliversProgressBeforeTerminalAndKeepsItWhenStreamEndsEarly() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"READY", "PARTIAL"})
+    void deliversProgressBeforeTerminalAndKeepsItWhenStreamEndsEarly(String status) throws Exception {
         var request = new Request(List.of(new Source("s0", "중소기업만 신청", "", List.of("COMPANY_SIZE"))), List.of(), List.of());
         var result = new Response(List.of(new Statement(List.of("s0"), "COMPANY_SIZE",
-                "신청기업은 중소기업이어야 합니다.", "", List.of("중소기업만 신청"), "ELIGIBILITY")), List.of(), "READY");
+                "신청기업은 중소기업이어야 합니다.", "", List.of("중소기업만 신청"), "ELIGIBILITY")), List.of(), status);
         var delivered = new CountDownLatch(1);
         var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/internal/monitoring/participation-rewrite/stream", exchange -> {

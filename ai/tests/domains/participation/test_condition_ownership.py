@@ -28,7 +28,7 @@ def test_public_center_notice_keeps_regional_footnotes_and_staff_exceptions():
     assert "별도의 상근 전담인력(행정매니저)을 두는 센터의 총괄매니저는 상근 겸직 가능" in staffing
     assert "중 하나 이상" in staffing
     # Korean instructions and complete regional/staff evidence fit the unchanged input budget.
-    size = focused.CallBudget().reserve(focused.model_messages(selected), focused.Extraction)
+    size = focused.call_budget().reserve(focused.model_messages(selected), focused.Extraction)
     assert size <= focused.MAX_INPUT_BYTES
 
 

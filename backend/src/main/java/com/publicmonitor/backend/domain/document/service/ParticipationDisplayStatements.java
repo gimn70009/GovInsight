@@ -36,7 +36,13 @@ final class ParticipationDisplayStatements {
                         List.of(quote), "ELIGIBILITY", scope, null));
             }
         }
-        return List.copyOf(result.values());
+        return result.values().stream().filter(item -> !"ELIGIBILITY".equals(item.kind())
+                        || !ParticipationRecruitmentScope.referenceOnly(input, item.sourceIds()))
+                .map(item -> new Statement(item.sourceIds(), item.criterion(), item.text(), item.groupLabel(),
+                        item.supportingQuotes(), item.kind(), item.scope(), item.audience(),
+                        item.details().stream().filter(detail -> !ParticipationRecruitmentScope.referenceOnly(input, detail.sourceIds())).toList(),
+                        item.reviewRequired()))
+                .toList();
     }
 
     private static List<Statement> separatePrograms(ParticipationRewriteProjection.Input input, List<Statement> items) {

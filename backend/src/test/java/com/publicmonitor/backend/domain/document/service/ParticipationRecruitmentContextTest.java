@@ -24,7 +24,8 @@ class ParticipationRecruitmentContextTest {
             assertThat(input.evidence().get(source.id())).anySatisfy(original ->
                     assertThat(source.excerpt()).isEqualTo(original.excerpt()));
         });
-        assertThat(outbound.sources()).anyMatch(s -> s.excerpt().contains("일반 유형\tDX 유형"));
+        assertThat(input.availableSources()).anyMatch(s -> s.excerpt().contains("일반 유형\tDX 유형"));
+        assertThat(outbound.sources()).noneMatch(s -> s.excerpt().contains("일반 유형\tDX 유형"));
         assertThat(input.request().sources()).noneMatch(s -> s.groupLabel().contains("[공고 대상]"));
     }
 

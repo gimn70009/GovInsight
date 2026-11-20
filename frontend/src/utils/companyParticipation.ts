@@ -114,7 +114,7 @@ export function companyConditionPresentation(entry: ParticipationCriterionEntry)
     audience: contextLabel(entry.rule.audience),
     reviewRequired: entry.displayStatus === 'REVIEW_REQUIRED',
     sentence: entry.displayStatus === 'REVIEW_REQUIRED'
-      ? `${entry.rule.section === 'APPLICATION_GUIDANCE' ? '접수 준비 사항' : '신청 요건'}을 문장으로 정리하지 못했습니다. 원문 근거를 확인해 주세요.`
+      ? `${entry.rule.section === 'APPLICATION_GUIDANCE' ? '접수 준비 사항' : '신청 요건'}의 정확한 내용은 원문 근거를 확인해 주세요.`
       : entry.rule.text,
     notices: entry.rule.guidance ?? [],
     notes: [...new Set([...(entry.rule.details ?? []), ...(entry.rule.exceptions ?? [])])]

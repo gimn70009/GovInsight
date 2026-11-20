@@ -62,6 +62,37 @@ class ParticipationPresentationQualityTest {
         assertThat(guide.rules().getFirst().guidance()).isEmpty();
     }
 
+    @Test void repeatedCompleteSentenceIsHiddenWithoutDroppingItsEvidenceOrCache() {
+        String repeated = "지분은 50% 이상이어야 합니다.";
+        String main = "기업이 신청할 수 있습니다. " + repeated;
+        String extra = "다만 대학은 신청 대상에서 제외됩니다.";
+        var response = new Response(List.of(new Statement(List.of("s0"), "IP", main, "", List.of(main),
+                "ELIGIBILITY", null, null, List.of(
+                    new Detail(List.of("s1"), repeated, List.of(repeated)),
+                    new Detail(List.of("s2"), extra, List.of(extra))))), List.of(), "READY");
+        var mapper = JsonMapper.builder().build();
+        String saved = mapper.writeValueAsString(response);
+        var guide = project(helper.raw(main, repeated, extra), response);
+        assertThat(guide.rules().getFirst().details()).containsExactly(extra);
+        assertThat(helper.entries(guide).getFirst().supportingQuotes()).containsExactly(main, repeated, extra);
+        assertThat(mapper.writeValueAsString(response)).isEqualTo(saved);
+    }
+
+    @Test void sharedWordsAndQuotesCannotHideNewLimitsNegationOrRoles() {
+        String main = "기업은 지분이 50.5% 이상이어야 합니다. 대학은 신청할 수 없습니다.";
+        var item = new Statement(List.of("s0"), "IP", main, "", List.of(main), "ELIGIBILITY");
+        for (String extra : List.of("기업은 지분이 50.5% 미만이어야 합니다.",
+                "기업은 지분이 50% 이상이어야 합니다.", "대학은 신청할 수 있습니다.",
+                "연구기관은 신청할 수 없습니다.", "지분은 50.5% 이상이어야 합니다.",
+                "기업은 지분이 50.5% 이상이어야 합니다. 증빙은 확인서로 제출합니다."))
+            assertThat(ParticipationPresentationQuality.redundantDetail(item,
+                    new Detail(List.of("s0"), extra, List.of(main)))).as(extra).isFalse();
+        var hidden = new Statement(item.sourceIds(), item.criterion(), main, "", item.supportingQuotes(),
+                item.kind(), null, null, List.of(), true);
+        assertThat(ParticipationPresentationQuality.redundantDetail(hidden,
+                new Detail(List.of("s0"), main, List.of(main)))).isFalse();
+    }
+
     @Test void invalidMainHasReviewStatusWithItsOriginalEvidence() {
         String raw = "비영리법인인 기관";
         var guide = project(helper.raw(raw), new Response(List.of(new Statement(List.of("s0"), "BUSINESS_FORM", raw,

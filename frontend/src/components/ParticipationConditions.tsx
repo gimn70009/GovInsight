@@ -15,6 +15,11 @@ function sourceName(source: RuleSource) {
   return source.origin === 'NOTICE_BODY' ? '공고 본문' : source.attachmentName || '첨부 문서'
 }
 
+function sourceSection(source: RuleSource) {
+  return source.sectionTitle?.replace('[자격 확인서] ', '')
+    .replace('[확인서 적용 예외] ', '공고 적용 예외 · ')
+}
+
 function RuleEvidence({ item, detail }: { item: ParticipationRule; detail: DocumentDetail }) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const id = useId()
@@ -31,11 +36,11 @@ function RuleEvidence({ item, detail }: { item: ParticipationRule; detail: Docum
       <select id={id} value={selectedIndex} title={sourceName(source)}
         onChange={event => setSelectedKey(sourceKey(sources[Number(event.target.value)]))}>
         {sources.map((value, index) => <option key={sourceKey(value)} value={index}>
-          {index + 1}. {[sourceName(value), value.sectionTitle, value.location].filter(Boolean).join(' · ')}
+          {index + 1}. {[sourceName(value), sourceSection(value), value.location].filter(Boolean).join(' · ')}
         </option>)}
       </select>
     </div> : <span>{sourceName(source)}</span>}
-    <small>{[source.sectionTitle, source.location].filter(Boolean).join(' · ')}</small>
+    <small>{[sourceSection(source), source.location].filter(Boolean).join(' · ')}</small>
     <blockquote key={sourceKey(source)} tabIndex={0} aria-label="선택한 원문 근거">{source.excerpt}</blockquote>
     {file && <a href={file.downloadUrl} target="_blank" rel="noreferrer">근거 문서 열기<ExternalLink size={12} aria-hidden="true" /></a>}
   </div>
@@ -168,6 +173,9 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
     <div className="business-summary__section-body">
       {pending && <SectionStatus state="loading" compact={visibleCount > 0}
         title="신청 자격을 확인하고 있습니다" description="확인이 끝나면 자동으로 반영됩니다." />}
+      {status === 'PARTIAL' && <SectionStatus state="unavailable" compact
+        title="일부 신청 조건은 확인을 완료하지 못했습니다"
+        description="아래 조건 외에 누락된 요건이 있을 수 있으니 공고 원문을 함께 확인해 주세요." />}
       {visibleCount > 0 ? <>
         {canFilter && <div className="participation-guide__filter">
           <label htmlFor={filterId}>해당 사업</label>

@@ -23,6 +23,7 @@ final class ParticipationProgramScope {
             var cited = sources.stream().filter(source -> source.excerpt().contains(quote)).toList();
             String context = index.displayScope(cited, scopeQuote(quote));
             if (context == null || context.isBlank()) unknown = true;
+            else if (ParticipationScopeIndex.administrativeHeading(context)) continue;
             else contexts.addAll(Arrays.asList(context.split(" / ")));
         }
         if (contexts.isEmpty()) return stored;

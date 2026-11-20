@@ -6,8 +6,9 @@ spring.datasource.username=${DB_USERNAME:govinsight}
 spring.datasource.password=${DB_PASSWORD}
 spring.datasource.driver-class-name=oracle.jdbc.OracleDriver
 
-# Local development only. Use validate after creating the schema.
-spring.jpa.hibernate.ddl-auto=${JPA_DDL_AUTO:update}
+# Preserve collected documents and paid AI caches on normal restarts.
+# Initialize a new development DB explicitly with --spring.jpa.hibernate.ddl-auto=create.
+spring.jpa.hibernate.ddl-auto=${JPA_DDL_AUTO:none}
 spring.jpa.open-in-view=false
 
 # Generate with: openssl rand -base64 32

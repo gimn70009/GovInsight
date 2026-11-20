@@ -2,6 +2,8 @@
 
 import re
 
+from . import requirements
+
 QUALIFICATION = re.compile(
     r"(?:사업\s*)?(?:(?:신청|참여|모집|기업)\s*(?:자격|대상|요건|조건)"
     r"|지원\s*(?:대상|자격|요건)|선정\s*대상|자격\s*요건|입찰\s*참가\s*자격)"
@@ -34,7 +36,7 @@ IRRELEVANT = re.compile(
     r"|입찰\s*보증금|과업\s*수행\s*계획|주요\s*과업|평가\s*항목|성과\s*보고|계약\s*체결\s*후"
     r"|지원\s*(?:기간|한도|비율|예산|과제\s*수)|선정\s*(?:규모|기준|절차|방법)"
     r"|모집\s*규모|최종\s*선정|지원\s*범위|신청서\s*제출\s*전"
-    r"|추진\s*체계|관련\s*규정|운영\s*규정|신청\s*절차|접수\s*기간"
+    r"|추진\s*체계|관련\s*규정|운영\s*규정|신청\s*절차|접수\s*기간|첨부\s*목록"
 )
 
 
@@ -73,7 +75,7 @@ def boundary(line):
         bool(re.match(r"^(?:[□■]|[가-하][.)])\s*", value))
         or bool(
             re.match(r"^(?:[0-9]+(?:-[0-9]+)+[.]?|[\ue000-\uf8ff\U000f0000-\U000ffffd])\s*", value)
-            and len(value) < 60
+            and len(value) < 180
         )
         or bool(
             len(value) < 60
@@ -86,7 +88,9 @@ def qualification_heading(line):
     title = re.sub(r"^[□■\ue000-\uf8ff\U000f0000-\U000ffffd]\s*", "", line)
     title = re.sub(r"^(?:[가-하][.)]|[0-9]+(?:[-.][0-9]+)*[.)]?)\s*", "", title)
     title = re.sub(r"^\(?과제별\s*", "", title).lstrip("(")
-    return bool(QUALIFICATION.match(title)) and not IRRELEVANT.search(title)
+    # A merged heading may contain the whole applicant paragraph. Its later words
+    # (e.g. a reference to the project purpose) must not invalidate the explicit label.
+    return bool(QUALIFICATION.match(title))
 
 
 def applicant_labels(text, *, table_only=False):
@@ -139,11 +143,20 @@ def prepare(source, source_fields):
         return None
     if QUALIFICATION.fullmatch(source.excerpt.strip()):
         return None
+    # Backend links these exact spans to an explicit qualification reference in the same file.
+    # Child headings and footnote numbers must not discard the referenced criteria/definitions.
+    if "[확인서 적용 예외]" in source.group_label:
+        return source, 0
+    if "[자격 확인서]" in source.group_label:
+        return source, 1
+    if "[자격 참조 원문]" in source.group_label:
+        return source, 1
     # Find real nested qualification sections in a coarse parsed block; do not cut inside tables.
     lines = source.excerpt.splitlines(keepends=True)
     starts, offset, table = [], 0, False
-    for line in lines:
-        if not table and boundary(line):
+    for index, line in enumerate(lines):
+        previous = lines[index - 1] if index else ""
+        if not table and (boundary(line) or requirements.section_start(line, previous)):
             starts.append(offset)
         if line.strip() == "[표]":
             table = True
@@ -152,16 +165,21 @@ def prepare(source, source_fields):
         offset += len(line)
     starts = sorted({0, *starts, len(source.excerpt)})
     qualified, contextual, mixed = [], [], []
+    qualification_section = False
     for start, end in zip(starts, starts[1:]):
         chunk = source.excerpt[start:end]
         first = chunk.strip().splitlines()[0] if chunk.strip() else ""
-        if qualification_heading(first) or EXCLUSION_HEADING.search(first):
+        if (requirements.SECTION.fullmatch(first) or first.startswith(("□", "■"))
+                or EXTRACTION_BOUNDARY.fullmatch(first)):
+            qualification_section = qualification_heading(first)
+        if qualification_section or qualification_heading(first) or EXCLUSION_HEADING.search(first):
             # Adjacent original sections stay adjacent; never insert a fake gap into an exact quote.
             if qualified and qualified[-1][1] == start:
                 qualified[-1] = (qualified[-1][0], end)
             else:
                 qualified.append((start, end))
-        elif APPLICANT_EXCLUSION.search(chunk) or EXPLICIT_APPLICANT.search(chunk):
+        elif (APPLICANT_EXCLUSION.search(chunk) or EXPLICIT_APPLICANT.search(chunk)
+              or requirements.condition_context(chunk)) and not applicant_labels(chunk):
             contextual.append((start, end))
         elif (
             PARTICIPATION_CONTEXT.search(chunk)
@@ -179,6 +197,8 @@ def prepare(source, source_fields):
             # Trim overview prose only; preserve every subordinate condition/exception.
             if (start, end) in mixed:
                 chunk = applicant_span(chunk)
+            elif (start, end) in contextual:
+                chunk = requirements.context_excerpt(chunk)
             if (spans and spans[-1][1] == start and chunk == source.excerpt[start:end]
                     and spans[-1][2] == source.excerpt[spans[-1][0]:start]):
                 spans[-1] = (spans[-1][0], end, spans[-1][2] + chunk)
@@ -209,8 +229,14 @@ def prepare(source, source_fields):
         priority = 5
     # Direct applicant qualifications come before broad target tables and exclusion checks.
     direct = heading(source) + "\n" + source.excerpt.splitlines()[0]
-    if priority <= 1 and re.search(r"신청\s*(?:자격|요건)|입찰\s*참가\s*자격|자격\s*요건", direct):
+    if (priority <= 1 or qualification_heading(heading(source))) and re.search(
+        r"신청\s*(?:자격|요건)|입찰\s*참가\s*자격|자격\s*요건", direct
+    ):
         priority = 0
+    # Retain restrictions buried in application instructions, but do not let a long
+    # procedural block consume the budget before explicitly referenced checklist facts.
+    if not qualified and re.search(r"(?:신청|접수)\s*방법|제출\s*서류", heading(source)):
+        priority = max(priority, 4)
     if priority > 3 and not source_fields(source):
         return None
     if recipient(source):
@@ -226,7 +252,8 @@ def program_key(source):
     return label if label and " / " not in label and not qualification_heading(label) else None
 
 
-def select(request, source_fields, codes, max_bytes, max_sources, fits=None):
+def candidates(request, source_fields):
+    """All distinct eligible inputs, including those that exceed the bounded call."""
     candidates = []
     seen = set()
     for index, original in enumerate(request.sources):
@@ -235,7 +262,7 @@ def select(request, source_fields, codes, max_bytes, max_sources, fits=None):
             continue
         source, priority = prepared
         size = len(source.excerpt.encode("utf-8"))
-        if not source.excerpt.strip() or size > max_bytes:
+        if not source.excerpt.strip():
             continue
         # Keep different scopes and all qualifiers; deduplicate formatting variants only.
         scope = re.search(r"\[적용 유형\]([^\n]*)", source.group_label)
@@ -248,9 +275,32 @@ def select(request, source_fields, codes, max_bytes, max_sources, fits=None):
             continue
         seen.add(identity)
         candidates.append((priority, index, source, size))
+    has_primary = any(rank <= 4 and not recipient(source) for rank, _, source, _ in candidates)
+    return [item for item in candidates if not (has_primary and recipient(item[2]))]
+
+
+def select(request, source_fields, codes, max_bytes, max_sources, fits=None):
+    # A checklist may be read only with every linked notice exemption. If the
+    # bounded input cannot hold both, retain it as original evidence for review.
+    def recruitment(source):
+        match = re.search(r"\[공고 대상\]([^\n]*)", source.group_label)
+        return match[1].strip() if match else ""
+
+    exemptions = [source for source in request.sources
+                  if "[확인서 적용 예외]" in source.group_label]
+
+    def dependencies_present(source, chosen):
+        if "[자격 확인서]" not in source.group_label:
+            return True
+        context = recruitment(source)
+        required = [s.id for s in exemptions
+                    if not context or not recruitment(s) or recruitment(s) == context]
+        return set(required) <= {s.id for s in chosen}
+
+    prepared_candidates = candidates(request, source_fields)
     # This is input ordering only: never remove a condition because its extraction looks noisy.
     noisy = {
-        index for _, index, _, _ in candidates
+        index for _, index, _, _ in prepared_candidates
         if len(set(re.findall(r"([가-힣])\1", request.sources[index].excerpt))) >= 4
         or any(
             line.strip().startswith("[PDF ") and EXTRACTION_BOUNDARY.fullmatch(line.strip())
@@ -261,10 +311,10 @@ def select(request, source_fields, codes, max_bytes, max_sources, fits=None):
     selected, used = {}, 0
     represented = set()
     # Exhaust actual qualification sections before filling capacity with any other topic.
-    priorities = (0, 1, 2, 3, 4) if any(rank <= 4 for rank, *_ in candidates) else (5,)
+    priorities = (0, 1, 2, 3, 4, 5)
     for priority in priorities:
         queues = {code: [] for code in (*codes, "_OTHER")}
-        for rank, index, source, size in candidates:
+        for rank, index, source, size in prepared_candidates:
             if rank == priority:
                 for code in source_fields(source) or {"_OTHER"}:
                     queues[code].append((index, source, size))
@@ -301,6 +351,7 @@ def select(request, source_fields, codes, max_bytes, max_sources, fits=None):
                     continue
                 index, source, size = queue.pop(choice)
                 if (index not in selected and used + size <= max_bytes
+                        and dependencies_present(source, selected.values())
                         and (fits is None or fits([*selected.values(), source]))):
                     selected[index] = source
                     used += size

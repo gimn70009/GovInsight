@@ -305,7 +305,7 @@ export interface ParticipationCategory {
   rows: ParticipationCriterionRow[]
 }
 export interface ParticipationGuide {
-  rewriteStatus?: 'PENDING' | 'READY' | 'UNAVAILABLE'
+  rewriteStatus?: 'PENDING' | 'READY' | 'PARTIAL' | 'UNAVAILABLE'
   categories?: ParticipationCategory[]
   conditions: ParticipationCondition[]
   rules?: ParticipationRule[]

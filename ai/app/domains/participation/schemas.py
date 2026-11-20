@@ -135,5 +135,5 @@ class RewriteResponse(StrictModel):
     diagnostics: dict[str, int] = Field(default_factory=dict)
     statements: list[Statement]
     evidence_only_ids: list[str]
-    status: Literal["READY", "UNAVAILABLE"]
+    status: Literal["READY", "PARTIAL", "UNAVAILABLE"]
     irrelevant_source_ids: list[str] = Field(default_factory=list)

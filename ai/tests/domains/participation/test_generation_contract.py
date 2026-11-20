@@ -32,7 +32,8 @@ def test_empty_eligibility_result_is_not_reported_as_success():
     )
     assert result.status == "UNAVAILABLE"
     assert result.statements == [] and result.evidence_only_ids == ["s1"]
-    assert result.diagnostics == {"candidates": 0, "accepted": 0, "unresolved": 0}
+    assert result.diagnostics == {"candidates": 0, "accepted": 0, "unresolved": 1,
+                                  "REQUIREMENT_UNCOVERED": 1}
 
 
 def test_rejection_counts_survive_without_storing_provider_text():

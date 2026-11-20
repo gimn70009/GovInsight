@@ -47,6 +47,8 @@ class BudgetExceeded(RuntimeError):
 class CallBudget:
     calls: int = 0
     input_bytes: int = 0
+    call_input_limit: int | None = None
+    document_input_limit: int | None = None
 
     def reserve(self, messages, schema):
         # Include system prompt, original text, draft and the SDK's strict schema.
@@ -58,8 +60,8 @@ class CallBudget:
         size = len(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
         if (
             self.calls >= MAX_MODEL_CALLS
-            or size > MAX_CALL_INPUT_BYTES
-            or self.input_bytes + size > MAX_DOCUMENT_INPUT_BYTES
+            or size > (self.call_input_limit or MAX_CALL_INPUT_BYTES)
+            or self.input_bytes + size > (self.document_input_limit or MAX_DOCUMENT_INPUT_BYTES)
         ):
             raise BudgetExceeded("Participation request budget exhausted")
         # Failed requests consume their reservation too; there is no refund/retry loop.

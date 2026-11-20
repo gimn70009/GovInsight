@@ -262,7 +262,7 @@ class ParticipationRewriteServiceTest {
         } finally { service.close(); }
     }
     @Test void persistedPendingSurvivesRestartAndExpiresWithoutAnotherCall() {
-        for (long started : List.of(System.currentTimeMillis(), System.currentTimeMillis() - 121_000)) {
+        for (long started : List.of(System.currentTimeMillis(), System.currentTimeMillis() - 130_000, System.currentTimeMillis() - 181_000)) {
             var client = mock(PythonParticipationRewriteClient.class);
             var store = mock(ParticipationRewriteStore.class);
             var version = version();
@@ -272,7 +272,7 @@ class ParticipationRewriteServiceTest {
                     String key = service.fingerprint(ParticipationRewriteProjection.input(raw(), false).request());
                     ReflectionTestUtils.setField(version, "participationRewriteKey", key);
                     ReflectionTestUtils.setField(version, "participationRewriteJson", mapper.writeValueAsString(new ParticipationRewriteService.Pending("PENDING", started)));
-                    String expected = System.currentTimeMillis() - started < 120_000 ? "PENDING" : "UNAVAILABLE";
+                    String expected = System.currentTimeMillis() - started < 180_000 ? "PENDING" : "UNAVAILABLE";
                     for (int poll=0; poll<3; poll++) assertThat(service.resolve(version, raw(), false).rewriteStatus()).isEqualTo(expected);
                 } finally { service.close(); }
             }
@@ -482,5 +482,41 @@ class ParticipationRewriteServiceTest {
                 verifyNoInteractions(client, store);
             } finally { service.close(); }
         }
+    }
+
+    @Test void partialResultKeepsVerifiedStatementsAndSurvivesPersistenceAndRestart() throws Exception {
+        var client = mock(PythonParticipationRewriteClient.class);
+        var store = mock(ParticipationRewriteStore.class);
+        var result = new Response(valid().statements(), List.of("s0"), "PARTIAL", List.of(),
+                java.util.Map.of("REQUIREMENT_UNCOVERED", 1));
+        when(store.claim(any(), anyString(), any(), anyString())).thenReturn(true);
+        when(client.rewrite(any(), any())).thenReturn(result);
+        var saved = new CountDownLatch(1);
+        var json = new java.util.concurrent.atomic.AtomicReference<String>();
+        doAnswer(inv -> { json.set(inv.getArgument(2)); saved.countDown(); return null; })
+                .when(store).finish(any(), anyString(), anyString());
+        var version = version();
+        var service = new ParticipationRewriteService(client, store, mapper);
+        String key = service.fingerprint(ParticipationRewriteProjection.input(raw(), false).request());
+        try {
+            service.resolve(version, raw(), false);
+            assertThat(saved.await(3, TimeUnit.SECONDS)).isTrue();
+            awaitTerminal(service, version);
+            var guide = service.resolve(version, raw(), false);
+            assertThat(guide.rewriteStatus()).isEqualTo("PARTIAL");
+            assertThat(entries(guide).stream().filter(e -> e.displayStatus().equals("VERIFIED")))
+                    .anySatisfy(e -> assertThat(e.rule().text()).isEqualTo(sentence));
+            assertThat(mapper.readValue(json.get(), Response.class).diagnostics())
+                    .containsEntry("REQUIREMENT_UNCOVERED", 1);
+        } finally { service.close(); }
+        ReflectionTestUtils.setField(version, "participationRewriteKey", key);
+        ReflectionTestUtils.setField(version, "participationRewriteJson", json.get());
+        var restarted = new ParticipationRewriteService(client, store, mapper);
+        try {
+            var guide = restarted.resolve(version, raw(), false);
+            assertThat(guide.rewriteStatus()).isEqualTo("PARTIAL");
+            assertThat(guide.rules()).anySatisfy(rule -> assertThat(rule.text()).isEqualTo(sentence));
+            verify(client, times(1)).rewrite(any(), any());
+        } finally { restarted.close(); }
     }
 }

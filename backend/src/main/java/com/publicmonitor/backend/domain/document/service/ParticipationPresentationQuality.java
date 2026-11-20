@@ -24,10 +24,24 @@ final class ParticipationPresentationQuality {
         return true;
     }
 
-    static boolean sameText(String first, String second) {
-        // No fuzzy matching: numbers, negation, alternatives and exceptions must not disappear.
-        return first != null && second != null && first.replaceAll("\\s+", "").equals(second.replaceAll("\\s+", ""));
+    static boolean redundantDetail(Statement item, Detail detail) {
+        if (item.reviewRequired() || !completeSentence(item.text())) return false;
+        String main = compact(item.text()), extra = compact(detail.text());
+        if (main.equals(extra)) return true;
+        // Only complete sentence boundaries prove containment. Similar words or shared quotes do not.
+        if (!completeSentence(detail.text())) return false;
+        String[] sentences = item.text().strip().split("(?<=[.!?。])\\s+(?=[가-힣])");
+        for (int start = 0; start < sentences.length; start++) {
+            StringBuilder span = new StringBuilder();
+            for (int end = start; end < sentences.length; end++) {
+                span.append(compact(sentences[end]));
+                if (span.toString().equals(extra)) return true;
+            }
+        }
+        return false;
     }
+
+    private static String compact(String value) { return value.replaceAll("\\s+", ""); }
 
     static boolean procedureOnly(Statement item, List<RequirementSource> sources) {
         if (!"ELIGIBILITY".equals(item.kind()) || !"BUSINESS_FORM".equals(item.criterion()) || sources.isEmpty()

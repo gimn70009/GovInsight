@@ -1,0 +1,115 @@
+[
+  {
+    "name": "omitted legal alternative",
+    "kind": "ELIGIBILITY",
+    "text": "연구기관은 「연구기관법」 제2조에 따른 기관이어야 합니다.",
+    "details": [],
+    "quotes": [
+      "연구기관\t「연구기관법」 제2조에 따른 기관 또는 「산업혁신법」 제42조에 따른 연구소"
+    ],
+    "reason": "LEGAL_SCOPE_INCOMPLETE"
+  },
+  {
+    "name": "all alternatives in details",
+    "kind": "ELIGIBILITY",
+    "text": "연구기관은 다음 중 하나에 해당해야 합니다.",
+    "details": [
+      "「연구기관법」 제2조에 따른 기관입니다.",
+      "「산업혁신법」 제42조에 따른 연구소입니다."
+    ],
+    "quotes": [
+      "연구기관\t「연구기관법」 제2조에 따른 기관 또는 「산업혁신법」 제42조에 따른 연구소"
+    ],
+    "reason": null
+  },
+  {
+    "name": "article omission matters",
+    "kind": "ELIGIBILITY",
+    "text": "연구기관법 또는 산업혁신법에 따른 연구기관이어야 합니다.",
+    "details": [],
+    "quotes": [
+      "연구기관\t「연구기관법」 제2조 또는 「산업혁신법」 제42조에 따른 연구기관"
+    ],
+    "reason": "LEGAL_SCOPE_INCOMPLETE"
+  },
+  {
+    "name": "no obligation to copy another applicant row",
+    "kind": "ELIGIBILITY",
+    "text": "대학은 대학법에 따른 대학이어야 합니다.",
+    "details": [],
+    "quotes": [
+      "대학\t「대학법」에 따른 대학\n연구기관\t「연구소법」에 따른 연구소"
+    ],
+    "reason": null
+  },
+  {
+    "name": "quote decoration and whitespace",
+    "kind": "ELIGIBILITY",
+    "text": "특정연구기관법에 따른 기관 또는 산업혁신법 제42조에 따른 연구소가 신청할 수 있습니다.",
+    "details": [],
+    "quotes": [
+      "｢특정연구기관법｣에 따른 기관 또는 「산업혁신법」 제 42 조에 따른 연구소"
+    ],
+    "reason": null
+  },
+  {
+    "name": "side note sanctions cannot cover independent causes",
+    "kind": "EXCLUSION",
+    "text": "목적에 부합하지 않거나 허위기재가 있으면 지원제외 및 협약해약이 가능합니다.",
+    "details": [],
+    "quotes": [
+      "목적에 부합하지 않는 경우 지원제외 가능\n* 허위기재 시 지원제외, 협약해약 가능"
+    ],
+    "reason": "OUTCOME_SCOPE_MERGED"
+  },
+  {
+    "name": "sanction only in specific note",
+    "kind": "EXCLUSION",
+    "text": "허위기재가 있으면 지원제외 및 협약해약이 가능합니다.",
+    "details": [],
+    "quotes": [
+      "* 허위기재 시 지원제외, 협약해약 가능"
+    ],
+    "reason": null
+  },
+  {
+    "name": "main rule keeps possibility",
+    "kind": "EXCLUSION",
+    "text": "목적에 부합하지 않거나 요건을 갖추지 못한 경우 지원에서 제외될 수 있습니다.",
+    "details": [],
+    "quotes": [
+      "목적에 부합하지 않거나 요건을 갖추지 못한 경우 지원제외 가능\n* 허위기재 시 협약해약 및 제재 가능"
+    ],
+    "reason": null
+  },
+  {
+    "name": "invented sanction",
+    "kind": "EXCLUSION",
+    "text": "체납 시 지원제외 및 환수 조치가 가능합니다.",
+    "details": [],
+    "quotes": [
+      "국세 체납 시 지원제외 가능"
+    ],
+    "reason": "OUTCOME_NOT_IN_CITATION"
+  },
+  {
+    "name": "single named authority is not an alternatives list",
+    "kind": "ELIGIBILITY",
+    "text": "등록된 비영리기관이 신청할 수 있습니다.",
+    "details": [],
+    "quotes": [
+      "「기관법」에 따라 등록된 비영리기관"
+    ],
+    "reason": null
+  },
+  {
+    "name": "middle dot extraction variant",
+    "kind": "ELIGIBILITY",
+    "text": "연구·교육법 제2조 또는 산업혁신법 제42조에 따른 기관이 신청할 수 있습니다.",
+    "details": [],
+    "quotes": [
+      "「연구ㆍ교육법」 제2조 또는 「산업혁신법」 제42조에 따른 기관"
+    ],
+    "reason": null
+  }
+]

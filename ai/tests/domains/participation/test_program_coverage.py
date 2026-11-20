@@ -19,10 +19,10 @@ def test_integrated_notice_keeps_short_program_targets_within_existing_byte_budg
     ids = {s.id for s in selected}
     assert {"s7", "s9", "s10", "s12", "s14", "s27", "s30", "s35", "s40"} <= ids
     assert len(selected) > 12
-    assert len(selected) <= 24
-    assert sum(len(s.excerpt.encode("utf-8")) for s in selected) <= 8000
-    size = focused.CallBudget().reserve(focused.model_messages(selected), focused.Extraction)
-    assert size <= 20000
+    assert len(selected) <= focused.MAX_SOURCES
+    assert sum(len(s.excerpt.encode("utf-8")) for s in selected) <= focused.MAX_SOURCE_BYTES
+    size = focused.call_budget().reserve(focused.model_messages(selected), focused.Extraction)
+    assert size <= focused.MAX_INPUT_BYTES
     originals = {s.id: s for s in req.sources}
     assert all(s.group_label == originals[s.id].group_label for s in selected)
 
@@ -41,14 +41,14 @@ def test_equal_priority_programs_precede_another_block_of_the_same_program():
 
 
 def test_long_contexts_do_not_turn_a_small_raw_excerpt_into_an_overbudget_request():
-    sources = [Source(id=str(i), group_label=f"[상위 구역] 사업{i}" + "긴사업명" * 120
+    sources = [Source(id=str(i), group_label=f"[상위 구역] 사업{i}" + "긴사업명" * 400
                       + "\n□ 지원대상",
                       excerpt=f"□ 지원대상\n국내 중소기업 및 분야{i} 제조기업") for i in range(24)]
     selected = focused.select_sources(request(sources))
     assert selected
     assert len(selected) < 24
-    size = focused.CallBudget().reserve(focused.model_messages(selected), focused.Extraction)
-    assert size <= 20000
+    size = focused.call_budget().reserve(focused.model_messages(selected), focused.Extraction)
+    assert size <= focused.MAX_INPUT_BYTES
 
 
 def test_contract_disambiguates_programs_roles_and_integrated_advance_notices():
@@ -56,4 +56,4 @@ def test_contract_disambiguates_programs_roles_and_integrated_advance_notices():
     assert "신청 대상·참여 형태" in schema["scope"]["description"]
     assert "표 행·괄호 표기" in schema["audience"]["description"]
     assert "통합공고에 안내된 사업별 신청 대상은 각각 유지" in focused.PROMPT
-    assert focused.MAX_OUTPUT_TOKENS == 4096
+    assert focused.MAX_OUTPUT_TOKENS == 8192
