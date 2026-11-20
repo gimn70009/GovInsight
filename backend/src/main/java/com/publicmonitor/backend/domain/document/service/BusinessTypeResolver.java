@@ -15,14 +15,14 @@ import tools.jackson.databind.ObjectMapper;
 /** Uses current notice evidence; older analyses can be supplemented without a model call on reads. */
 final class BusinessTypeResolver {
     private static final Pattern HEADING = Pattern.compile(
-            "^[\\h□■○◦●ㅇ•*※①②③④⑤⑥⑦⑧⑨⑩ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ\\d.()\\[\\]-]*(?:[가-하]\\.\\h*)?(수행\\h*내용|선정\\h*목적|사업\\h*목적|지원\\h*내용|지원\\h*분야|(?:주요\\h*)?사업\\h*내용|(?:주요\\h*)?과업\\h*(?:의\\h*)?(?:(?:주요|세부)\\h*)?내용|과업\\h*(?:의\\h*)?범위|주요\\h*과업|연구\\h*(?:목표|내용(?:\\h*및\\h*범위)?|범위)|모집\\h*내용|지원\\h*항목|지원\\h*설비|지원\\h*범위|지원\\h*방식|지원\\h*규모|(?:시범\\h*)?사업\\h*개요|(?:시범\\h*)?사업\\h*목적|개\\h*념)\\h*(?:[)\\]]\\h*[:：]?|[:：]|$)");
+            "^[\\h□■○◦●ㅇ•*※①②③④⑤⑥⑦⑧⑨⑩ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ\\d.()\\[\\]-]*(?:[가-하]\\.\\h*)?(공모사업\\h*내용|역점\\h*사업방향|세부\\h*사업계획|수행\\h*내용|선정\\h*목적|사업\\h*목적|지원\\h*내용|지원\\h*분야|(?:주요\\h*)?사업\\h*내용|(?:주요\\h*)?과업\\h*(?:의\\h*)?(?:(?:주요|세부)\\h*)?내용|과업\\h*(?:의\\h*)?범위|주요\\h*과업|연구\\h*(?:목표|내용(?:\\h*및\\h*범위)?|범위)|모집\\h*내용|지원\\h*항목|지원\\h*설비|지원\\h*범위|지원\\h*방식|지원\\h*규모|(?:시범\\h*)?사업\\h*개요|(?:시범\\h*)?사업\\h*목적|개\\h*념)\\h*(?:[)\\]]\\h*[:：]?|[:：]|$)");
     private static final Pattern BOUNDARY = Pattern.compile("^[□■]|^\\[참고 구간 제외\\]|^\\[파일:|^RFP\\h*번호|^[\\h\\dⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ.()\\[\\]-]*(?:[가-하]\\.\\h*)?(?:지원대상|지원\\h*자격|모집대상|참여자격|지원기간|연구\\h*추진\\h*방법|연구비|연구\\h*기간|신청|접수|제출|평가|선정|지원제외|유의|문의|추진일정|사업기간|과업\\h*수행\\h*일반사항|과업\\h*지시사항|사업\\h*예산|입찰\\h*개요|제안서\\h*작성)");
     private static final Pattern FORM = Pattern.compile("^[\\h\\[<(【]*(?:붙임|별첨|별지|서식)\\h*(?:제\\h*)?\\d|^[\\h\\[<(【]*(?:작성\\h*예시|사업계획서|신청서|동의서)");
     private static final Pattern NON_NOTICE = Pattern.compile("(?i)예시|견본|FAQ|참고자료|신청서|계획서|동의서|서식|양식|협약서");
     private static final Pattern UNSUPPORTED = Pattern.compile("전년도|지난해|타\\h*사업|다른\\h*사업|작성\\h*예시|지원\\h*(?:제외|없음|불가|하지)|미지원|후속|향후|추후|연계\\h*가능|참고용|일부 원문 생략");
-    private static final Pattern ACTION = Pattern.compile("지원|제공|수행|구축|도입|모집|융자|입주|개발|실증|컨설팅");
+    private static final Pattern ACTION = Pattern.compile("지원|제공|수행|구축|도입|모집|융자|입주|개발|실증|컨설팅|개최|매칭");
     private static final Pattern SPECULATIVE_EXPLANATION = Pattern.compile("수반될가능성|가능성이있어|가능성을시사|유형으로추정");
-    private static final Pattern ADMINISTRATIVE_ACTIVITY = Pattern.compile("지원대상|신청자격|보유자격|접수마감|접수기간|제출기한|접수기한|제출마감|신청마감");
+    private static final Pattern ADMINISTRATIVE_ACTIVITY = Pattern.compile("지원대상|신청자격|보유자격|접수마감|접수기간|제출기한|접수기한|제출마감|신청마감|동시수행|과제수산정");
     private static final Pattern EXPLICIT_SUPPORT = Pattern.compile("(?:비용|취득비|제작비|개발비|구축비)(?:를|을)?지원|지원합니다|제공합니다|수행합니다");
     private static final Pattern DEMONSTRATION_ACTION = Pattern.compile("시범.{0,80}(?:참여|적용|허용|유지)");
     private static final Pattern INSTALLATION_ACTION = Pattern.compile("설치|교체|개선|구매|(?:설비|시설)(?:의)?투자비");
@@ -285,6 +285,7 @@ final class BusinessTypeResolver {
 
     private static boolean supportsActivity(BusinessType type, String text) {
         String value = compact(text);
+        if (type == BusinessType.ADOPTION) value = value.replaceAll("(?:협력|교류|협업|통상|교역)(?:기반|네트워크)?인프라구축", "");
         if (!type.matches(value) || UNSUPPORTED.matcher(text).find()) return false;
         if (ADMINISTRATIVE_ACTIVITY.matcher(value).find()
                 && !EXPLICIT_SUPPORT.matcher(value).find()) return false;
@@ -296,7 +297,8 @@ final class BusinessTypeResolver {
     }
 
 
-    private static boolean endsSupportSection(String line, String heading, int rank) {
+    private static boolean endsSupportSection(String line, String heading, int rank, boolean letterSection) {
+        if (letterSection && line.matches("^[가-하][.)]\\h*.*")) return true;
         if (!BOUNDARY.matcher(line).find()) return false;
         // A box can introduce a support sentence, not just a new section heading.
         if (heading == null || rank < 200 || !line.matches("^[□■].*")) return true;
@@ -313,6 +315,7 @@ final class BusinessTypeResolver {
         var sourceLines = new ParticipationSourceLines(source.text());
         String[] lines = sourceLines.lines();
         String heading = null;
+        boolean letterSection = false;
         int rank = 0, offset = 0, count = 0;
         for (int lineIndex = 0; lineIndex < lines.length; lineIndex++) {
             String physical = lines[lineIndex];
@@ -322,9 +325,10 @@ final class BusinessTypeResolver {
             boolean headingLine = match.find();
             if (headingLine) {
                 heading = match.group(1).replaceAll("\\h+", "");
-                rank = heading.matches("수행내용|선정목적|지원규모|지원내용|지원분야|지원항목|지원설비|지원범위|지원방식|(?:주요)?사업내용|(?:주요)?과업(?:의)?(?:주요|세부)?내용|과업(?:의)?범위|주요과업|연구(?:내용(?:및범위)?|범위)|모집내용") ? 200 : 100;
+                letterSection = line.matches("^[가-하][.)]\\h*.*");
+                rank = heading.matches("공모사업내용|역점사업방향|세부사업계획|수행내용|선정목적|지원규모|지원내용|지원분야|지원항목|지원설비|지원범위|지원방식|(?:주요)?사업내용|(?:주요)?과업(?:의)?(?:주요|세부)?내용|과업(?:의)?범위|주요과업|연구(?:내용(?:및범위)?|범위)|모집내용") ? 200 : 100;
                 count = 0;
-            } else if (endsSupportSection(line, heading, rank)) heading = null;
+            } else if (endsSupportSection(line, heading, rank, letterSection)) heading = null;
             if (heading != null && ++count < 35 && line.length() <= 1000 && line.length() >= 8
                     && !UNSUPPORTED.matcher(line).find()) {
                 // Split current support from attached headings in flattened PDFs.
@@ -334,7 +338,7 @@ final class BusinessTypeResolver {
                 String excerpt = line;
                 for (int nextLine = lineIndex + 1; nextLine < Math.min(lines.length, lineIndex + 3); nextLine++) {
                     String following = lines[nextLine].strip();
-                    if (HEADING.matcher(following).find() || endsSupportSection(following, heading, rank)
+                    if (HEADING.matcher(following).find() || endsSupportSection(following, heading, rank, letterSection)
                             || FORM.matcher(following).find() || UNSUPPORTED.matcher(following).find()
                             || excerpt.length() + following.length() + 1 > 700) break;
                     excerpt = sourceLines.excerpt(lineIndex, nextLine + 1).strip();
