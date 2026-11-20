@@ -26,7 +26,7 @@ final class SubmissionDocumentResolver {
     private static final Pattern COLUMN = Pattern.compile("(?:유형\\h*\\d+|주관(?:연구개발)?기관|공동(?:연구개발)?기관|영리기관|비영리기관|개인기업|법인기업)");
     private static final Pattern MARK = Pattern.compile("[○◯O●◎✓√X×✕✗-]", Pattern.CASE_INSENSITIVE);
     private static final Pattern OUTLINE = Pattern.compile("^(?:[□■]|\\d+[.)]\\h*|[가-하][.)]\\h*)");
-    private static final Pattern BOUNDARY = Pattern.compile("^(?:[<\\[(（]?\\h*)?(?:평가\\h*및\\h*선정절차|신청[·ㆍ\\h]*접수$|문의처|유의사항|서류\\h*작성|신청\\h*방법|제출\\h*방법|평가\\h*방법|선정\\h*절차|지원\\h*내용|첨부\\h*파일|붙임\\h*\\d|서식\\h*\\d|별지\\h*\\d)");
+    private static final Pattern BOUNDARY = Pattern.compile("^(?:[<\\[(（]?\\h*)?(?:평가\\h*및\\h*선정절차|신청[·ㆍ\\h]*접수$|문의처|유의사항|서류\\h*작성|(?:신청|제출|접수)\\h*(?:방법|방식|기간|기한|장소|일정)|평가\\h*(?:방법|기준)|선정\\h*절차|지원\\h*(?:내용|자격)|첨부\\h*파일|붙임\\h*\\d|서식\\h*\\d|별지\\h*\\d)");
     private static final Pattern BLOCKED = Pattern.compile("^(?:[□■\\[<(]|\\d+[.)])?\\h*(?:참고\\h*자료|작성\\h*예시|작성\\h*견본|양식\\h*목록|첨부\\h*목록)");
     private static final Pattern EXCLUDED_FILE = Pattern.compile("(?i)예시|견본|FAQ|참고자료|신청서|계획서|동의서|서식|양식|운영지침");
     private static final Pattern CONDITIONAL = Pattern.compile("해당\\h*(?:시|자|기업|기관)|경우|한하여|한해|한함|대상만|기관만|기업만|택\\h*1|택일|중\\h*하나");
@@ -160,7 +160,7 @@ final class SubmissionDocumentResolver {
             documents.putIfAbsent(identity, item);
         }
         bounded = StructuredSubmissionTable.withoutTables(bounded);
-        String[] lines = bounded.replace('\u00a0', ' ').replaceAll("([①-⑳])", "\n$1").split("\\R");
+        String[] lines = bounded.replace('\u00a0', ' ').replaceAll("(?m)^\\h*-\\h*(?=[①-⑳])", "").replaceAll("([①-⑳])", "\n$1").split("\\R");
         Block block = null;
         String context = "";
         var precedingNotes = new ArrayList<String>();
@@ -181,20 +181,21 @@ final class SubmissionDocumentResolver {
                 continue;
             }
             var heading = HEADING.matcher(line);
-            boolean submissionHeading = heading.matches() && (heading.group(2).isBlank() || isDocument(heading.group(2))
+            boolean submissionHeading = heading.matches() && (heading.group(2).isBlank() || SubmissionListSyntax.reference(heading.group(2)) || isDocument(heading.group(2))
                     || !NumberedSubmissionList.items(heading.group(2)).isEmpty());
             if (submissionHeading && !blocked) {
                 if (block == null || block.hasRows()) {
                     if (block != null) emit(block, fileName, documents, notes);
-                    block = new Block(line, stage(heading.group(1), context));
+                    block = new Block(line, stage(heading.group(1), context), text);
                     block.lines.addAll(precedingNotes);
                     block.precedingNotes.addAll(precedingNotes);
                 }
-                if (!heading.group(2).isBlank()) block.lines.add(heading.group(2));
+                if (!heading.group(2).isBlank() && !SubmissionListSyntax.reference(heading.group(2))) block.lines.add(heading.group(2));
                 continue;
             }
-            if (!isDocument(line) && NumberedSubmissionList.items(line).isEmpty()
-                    && (OUTLINE.matcher(line).find() || BOUNDARY.matcher(line).find())) {
+            if (!SubmissionListSyntax.document(line) && !(block != null && SubmissionListSyntax.group(line))
+                    && NumberedSubmissionList.items(line).isEmpty()
+                    && (OUTLINE.matcher(line).find() || BOUNDARY.matcher(SubmissionListSyntax.unmarked(line)).find())) {
                 if (block != null) emit(block, fileName, documents, notes);
                 block = null;
                 context = line;
@@ -221,12 +222,13 @@ final class SubmissionDocumentResolver {
     private static final class Block {
         final String heading;
         final String stage;
+        final String source;
         final List<String> lines = new ArrayList<>();
         final List<String> precedingNotes = new ArrayList<>();
         int size;
         boolean invalid;
-        Block(String heading, String stage) { this.heading = heading; this.stage = stage; }
-        boolean hasRows() { return lines.stream().anyMatch(line -> isDocument(line) || !NumberedSubmissionList.items(line).isEmpty()); }
+        Block(String heading, String stage, String source) { this.heading = heading; this.stage = stage; this.source = source; }
+        boolean hasRows() { return lines.stream().anyMatch(line -> SubmissionListSyntax.document(line) || !NumberedSubmissionList.items(line).isEmpty()); }
     }
 
     private static final class Row {
@@ -236,11 +238,12 @@ final class SubmissionDocumentResolver {
         final List<String> cells = new ArrayList<>();
         SubmissionDocument resolved;
         String scope;
+        String group;
         String noteContext;
         Row(String original) { this(original, null); }
         Row(String original, String listEvidence) {
             this.original = original;
-            this.title = cleanTitle(original);
+            this.title = SubmissionListSyntax.title(original);
             this.listEvidence = listEvidence;
         }
     }
@@ -266,7 +269,14 @@ final class SubmissionDocumentResolver {
         var candidates = new ArrayList<NoteCandidate>();
         Row row = null;
         Row noteOwner = null;
+        String group = null, groupMarker = "";
         for (String line : block.lines) {
+            if (SubmissionListSyntax.group(line)) {
+                group = CONDITIONAL.matcher(line).find() || EXEMPTION.matcher(line).find() ? line : null;
+                groupMarker = SubmissionListSyntax.marker(line);
+                row = null; noteOwner = null; continue;
+            }
+            if (group != null && !groupMarker.isEmpty() && groupMarker.equals(SubmissionListSyntax.marker(line))) group = null;
             var numbered = NumberedSubmissionList.items(line);
             if (line.matches("^[*※].*") || line.matches("^(?:모든|공통)\\h*서류.*") || (rows.isEmpty() && numbered.isEmpty() && line.contains("서류") && line.contains("제출") && !isDocument(line))) {
                 shared.add(line);
@@ -275,11 +285,13 @@ final class SubmissionDocumentResolver {
                 String evidence = block.heading.endsWith(line) ? block.heading : block.heading + "\n" + line;
                 for (String name : numbered) {
                     row = new Row(name, evidence);
+                    row.group = group;
                     rows.add(row);
                 }
                 noteOwner = row;
-            } else if (isDocument(line)) {
+            } else if (SubmissionListSyntax.document(line)) {
                 row = new Row(line);
+                row.group = group;
                 rows.add(row);
                 noteOwner = row;
             } else if (row == null) {
@@ -310,7 +322,9 @@ final class SubmissionDocumentResolver {
                 }
                 if (included.isEmpty()) continue;
             }
-            String instruction = entry.original + (matrix || value.isBlank() ? "" : "\n" + value);
+            String annotation = SubmissionListSyntax.annotation(entry.original);
+            String instruction = (entry.group == null ? "" : entry.group + "\n") + entry.title + (annotation.isBlank() ? "" : "\n" + annotation)
+                    + (matrix || value.isBlank() ? "" : "\n" + value);
             if (instruction.length() > 800 || instruction.matches(".*(?:예시|견본|참고용).*")) continue;
             boolean conditional = CONDITIONAL.matcher(instruction).find() || !excluded.isEmpty();
             if (EXEMPTION.matcher(instruction).find() && !conditional) continue;
@@ -333,6 +347,14 @@ final class SubmissionDocumentResolver {
                     + (columns.isEmpty() ? "" : String.join(" | ", columns) + "\n") + entry.original)
                     + (value.isBlank() ? "" : "\n" + value)
                     + (rowNotes.isEmpty() ? "" : "\n" + String.join("\n", rowNotes));
+            if (!matrix && entry.listEvidence == null && (entry.group != null || !block.source.contains(quote))) {
+                var parts = new ArrayList<String>();
+                parts.add(entry.original); parts.addAll(entry.cells); parts.addAll(rowNotes);
+                String rowPattern = String.join("\\s*", parts.stream().map(Pattern::quote).toList());
+                if (entry.group != null) rowPattern = Pattern.quote(entry.group) + "[\\s\\S]{0,8000}?" + rowPattern;
+                var exact = Pattern.compile(rowPattern).matcher(block.source);
+                if (exact.find()) quote = exact.group();
+            }
             var document = new SubmissionDocument(entry.title, detail, level, block.stage, appliesTo,
                     source(fileName, block.heading, quote));
             String key = titleKey(entry.title) + ":" + level + ":" + key(appliesTo);
