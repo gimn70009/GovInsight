@@ -298,14 +298,18 @@ test('legacy English common scopes normalize without rewriting applicant names o
 })
 
 
-test('format failures retain evidence and show an explicit review sentence', () => {
-  const value = { ...entry('기관 등 단독 또는 컨소시엄'), displayStatus: 'REVIEW_REQUIRED' }
-  const presented = companyConditionPresentation(value)
-  assert.equal(presented.reviewRequired, true)
-  assert.match(presented.sentence, /원문 근거를 확인/)
-  assert.doesNotMatch(presented.sentence, /컨소시엄/)
-  assert.deepEqual(applicantRows([value]).mandatory, [value])
-  assert.equal(value.rule.sources[0].excerpt, '기관 등 단독 또는 컨소시엄')
+test('review-only conditions stay hidden while verified conditions and original evidence remain intact', () => {
+  const sections = ['BASIC', 'ELIGIBILITY', 'TARGETED', 'PREFERENCE', 'EXCLUSION', 'APPLICATION_GUIDANCE']
+  const verified = sections.map(section => entry('사업자등록이 된 기관이어야 합니다.', section))
+  const review = sections.map(section => ({ ...entry('기관 등 단독 또는 컨소시엄', section), displayStatus: 'REVIEW_REQUIRED' }))
+  const data = guide([row('BUSINESS_FORM', [...verified, ...review])])
+  const original = structuredClone(data)
+  const actual = companyParticipationRows(data)[4]
+  assert.deepEqual(actual.mandatory, verified.slice(0, 3))
+  assert.deepEqual(actual.preference, [verified[3]])
+  assert.deepEqual(companyParticipationExclusions(data), [verified[4]])
+  assert.deepEqual(companyParticipationGuidance(data), [verified[5]])
+  assert.deepEqual(data, original)
 })
 
 test('administrative setup is separated from eligibility without losing its explanation', () => {

@@ -8,9 +8,6 @@
 .participation-guide__filter { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 18px; }
 .participation-guide__filter label { flex-shrink: 0; color: #385472; font-size: 12px; font-weight: 600; }
 .participation-guide__filter select { flex: 1 1 260px; width: 100%; min-width: 0; max-width: 520px; padding: 9px 30px 9px 11px; border: 1px solid #cbdcef; border-radius: 6px; color: #294d74; background: #fff; font: inherit; font-size: 12px; }
-.participation-guide__filter-count { color: #61748b; font-size: 12px; }
-.participation-guide__filter button { border: 0; background: none; padding: 6px 0; color: #3571bb; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
-.participation-guide__filter p { flex-basis: 100%; margin: 0; font-size: 12px; color: #61748b; }
 .participation-guide__index { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 20px; }
 .participation-guide__index-label { color: #61748b; font-size: 12px; }
 .participation-guide__index-links { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; min-width: 0; }

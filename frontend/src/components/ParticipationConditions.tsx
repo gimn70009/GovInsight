@@ -175,9 +175,6 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
             <option value="">전체 사업</option>
             {programs.map(program => <option key={program} value={program}>{program}</option>)}
           </select>
-          <span className="participation-guide__filter-count" aria-live="polite">{activeProgram ? `${visibleCount}개 표시 / 전체 ${allEntries.length}개 조건` : `전체 ${allEntries.length}개 조건`}</span>
-          {activeProgram && <button type="button" onClick={() => selectProgram('')}>전체 보기</button>}
-          {activeProgram && <p>선택한 사업의 조건과 공통 조건을 표시합니다. 사업 구분이 확인되지 않은 조건도 포함합니다.</p>}
         </div>}
         {visibleRows.length >= 4 && <nav className="participation-guide__index" aria-label="신청 자격 항목 바로가기">
           <span className="participation-guide__index-label" aria-hidden="true">자격 항목 바로가기</span>

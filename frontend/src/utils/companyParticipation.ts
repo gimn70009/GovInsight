@@ -22,7 +22,7 @@ function uniqueSources(sources: ParticipationRule['sources']): ParticipationRule
 }
 
 function displayable(entry: ParticipationCriterionEntry): boolean {
-  return (entry.displayStatus === 'VERIFIED' || entry.displayStatus === 'REVIEW_REQUIRED') && Boolean(entry.rule.text.trim())
+  return entry.displayStatus === 'VERIFIED' && Boolean(entry.rule.text.trim())
     && (requiredSections.has(entry.rule.section) || entry.rule.section === 'PREFERENCE' || entry.rule.section === 'EXCLUSION')
 }
 
@@ -68,7 +68,7 @@ export function companyParticipationExclusions(guide: ParticipationGuide | null 
 export function companyParticipationGuidance(guide: ParticipationGuide | null | undefined) {
   const entries = guide?.categories?.flatMap(category => category.rows.flatMap(row => row.entries)) ?? []
   return identicalConditions(entries.filter(entry => entry.rule.section === 'APPLICATION_GUIDANCE'
-    && (entry.displayStatus === 'VERIFIED' || entry.displayStatus === 'REVIEW_REQUIRED')
+    && entry.displayStatus === 'VERIFIED'
     && Boolean(entry.rule.text.trim())))
 }
 
