@@ -3,18 +3,21 @@ package com.publicmonitor.backend.domain.analysis.service;
 import com.publicmonitor.backend.domain.analysis.client.dto.PythonAnalysisJobRequest;
 import com.publicmonitor.backend.domain.analysis.entity.AnalysisTask;
 import com.publicmonitor.backend.domain.analysis.repository.AnalysisTaskRepository;
+import com.publicmonitor.backend.domain.analysis.web.dto.AnalysisResultFailureRequest;
 import com.publicmonitor.backend.domain.monitoring.entity.MonitoringRunStatus;
 import com.publicmonitor.backend.domain.monitoring.repository.MonitoringRunRepository;
 import com.publicmonitor.backend.domain.report.event.ProposalCompletedEvent;
 import com.publicmonitor.backend.domain.report.repository.MonitoringReportRepository;
 import java.time.*;
 import java.util.Optional;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.*;
 import tools.jackson.databind.ObjectMapper;
 
+@Slf4j
 @Service
 public class AnalysisTaskService {
     private final MonitoringRunRepository runs;
@@ -93,6 +96,25 @@ public class AnalysisTaskService {
         var task = tasks.findByRunId(work.runId()).orElseThrow();
         if (work.token().equals(task.getAttemptId()) && task.getState() == AnalysisTask.State.RUNNING)
             retryOrFail(task);
+    }
+
+    @Transactional
+    public boolean resultRejected(AnalysisResultFailureRequest request) {
+        var run = runs.findForUpdate(request.runId()).orElse(null);
+        if (run == null || run.getStatus() != MonitoringRunStatus.COLLECTED || request.httpStatus() == 429)
+            return false;
+        var task = tasks.findByRunId(request.runId()).orElse(null);
+        var expected = request.phase() == AnalysisResultFailureRequest.Phase.ANALYSIS
+                ? AnalysisTask.State.RUNNING : AnalysisTask.State.ANALYZED;
+        var now = now();
+        // A lost success response or an old worker must not fail a later stage/attempt.
+        if (task == null || task.getState() != expected || !task.matches(request.jobId(), now))
+            return false;
+        String stage = request.phase() == AnalysisResultFailureRequest.Phase.ANALYSIS ? "공고 분석" : "사업 제안";
+        task.fail(now, stage + " 결과를 저장하지 못했습니다. 결과 형식을 확인한 뒤 다시 실행해 주세요.");
+        log.warn("분석 결과 거절로 실행 종료. runId={} jobId={} phase={} status={}",
+                request.runId(), request.jobId(), request.phase(), request.httpStatus());
+        return true;
     }
 
     public Duration lease(PythonAnalysisJobRequest request) {

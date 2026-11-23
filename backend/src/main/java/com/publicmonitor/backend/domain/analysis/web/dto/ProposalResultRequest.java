@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.util.List;
 import java.util.UUID;
+import org.hibernate.validator.constraints.CodePointLength;
 
 public record ProposalResultRequest(
         @NotNull @Positive Long runId,
@@ -19,7 +20,7 @@ public record ProposalResultRequest(
             @NotNull @Positive Long documentId,
             @NotNull @Positive Long versionId,
             @NotNull @Valid AnalysisResultRequest.Proposal proposal,
-            @NotNull @Size(max = 20) List<@NotBlank @Size(max = 100) String> usedTools
+            @NotNull @Size(max = 20) List<@NotBlank @CodePointLength(max = 100) String> usedTools
     ) {
     }
 }

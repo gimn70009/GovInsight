@@ -14,6 +14,7 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.util.List;
 import java.util.UUID;
+import org.hibernate.validator.constraints.CodePointLength;
 
 @Schema(description = "Python AI 문서 분석 결과 전달 요청")
 public record AnalysisResultRequest(
@@ -47,20 +48,20 @@ public record AnalysisResultRequest(
             @NotNull @Positive Long detectionId,
             @NotNull @Positive Long documentId,
             @NotNull @Positive Long versionId,
-            @NotBlank @Size(max = 4000) String summary,
-            @NotNull @Size(min = 1, max = 8) List<@NotBlank @Size(max = 1000) String> keyPoints,
+            @NotBlank @CodePointLength(max = 4000) String summary,
+            @NotNull @Size(min = 1, max = 8) List<@NotBlank @CodePointLength(max = 1000) String> keyPoints,
             @NotNull DocumentImportance importance,
-            @NotBlank @Size(max = 1000) String reason,
+            @NotBlank @CodePointLength(max = 1000) String reason,
             @NotNull AnalysisEligibility eligibility,
             @NotNull AnalysisFavorability favorableOrNot,
             @NotNull @Valid Proposal proposal,
             @NotNull @Valid Opportunity opportunity,
-            @NotNull @Size(max = 20) List<@NotBlank @Size(max = 100) String> usedTools,
-            @NotBlank @Size(max = 100) String modelName,
+            @NotNull @Size(max = 20) List<@NotBlank @CodePointLength(max = 100) String> usedTools,
+            @NotBlank @CodePointLength(max = 100) String modelName,
             @Valid ComparisonSummary comparisonSummary,
-            @Size(max = 8000) String similarityProfile,
+            @CodePointLength(max = 8000) String similarityProfile,
             @Size(max = 3072) List<@NotNull Double> similarityEmbedding,
-            @Size(max = 100) String embeddingModelName
+            @CodePointLength(max = 100) String embeddingModelName
     ) {
         public AnalysisResult(
                 Long detectionId,
@@ -84,11 +85,11 @@ public record AnalysisResultRequest(
     }
 
     public record ComparisonSummary(
-            @NotBlank @Size(max = 1500) String purpose,
-            @NotBlank @Size(max = 500) String supportScale,
-            @NotBlank @Size(max = 300) String applicationDeadline,
-            @NotBlank @Size(max = 1000) String eligibility,
-            @NotBlank @Size(max = 1000) String requiredPartner,
+            @NotBlank @CodePointLength(max = 1500) String purpose,
+            @NotBlank @CodePointLength(max = 500) String supportScale,
+            @NotBlank @CodePointLength(max = 300) String applicationDeadline,
+            @NotBlank @CodePointLength(max = 1000) String eligibility,
+            @NotBlank @CodePointLength(max = 1000) String requiredPartner,
             @NotNull @Size(min = 5, max = 5) List<@Valid LegalRiskFinding> legalRisks,
             @Valid BusinessTypeAssessment businessType,
             @Valid BusinessTypeReview businessTypeReview
@@ -104,7 +105,7 @@ public record AnalysisResultRequest(
     }
 
     public record BusinessTypeReview(
-            @NotBlank @Size(max = 80) String validatorVersion,
+            @NotBlank @CodePointLength(max = 80) String validatorVersion,
             BusinessType candidateType,
             @NotBlank @Size(max = 40) @jakarta.validation.constraints.Pattern(regexp = "[A-Z_]+") String reason,
             @jakarta.validation.constraints.Min(0) @jakarta.validation.constraints.Max(3) Integer sourceIndex,
@@ -113,23 +114,23 @@ public record AnalysisResultRequest(
 
     public record BusinessTypeAssessment(
             @NotNull BusinessType primaryType,
-            @NotBlank @Size(max = 500) String explanation,
-            @NotNull @Size(max = 5) List<@NotBlank @Size(max = 300) String> details,
+            @NotBlank @CodePointLength(max = 500) String explanation,
+            @NotNull @Size(max = 5) List<@NotBlank @CodePointLength(max = 300) String> details,
             @NotNull @Size(min = 1, max = 4) List<@Valid BusinessTypeEvidence> sources
     ) {}
 
     public record BusinessTypeEvidence(
             @NotBlank @jakarta.validation.constraints.Pattern(regexp = "NOTICE_BODY|ATTACHMENT") String origin,
-            @Size(max = 500) String attachmentName,
-            @NotBlank @Size(min = 5, max = 1000) String excerpt
+            @CodePointLength(max = 500) String attachmentName,
+            @NotBlank @CodePointLength(min = 5, max = 1000) String excerpt
     ) {}
 
     public record LegalRiskFinding(
-            @NotBlank @Size(max = 40) String type,
-            @NotBlank @Size(max = 40) String status,
-            @NotBlank @Size(max = 500) String summary,
-            @Size(max = 3000) String evidenceExcerpt,
-            @Size(max = 40) String failureReason
+            @NotBlank @CodePointLength(max = 40) String type,
+            @NotBlank @CodePointLength(max = 40) String status,
+            @NotBlank @CodePointLength(max = 500) String summary,
+            @CodePointLength(max = 3000) String evidenceExcerpt,
+            @CodePointLength(max = 40) String failureReason
     ) {
         public LegalRiskFinding(String type, String status, String summary, String evidenceExcerpt) {
             this(type, status, summary, evidenceExcerpt, null);
@@ -137,11 +138,11 @@ public record AnalysisResultRequest(
     }
     public record Proposal(
             @NotNull @Size(min = 1, max = 6) List<@Valid Section> sections,
-            @NotBlank @Size(max = 40) String documentType,
-            @NotBlank @Size(max = 40) String draftStatus,
-            @NotBlank @Size(max = 1000) String draftReason,
-            @NotNull @Size(max = 10) List<@NotBlank @Size(max = 500) String> sourceAttachmentNames,
-            @NotNull @Size(max = 30) List<@NotBlank @Size(max = 100) String> templateSections,
+            @NotBlank @CodePointLength(max = 40) String documentType,
+            @NotBlank @CodePointLength(max = 40) String draftStatus,
+            @NotBlank @CodePointLength(max = 1000) String draftReason,
+            @NotNull @Size(max = 10) List<@NotBlank @CodePointLength(max = 500) String> sourceAttachmentNames,
+            @NotNull @Size(max = 30) List<@NotBlank @CodePointLength(max = 100) String> templateSections,
             @NotNull @Size(max = 8) List<@Valid Section> draftSections,
             @Valid Preparation preparation,
             Integer preparationSchemaVersion,
@@ -181,49 +182,49 @@ public record AnalysisResultRequest(
     }
 
     public record Preparation(
-            @NotNull @Size(max = 20) List<@NotBlank @Size(max = 500) String> meetingAgenda,
-            @Size(max = 64) List<@NotBlank @Size(max = 500) String> submissionReviewNotes,
+            @NotNull @Size(max = 20) List<@NotBlank @CodePointLength(max = 500) String> meetingAgenda,
+            @Size(max = 64) List<@NotBlank @CodePointLength(max = 500) String> submissionReviewNotes,
             @NotNull @Size(max = 12) List<@Valid PreparationItem> eligibilityChecklist,
             @NotNull @Size(max = 27) List<@Valid PreparationItem> submissionDocuments,
-            @Size(max = 10) String applicationDeadline,
+            @CodePointLength(max = 10) String applicationDeadline,
             @NotNull @Valid StrategyOnePage strategy
     ) {
     }
 
     public record PreparationItem(
-            @NotBlank @Size(max = 150) String title,
-            @NotBlank @Size(max = 500) String detail,
-            @NotBlank @Size(max = 300) String nextAction,
-            @Size(max = 40) String requirementLevel,
-            @Size(max = 40) String stage,
-            @Size(max = 200) String appliesTo,
+            @NotBlank @CodePointLength(max = 150) String title,
+            @NotBlank @CodePointLength(max = 500) String detail,
+            @NotBlank @CodePointLength(max = 300) String nextAction,
+            @CodePointLength(max = 40) String requirementLevel,
+            @CodePointLength(max = 40) String stage,
+            @CodePointLength(max = 200) String appliesTo,
             @Valid RequirementSource source,
-            @Size(max = 40) String companyEvidenceLevel,
+            @CodePointLength(max = 40) String companyEvidenceLevel,
             @jakarta.validation.constraints.Min(0) @jakarta.validation.constraints.Max(100) Integer readinessScore,
             @jakarta.validation.constraints.Min(0) @jakarta.validation.constraints.Max(100) Integer conditionScore,
             @jakarta.validation.constraints.Min(0) @jakarta.validation.constraints.Max(100) Integer evidenceScore,
             @jakarta.validation.constraints.Min(0) @jakarta.validation.constraints.Max(100) Integer scheduleScore,
-            @Size(max = 40) String workType,
+            @CodePointLength(max = 40) String workType,
             @jakarta.validation.constraints.Min(1) @jakarta.validation.constraints.Max(120) Integer estimatedBusinessDays,
-            @Size(max = 4) List<@NotBlank @Size(max = 300) String> scoreBasis
+            @Size(max = 4) List<@NotBlank @CodePointLength(max = 300) String> scoreBasis
     ) {
     }
 
     public record RequirementSource(
-            @Size(max = 40) String origin,
-            @Size(max = 500) String attachmentName,
-            @Size(max = 200) String sectionTitle,
-            @Size(max = 200) String location,
-            @Size(max = 1200) String excerpt
+            @CodePointLength(max = 40) String origin,
+            @CodePointLength(max = 500) String attachmentName,
+            @CodePointLength(max = 200) String sectionTitle,
+            @CodePointLength(max = 200) String location,
+            @CodePointLength(max = 1200) String excerpt
     ) {
     }
 
     public record StrategyOnePage(
-            @NotBlank @Size(max = 40) String decision,
-            @NotBlank @Size(max = 500) String decisionReason,
-            @NotBlank @Size(max = 120) String recommendedProject,
-            @NotBlank @Size(max = 500) String recommendedParticipation,
-            @NotBlank @Size(max = 500) String alternativeParticipation,
+            @NotBlank @CodePointLength(max = 40) String decision,
+            @NotBlank @CodePointLength(max = 500) String decisionReason,
+            @NotBlank @CodePointLength(max = 120) String recommendedProject,
+            @NotBlank @CodePointLength(max = 500) String recommendedParticipation,
+            @NotBlank @CodePointLength(max = 500) String alternativeParticipation,
             @NotNull @Size(max = 4) List<@Valid StrategyCapabilityMatch> capabilityMatches,
             @NotNull @Size(min = 1, max = 4) List<@Valid StrategyGap> criticalGaps,
             @NotNull @Size(min = 1, max = 4) List<@Valid StrategyStopCriterion> stopCriteria
@@ -231,34 +232,34 @@ public record AnalysisResultRequest(
     }
 
     public record StrategyCapabilityMatch(
-            @Size(max = 80) String companyEvidenceId,
-            @NotBlank @Size(max = 500) String confirmedFact,
-            @NotBlank @Size(max = 500) String strategicInterpretation
+            @CodePointLength(max = 80) String companyEvidenceId,
+            @NotBlank @CodePointLength(max = 500) String confirmedFact,
+            @NotBlank @CodePointLength(max = 500) String strategicInterpretation
     ) {
     }
 
     public record StrategyGap(
-            @NotBlank @Size(max = 300) String gap,
-            @NotBlank @Size(max = 300) String nextAction,
-            @NotBlank @Size(max = 100) String owner,
-            @NotBlank @Size(max = 150) String targetTiming,
-            @Size(max = 40) String workType,
+            @NotBlank @CodePointLength(max = 300) String gap,
+            @NotBlank @CodePointLength(max = 300) String nextAction,
+            @NotBlank @CodePointLength(max = 100) String owner,
+            @NotBlank @CodePointLength(max = 150) String targetTiming,
+            @CodePointLength(max = 40) String workType,
             @jakarta.validation.constraints.Min(1) @jakarta.validation.constraints.Max(120) Integer estimatedBusinessDays,
-            @Size(max = 10) String targetDate,
-            @Size(max = 300) String scheduleBasis
+            @CodePointLength(max = 10) String targetDate,
+            @CodePointLength(max = 300) String scheduleBasis
     ) {
     }
 
     public record StrategyStopCriterion(
-            @NotBlank @Size(max = 40) String type,
-            @NotBlank @Size(max = 400) String condition,
-            @NotBlank @Size(max = 400) String rationale
+            @NotBlank @CodePointLength(max = 40) String type,
+            @NotBlank @CodePointLength(max = 400) String condition,
+            @NotBlank @CodePointLength(max = 400) String rationale
     ) {
     }
 
     public record Section(
-            @NotBlank @Size(max = 100) String title,
-            @NotBlank @Size(max = 1000) String body
+            @NotBlank @CodePointLength(max = 100) String title,
+            @NotBlank @CodePointLength(max = 1000) String body
     ) {
     }
 
@@ -280,7 +281,7 @@ public record AnalysisResultRequest(
     public record OpportunityDimension(
             @NotNull OpportunityDimensionType type,
             @NotNull @jakarta.validation.constraints.Min(0) @jakarta.validation.constraints.Max(100) Integer score,
-            @NotBlank @Size(max = 500) String reason
+            @NotBlank @CodePointLength(max = 500) String reason
     ) {
     }
 
@@ -288,7 +289,7 @@ public record AnalysisResultRequest(
             @NotNull @Positive Long detectionId,
             @NotNull @Positive Long documentId,
             @NotNull @Positive Long versionId,
-            @NotBlank @Size(max = 2000) String errorMessage
+            @NotBlank @CodePointLength(max = 2000) String errorMessage
     ) {
     }
 }
