@@ -61,3 +61,8 @@ app.analysis.recovery.interval-ms=10000
 app.analysis.recovery.initial-delay-ms=10000
 app.analysis.recovery.minimum-lease=PT30M
 app.analysis.recovery.per-document-lease=PT15M
+
+# Build/persist document display sections before a browser requests them.
+app.document-detail.worker.enabled=${DOCUMENT_DETAIL_WORKER_ENABLED:true}
+app.document-detail.worker.interval-ms=3000
+app.document-detail.worker.initial-delay-ms=5000

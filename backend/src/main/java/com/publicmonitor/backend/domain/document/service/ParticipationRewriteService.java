@@ -27,6 +27,7 @@ public class ParticipationRewriteService {
     private final ConcurrentMap<Long, String> running = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Response> progress = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Response> completed = new ConcurrentHashMap<>();
+    private final java.util.Set<String> persistedResults = ConcurrentHashMap.newKeySet();
     private final ThreadPoolExecutor executor = new ThreadPoolExecutor(2, 2, 0, TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(32), Thread.ofPlatform().name("participation-rewrite-", 0).daemon().factory());
 
@@ -67,11 +68,16 @@ public class ParticipationRewriteService {
             // Check again under the admission lock: a job may have completed since the first cache lookup.
             cached = completed.get(cacheId);
             if (cached != null) return ParticipationRewriteProjection.guide(raw, input, cached, cached.status());
-            // Preserve terminal results instead of evicting failures and charging for them again.
-            if (completed.size() + running.size() >= 256) status = "UNAVAILABLE";
+            // DB-persisted results can leave memory; failed writes must remain to prevent a second paid call.
+            for (var persisted : persistedResults) {
+                if (completed.size() + running.size() < 256) break;
+                completed.remove(persisted);
+                persistedResults.remove(persisted);
+            }
+            if (completed.size() + running.size() >= 256) status = "PENDING";
             else if (running.putIfAbsent(version.getId(), key) == null) {
                 try { executor.execute(() -> run(version.getId(), key, version.getParticipationRewriteKey(), outbound)); }
-                catch (RejectedExecutionException exception) { running.remove(version.getId(), key); status = "UNAVAILABLE"; }
+                catch (RejectedExecutionException exception) { running.remove(version.getId(), key); status = "PENDING"; }
             }
         }
         return ParticipationRewriteProjection.guide(raw, input, Response.unavailable(request), status);
@@ -97,6 +103,7 @@ public class ParticipationRewriteService {
         Response result = Response.unavailable(request);
         boolean claimed = false;
         boolean otherWorker = false;
+        boolean persisted = false;
         try {
             claimed = store.claim(id, key, previousKey, mapper.writeValueAsString(new Pending("PENDING", System.currentTimeMillis())));
             if (!claimed) { otherWorker = true; return; }
@@ -108,7 +115,7 @@ public class ParticipationRewriteService {
             log.warn("Participation rewrite unavailable. version_id={} error_type={}", id, exception.getClass().getSimpleName());
         } finally {
             if (claimed) {
-                try { store.finish(id, key, mapper.writeValueAsString(result)); }
+                try { store.finish(id, key, mapper.writeValueAsString(result)); persisted = true; }
                 catch (RuntimeException exception) {
                     log.warn("Participation rewrite result persistence failed. version_id={} error_type={}", id, exception.getClass().getSimpleName());
                 }
@@ -117,7 +124,10 @@ public class ParticipationRewriteService {
             log.info("Participation rewrite finished. version_id={} status={} statements={}",
                     id, result.status(), result.statements().size());
             synchronized (completed) {
-                if (!otherWorker) completed.put(id + ":" + key, result);
+                if (!otherWorker) {
+                    completed.put(id + ":" + key, result);
+                    if (persisted) persistedResults.add(id + ":" + key);
+                }
                 running.remove(id, key);
             }
         }

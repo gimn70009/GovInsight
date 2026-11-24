@@ -242,7 +242,7 @@ class ParticipationRewriteServiceTest {
         } finally { service.close(); }
     }
 
-    @Test void fullTerminalCacheStopsNewWorkButStillReadsPersistedResults() {
+    @Test void fullUnpersistedCacheDefersNewWorkButStillReadsPersistedResults() {
         var client = mock(PythonParticipationRewriteClient.class);
         var store = mock(ParticipationRewriteStore.class);
         when(store.claim(any(), anyString(), any(), anyString())).thenReturn(true);
@@ -253,12 +253,36 @@ class ParticipationRewriteServiceTest {
             var request = ParticipationRewriteProjection.input(raw(), false).request();
             for (int index = 0; index < 256; index++) completed.put("cached-" + index, Response.unavailable(request));
             var version = version();
-            assertThat(service.resolve(version, raw(), false).rewriteStatus()).isEqualTo("UNAVAILABLE");
+            assertThat(service.resolve(version, raw(), false).rewriteStatus()).isEqualTo("PENDING");
             assertThat(completed).hasSize(256);
             ReflectionTestUtils.setField(version, "participationRewriteKey", service.fingerprint(request));
             ReflectionTestUtils.setField(version, "participationRewriteJson", mapper.writeValueAsString(valid()));
             assertThat(service.resolve(version, raw(), false).rewriteStatus()).isEqualTo("READY");
             verifyNoInteractions(client, store);
+        } finally { service.close(); }
+    }
+    @Test void persistedTerminalCacheCanReleaseCapacityWithoutRepeatingPaidCalls() throws Exception {
+        var client = mock(PythonParticipationRewriteClient.class);
+        var store = mock(ParticipationRewriteStore.class);
+        when(store.claim(any(), anyString(), any(), anyString())).thenReturn(true);
+        when(client.rewrite(any(), any())).thenReturn(valid());
+        var service = new ParticipationRewriteService(client, store, mapper);
+        try {
+            @SuppressWarnings("unchecked")
+            var completed = (java.util.Map<String, Response>) ReflectionTestUtils.getField(service, "completed");
+            @SuppressWarnings("unchecked")
+            var persisted = (java.util.Set<String>) ReflectionTestUtils.getField(service, "persistedResults");
+            for (int index = 0; index < 256; index++) {
+                completed.put("cached-" + index, valid()); persisted.add("cached-" + index);
+            }
+            var fresh = version(); service.resolve(fresh, raw(), false); awaitTerminal(service, fresh);
+            assertThat(completed.size()).isLessThanOrEqualTo(256);
+            var old = version(); ReflectionTestUtils.setField(old, "id", 999L);
+            var request = ParticipationRewriteProjection.input(raw(), false).request();
+            ReflectionTestUtils.setField(old, "participationRewriteKey", service.fingerprint(request));
+            ReflectionTestUtils.setField(old, "participationRewriteJson", mapper.writeValueAsString(valid()));
+            assertThat(service.resolve(old, raw(), false).rewriteStatus()).isEqualTo("READY");
+            verify(client, times(1)).rewrite(any(), any());
         } finally { service.close(); }
     }
     @Test void persistedPendingSurvivesRestartAndExpiresWithoutAnotherCall() {

@@ -40,6 +40,7 @@ class DocumentAnalysisStatusIntegrationTest {
     @Autowired AnalysisTaskRepository tasks;
     @Autowired DocumentAttachmentRepository attachments;
     @Autowired DocumentVersionRepository versions;
+    @Autowired DocumentDetailSnapshotRepository snapshots;
 
     @Test void submissionNotesClaimsAreAtomicAndStaleCompletionsCannotOverwrite() {
         // Use the existing fixture so all required source/run relations are persisted.
@@ -193,12 +194,7 @@ class DocumentAnalysisStatusIntegrationTest {
     }
 
     private DocumentDetectionDetailService detailService() {
-        return new DocumentDetectionDetailService(detections, analyses, tasks, attachments, new ObjectMapper(), rewriteService(), com.publicmonitor.backend.domain.document.service.SubmissionNotesTestSupport.service());
-    }
-    private com.publicmonitor.backend.domain.document.service.ParticipationRewriteService rewriteService() {
-        var service = org.mockito.Mockito.mock(com.publicmonitor.backend.domain.document.service.ParticipationRewriteService.class);
-        org.mockito.Mockito.lenient().when(service.resolve(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyBoolean()))
-                .thenAnswer(invocation -> invocation.getArgument(1));
-        return service;
+        return new DocumentDetectionDetailService(detections, analyses, tasks, attachments, new ObjectMapper(),
+                new com.publicmonitor.backend.domain.document.service.DocumentDetailSnapshotReader(snapshots, new ObjectMapper()));
     }
 }

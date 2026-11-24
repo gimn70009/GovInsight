@@ -58,7 +58,7 @@ public class SubmissionNotesService {
             try { executor.execute(() -> run(version.getId(), key, version.getSubmissionNotesKey(), request)); }
             catch (RejectedExecutionException exception) {
                 running.remove(version.getId());
-                return new SubmissionGuide(raw.documents(), List.of(), "UNAVAILABLE");
+                return new SubmissionGuide(raw.documents(), List.of(), "PENDING");
             }
         }
         return new SubmissionGuide(raw.documents(), List.of(), "PENDING");

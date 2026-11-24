@@ -165,6 +165,7 @@ public class AnalysisResultService {
             );
         }
         if (task != null) task.analyzed(analyzedAt, taskService.proposalLease(task));
+        eventPublisher.publishEvent(new com.publicmonitor.backend.domain.analysis.event.AnalysisStoredEvent(request.runId()));
         return new AnalysisResultResponse(
                 request.runId(), storedCount, duplicateCount, request.failures().size()
         );

@@ -45,5 +45,6 @@ dependencies {
 tasks.named('test') {
 	// Existing fixtures own their sources; defaults are exercised by isolated persistence tests.
 	systemProperty 'app.monitoring.sources.initialize', 'false'
+	systemProperty 'app.document-detail.worker.enabled', 'false'
 	useJUnitPlatform()
 }
