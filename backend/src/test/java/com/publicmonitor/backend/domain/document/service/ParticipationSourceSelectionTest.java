@@ -247,7 +247,7 @@ class ParticipationSourceSelectionTest {
             assertThat(result.rewriteStatus()).isEqualTo("READY");
             assertThat(result.rules()).singleElement().satisfies(rule -> {
                 assertThat(rule.scope()).isEqualTo("성장형");
-                assertThat(rule.audience()).isEqualTo("참여기업");
+                assertThat(rule.audience()).isNull(); // This mock's citation does not establish that role.
                 assertThat(rule.sources()).extracting(RequirementSource::attachmentName).containsExactly("공고.hwpx");
             });
             verify(client, times(1)).rewrite(any(), any());

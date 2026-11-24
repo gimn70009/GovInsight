@@ -39,7 +39,7 @@ class ParticipationFocusProjectionTest {
     }
 
     @Test void modelTextClassificationScopeAndAudiencePassThroughWithoutLocalRewriting() {
-        String quote = "업력 7년 이상인 중소기업. 단, 추천받은 창업기업은 업력 제한 없음";
+        String quote = "도입기업: 업력 7년 이상인 중소기업. 단, 추천받은 창업기업은 업력 제한 없음";
         String text = "중소기업은 업력이 7년 이상이어야 합니다. 다만 추천받은 창업기업에는 업력 제한이 없습니다.";
         var response = new Response(List.of(new Statement(List.of("s0"), "BUSINESS_FORM", text, "일반 절 제목",
                 List.of(quote), "ELIGIBILITY", "성장형", "도입기업")), List.of(), "READY");

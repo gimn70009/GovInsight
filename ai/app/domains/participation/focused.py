@@ -13,7 +13,7 @@ from pydantic import Field, ValidationError
 from app.core.openai_models import ChatOpenAI
 from app.observability.model_calls import ModelCallTrace, error_details
 
-from . import completeness, coverage, grounding, requirements, selection
+from . import completeness, context_labels, coverage, grounding, requirements, selection
 from .budget import BudgetExceeded, CallBudget
 from .config import RewriteSettings
 from .presentation import complete_sentence
@@ -58,7 +58,7 @@ PROMPT = (
     '는다.\n'
     '1. 모집 제목·자격·별도 모집 안내를 대조한다. 통합공고에 안내된 사업별 '
     '신청 대상은 각각 유지한다. 주관·운영기관 모집에 참고 수혜자나 별도 모집 '
-    '역할을 섞지 않는다. scope는 사업/유형, audience는 신청 주체다'
+    '역할을 섞지 않는다. scope는 사업/유형, audience는 인용 조건의 신청 주체다'
     '.\n'
     '2. 사업(context.program/parent)·신청 주체별로 required_spans의 조건·선행 단계·예외를 '
     '빠짐없이 items/details로 연결한다. 미해결 구간은 unresolved_source_ids에 남긴다. '
@@ -95,7 +95,7 @@ PROMPT = (
     ' 정보를 점검한다. 불완전한 관련 출처는 unresolved_source_i'
     'ds, 무관한 출처는 제외한다. 미기재를 부적격·조건 없음으로 단정하지 않는'
     '다. context.recruitment는 recruitments의 0부터 '
-    '센 번호이고 program·parent는 힌트다. 근거와 다른 행정 구역명은 scope로 쓰지 않는다.\n'
+    '센 번호이고 program·parent는 힌트다. scope에 모집·구역·서식명 금지.\n'
 )
 
 
@@ -137,14 +137,16 @@ class ExtractedCondition(StrictModel):
     scope: str | None = Field(
         default=None, max_length=100,
         description=(
-            "인용의 사업/유형명. 신청 대상·참여 형태·모집 제목·구역명·직책 금지. "
+            "인용의 사업/유형명. 신청 대상·참여 형태·모집 제목·구역명(경로 포함)·서식명·직책 금지. "
             "유형 없으면 null. 병렬 ' / ', 계층 ' · '. "
             "전체 적용은 공통, 불확실성 명시에만 적용 범위 확인 필요."
         ),
     )
     audience: str | None = Field(
         default=None, max_length=100,
-        description="신청 주체/역할(표 행·괄호 표기). 사업 유형·직원·시설 금지, 없으면 null.",
+        description=("인용 조건의 신청 주체/역할(표 행·괄호 표기). 사업 유형·시설 금지. "
+                     "직원 요건의 직책을 신청 주체로 쓰지 않되 제외 조건의 개인 대상은 보존. "
+                     "근거 없으면 null."),
     )
     details: list[ExtractedDetail] = Field(
         default_factory=list, max_length=6,
@@ -220,6 +222,7 @@ def scope_label(value):
         heading = re.sub(r"^(?:\(?(?:[0-9]+(?:-[0-9]+)*|[가-힣]|[IVXⅠ-Ⅻ]+)[.)]|[①-⑳])", "", compact)
         if (
             not compact
+            or context_labels.structural_label(label)
             or heading.lower() in SCOPE_PLACEHOLDERS
             or re.match(r"^\[(?:상위구역|원문구역|적용유형)\]", compact)
             or re.fullmatch(r"실제사업[·ㆍ]과제유형(?:\(.*\))?", compact)
@@ -410,7 +413,7 @@ def project(extraction, selected, request):
                 supporting_quotes=[quote],
                 kind=item.kind,
                 scope=scope_label(item.scope),
-                audience=item.audience.strip() or None if item.audience else None,
+                audience=context_labels.audience_label(item.audience, quote),
             )
         )
     missing = coverage.audit(selected, statements)

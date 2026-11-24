@@ -53,7 +53,7 @@ class ParticipationCachedEligibilityTest {
         return project(new Sample(List.of(request), Map.of("s0", List.of(source)), new Response(List.of(
                 new Statement(List.of("s0"), "BUSINESS_FORM", text, "", List.of(quote), kind, "일반형", "신청기업")), List.of(), "READY"), null));
     }
-    @Test void cachedWordingKeepsItsLabelsScopeAndQuotesAcrossFormatting() {
+    @Test void cachedWordingKeepsScopeAndQuotesButCannotInventAnApplicantAcrossFormatting() {
         for (String title : List.of("지원대상", "신청 자격", "참여 요건", "모집 대상")) {
             for (String prefix : List.of("", "□ ", "■ ")) {
                 for (String colon : List.of(": ", "：")) {
@@ -64,7 +64,7 @@ class ParticipationCachedEligibilityTest {
                         assertThat(guide.rules()).singleElement().satisfies(rule -> {
                             assertThat(rule.text()).isEqualTo(text);
                             assertThat(rule.scope()).isEqualTo("일반형");
-                            assertThat(rule.audience()).isEqualTo("신청기업");
+                            assertThat(rule.audience()).isNull();
                         });
                         assertThat(entries(guide)).singleElement().satisfies(entry ->
                                 assertThat(entry.supportingQuotes()).containsExactly(quote));

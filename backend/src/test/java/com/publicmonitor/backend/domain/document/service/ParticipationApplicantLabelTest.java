@@ -88,14 +88,14 @@ class ParticipationApplicantLabelTest {
             assertThat(ParticipationApplicantLabel.from(statement(body), List.of(source(table)))).isNull();
     }
 
-    @Test void explicitAudienceAndExclusionMeaningRemainUntouched() {
+    @Test void citedApplicantRowWinsOverAnUnsupportedRoleGlossAndExclusionMeaningRemainsUntouched() {
         var candidates = ParticipationConditionResolver.candidatesWithScopes(TABLE, List.of(), null);
         var input = ParticipationRewriteProjection.input(candidates.guide(), false, candidates.scopes());
         var original = input.availableSources().stream().filter(s -> s.excerpt().contains(ROWS.getFirst())).findFirst().orElseThrow();
         var item = new Statement(List.of(original.id()), "BUSINESS_FORM", "협회는 신청할 수 있습니다.", "",
                 List.of(ROWS.getFirst()), "ELIGIBILITY", null, "협회·단체(주관기관)");
         var guide = ParticipationRewriteProjection.guide(candidates.guide(), input, new Response(List.of(item), List.of(), "READY"), "READY");
-        assertThat(guide.rules().getFirst().audience()).isEqualTo("협회·단체(주관기관)");
+        assertThat(guide.rules().getFirst().audience()).isEqualTo("협회·단체");
         var excluded = new Statement(List.of("s0"), "BUSINESS_FORM", "제외됩니다.", "", List.of(ROWS.get(2)), "EXCLUSION");
         assertThat(ParticipationApplicantLabel.from(excluded, List.of(source(TABLE)))).isNull();
     }

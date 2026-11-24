@@ -739,7 +739,7 @@ def test_structural_scope_does_not_invent_a_program_or_change_grounded_condition
     value = result.statements[0]
     assert value.scope is None
     assert value.text == quote
-    assert value.audience == "총괄주관기관"
+    assert value.audience is None  # This role is absent from the cited condition.
     assert value.supporting_quotes == [quote]
 
 

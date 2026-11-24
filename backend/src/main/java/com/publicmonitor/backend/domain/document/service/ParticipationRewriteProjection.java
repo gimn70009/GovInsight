@@ -127,7 +127,8 @@ final class ParticipationRewriteProjection {
             var mainSources = item.sourceIds().stream().map(input.evidence()::get).flatMap(List::stream).distinct().toList();
             String applicant = ParticipationApplicantLabel.from(item, mainSources);
             String audience = ParticipationApplicantLabel.isPersonnelAudience(item, mainSources) ? null
-                    : item.audience() == null || item.audience().isBlank() ? applicant : item.audience();
+                    : applicant != null ? applicant : ParticipationContextLabels.audience(
+                            item.audience(), String.join("\n", item.supportingQuotes()));
             boolean procedure = ParticipationPresentationQuality.procedureOnly(item, mainSources);
             var readableDetails = item.details().stream()
                     .filter(detail -> !ParticipationPresentationQuality.redundantDetail(item, detail))
@@ -208,7 +209,7 @@ final class ParticipationRewriteProjection {
                 detail.supportingQuotes(), "ELIGIBILITY"), evidence);
     }
 
-    private static String displayScope(String value, String applicant) {
+    static String displayScope(String value, String applicant) {
         if (value == null || value.isBlank()) return null;
         var paths = new LinkedHashSet<String>();
         for (String path : value.split(" / ")) {
@@ -225,7 +226,8 @@ final class ParticipationRewriteProjection {
         String compact = compact(value);
         // Compare headings without numbering, but preserve the original spelling of real programs.
         String heading = compact.replaceFirst("^(?:\\(?(?:[0-9]+(?:-[0-9]+)*|[가-힣]|[IVXⅠ-Ⅻ]+)[.)]|[①-⑳])", "");
-        return compact.isEmpty() || compact.matches("(?:별표|별지|붙임)[0-9]+(?:호)?")
+        return compact.isEmpty() || ParticipationContextLabels.structural(value)
+                || compact.matches("(?:별표|별지|붙임)[0-9]+(?:호)?")
                 || compact.matches(".*(?:법률|시행령|시행규칙|운영요령|규정)제[0-9]+조(?:의[0-9]+)?(?:제[0-9]+항)?") || Set.of("상위구역", "원문구역", "적용유형", "유형명", "신청역할", "신청주체명",
                 "신청자격", "신청요건", "신청자격및신청요건", "지원대상", "지원내용", "사업개요",
                 "scope", "parent", "section", "program", "null").contains(heading.toLowerCase(Locale.ROOT))

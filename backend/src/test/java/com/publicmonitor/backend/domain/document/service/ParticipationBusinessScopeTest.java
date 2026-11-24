@@ -24,7 +24,9 @@ class ParticipationBusinessScopeTest {
         var service = new ParticipationRewriteService(client, store, mapper);
         try {
             for (String label : List.of("아. 세부과제 지원유형", "2. 사업 유형", "① 지원대상", "(가) 신청자격",
-                    "3-1. 사업개요", "유형별 지원내용", "내역사업 구분", "신청자격 및 선정기준")) {
+                    "3-1. 사업개요", "유형별 지원내용", "내역사업 구분", "신청자격 및 선정기준",
+                    "사업 개요 - 지원분야", "사업 개요 - 수행내용", "사업개요>지원분야",
+                    "총괄주관연구개발기관 모집 공고 / 자격 확인서")) {
                 var saved = new Response(List.of(new Statement(List.of(source.id()), "BUSINESS_FORM", quote, "",
                         List.of(quote), "ELIGIBILITY", label, "총괄주관기관", List.of())), List.of(), "READY");
                 var version = DocumentVersion.create(null, 1, "공고", quote, "b".repeat(64), null, 0, null);
@@ -36,7 +38,8 @@ class ParticipationBusinessScopeTest {
                 assertThat(guide.rewriteStatus()).isEqualTo("READY");
                 assertThat(guide.rules()).singleElement().satisfies(rule -> {
                     assertThat(rule.scope()).as(label).isNull();
-                    assertThat(rule.audience()).isEqualTo("총괄주관기관");
+                    // The model's role is absent from this citation; keep the condition, not its invented badge.
+                    assertThat(rule.audience()).isNull();
                     assertThat(rule.text()).isEqualTo(quote);
                     assertThat(rule.sources()).anySatisfy(evidence -> assertThat(evidence.excerpt()).contains(quote));
                 });
@@ -64,6 +67,8 @@ class ParticipationBusinessScopeTest {
                 {"성장사업 · Common", "성장사업 · 공통"},
                 {"Common Ground 지원사업", "Common Ground 지원사업"},
                 {"공급기업 역량진단", "공급기업 역량진단"},
+                {"성장사업 · 사업 개요 - 지원분야 / 도약사업", "성장사업 / 도약사업"},
+                {"연구기관 역량강화 지원사업", "연구기관 역량강화 지원사업"},
                 {"공급기업", "공급기업"},
                 {"큐레이터", "큐레이터"},
                 {null, null}

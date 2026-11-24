@@ -16,6 +16,11 @@ final class ParticipationProgramScope {
     private ParticipationProgramScope() {}
 
     static String resolve(String stored, Statement item, List<RequirementSource> sources, ParticipationScopeIndex index) {
+        return ParticipationRewriteProjection.displayScope(resolveContext(
+                ParticipationRewriteProjection.displayScope(stored, null), item, sources, index), null);
+    }
+
+    private static String resolveContext(String stored, Statement item, List<RequirementSource> sources, ParticipationScopeIndex index) {
         if (index == null || item.supportingQuotes().isEmpty() || review(stored)) return stored;
         var contexts = new LinkedHashSet<String>();
         boolean unknown = false;
