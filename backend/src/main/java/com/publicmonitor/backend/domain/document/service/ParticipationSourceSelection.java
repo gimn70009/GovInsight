@@ -15,8 +15,19 @@ final class ParticipationSourceSelection {
     private static final java.util.regex.Pattern COMPATIBLE_SECTION = java.util.regex.Pattern.compile(PREFIX
             + "(?:(?:신청|지원|참여|모집|입찰참가)\\h*(?:자격|대상|요건|조건)|우대(?:사항|조건|대상|기업)?|가점(?:사항|조건|항목)?)" + END);
     private static final java.util.regex.Pattern APPLICANT_SECTION = java.util.regex.Pattern.compile(PREFIX
-            + "(?:사업\\h*)?(?:(?:신청|참여|모집|입찰참가)\\h*(?:자격|대상|요건|조건)|지원\\h*(?:자격|대상|요건)|우대(?:사항|조건|대상|기업)?|가점(?:사항|조건|항목)?)" + END);
+            + "(?:사업\\h*)?(?:(?:신청|참여|모집|입찰참가)\\h*(?:자격|대상|요건|조건|제한|제외)|지원\\h*(?:자격|대상|요건|제한|제외)|우대(?:사항|조건|대상|기업)?|가점(?:사항|조건|항목)?)(?:\\h*에\\h*관한\\h*사항)?" + END);
+    private static final java.util.regex.Pattern ROLE_SECTION = java.util.regex.Pattern.compile(
+            "^[\\h◦○●•ㅇ*-]*\\((?:공동)?(?:주관|참여|수행|운영)\\h*(?:기관|기업)\\)\\h*\\S");
+    private static final java.util.regex.Pattern APPLICANT_RESTRICTION = java.util.regex.Pattern.compile(
+            "(?:기관|기업|사업자|신청자|참여자|대표자)[^\\r\\n]{0,120}(?:신청|참여|지원)[^\\r\\n]{0,30}(?:제외|제한|불가)"
+            + "|(?:선정|평가|심사|지원|신청|참여)(?:\\s*(?:평가|심사|대상|자격|절차))?\\s*(?:에서|에|이|을|를)?\\s*(?:제외|제한|불가|취소)");
     private final Set<String> fileNames;
+
+    static boolean referenceDocument(String name) {
+        if (name == null || name.matches(".*(?:공고|모집).*")) return false;
+        return name.replaceAll("\\s+", "").matches(".*(?:(?:비|금)(?:사용|집행|정산)(?:기준|용도|지침)"
+                + "|(?:운영|관리)(?:관리|운영)?지침|매뉴얼).*");
+    }
 
     private ParticipationSourceSelection(Set<String> fileNames) { this.fileNames = fileNames; }
 
@@ -53,6 +64,10 @@ final class ParticipationSourceSelection {
     }
 
     Request outbound(ParticipationRewriteProjection.Input input) {
+        return outbound(input, null);
+    }
+
+    Request outbound(ParticipationRewriteProjection.Input input, String noticeTitle) {
         var frozenIds = new HashSet<>(input.request().sources().stream().map(Source::id).toList());
         var linked = input.evidence().values().stream().flatMap(List::stream).filter(this::includes)
                 .filter(source -> Objects.toString(source.sectionTitle(), "").startsWith(ParticipationReferencedSources.MARKER)).toList();
@@ -78,7 +93,12 @@ final class ParticipationSourceSelection {
                         heading = Objects.toString(heading, "").replaceAll("(?m)^\\[공고 대상] [^\\r\\n]*(?:\\R|$)", "");
                         heading = "[공고 대상] " + recruitment + "\n" + heading;
                     }
-                    return new Source(source.id(), original.excerpt(), heading, source.criteria());
+                    String documentName = input.scopes() == null ? original.attachmentName() : input.scopes().documentName(original);
+                    if (referenceDocument(documentName)) heading = "[참고 규정] " + documentName + "\n" + heading;
+                    if (noticeTitle != null && !noticeTitle.isBlank())
+                        heading = "[공고 제목] " + noticeTitle.replaceAll("\\R", " ").strip() + "\n" + heading;
+                    return new Source(source.id(), original.excerpt(), heading, source.criteria(),
+                            input.scopes() == null ? List.of() : input.scopes().scopeRegions(original));
                 })
                 .toList();
         return new Request(sources, input.request().criteria(), input.request().businessTypes());
@@ -96,6 +116,8 @@ final class ParticipationSourceSelection {
                 || Objects.toString(source.sectionTitle(), "").startsWith(ParticipationChecklistSources.EXCEPTION)
                 || Objects.toString(source.sectionTitle(), "").startsWith(ParticipationReferencedSources.MARKER)
                 || APPLICANT_SECTION.matcher(originalHeading(source)).find()
+                || APPLICANT_RESTRICTION.matcher(source.excerpt()).find()
+                || source.excerpt().lines().anyMatch(line -> ROLE_SECTION.matcher(line).find())
                 || source.excerpt().lines().flatMap(line -> Arrays.stream(line.split("\\t")))
                         .anyMatch(cell -> APPLICANT_SECTION.matcher(cell.strip()).find());
     }

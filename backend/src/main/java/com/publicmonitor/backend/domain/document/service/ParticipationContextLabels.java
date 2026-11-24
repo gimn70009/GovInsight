@@ -8,6 +8,14 @@ import java.util.regex.Pattern;
 final class ParticipationContextLabels {
     private ParticipationContextLabels() {}
 
+    static boolean programRole(String value) {
+        return value.strip().matches(".+(?:구성한|구성된|보유한|소재한|영위하는|충족하는|해당하는)"
+                + ".{0,30}(?:기업|기관|단체|협의체|컨소시엄)")
+                || value.strip().matches("(?:협의체|컨소시엄|기업|기관|공모대상과제|모집대상|신청주체)"
+                + "|(?:(?:총괄|공동|주관|연계|참여|수행|운영|신청|도입|공급)\\s*)+"
+                + "(?:기업|기관|지역|연구개발기관|연구자|연구원|책임자)");
+    }
+
     static boolean structural(String value) {
         String label = value.replaceAll("\\s+", "").replaceFirst(
                 "^(?:\\(?(?:[0-9]+(?:-[0-9]+)*|[가-힣]|[IVXⅠ-Ⅻ]+)[.)]|[①-⑳])", "");

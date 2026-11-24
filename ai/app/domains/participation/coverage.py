@@ -16,7 +16,7 @@ class Requirement(NamedTuple):
     table_row: bool = False
 
 
-BULLET = re.compile(r"^\s*(?:[◦○●•ㅇ□■❶-❿①-⑳※*]|[-–]\s|[\ue000-\uf8ff\U000f0000-\U000ffffd])")
+BULLET = re.compile(r"^\s*(?:[◦○●•·ㅇ□■❶-❿①-⑳※*]|[-–]\s|[\ue000-\uf8ff\U000f0000-\U000ffffd])")
 
 
 def inventory(source):
@@ -83,6 +83,10 @@ def inventory(source):
             continue
         if value and start is None:
             start = index
+        # Flattened PDF tables may put a complete exclusion immediately before
+        # unrelated support-content columns. Do not make that citation span the table.
+        if not table and re.search(r"(?:제외|불가|한함|자동\s*탈락)[.!。]?\s*$", value):
+            flush(index + 1)
     flush(len(lines))
     return sorted({unit.ref: unit for unit in result}.values(),
                   key=lambda u: int(u.ref[1:].split('-')[0]))
@@ -132,15 +136,34 @@ def covered(unit, source_id, statements):
             continue
         texts = ([statement.text] if body else []) + [d.text for d in details]
         if (completeness.row_values_preserved(unit.text, texts)
+                and completeness.required_terms_preserved(unit.text, texts)
                 and role_preserved(unit, " ".join(texts))):
             return True
     return False
 
 
 def quantity_review(text, quotes, units):
-    """Review only a claim quoting one explicit row, never its source siblings."""
-    owned = [u for u in units if u.table_row and cites(u, quotes)]
+    """Review a single owned requirement, including prose; never its source siblings."""
+    owned = [u for u in units if cites(u, quotes)]
     return len(owned) == 1 and not completeness.row_values_preserved(owned[0].text, text)
+
+
+def condition_review(text, quotes, units):
+    owned = [u for u in units if cites(u, quotes)]
+    return len(owned) == 1 and not completeness.required_terms_preserved(owned[0].text, text)
+
+
+def exception_review(text, quotes, units):
+    # A model may omit the citation as well as the exception. Check only the immediate
+    # adjacent note of an owned requirement; never borrow another role or source's note.
+    for unit, following in zip(units, units[1:]):
+        end = int(unit.ref.split("-L")[-1].lstrip("L"))
+        start = int(following.ref.split("-")[0].lstrip("L"))
+        if (start == end + 1 and cites(unit, quotes)
+                and re.match(r"\s*[-*※]?\s*(?:다만|단[,，])", following.text)
+                and completeness.exception_missing(text, following.text)):
+            return True
+    return False
 
 
 def audit(selected, statements):

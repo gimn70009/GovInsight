@@ -55,5 +55,6 @@ def test_contract_disambiguates_programs_roles_and_integrated_advance_notices():
     schema = focused.ExtractedCondition.model_json_schema()["properties"]
     assert "신청 대상·참여 형태" in schema["scope"]["description"]
     assert "표 행·괄호 표기" in schema["audience"]["description"]
-    assert "통합공고에 안내된 사업별 신청 대상은 각각 유지" in focused.PROMPT
+    assert "사업별 대상을 유지" in focused.PROMPT
+    assert "scope_windows 각 구간의 조건을 처리" in focused.PROMPT
     assert focused.MAX_OUTPUT_TOKENS == 8192

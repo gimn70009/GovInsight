@@ -374,13 +374,13 @@ async def mixed_recruitment_scopes(browser):
 
 
 async def business_scope_absence_and_uncertainty(browser):
-    for case, scope, variants, expected in [
-        ("no-division", None, [], None),
-        ("cached-description", "실제 사업·과제유형(명시공통='공통')", [], None),
-        ("numbered-section", "아. 세부과제 지원유형", [], None),
-        ("generic-variant", None, [dict(name="2. 사업 유형", description="구역 제목")], None),
-        ("explicit-review", "확인 필요", [], "원문 확인 필요"),
-        ("declared-types", None, [dict(name="유형1", description="일반형"), dict(name="유형2", description="성장형")], None),
+    for case, scope, variants in [
+        ("no-division", None, []),
+        ("cached-description", "실제 사업·과제유형(명시공통='공통')", []),
+        ("numbered-section", "아. 세부과제 지원유형", []),
+        ("generic-variant", None, [dict(name="2. 사업 유형", description="구역 제목")]),
+        ("explicit-review", "확인 필요", []),
+        ("declared-types", None, [dict(name="유형1", description="일반형"), dict(name="유형2", description="성장형")]),
     ]:
         h = await summary.refresh.Harness(browser).start()
         try:
@@ -395,10 +395,7 @@ async def business_scope_absence_and_uncertainty(browser):
             for width in (1440, 390, 320):
                 await h.page.set_viewport_size(dict(width=width, height=1100))
                 await assert_responsive_condition_groups(region, width)
-                if expected:
-                    await expect(region.locator(".participation-guide__unscoped:visible")).to_have_text(expected)
-                else:
-                    await expect(region.locator(".participation-guide__business-context")).to_have_count(0)
+                await expect(region.locator(".participation-guide__business-context")).to_have_count(0)
                 await expect(region.locator(".participation-guide__main")).to_have_text(text)
                 await expect(region.locator(".participation-guide__program:visible")).to_have_count(0)
                 await expect(region.locator(".participation-guide__filter")).to_have_count(0)

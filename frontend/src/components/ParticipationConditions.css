@@ -37,7 +37,6 @@
 .participation-guide__context-label { flex-shrink: 0; padding-right: 7px; border-right: 1px solid #dce5ef; color: #61748b; font-weight: 400; }
 .participation-guide__program { min-width: 0; color: #355372; white-space: normal; overflow-wrap: anywhere; word-break: keep-all; }
 .participation-guide__program-path { display: inline; }
-.participation-guide__unscoped, .participation-guide__scope-review { color: #775624; }
 .participation-guide__main { display: block; margin: 0; color: #20354e; font-size: 15px; font-weight: 400; line-height: 1.85; white-space: pre-line; overflow-wrap: anywhere; word-break: keep-all; }
 .participation-guide__reveal { display: inline-flex; align-items: center; gap: 4px; margin-top: 3px; color: #4672a7; font-size: 11px; line-height: 1.7; white-space: nowrap; }
 .participation-guide__reveal > span { opacity: 0; }
@@ -109,5 +108,4 @@
 .participation-guide__exclusions .participation-guide__main { color: #743d38; }
 .participation-guide__exclusions .participation-guide__condition-toggle:is(:hover, [aria-expanded="true"]) { background: #fff4f2; }
 
-.participation-guide__quality-notice { margin: 10px 0; padding: 12px 14px; border: 1px solid #e4d7b9; border-radius: 8px; background: #fffbef; color: #74521c; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
 .participation-guide__application-guidance { margin-top: 20px; }

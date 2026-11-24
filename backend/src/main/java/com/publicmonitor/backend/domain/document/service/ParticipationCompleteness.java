@@ -9,8 +9,8 @@ final class ParticipationCompleteness {
     private static final Pattern EFFECT = Pattern.compile("협약\\s*(?:해약|해지)|선정\\s*취소|참여\\s*제한|제재|환수");
 
     static String reviewReason(String text, List<String> details, List<String> quotes, String kind) {
-        String displayed = compact(text + " " + String.join(" ", details));
         String evidence = String.join("\n", new LinkedHashSet<>(quotes));
+        String displayed = expandLawAliases(evidence, text + " " + String.join(" ", details));
         long rows = evidence.lines().filter(line -> line.contains("\t")).distinct().count();
         if ("ELIGIBILITY".equals(kind) && rows <= 1) {
             var laws = LAW.matcher(evidence).results().map(m -> compact(m.group())).distinct().toList();
@@ -29,6 +29,20 @@ final class ParticipationCompleteness {
             }
         }
         return null;
+    }
+
+    static String expandLawAliases(String original, String text) {
+        text = text.replaceAll("[「」｢｣『』\"“”]", "");
+        var names = LAW.matcher(original).results().map(m -> compact(m.group(1))).collect(java.util.stream.Collectors.toSet());
+        var parents = names.stream().map(name -> name.replaceFirst("(?:시행령|시행규칙)$", "")).distinct().toList();
+        String parentPattern = parents.size() == 1 ? Arrays.stream(parents.getFirst().split(""))
+                .map(Pattern::quote).collect(java.util.stream.Collectors.joining("\\s*")) : "";
+        if (parents.size() == 1 && Pattern.compile("(?<![가-힣])" + parentPattern + "(?=\\s|제|의|$)").matcher(text).find()) {
+            String parent = parents.getFirst();
+            for (String suffix : List.of("시행령", "시행규칙")) if (names.contains(parent + suffix))
+                text = text.replaceAll("(?<![가-힣])(?:(?:같은\\s*법|동법)\\s*)?" + suffix + "(?=\\s*제\\s*\\d+\\s*조)", parent + suffix);
+        }
+        return compact(text);
     }
 
     static String explanation(String reason) {

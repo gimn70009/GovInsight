@@ -9,7 +9,6 @@ import java.util.regex.Pattern;
 final class ParticipationPresentationQuality {
     static final String DETAIL_REVIEW = "일부 세부 조건을 문장으로 정리하지 못했습니다. 원문 근거를 확인해 주세요.";
     private static final Pattern RAW_MARKERS = Pattern.compile("[\\r\\n\\t※⏎■□▪●•◦]|(?:^|\\s)[*①-⑳]|(?:^|\\s)(?:[-–—]|\\d+[.)])\\s");
-    private static final Pattern PROCEDURE_HEADING = Pattern.compile("(?:신청|접수|제출)\\s*(?:방법|절차|안내)|사전\\s*준비|필수\\s*이행\\s*사항");
     private static final Pattern ADMIN_ACTION = Pattern.compile("회원가입|로그인|계정|권한(?:부여|설정)|(?:기관|대표자)(?:정보)?등록|전산등록|업로드|전자서명");
     private static final Pattern QUALIFICATION = Pattern.compile(
             "(?:신청|지원|참여)(?:자격|대상|요건)|(?:법률|법령|조례|법에|법상|법제\\d+조).*(?:등록|허가|지정)"
@@ -44,14 +43,12 @@ final class ParticipationPresentationQuality {
     private static String compact(String value) { return value.replaceAll("\\s+", ""); }
 
     static boolean procedureOnly(Statement item, List<RequirementSource> sources) {
-        if (!"ELIGIBILITY".equals(item.kind()) || !"BUSINESS_FORM".equals(item.criterion()) || sources.isEmpty()
-                || sources.stream().anyMatch(source -> source.sectionTitle() == null
-                    || !PROCEDURE_HEADING.matcher(source.sectionTitle()).find())) return false;
+        if (!"ELIGIBILITY".equals(item.kind()) || !"BUSINESS_FORM".equals(item.criterion()) || sources.isEmpty()) return false;
         String quote = String.join("\n", item.supportingQuotes()).replaceAll("\\s+", "");
         String qualifications = item.text() + item.details().stream()
-                .map(detail -> detail.text() + String.join("", detail.supportingQuotes())).reduce("", String::concat);
+                .filter(detail -> !detail.reviewRequired()).map(Detail::text).reduce("", String::concat);
         // A mixed paragraph (including attached definitions) stays with eligibility.
-        return ADMIN_ACTION.matcher(quote).find() && !QUALIFICATION.matcher(quote).find()
+        return ADMIN_ACTION.matcher(quote).find() && ADMIN_ACTION.matcher(compact(item.text())).find()
                 && !QUALIFICATION.matcher(qualifications.replaceAll("\\s+", "")).find();
     }
 }

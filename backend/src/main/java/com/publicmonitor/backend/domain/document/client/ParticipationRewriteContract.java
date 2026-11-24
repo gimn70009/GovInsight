@@ -6,8 +6,17 @@ import java.util.List;
 public final class ParticipationRewriteContract {
     private ParticipationRewriteContract() {}
     public record Criterion(String code, String label, String category) {}
+    /** Code-point offsets in the original excerpt; the label belongs only to this interval. */
+    public record ScopeRegion(int start, int end, String scope) {}
     public record Source(String id, String excerpt, @JsonProperty("group_label") String groupLabel,
-                         List<String> criteria) {}
+                         List<String> criteria,
+                         @JsonProperty("scope_regions") @com.fasterxml.jackson.annotation.JsonInclude(
+                                 com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY) List<ScopeRegion> scopeRegions) {
+        public Source { scopeRegions = scopeRegions == null ? List.of() : List.copyOf(scopeRegions); }
+        public Source(String id, String excerpt, String groupLabel, List<String> criteria) {
+            this(id, excerpt, groupLabel, criteria, List.of());
+        }
+    }
     public record Request(List<Source> sources, List<Criterion> criteria,
                           @JsonProperty("business_types") List<String> businessTypes) {}
     public record Detail(@JsonProperty("source_ids") List<String> sourceIds, String text,

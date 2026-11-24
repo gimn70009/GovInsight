@@ -101,7 +101,7 @@ class ParticipationPresentationQualityTest {
         assertThat(helper.entries(guide).getFirst().supportingQuotes()).containsExactly(raw);
     }
 
-    @Test void adminSetupNeedsBothProcedureContextAndAdministrativeActions() {
+    @Test void adminSetupDependsOnTheConditionRatherThanTheSectionHeading() {
         String text = "접수 시스템의 기관등록과 담당자 권한부여가 필요합니다.";
         var item = new Statement(List.of("s0"), "BUSINESS_FORM", text, "", List.of(text), "ELIGIBILITY");
         var source = new RequirementSource("NOTICE_BODY", null, "가. 신청방법", null, text);
@@ -112,7 +112,7 @@ class ParticipationPresentationQualityTest {
                 item.supportingQuotes(), item.kind(), null, null, List.of(qualifiedDetail));
         assertThat(ParticipationPresentationQuality.procedureOnly(mixedDetails, List.of(source))).isFalse();
         assertThat(ParticipationPresentationQuality.procedureOnly(item, List.of(
-                new RequirementSource("NOTICE_BODY", null, "신청자격", null, text)))).isFalse();
+                new RequirementSource("NOTICE_BODY", null, "신청자격", null, text)))).isTrue();
         for (String qualification : List.of("사업자등록이 된 기업은 전산등록이 필요합니다.",
                 "법 제12조에 따라 등록한 기업은 회원가입이 필요합니다.",
                 "업력 7년 이내 기업은 계정 설정이 필요합니다.",

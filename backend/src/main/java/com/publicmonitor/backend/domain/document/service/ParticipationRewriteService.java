@@ -17,7 +17,7 @@ import static com.publicmonitor.backend.domain.document.client.ParticipationRewr
 @Service
 @org.springframework.context.annotation.Lazy
 public class ParticipationRewriteService {
-    private static final String VERSION = "participation-condition-contract-v6";
+    private static final String VERSION = "participation-condition-contract-v7-scope-ownership";
     // Allow the AI document deadline (150 seconds) plus transport/persistence overhead.
     private static final long PENDING_TIMEOUT_MILLIS = 180_000;
     record Pending(String status, long startedAt) {}
@@ -41,7 +41,7 @@ public class ParticipationRewriteService {
     public ParticipationGuide resolve(DocumentVersion version, ParticipationGuide raw, boolean incomplete, ParticipationScopeIndex scopes) {
         var input = ParticipationRewriteProjection.input(raw, incomplete, scopes);
         var request = input.request();
-        // v6 aligns required text and line references with the generation contract.
+        // v7 binds conditions to source-local program/organization ownership.
         // A previous policy is refreshed once through the same database claim below.
         if (input.availableSources().isEmpty()) return ParticipationRewriteProjection.guide(raw, input,
                 new Response(java.util.List.of(), java.util.List.of(), "READY"), "READY");
@@ -57,12 +57,12 @@ public class ParticipationRewriteService {
             return ParticipationRewriteProjection.guide(raw, input, cached, cached.status());
         // Unmatched source identities are stale, not an empty extraction for the current input.
         // Refresh once under a database claim; never remap old sequential ids using a partial quote.
-        var outbound = ParticipationSourceSelection.select(input).outbound(input);
+        var outbound = ParticipationSourceSelection.select(input).outbound(input, version.getTitle());
         if (outbound.sources().isEmpty()) return ParticipationRewriteProjection.guide(raw, input,
                 new Response(java.util.List.of(), java.util.List.of(), "READY"), "READY");
         String status = "PENDING";
-        if (outbound.sources().size() > 160
-                || version.getId() == null) status = "UNAVAILABLE";
+        // Candidate count must not prevent Python's bounded local selection.
+        if (version.getId() == null) status = "UNAVAILABLE";
         else synchronized (completed) {
             // Check again under the admission lock: a job may have completed since the first cache lookup.
             cached = completed.get(cacheId);

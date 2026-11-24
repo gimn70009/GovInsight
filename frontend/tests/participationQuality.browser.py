@@ -33,7 +33,7 @@ async def verify(browser, width, guide):
         first = applicant.locator('.participation-guide__rule').first
         await first.locator('.participation-guide__condition-toggle').click()
         await expect(first.locator('.participation-guide__notes')).to_have_count(0)
-        await expect(first.locator('.participation-guide__quality-notice')).to_be_visible()
+        await expect(first.locator('.participation-guide__quality-notice')).to_have_count(0)
         await expect(first.locator('blockquote')).to_be_visible()
         await expect(first.locator('blockquote')).to_contain_text('주무부처')
         await applicant.scroll_into_view_if_needed()

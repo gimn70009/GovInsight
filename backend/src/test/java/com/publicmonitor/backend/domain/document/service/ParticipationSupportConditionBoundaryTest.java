@@ -46,7 +46,8 @@ class ParticipationSupportConditionBoundaryTest {
         assertThat(ParticipationSourceSelection.explicit(mixed.evidence().getFirst())).isTrue();
         assertThat(ParticipationSourceSelection.explicit(funding.evidence().getFirst())).isFalse();
         assertThat(ParticipationSourceSelection.compatibleCandidate(funding.evidence().getFirst())).isTrue();
-        assertThat(ParticipationSourceSelection.explicit(scale.evidence().getFirst())).isFalse();
+        // A scale heading does not erase the explicit workplace/selection restriction in its note.
+        assertThat(ParticipationSourceSelection.explicit(scale.evidence().getFirst())).isTrue();
         var input = capturedInput(samples);
         var before = mapper.writeValueAsString(input.request());
         var outbound = ParticipationSourceSelection.select(input).outbound(input);

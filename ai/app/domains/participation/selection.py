@@ -2,18 +2,19 @@
 
 import re
 
-from . import requirements
+from . import requirements, scope_ownership
 
 QUALIFICATION = re.compile(
     r"(?:사업\s*)?(?:(?:신청|참여|모집|기업)\s*(?:자격|대상|요건|조건)"
-    r"|지원\s*(?:대상|자격|요건)|선정\s*대상|자격\s*요건|입찰\s*참가\s*자격)"
+    r"|지원\s*(?:대상|자격|요건)|선정\s*대상|(?:자격|구성)\s*요건|입찰\s*참가\s*자격)"
     r"(?=\s|[:：()（）·ㆍ]|$)"
 )
-EXCLUSION_HEADING = re.compile(r"(?:지원|신청|참여)\s*제외|제외\s*대상")
+EXCLUSION_HEADING = re.compile(r"(?:지원|신청|참여)\s*(?:제외|제한)|제외\s*대상")
 # Preserve explicit applicant exclusions even when nested under general precautions.
 APPLICANT_EXCLUSION = re.compile(
     r"(?:기업|기관|사업자|대표자|참여하는\s*자)[^\n]{0,100}"
-    r"(?:지원\s*대상에서\s*제외|지원\s*제외|신청(?:이|할\s*수)?\s*(?:불가|없))"
+    r"(?:지원\s*대상에서\s*제외|지원\s*제외|(?:신청|참여)[^\n]{0,25}(?:제한|제외|불가)"
+    r"|신청(?:이|할\s*수)?\s*없)"
 )
 PREFERENCE = re.compile(r"우대|가점|가산점")
 EXTRACTION_BOUNDARY = re.compile(
@@ -151,13 +152,22 @@ def prepare(source, source_fields):
         return source, 1
     if "[자격 참조 원문]" in source.group_label:
         return source, 1
+    if "[참고 규정]" in source.group_label and not (
+        qualification_heading(heading(source))
+        or any(qualification_heading(line) for line in source.excerpt.splitlines())
+    ):
+        # Financial execution/manual provisions are not qualifications of this
+        # notice. Explicit qualification sections and linked references survive.
+        return None
     # Find real nested qualification sections in a coarse parsed block; do not cut inside tables.
     lines = source.excerpt.splitlines(keepends=True)
-    starts, offset, table = [], 0, False
+    starts, resets, offset, table = [], set(), 0, False
     for index, line in enumerate(lines):
         previous = lines[index - 1] if index else ""
         if not table and (boundary(line) or requirements.section_start(line, previous)):
             starts.append(offset)
+            if requirements.section_start(line, previous):
+                resets.add(offset)
         if line.strip() == "[표]":
             table = True
         elif line.strip() == "[/표]":
@@ -169,7 +179,7 @@ def prepare(source, source_fields):
     for start, end in zip(starts, starts[1:]):
         chunk = source.excerpt[start:end]
         first = chunk.strip().splitlines()[0] if chunk.strip() else ""
-        if (requirements.SECTION.fullmatch(first) or first.startswith(("□", "■"))
+        if (start in resets or requirements.SECTION.fullmatch(first) or first.startswith(("□", "■"))
                 or EXTRACTION_BOUNDARY.fullmatch(first)):
             qualification_section = qualification_heading(first)
         if qualification_section or qualification_heading(first) or EXCLUSION_HEADING.search(first):
@@ -178,6 +188,8 @@ def prepare(source, source_fields):
                 qualified[-1] = (qualified[-1][0], end)
             else:
                 qualified.append((start, end))
+        elif PREFERENCE.search(first):
+            contextual.append((start, end))
         elif (APPLICANT_EXCLUSION.search(chunk) or EXPLICIT_APPLICANT.search(chunk)
               or requirements.condition_context(chunk)) and not applicant_labels(chunk):
             contextual.append((start, end))
@@ -197,7 +209,7 @@ def prepare(source, source_fields):
             # Trim overview prose only; preserve every subordinate condition/exception.
             if (start, end) in mixed:
                 chunk = applicant_span(chunk)
-            elif (start, end) in contextual:
+            elif (start, end) in contextual and not PREFERENCE.search(chunk):
                 chunk = requirements.context_excerpt(chunk)
             if (spans and spans[-1][1] == start and chunk == source.excerpt[start:end]
                     and spans[-1][2] == source.excerpt[spans[-1][0]:start]):
@@ -205,7 +217,7 @@ def prepare(source, source_fields):
             else:
                 spans.append((start, end, chunk))
         excerpt = "\n[다음 원문 구간]\n".join(chunk for _, _, chunk in spans)
-        source = source.model_copy(update={"excerpt": excerpt})
+        source = scope_ownership.rebase(source, excerpt)
         priority = 1 if qualified else 2 if contextual else 3
     elif any(EXTRACTION_BOUNDARY.fullmatch(line.strip()) for line in lines):
         # Extraction restarts sever inherited headings. Explicit sections above remain usable.
@@ -270,6 +282,7 @@ def candidates(request, source_fields):
             re.sub(r"\s+|[｢｣「」『』]", "", source.excerpt),
             scope[1].strip() if scope else "",
             source.group_label,
+            tuple((r.start, r.end, r.scope) for r in source.scope_regions),
         )
         if identity in seen:
             continue

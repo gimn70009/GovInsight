@@ -77,16 +77,15 @@ const criterionIcons = {
 }
 
 function ConditionContext({ condition }: { condition: ConditionPresentation }) {
-  if (!condition.scope && !condition.scopeReviewRequired) return null
+  if (!condition.scope) return null
   return <span className="participation-guide__context participation-guide__business-context">
     <span className="participation-guide__context-label">적용 사업</span>
-    {condition.scope ? <span className="participation-guide__program">
+    <span className="participation-guide__program">
       {condition.scope.split(' / ').map((path, index) => <span className="participation-guide__program-path" key={path}>
         {index > 0 && <span aria-hidden="true"> / </span>}
         {path === '공통' ? '전체 사업 공통' : path}
       </span>)}
-    </span> : <span className="participation-guide__unscoped">원문 확인 필요</span>}
-    {condition.scope && condition.scopeReviewRequired && <span className="participation-guide__scope-review">원문 확인 필요</span>}
+    </span>
   </span>
 }
 
@@ -99,7 +98,7 @@ function Rule({ entry, detail, label, condition, number, kind }: {
   const id = useId()
   const hasEvidence = item.sources.some(source => source.excerpt?.trim())
   const hasNotes = condition.notes.length > 0
-  const expandable = hasNotes || hasEvidence || condition.notices.length > 0
+  const expandable = hasNotes || hasEvidence
   const kindLabel = kind === 'guidance' ? '접수 준비' : kind === 'exclusion' ? '지원 제외' : kind === 'preference' ? '우대' : '신청 요건'
   const content = <>
     {number != null && <span className="participation-guide__number" aria-hidden="true">{number}</span>}
@@ -107,7 +106,6 @@ function Rule({ entry, detail, label, condition, number, kind }: {
       <span className="participation-guide__meta">
         <span className={`participation-guide__kind-badge participation-guide__kind-badge--${kind}`}>{kindLabel}</span>
         <ConditionContext condition={condition} />
-        {(condition.reviewRequired || condition.notices.length > 0) && <span className="participation-guide__scope-review">원문 확인 필요</span>}
         {condition.audience && <span className="participation-guide__context participation-guide__applicant">
           <span className="participation-guide__context-label">신청 구분</span>
           <span className="participation-guide__audience">{condition.audience}</span>
@@ -127,7 +125,6 @@ function Rule({ entry, detail, label, condition, number, kind }: {
       {content}
     </button> : <div className={className}>{content}</div>}
     {expandable && <div id={id} hidden={!open} className={`participation-guide__details${number != null ? " participation-guide__details--numbered" : ""}`}>
-      {condition.notices.map((notice, index) => <p className="participation-guide__quality-notice" key={index}>{notice}</p>)}
       {hasNotes && <div className="participation-guide__notes">
         <strong className="participation-guide__notes-heading">세부 설명</strong>
         <ul>{condition.notes.map((note, index) => <li key={index}>
@@ -135,7 +132,7 @@ function Rule({ entry, detail, label, condition, number, kind }: {
             <span className="participation-guide__note-line" key={lineIndex}>{line}</span>)}</span>
         </li>)}</ul>
       </div>}
-      {open && hasEvidence && <EvidencePanel item={item} detail={detail} defaultOpen={!hasNotes || condition.notices.length > 0 || condition.reviewRequired} />}
+      {open && hasEvidence && <EvidencePanel item={item} detail={detail} defaultOpen={!hasNotes} />}
     </div>}
   </div>
 }

@@ -2,6 +2,14 @@
 
 import re
 
+ROLE_HEADING = re.compile(
+    r"^[\s◦○●•ㅇ*-]*\((?:공동)?(?:주관|참여|수행|운영)\s*(?:기관|기업)\)\s*\S"
+)
+ADMISSION_EFFECT = re.compile(
+    r"(?:선정|평가|심사|지원|신청|참여)(?:\s*(?:평가|심사|대상|자격|절차))?"
+    r"\s*(?:에서|에|이|을|를)?\s*(?:제외|제한|불가|취소)"
+    r"|자동\s*탈락"
+)
 # These expressions retain evidence for the model. They do not decide eligibility.
 CONDITION = re.compile(
     r"(?:신청|참여|수행)[^\n]{0,65}(?:가능|불가|필수|한해|한하여|선택|제외|제한)"
@@ -15,6 +23,7 @@ CONDITION = re.compile(
     r"|(?:기|이미)\s*선정[^\n]{0,60}(?:계속|수행)"
     r"|(?:유형|분야)[^\n]{0,45}(?:하나를?\s*선택|택\s*1|선택하여\s*신청)"
     r"|(?:종료평가|성공\s*판정|완료)[^\n]{0,45}(?:선발|이후\s*지원)"
+    r"|(?:기업|기관|신청자|참여자)[^\n]{0,45}(?:한함|제외|불가)"
 )
 PROCEDURE = re.compile(
     r"(?:온라인|누리집|홈페이지|회원가입|계정|로그인|접수|제출|업로드|전산등록)"
@@ -31,6 +40,10 @@ SECTION = re.compile(
 def condition_context(text):
     """Find substantive conditions even under funding/capacity/precaution headings."""
     for line in text.splitlines():
+        if ADMISSION_EFFECT.search(line):
+            return True
+        if ROLE_HEADING.search(line):
+            return True
         if not CONDITION.search(line):
             continue
         # Account and upload instructions remain separate from substantive prerequisites.
@@ -43,7 +56,13 @@ def condition_context(text):
 
 
 def section_start(line, previous):
-    return bool(re.fullmatch(r"\s*\d{1,2}\s*", previous) and SECTION.fullmatch(line.strip()))
+    title = line.strip()
+    return bool(re.fullmatch(r"\s*\d{1,2}\s*", previous) and (
+        SECTION.fullmatch(title) or re.fullmatch(
+            r"[가-힣·ㆍ\s]{1,35}(?:자격|요건|대상|기준|사항|체계|일정|목적|개요|방법|규모|내용|기간|서류)"
+            r"(?:\s*\([^\n]{1,30}\))?", title
+        )
+    ))
 
 
 def administrative_scope(value):
@@ -52,6 +71,10 @@ def administrative_scope(value):
 
 def context_excerpt(text):
     """Retain complete paragraphs, attached notes and tables, not arbitrary character slices."""
+    # Role definitions share tables and regional/organizational definitions. A verb-only
+    # paragraph filter cannot safely separate eligibility from those dependencies.
+    if any(ROLE_HEADING.search(line) for line in text.splitlines()):
+        return text
     lines = text.splitlines(keepends=True)
     starts, offset, table = [0], 0, False
     for line in lines:

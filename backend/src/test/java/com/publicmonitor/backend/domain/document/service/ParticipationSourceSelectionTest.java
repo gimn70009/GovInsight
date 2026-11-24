@@ -14,6 +14,33 @@ import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
 
 class ParticipationSourceSelectionTest {
+    @Test void restrictionsAndRoleDefinitionsReachNewRequestsWithoutChangingFrozenIdentity() {
+        for (var source : List.of(
+                new RequirementSource("ATTACHMENT", "공고.hwpx", "신청제한에 관한 사항", null,
+                        "주관기관이 사전지원제외대상에 해당하는 경우 신청 및 참여를 제한합니다."),
+                new RequirementSource("ATTACHMENT", "공고.hwpx", "구성·운영체계", null,
+                        "◦ (공동주관기관) 주관지역에 소재한 지역본부·지사"),
+                new RequirementSource("ATTACHMENT", "공고.hwpx", "유의사항", null,
+                        "신청자는 참여제한에 해당하는 경우 신청할 수 없습니다."))) {
+            var input = ParticipationRewriteProjection.input(sources(source), false);
+            assertThat(input.request().sources()).isEmpty();
+            assertThat(ParticipationSourceSelection.select(input).outbound(input).sources())
+                    .singleElement().satisfies(item -> {
+                        assertThat(item.id()).matches("u[0-9a-f]{64}");
+                        assertThat(item.excerpt()).isEqualTo(source.excerpt());
+                    });
+            assertThat(ParticipationSourceSelection.compatibleCandidate(source)).isFalse();
+        }
+    }
+
+    @Test void restrictionHeadingIsRetainedWithoutGuessingAnApplicantFromTheBody() {
+        var source = new RequirementSource("ATTACHMENT", "공고.pdf", "□ 신청제한에 관한 사항", null,
+                "다음 각 호에 해당하면 신청할 수 없습니다.");
+        assertThat(ParticipationSourceSelection.explicit(source)).isTrue();
+        assertThat(ParticipationSourceSelection.explicit(new RequirementSource("ATTACHMENT", "공고.pdf",
+                "□ 접수방법", null, "온라인 계정을 등록하고 신청서를 제출합니다."))).isFalse();
+    }
+
     private ParticipationGuide raw(String... names) {
         var rules = new ArrayList<ParticipationRule>();
         for (int index = 0; index < names.length; index++) {

@@ -3,6 +3,55 @@
 import re
 
 
+def program_role(value):
+    """A bare role/region label cannot establish a business or track."""
+    return bool(re.fullmatch(
+        r".+(?:구성한|구성된|보유한|소재한|영위하는|충족하는|해당하는)"
+        r".{0,30}(?:기업|기관|단체|협의체|컨소시엄)", (value or "").strip()
+    ) or re.fullmatch(
+        r"(?:협의체|컨소시엄|기업|기관|공모대상과제|모집대상|신청주체)"
+        r"|(?:(?:총괄|공동|주관|연계|참여|수행|운영|신청|도입|공급)\s*)+"
+        r"(?:기업|기관|지역|연구개발기관|연구자|연구원|책임자)", (value or "").strip()
+    ))
+
+
+def program_scope(value, evidence, quote=None):
+    # Explicitly named program columns/rows can have arbitrary names, including
+    # words also used for applicants. A bare role without that evidence is not a program.
+    named = set()
+    lines = evidence.splitlines()
+    for index, line in enumerate(lines):
+        header = line.split("\t")
+        if len(header) < 2:
+            continue
+        following = []
+        for row in lines[index + 1:]:
+            if "\t" not in row:
+                break
+            following.append(row)
+        cited_rows = [row for row in following if quote is None or quote in row or row in quote]
+        if not cited_rows:
+            continue
+        if header[0].strip() == "구분" and any(
+            row.split("\t")[0].strip()
+            in {"지원대상", "신청대상", "참여대상", "신청자격", "지원자격"}
+            for row in cited_rows
+        ):
+            named.update(cell.strip() for cell in header[1:])
+        columns = [i for i, cell in enumerate(header)
+                   if re.fullmatch(
+                       r"(?:세부)?사업명|사업유형|지원유형|과제유형|트랙", cell.strip())]
+        for row in cited_rows:
+            cells = row.split("\t")
+            named.update(cells[i].strip() for i in columns if i < len(cells))
+    paths = []
+    for path in (value or "").split(" / "):
+        parts = [part for part in path.split(" · ") if not program_role(part) or part in named]
+        if parts:
+            paths.append(" · ".join(parts))
+    return " / ".join(paths) or None
+
+
 def structural_label(value):
     """A section path, recruitment title or form name is not a program name."""
     value = re.sub(r"\s+", "", value or "")

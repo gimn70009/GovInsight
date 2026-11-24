@@ -36,6 +36,17 @@ final class ParticipationScopeIndex {
     }
 
     private final Map<RequirementSource, String> contexts = new LinkedHashMap<>();
+    private final Map<RequirementSource, List<com.publicmonitor.backend.domain.document.client.ParticipationRewriteContract.ScopeRegion>> ownership = new LinkedHashMap<>();
+    List<com.publicmonitor.backend.domain.document.client.ParticipationRewriteContract.ScopeRegion> scopeRegions(RequirementSource source) {
+        return ownership.getOrDefault(source, List.of());
+    }
+    String owner(List<RequirementSource> evidence, String quote) {
+        var labels = new LinkedHashSet<String>();
+        for (var source : evidence) labels.addAll(ParticipationScopeOwnership.owners(source.excerpt(), scopeRegions(source), quote));
+        return labels.isEmpty() ? null : labels.size() == 1 ? labels.iterator().next() : "적용 범위 확인 필요";
+    }
+    private final Map<RequirementSource, String> documentNames = new LinkedHashMap<>();
+    String documentName(RequirementSource source) { return documentNames.getOrDefault(source, source.attachmentName()); }
     private final Map<RequirementSource, String> recruitments = new LinkedHashMap<>();
     private final Map<RequirementSource, Set<String>> originalContexts = new LinkedHashMap<>();
 
@@ -44,6 +55,12 @@ final class ParticipationScopeIndex {
     record Heading(int level, String title) {}
 
     void addDocument(String document, List<ParticipationRule> rules) {
+        String first = document.lines().findFirst().orElse("").strip();
+        if (first.startsWith("[파일:") && first.endsWith("]")) {
+            // Filenames may themselves contain [붙임], [공고문], etc.
+            String name = first.substring(4, first.length() - 1).strip();
+            rules.forEach(rule -> rule.sources().forEach(source -> documentNames.put(source, name)));
+        }
         // Keep paid request identities unchanged; repair physical-line headings only for presentation.
         if (!forDisplay) {
             if (displayIndex == null) displayIndex = new ParticipationScopeIndex(frozen, true);
@@ -112,12 +129,24 @@ final class ParticipationScopeIndex {
             }
         }
         var parentSections = parentSections(document);
+        var ownedRegions = ParticipationScopeOwnership.scan(document);
         String recruitmentDocument = forDisplay ? originalDocument(document) : document;
         int cursor = 0;
         for (var rule : rules) for (var source : rule.sources()) {
             String excerpt = source.excerpt();
             int start = document.indexOf(excerpt, cursor);
             if (start < 0) continue;
+            var localOwners = ParticipationScopeOwnership.local(ownedRegions, excerpt, start);
+            var previousOwners = ownership.get(source);
+            if (previousOwners == null) ownership.put(source, localOwners);
+            else if (!previousOwners.equals(localOwners)) {
+                var combined = new ArrayList<>(previousOwners);
+                combined.addAll(localOwners);
+                if (previousOwners.isEmpty() || localOwners.isEmpty())
+                    combined.add(new com.publicmonitor.backend.domain.document.client.ParticipationRewriteContract.ScopeRegion(
+                            0, excerpt.codePointCount(0, excerpt.length()), "적용 범위 확인 필요"));
+                ownership.put(source, combined.stream().distinct().toList());
+            }
             // Raw blocks start at line boundaries. Index their preceding headings once per document.
             String parent = parentSections.get(start);
             if (parent == null) parent = parentSection(document.substring(0, start));

@@ -364,8 +364,9 @@ class ParticipationRewriteServiceTest {
 
     @Test void olderPoliciesRefreshOnceAndReuseTheNewTerminalResultAfterRestart() throws Exception {
         for (String policy : List.of("participation-four-fields-v1", "participation-seven-fields-v1",
-                "participation-seven-fields-v2", "participation-seven-fields-v3", "participation-applicant-conditions-v4")) {
-            for (String status : List.of("READY", "UNAVAILABLE")) {
+                "participation-seven-fields-v2", "participation-seven-fields-v3", "participation-applicant-conditions-v4",
+                "participation-condition-contract-v6")) {
+            for (String status : List.of("READY", "PARTIAL", "UNAVAILABLE")) {
                 var client = mock(PythonParticipationRewriteClient.class);
                 var store = mock(ParticipationRewriteStore.class);
                 var service = new ParticipationRewriteService(client, store, mapper);
@@ -374,7 +375,8 @@ class ParticipationRewriteServiceTest {
                 String oldKey = ReflectionTestUtils.invokeMethod(service, "fingerprint", request, policy);
                 ReflectionTestUtils.setField(version, "participationRewriteKey", oldKey);
                 ReflectionTestUtils.setField(version, "participationRewriteJson", mapper.writeValueAsString(valid()));
-                var result = status.equals("READY") ? valid() : Response.unavailable(request);
+                var result = status.equals("UNAVAILABLE") ? Response.unavailable(request)
+                        : new Response(valid().statements(), List.of(), status);
                 var saved = new CountDownLatch(1);
                 when(store.claim(eq(1L), anyString(), eq(oldKey), anyString())).thenReturn(true);
                 when(client.rewrite(any(), any())).thenReturn(result);

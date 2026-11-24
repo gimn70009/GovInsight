@@ -56,15 +56,24 @@ class Criterion(StrictModel):
     category: str
 
 
+class ScopeRegion(StrictModel):
+    start: int = Field(ge=0)
+    end: int = Field(gt=0)
+    scope: str = Field(min_length=1, max_length=100)
+
+
 class Source(StrictModel):
     id: str
     excerpt: str
     group_label: str = ""
     criteria: list[str] = Field(default_factory=list)
+    scope_regions: list[ScopeRegion] = Field(default_factory=list)
 
 
 class RewriteRequest(StrictModel):
-    sources: list[Source] = Field(max_length=160)
+    # Attachment candidates are not model input. focused.select_sources enforces
+    # the source, byte and token budgets after deduplication and local selection.
+    sources: list[Source]
     criteria: list[Criterion] = Field(min_length=1, max_length=40)
     business_types: list[str] = Field(default_factory=list, max_length=40)
 

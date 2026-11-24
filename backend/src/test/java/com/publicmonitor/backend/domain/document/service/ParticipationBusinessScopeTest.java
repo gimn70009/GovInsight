@@ -69,7 +69,7 @@ class ParticipationBusinessScopeTest {
                 {"공급기업 역량진단", "공급기업 역량진단"},
                 {"성장사업 · 사업 개요 - 지원분야 / 도약사업", "성장사업 / 도약사업"},
                 {"연구기관 역량강화 지원사업", "연구기관 역량강화 지원사업"},
-                {"공급기업", "공급기업"},
+                {"공급기업", null}, // A bare actor is not one of this table's named business types.
                 {"큐레이터", "큐레이터"},
                 {null, null}
         };

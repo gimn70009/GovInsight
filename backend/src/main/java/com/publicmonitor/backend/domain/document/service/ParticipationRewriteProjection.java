@@ -91,6 +91,7 @@ final class ParticipationRewriteProjection {
 
     static ParticipationGuide guide(ParticipationGuide raw, Input input, Response result, String status, Input currentInput) {
         var selected = ParticipationSourceSelection.select(currentInput);
+        var applicabilitySources = selected.outbound(currentInput).sources();
         var entries = new LinkedHashMap<String, List<ParticipationCriterionEntry>>();
         var displayedQuotes = new LinkedHashMap<String, List<String>>();
         var unresolved = new HashSet<>(result.evidenceOnlyIds() == null ? List.<String>of() : result.evidenceOnlyIds());
@@ -123,7 +124,7 @@ final class ParticipationRewriteProjection {
             }
             var sources = sourceIds.stream().map(input.evidence()::get).flatMap(List::stream).distinct().toList();
             var quotes = List.copyOf(allQuotes);
-            var criterion = ParticipationFocusCriterion.valueOf(item.criterion());
+            var criterion = ParticipationFocusCriterion.valueOf(ParticipationApplicability.criterion(item));
             var mainSources = item.sourceIds().stream().map(input.evidence()::get).flatMap(List::stream).distinct().toList();
             String applicant = ParticipationApplicantLabel.from(item, mainSources);
             String audience = ParticipationApplicantLabel.isPersonnelAudience(item, mainSources) ? null
@@ -136,6 +137,11 @@ final class ParticipationRewriteProjection {
                     .map(Detail::text).distinct().toList();
             String semanticReason = ParticipationCompleteness.reviewReason(item.text(),
                     readableDetails, quotes, item.kind());
+            if (semanticReason == null && ParticipationApplicability.conflict(item, applicabilitySources))
+                semanticReason = "NOTICE_EXEMPTION_UNRESOLVED";
+            if (input.scopes() != null && item.supportingQuotes().stream().anyMatch(q ->
+                    "적용 범위 확인 필요".equals(input.scopes().owner(mainSources, q))))
+                semanticReason = "CITATION_SCOPE_AMBIGUOUS";
             boolean review = semanticReason != null || item.reviewRequired()
                     || !ParticipationPresentationQuality.completeSentence(item.text());
             boolean detailReview = item.details().stream()

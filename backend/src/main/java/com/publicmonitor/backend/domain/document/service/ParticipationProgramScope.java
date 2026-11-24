@@ -16,8 +16,19 @@ final class ParticipationProgramScope {
     private ParticipationProgramScope() {}
 
     static String resolve(String stored, Statement item, List<RequirementSource> sources, ParticipationScopeIndex index) {
-        return ParticipationRewriteProjection.displayScope(resolveContext(
+        if (index != null) {
+            var owners = new LinkedHashSet<String>();
+            item.supportingQuotes().stream().map(q -> index.owner(sources, q)).filter(Objects::nonNull).forEach(owners::add);
+            if (!owners.isEmpty()) return owners.size() == 1 ? owners.iterator().next() : REVIEW;
+            if (sources.stream().anyMatch(s -> !index.scopeRegions(s).isEmpty())) stored = null;
+        }
+        String resolved = ParticipationRewriteProjection.displayScope(resolveContext(
                 ParticipationRewriteProjection.displayScope(stored, null), item, sources, index), null);
+        if (resolved == null || tableProgram(resolved, item, sources)) return resolved;
+        var paths = Arrays.stream(resolved.split(" / ")).map(path -> Arrays.stream(path.split(" · "))
+                .filter(part -> !ParticipationContextLabels.programRole(part)).collect(java.util.stream.Collectors.joining(" · ")))
+                .filter(path -> !path.isBlank()).toList();
+        return paths.isEmpty() ? null : String.join(" / ", paths);
     }
 
     private static String resolveContext(String stored, Statement item, List<RequirementSource> sources, ParticipationScopeIndex index) {
