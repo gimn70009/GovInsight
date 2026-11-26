@@ -115,6 +115,62 @@ class AnalysisJobRequestServiceTest {
         });
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(longs = {0, 2})
+    void 같은_설정의_이전_채점_정책은_전체_재평가하고_완료하면_재사용한다(long revision) throws Exception {
+        var mapper = new tools.jackson.databind.ObjectMapper();
+        try (var input = new org.springframework.core.io.ClassPathResource("opportunity-settings-defaults.json").getInputStream()) {
+            var data = mapper.readValue(input, com.publicmonitor.backend.domain.settings.web.dto.EvaluationSettingsData.class);
+            given(evaluationSettings.currentSnapshot()).willReturn(
+                    new com.publicmonitor.backend.domain.settings.web.dto.EvaluationSettingsSnapshot(revision, data));
+        }
+        var version = version(1, 200L, "기존 공고", "변경 없는 공고 본문입니다.");
+        given(detectionRepository.findAllByMonitoringRunSourceMonitoringRunIdOrderByIdAsc(10L))
+                .willReturn(List.of(detection(version, 300L, DocumentChangeType.UNCHANGED_DOCUMENT)));
+        var analysis = mock(DocumentAnalysis.class);
+        given(analysis.getOpportunityAssessment()).willReturn("{\"settingsRevision\":" + revision + "}");
+        given(analysisRepository.findByDocumentVersionId(200L)).willReturn(Optional.of(analysis));
+
+        assertThat(service.prepare(10L).orElseThrow().documents().getFirst().analysisScope()).isEqualTo("FULL");
+
+        given(analysis.getOpportunityAssessment()).willReturn("{\"settingsRevision\":" + revision + ",\"scoringPolicyVersion\":1}");
+        given(analysis.getComparisonSummary()).willReturn(mapper.writeValueAsString(java.util.Map.of(
+                "legalReviewVersion", 2,
+                "legalRisks", LegalReviewPolicy.TYPES.stream().map(type -> java.util.Map.of(
+                        "type", type, "status", "NOT_FOUND", "summary", "관련 제한 없음"
+                )).toList()
+        )));
+        assertThat(service.prepare(10L)).isEmpty();
+
+        given(analysis.getComparisonSummary()).willReturn(null);
+        assertThat(service.prepare(10L).orElseThrow().documents().getFirst().analysisScope()).isEqualTo("LEGAL_ONLY");
+    }
+
+    @Test
+    void 최초_저장_전에도_화면의_기본값을_전달하고_구형_분석을_갱신한다() {
+        var mapper = new tools.jackson.databind.ObjectMapper();
+        var defaultSettings = new com.publicmonitor.backend.domain.settings.service.EvaluationSettingsService(
+                mock(com.publicmonitor.backend.domain.settings.repository.EvaluationSettingsRepository.class),
+                mock(com.publicmonitor.backend.domain.settings.repository.EvaluationSettingsRevisionRepository.class), mapper);
+        var defaultService = new AnalysisJobRequestService(detectionRepository, attachmentRepository,
+                versionRepository, analysisRepository, defaultSettings, mapper);
+        var version = version(1, 200L, "기존 공고", "설정 저장 전에 수집한 공고입니다.");
+        given(detectionRepository.findAllByMonitoringRunSourceMonitoringRunIdOrderByIdAsc(10L))
+                .willReturn(List.of(detection(version, 300L, DocumentChangeType.UNCHANGED_DOCUMENT)));
+        var analysis = mock(DocumentAnalysis.class);
+        given(analysis.getOpportunityAssessment()).willReturn("{\"settingsRevision\":0,\"scoringPolicyVersion\":0}");
+        given(analysisRepository.findByDocumentVersionId(200L)).willReturn(Optional.of(analysis));
+
+        var request = defaultService.prepare(10L).orElseThrow();
+        var snapshot = request.evaluationSettings();
+        assertThat(snapshot.revision()).isZero();
+        assertThat(snapshot.data()).isEqualTo(defaultSettings.find().data());
+        assertThat(snapshot.data().criteria().preparationDays()).isEqualTo(14);
+        assertThat(snapshot.data().criteria().urgencyDays()).isEqualTo(7);
+        assertThat(request.documents().getFirst().analysisScope()).isEqualTo("FULL");
+        assertThat(mapper.valueToTree(request).path("evaluationSettings").path("revision").asLong(-1)).isZero();
+    }
+
     @Test
     void 법률_결과가_누락된_변경없는_문서는_다시_요청한다() {
         DocumentVersion version = version(1, 200L, "기존 공고", "게시글 본문");
@@ -122,6 +178,7 @@ class AnalysisJobRequestServiceTest {
         given(detectionRepository.findAllByMonitoringRunSourceMonitoringRunIdOrderByIdAsc(10L))
                 .willReturn(List.of(detection));
         DocumentAnalysis analysis = mock(DocumentAnalysis.class);
+        given(analysis.getOpportunityAssessment()).willReturn("{\"scoringPolicyVersion\":1}");
         given(analysis.requiresProposalSchemaUpgrade()).willReturn(false);
         given(analysisRepository.findByDocumentVersionId(200L)).willReturn(Optional.of(analysis));
 
@@ -151,6 +208,7 @@ class AnalysisJobRequestServiceTest {
             ((tools.jackson.databind.node.ObjectNode) stored).put("draftReason", "확인 내용: 원문 검증 실패");
         }
         ReflectionTestUtils.setField(analysis, "proposalDirection", mapper.writeValueAsString(stored));
+        ReflectionTestUtils.setField(analysis, "opportunityAssessment", "{\"scoringPolicyVersion\":1}");
         ReflectionTestUtils.setField(analysis, "comparisonSummary", mapper.writeValueAsString(java.util.Map.of(
                 "legalReviewVersion", 2,
                 "legalRisks", LegalReviewPolicy.TYPES.stream().map(type -> java.util.Map.of(

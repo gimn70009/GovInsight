@@ -285,6 +285,7 @@ class DocumentAnalysisWorkflow:
                 draft=draft,
                 used_tools=candidate.used_tools,
                 model_name=candidate.model_name,
+                feasibility=candidate.feasibility,
             ),
             "feedback": "",
             "error": "",
@@ -311,6 +312,7 @@ class DocumentAnalysisWorkflow:
                 opportunity=finalize_configured_score(
                     draft.opportunity, document.evaluation_settings,
                     draft.comparison_summary.application_deadline, self._analysis_date,
+                    evidence=candidate.feasibility, eligibility=draft.eligibility,
                 ),
                 used_tools=candidate.used_tools,
                 model_name=candidate.model_name,
@@ -429,6 +431,7 @@ def _build_narrative_fallback(
         draft=candidate.draft.model_copy(deep=True),
         used_tools=list(candidate.used_tools),
         model_name=candidate.model_name,
+        feasibility=candidate.feasibility,
     )
     expired_fields = {
         field for field, _ in _expired_narrative_findings(fallback, analysis_date)
@@ -478,6 +481,7 @@ def _build_narrative_fallback(
         draft=validated,
         used_tools=fallback.used_tools,
         model_name=fallback.model_name,
+        feasibility=fallback.feasibility,
     ), omitted_fields
 
 

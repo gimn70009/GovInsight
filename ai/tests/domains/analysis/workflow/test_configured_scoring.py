@@ -36,6 +36,37 @@ def settings():
     return EvaluationSettingsSnapshot.model_validate({"revision": 3, "data": data})
 
 
+def test_unsaved_defaults_roundtrip_to_every_document_and_new_scoring(settings):
+    payload = {
+        "runId": 1,
+        "evaluationSettings": {
+            "revision": 0,
+            "data": settings.data.model_dump(mode="json", by_alias=True),
+        },
+        "documents": [document().model_dump(mode="json", by_alias=True)],
+    }
+    job = AnalysisJobRequest.model_validate_json(json.dumps(payload))
+    snapshot = job.documents[0].evaluation_settings
+    assert snapshot is not None
+    assert snapshot.revision == 0
+    assert snapshot.data.criteria.preparation_days == 14
+    assert snapshot.data.criteria.urgency_days == 7
+    assert profile_for_settings(snapshot).company_name == settings.data.company.name
+    assert "opportunity.feasibility" in configured_system_prompt(SYSTEM_PROMPT, snapshot)
+    result = finalize_configured_score(
+        assessment(score=95),
+        snapshot,
+        "2026-12-03",
+        date(2026, 11, 26),
+        eligibility="INELIGIBLE",
+    )
+    assert result.settings_revision == 0
+    assert result.scoring_policy_version == 1
+    assert next(d.score for d in result.dimensions if d.type == "FEASIBILITY") <= 20
+    assert next(d.score for d in result.dimensions if d.type == "URGENCY") == 100
+    assert "7일 부족" in next(d.reason for d in result.dimensions if d.type == "FEASIBILITY")
+
+
 @pytest.mark.parametrize("days", [None, 1, 3, 10, 18, 21, 365])
 def test_custom_preparation_days_survive_job_roundtrip_and_model_context(settings, days):
     payload = settings.model_dump(mode="json", by_alias=True)
@@ -68,8 +99,14 @@ def test_custom_urgency_windows_survive_job_and_score_every_boundary(settings, w
     assert json.loads(criteria_context(applied).split("\n", 1)[1])["urgencyDays"] == window
     today = date(2026, 10, 19)
     for remaining, expected in [
-        (-1, 0), (0, 100), (window, 100), (window + 1, 65),
-        (window * 2, 65), (window * 2 + 1, 35), (window * 4, 35), (window * 4 + 1, 10),
+        (-1, 0),
+        (0, 100),
+        (window, 100),
+        (window + 1, 65),
+        (window * 2, 65),
+        (window * 2 + 1, 35),
+        (window * 4, 35),
+        (window * 4 + 1, 10),
     ]:
         deadline = (today + timedelta(days=remaining)).isoformat()
         result = finalize_configured_score(assessment(), applied, deadline, today)
@@ -234,9 +271,13 @@ def test_future_technology_transfer_deadline_does_not_keep_completed_wording(set
         "2026-10-29 (목) 23:59:00, 시스템 접수 기준으로 마감되었습니다."
     )
     runner = SequencedRunner([candidate])
-    result = asyncio.run(DocumentAnalysisWorkflow(
-        runner=runner, max_attempts=1, analysis_date=date(2026, 10, 23),
-    ).analyze(document().model_copy(update={"evaluation_settings": settings})))
+    result = asyncio.run(
+        DocumentAnalysisWorkflow(
+            runner=runner,
+            max_attempts=1,
+            analysis_date=date(2026, 10, 23),
+        ).analyze(document().model_copy(update={"evaluation_settings": settings}))
+    )
 
     assert runner.call_count == 1
     assert result.comparison_summary.application_deadline == (
@@ -246,3 +287,207 @@ def test_future_technology_transfer_deadline_does_not_keep_completed_wording(set
     assert urgency.score == 100
     assert "남은 6일" in urgency.reason
     assert result.eligibility == Eligibility.REVIEW_REQUIRED
+
+
+@pytest.fixture
+def feasibility(settings):
+    from app.domains.analysis.context.evaluation_settings import RegisteredProject
+    from app.domains.analysis.schemas.feasibility import FeasibilityEvidence
+
+    settings.data.criteria.preparation_days = 21
+    settings.data.company.projects = [
+        RegisteredProject(
+            title="공정 AI 구축",
+            description="완료한 구축 실적입니다.",
+            status="COMPLETED",
+        )
+    ]
+    return FeasibilityEvidence.model_validate(
+        {
+            "eligibility": {"status": "CONFIRMED", "evidence": "신청 자격 증빙이 확인되었습니다."},
+            "technology": {"status": "DIRECT", "evidence": "등록된 공정 AI 기술로 대응합니다."},
+            "experience": {
+                "status": "VERIFIED",
+                "evidence": "완료 실적의 공고상 인정이 확인되었습니다.",
+            },
+            "staffing": {
+                "status": "AVAILABLE",
+                "evidence": "투입 가능한 전담 인력이 확인되었습니다.",
+            },
+            "prerequisites": {
+                "status": "CONFIRMED",
+                "partner": "NOT_REQUIRED",
+                "evidence": "필수 서류를 갖추었으며 공동 참여 의무가 없습니다.",
+            },
+        }
+    )
+
+
+def scored_feasibility(settings, feasibility, deadline="2026-12-17", eligibility="ELIGIBLE"):
+    result = finalize_configured_score(
+        assessment("준비 기간이 충분한 것으로 판단합니다.", 100),
+        settings,
+        deadline,
+        date(2026, 11, 26),
+        evidence=feasibility,
+        eligibility=eligibility,
+    )
+    return next(item for item in result.dimensions if item.type == "FEASIBILITY")
+
+
+@pytest.mark.parametrize(
+    "deadline,score,phrase",
+    [
+        ("2026-12-15", 85, "19일로, 설정한 최소 준비 기간 21일보다 2일 부족"),
+        ("2026-12-17", 100, "21일로 최소 준비 기간 21일을 충족"),
+        ("2026-11-26", 85, "21일 부족"),
+        ("2026-11-25", 20, "신청 마감일이 지나"),
+        ("상시 접수, 예산 소진 시 마감", 90, "충족 여부를 확인"),
+        ("신청 마감일 미확인", 90, "충족 여부를 확인"),
+    ],
+)
+def test_preparation_time_and_reason_are_computed_together(
+    settings, feasibility, deadline, score, phrase
+):
+    result = scored_feasibility(settings, feasibility, deadline)
+    assert result.score == score
+    assert phrase in result.reason
+    assert "준비 기간이 충분한 것으로 판단" not in result.reason
+
+
+@pytest.mark.parametrize(
+    "eligibility,status,partner,expected",
+    [
+        ("INELIGIBLE", "CONFIRMED", "NOT_REQUIRED", 20),
+        ("ELIGIBLE", "UNMET", "NOT_REQUIRED", 20),
+        ("REVIEW_REQUIRED", "CONFIRMED", "NOT_REQUIRED", 45),
+        ("ELIGIBLE", "UNKNOWN", "NOT_REQUIRED", 45),
+        ("ELIGIBLE", "CONFIRMED", "UNKNOWN", 45),
+        ("ELIGIBLE", "CONFIRMED", "UNMET", 20),
+        ("ELIGIBLE", "CONFIRMED", "CONFIRMED", 100),
+    ],
+)
+def test_disqualification_and_uncertain_eligibility_caps(
+    settings, feasibility, eligibility, status, partner, expected
+):
+    feasibility.eligibility.status = status
+    feasibility.prerequisites.partner = partner
+    result = scored_feasibility(settings, feasibility, eligibility=eligibility)
+    assert result.score == expected
+    assert ("점수를 제한" in result.reason) == (expected < 100)
+
+
+@pytest.mark.parametrize(
+    "status,expected", [("COMPLETED", 100), ("IN_PROGRESS", 80), ("PLANNED", 80)]
+)
+def test_only_completed_projects_can_receive_experience_points(
+    settings, feasibility, status, expected
+):
+    settings.data.company.projects[0].status = status
+    assert scored_feasibility(settings, feasibility).score == expected
+
+
+def test_registered_projects_and_unknown_staff_are_not_verified(settings, feasibility):
+    feasibility.experience.status = "REGISTERED"
+    feasibility.staffing.status = "UNKNOWN"
+    result = scored_feasibility(settings, feasibility)
+    assert result.score == 80
+    assert "등록·증빙 미확인" in result.reason
+    assert "투입 인력은 미확인" in result.reason
+
+
+def test_unknown_preparation_and_unavailable_staff(settings, feasibility):
+    settings.data.criteria.preparation_days = None
+    assert scored_feasibility(settings, feasibility).score == 90
+    feasibility.staffing.status = "UNAVAILABLE"
+    assert scored_feasibility(settings, feasibility).score == 85
+
+
+def test_partner_preference_is_not_partner_availability(settings, feasibility):
+    settings.data.criteria.participation_mode = "CONSORTIUM"
+    feasibility.technology.status = "PARTNER"
+    feasibility.prerequisites.partner = "UNKNOWN"
+    result = scored_feasibility(settings, feasibility)
+    assert result.score == 45
+    assert "기술 대응: 미확인" in result.reason
+
+
+def test_missing_evidence_cannot_keep_model_score_and_legacy_stays_unchanged(settings):
+    result = scored_feasibility(settings, None)
+    assert result.score <= 45
+    original = assessment(score=93)
+    legacy = finalize_configured_score(original, None, "2026-12-15", date(2026, 11, 26))
+    assert legacy == original
+    assert legacy.scoring_policy_version == 0
+
+
+def test_long_evidence_fits_callback_and_does_not_mutate_input(settings, feasibility):
+    ending = "부족하지 않습니다."
+    for name in ("eligibility", "technology", "experience", "staffing", "prerequisites"):
+        getattr(feasibility, name).evidence = "가" * (45 - len(ending)) + ending
+    feasibility.prerequisites.partner = "UNKNOWN"
+    feasibility.eligibility.status = "UNKNOWN"
+    settings.data.criteria.participation_mode = "SOLO"
+    before = feasibility.model_dump()
+    result = scored_feasibility(settings, feasibility, "2026-12-15")
+    assert len(result.reason) <= 500
+    assert ending in result.reason
+    assert feasibility.model_dump() == before
+
+
+@pytest.mark.parametrize("revision", [0, 3])
+def test_configured_runner_uses_one_analysis_call_and_preserves_evidence_through_graph(
+    settings, feasibility, revision
+):
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from app.domains.analysis.schemas.result import Favorability
+    from app.domains.analysis.workflow.agent import LangChainAnalysisRunner
+    from app.domains.analysis.workflow.graph import DocumentAnalysisWorkflow
+    from tests.domains.analysis.evidence.fakes import collect_all_evidence
+    from tests.domains.analysis.workflow.test_graph import analysis
+
+    settings.revision = revision
+    runner = LangChainAnalysisRunner.__new__(LangChainAnalysisRunner)
+    runner._settings = SimpleNamespace(
+        max_text_chars=20_000, timeout_seconds=5, model_name="mock-model"
+    )
+    runner._evidence_agent = SimpleNamespace(collect=collect_all_evidence)
+    draft = analysis(Favorability.NOT_APPLICABLE).draft
+    draft.comparison_summary.application_deadline = "2026-12-15 마감입니다."
+    payload = draft.model_dump()
+    payload["opportunity"] = {
+        "dimensions": [
+            d.model_dump() for d in draft.opportunity.dimensions if d.type != "FEASIBILITY"
+        ],
+        "feasibility": feasibility.model_dump(),
+    }
+    runner._analysis_model = AsyncMock()
+    runner._configured_analysis_model = AsyncMock()
+    runner._configured_analysis_model.ainvoke.return_value = payload
+    runner._assess_legal_risks = AsyncMock(return_value=draft.comparison_summary.legal_risks)
+    result = asyncio.run(
+        DocumentAnalysisWorkflow(
+            runner=runner,
+            max_attempts=1,
+            analysis_date=date(2026, 11, 26),
+        ).analyze(document().model_copy(update={"evaluation_settings": settings}))
+    )
+
+    runner._configured_analysis_model.ainvoke.assert_awaited_once()
+    runner._analysis_model.ainvoke.assert_not_awaited()
+    runner._assess_legal_risks.assert_awaited_once()
+    messages = runner._configured_analysis_model.ainvoke.call_args.args[0]
+    assert "opportunity.feasibility" in messages[0]["content"]
+    assert '"preparationDays": 21' in messages[1]["content"]
+    dimension = next(d for d in result.opportunity.dimensions if d.type == "FEASIBILITY")
+    assert dimension.score == 45
+    assert "2일 부족" in dimension.reason
+    assert "기술 대응: 직접 대응" in dimension.reason
+    callback = result.model_dump(mode="json", by_alias=True)
+    assert callback["opportunity"]["scoringPolicyVersion"] == 1
+    assert callback["opportunity"]["settingsRevision"] == revision
+    assert len(callback["opportunity"]["dimensions"]) == 4
+    assert "feasibility" not in callback["opportunity"]

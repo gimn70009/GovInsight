@@ -78,6 +78,7 @@ public class AnalysisResultService {
                             AnalysisResultRequest.OpportunityDimension::score
                     ));
             long settingsRevision = result.opportunity().settingsRevision();
+            int scoringPolicyVersion = result.opportunity().scoringPolicyVersion();
             var settings = evaluationSettings.revision(settingsRevision);
             var preset = settings == null
                     ? com.publicmonitor.backend.domain.settings.web.dto.EvaluationSettingsData.Preset.FIT
@@ -85,18 +86,22 @@ public class AnalysisResultService {
             var ranking = OpportunityRankingCalculator.calculate(opportunityScores, preset);
             String assessment = objectMapper.writeValueAsString(Map.of(
                     "dimensions", result.opportunity().dimensions(),
-                    "settingsRevision", settingsRevision, "preset", preset.name()));
+                    "settingsRevision", settingsRevision, "preset", preset.name(),
+                    "scoringPolicyVersion", scoringPolicyVersion));
             var existingAnalysis = analysisRepository.findByDocumentVersionIdForUpdate(result.versionId());
             if (existingAnalysis.isPresent()) {
                 DocumentAnalysis existing = existingAnalysis.orElseThrow();
                 long previousRevision = OpportunitySettingsMetadata.revision(existing.getOpportunityAssessment(), objectMapper);
-                if (previousRevision > settingsRevision) {
+                int previousPolicy = OpportunitySettingsMetadata.scoringPolicyVersion(existing.getOpportunityAssessment(), objectMapper);
+                if (previousRevision > settingsRevision
+                        || (previousRevision == settingsRevision && previousPolicy > scoringPolicyVersion)) {
                     duplicateCount++;
                     continue;
                 }
                 updateComparisonSummary(existing, result);
                 updateSimilarity(existing, result);
-                if (!existing.requiresProposalSchemaUpgrade() && previousRevision == settingsRevision) {
+                if (!existing.requiresProposalSchemaUpgrade() && previousRevision == settingsRevision
+                        && previousPolicy == scoringPolicyVersion) {
                     duplicateCount++;
                     continue;
                 }

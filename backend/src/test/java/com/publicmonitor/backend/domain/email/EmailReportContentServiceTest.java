@@ -161,7 +161,8 @@ class EmailReportContentServiceTest {
         var detections = mock(AnalysisDocumentDetectionRepository.class);
         var details = mock(DocumentDetectionDetailService.class);
         var settings = defaultSettings();
-        assertThat(settings.currentSnapshot()).isNull();
+        assertThat(settings.currentSnapshot().revision()).isZero();
+        assertThat(settings.currentSnapshot().data()).isEqualTo(settings.find().data());
         assertThat(settings.find().data().criteria().preparationDays()).isEqualTo(14);
         var report = mock(MonitoringReport.class);
         var run = mock(MonitoringRun.class);
