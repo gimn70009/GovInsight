@@ -141,11 +141,10 @@ def test_retry_server_error_then_succeed() -> None:
 
 
 def test_do_not_retry_client_error() -> None:
-    call_count = 0
+    paths = []
 
-    def handle(_request: httpx.Request) -> httpx.Response:
-        nonlocal call_count
-        call_count += 1
+    def handle(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
         return httpx.Response(409)
 
     client = AnalysisResultClient(
@@ -158,7 +157,9 @@ def test_do_not_retry_client_error() -> None:
     with pytest.raises(AnalysisResultClientError):
         asyncio.run(client.send(analysis_request()))
 
-    assert call_count == 1
+    assert paths == [
+        "/internal/monitoring/analysis-results", "/internal/monitoring/analysis-result-failures",
+    ]
 
 
 def test_send_proposal_update_to_separate_endpoint() -> None:
@@ -212,3 +213,93 @@ def test_proposal_completion_allows_empty_updates() -> None:
     )
 
     assert request.model_dump(by_alias=True)["results"] == []
+
+
+@pytest.mark.parametrize("phase", ["ANALYSIS", "PROPOSAL"])
+def test_rejected_results_notify_exact_attempt_and_phase_without_sending_content(phase, caplog):
+    bodies = []
+    field = "results[12].comparisonSummary.legalRisks[2].evidenceExcerpt"
+
+    def handle(request):
+        bodies.append((request.url.path, json.loads(request.content)))
+        if request.url.path.endswith("analysis-result-failures"):
+            return httpx.Response(200, json={"data": {"applied": True}})
+        return httpx.Response(400, json={
+            "message": "private raw message",
+            "data": {field: "private rejected text", "private\nkey": "secret"},
+        })
+
+    client = AnalysisResultClient(
+        base_url="http://spring.test", transport=httpx.MockTransport(handle),
+    )
+    analysis = analysis_request()
+    call = client.send(analysis) if phase == "ANALYSIS" else client.send_proposals(
+        ProposalResultRequest(run_id=analysis.run_id, job_id=analysis.job_id, results=[]),
+    )
+    with pytest.raises(AnalysisResultClientError) as error:
+        asyncio.run(call)
+    assert bodies[-1] == ("/internal/monitoring/analysis-result-failures", {
+        "runId": analysis.run_id, "jobId": str(analysis.job_id), "phase": phase, "httpStatus": 400,
+    })
+    assert len(bodies) == 2
+    assert field in str(error.value)
+    assert "private" not in str(error.value) + caplog.text
+    assert "secret" not in str(error.value) + caplog.text
+
+
+def test_failure_notice_retries_transport_and_server_errors_without_resending_results():
+    paths = []
+
+    def handle(request):
+        paths.append(request.url.path)
+        if len(paths) == 1:
+            return httpx.Response(400)
+        if len(paths) == 2:
+            raise httpx.ReadTimeout("private connection detail")
+        return httpx.Response(503 if len(paths) == 3 else 200)
+
+    client = AnalysisResultClient(base_url="http://spring.test", retry_delay_seconds=0,
+                                  transport=httpx.MockTransport(handle))
+    with pytest.raises(AnalysisResultClientError, match="status=400"):
+        asyncio.run(client.send(analysis_request()))
+    assert paths.count("/internal/monitoring/analysis-results") == 1
+    assert paths.count("/internal/monitoring/analysis-result-failures") == 3
+
+
+def test_failed_failure_notice_keeps_original_error_and_bounds_attempts(caplog):
+    paths = []
+
+    def handle(request):
+        paths.append(request.url.path)
+        if len(paths) == 1:
+            return httpx.Response(400, text="private raw body")
+        raise httpx.ConnectError("private connection detail")
+
+    client = AnalysisResultClient(base_url="http://spring.test", retry_delay_seconds=0,
+                                  transport=httpx.MockTransport(handle))
+    with pytest.raises(AnalysisResultClientError, match="status=400") as error:
+        asyncio.run(client.send(analysis_request()))
+    assert len(paths) == 4
+    assert "private" not in str(error.value) + caplog.text
+
+
+def test_rate_limit_does_not_report_permanent_failure():
+    paths = []
+
+    def handle(request):
+        paths.append(request.url.path)
+        return httpx.Response(429)
+
+    client = AnalysisResultClient(
+        base_url="http://spring.test", transport=httpx.MockTransport(handle),
+    )
+    with pytest.raises(AnalysisResultClientError, match="status=429"):
+        asyncio.run(client.send(analysis_request()))
+    assert paths == ["/internal/monitoring/analysis-results"]
+
+
+def test_long_or_non_json_validation_response_is_never_included_in_error():
+    from app.domains.analysis.clients.analysis_result_client import _rejection_details
+    for response in (httpx.Response(400, text="private"),
+                     httpx.Response(400, json={"data": {"results[0].summary": "private" * 3000}})):
+        assert _rejection_details(response) == "status=400"

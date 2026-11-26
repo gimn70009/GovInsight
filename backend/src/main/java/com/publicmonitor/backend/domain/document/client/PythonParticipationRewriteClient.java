@@ -40,7 +40,7 @@ public class PythonParticipationRewriteClient {
                                 var result = event.result();
                                 if (!valid(result)) continue;
                                 // An interrupted stream or terminal provider failure cannot erase verified progress.
-                                if ("READY".equals(result.status()) || latest[0].statements().isEmpty()) latest[0] = result;
+                                if ("READY".equals(result.status()) || "PARTIAL".equals(result.status()) || latest[0].statements().isEmpty()) latest[0] = result;
                                 if (event.done()) return latest[0];
                                 progress.accept(latest[0]);
                             }
@@ -54,7 +54,7 @@ public class PythonParticipationRewriteClient {
     }
     private static boolean valid(Response result) {
         return result != null && result.statements() != null && result.evidenceOnlyIds() != null
-                && ("READY".equals(result.status()) || "UNAVAILABLE".equals(result.status()));
+                && ("READY".equals(result.status()) || "PARTIAL".equals(result.status()) || "UNAVAILABLE".equals(result.status()));
     }
     public record Progress(Response result, boolean done) {}
 }

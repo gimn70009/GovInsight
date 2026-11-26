@@ -101,6 +101,9 @@ final class ParticipationConditionResolver {
         attachments.stream().filter(file -> file.getParseStatus() == AttachmentParseStatus.COMPLETED
                 && allowedFile(file.getFileName()) && file.getExtractedText() != null)
                 .forEach(file -> texts.add(noticeText(file.getExtractedText())));
+        // Candidate extraction replaces legacy rules with raw source blocks immediately afterwards.
+        // Preserve conditions and variants without running a discarded category projection.
+        if (!project) return new ParticipationGuide(conditions, List.of(), ParticipationGuidePresentation.variants(texts), List.of());
         var rules = ParticipationGuidePresentation.rules(sourcedConditions);
         var expanded = new LinkedHashMap<String, ParticipationCondition>();
         collectCategories(body, null, expanded);
@@ -113,8 +116,8 @@ final class ParticipationConditionResolver {
                 .forEach(categorizedConditions::add);
         var categoryRules = new ArrayList<>(ParticipationGuidePresentation.rules(categorizedConditions));
         categoryRules.addAll(ParticipationCategorySources.supplement(body, attachments, categoryRules));
-        return new ParticipationGuide(conditions, project ? rules : categoryRules, ParticipationGuidePresentation.variants(texts),
-                project ? ParticipationCategoryProjector.project(categoryRules, ParticipationCategorySources.incomplete(body, attachments)) : List.of());
+        return new ParticipationGuide(conditions, rules, ParticipationGuidePresentation.variants(texts),
+                ParticipationCategoryProjector.project(categoryRules, ParticipationCategorySources.incomplete(body, attachments)));
     }
 
     private static void collectCategories(String text, String name, LinkedHashMap<String, ParticipationCondition> result) {

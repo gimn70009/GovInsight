@@ -89,10 +89,12 @@ def test_public_operator_notice_prioritizes_applicants_and_omits_selection_quota
     selected = focused.select_sources(request(*sources))
     ids = {row.id for row in selected}
     assert {"s0", "s3"} <= ids
-    assert not ids & {"s1", "s7", "s9", "s12", "s15"}
+    # Mixed quota sections contain real duplicate-application restrictions.
+    assert {"s9", "s15"} <= ids
+    assert any("1개 유형만 수행 가능" in row.excerpt for row in selected)
     assert any("기업신용등급" in row.excerpt for row in selected)
     assert any("창업기업 지원역량을 보유한 공공기관" in row.excerpt for row in selected)
-    assert sum(len(row.excerpt.encode()) for row in selected) <= 8000
+    assert sum(len(row.excerpt.encode()) for row in selected) <= focused.MAX_SOURCE_BYTES
 
 
 def test_public_manufacturing_notice_keeps_real_applicants_and_mixed_target_table():
@@ -102,19 +104,19 @@ def test_public_manufacturing_notice_keeps_real_applicants_and_mixed_target_tabl
     ids = {row.id for row in selected}
     assert {"s7", "s43", "s44"} <= ids
     context = next(row for row in sources if row.id == "s43")
-    assert next(row for row in selected if row.id == "s43") == context
+    assert next(row for row in selected if row.id == "s43").group_label == context.group_label
     payload = json.loads(focused.model_messages(selected)[1].content)
     model_context = next(row for row in payload["sources"] if row["id"] == "s43")
     assert "기 선정된 전문연구기관이 `28년까지 계속 수행" in model_context["excerpt"]
     assert "제조현장진단 참여기업 중" in model_context["excerpt"]
-    assert len(selected) <= 12
-    assert "s39" not in ids
-    assert not any("총사업비의 30~100%" in row.excerpt for row in selected)
-    assert not any("진단비용 80% 지원" in row.excerpt for row in selected)
+    assert len(selected) <= focused.MAX_SOURCES
+    # Ambiguous support-condition tables may be retained for model classification.
+    assert any("성공 판정" in row.excerpt for row in selected)
+    assert any("구축지도" in row.excerpt for row in selected)
     assert any("국내 중소·중견기업" in row.excerpt for row in selected)
-    assert sum(len(row.excerpt.encode()) for row in selected) <= 8000
-    serialized = focused.CallBudget().reserve(focused.model_messages(selected), focused.Extraction)
-    assert serialized <= 20000
+    assert sum(len(row.excerpt.encode()) for row in selected) <= focused.MAX_SOURCE_BYTES
+    serialized = focused.call_budget().reserve(focused.model_messages(selected), focused.Extraction)
+    assert serialized <= focused.MAX_INPUT_BYTES
 
 
 def test_numeric_applicant_requirements_are_not_filtered_like_funding_numbers():
@@ -138,7 +140,7 @@ def test_support_only_notice_does_not_start_an_unnecessary_model_call():
 def test_boundary_prompt_and_schema_fit_the_bounded_input():
     assert len(focused.PROMPT.encode()) <= 5500
     src = source("one", "□ 신청자격\n업력 7년 이내 기업", "신청자격")
-    assert focused.CallBudget().reserve(focused.model_messages([src]), focused.Extraction) <= 9000
+    assert focused.call_budget().reserve(focused.model_messages([src]), focused.Extraction) <= 9000
 
 
 @pytest.mark.parametrize("body", [
@@ -213,10 +215,10 @@ def test_public_manufacturing_keeps_specific_status_and_level_within_existing_bu
         assert row.group_label == originals[row.id].group_label
         for span in row.excerpt.split("\n[다음 원문 구간]\n"):
             assert span in originals[row.id].excerpt
-    assert len(selected) <= 12
-    assert sum(len(row.excerpt.encode()) for row in selected) <= 8000
-    budget = focused.CallBudget().reserve(focused.model_messages(selected), focused.Extraction)
-    assert budget <= 20000
+    assert len(selected) <= focused.MAX_SOURCES
+    assert sum(len(row.excerpt.encode()) for row in selected) <= focused.MAX_SOURCE_BYTES
+    budget = focused.call_budget().reserve(focused.model_messages(selected), focused.Extraction)
+    assert budget <= focused.MAX_INPUT_BYTES
 
 
 @pytest.mark.parametrize("label", ["지원 대상", "신청대상", "참여 요건", "모집 자격"])
@@ -255,15 +257,15 @@ def test_known_bounds_precede_bare_targets_without_dropping_their_exceptions():
     )
     selected = focused.select_sources(request(*bare, detailed))
     assert detailed in selected
-    assert len(selected) <= 12
+    assert len(selected) <= focused.MAX_SOURCES
 
 
 def test_revised_prompt_preserves_input_caps_and_bounds_complete_output():
     assert len(focused.PROMPT.encode()) <= 5500
-    assert focused.MAX_SOURCE_BYTES == 8000
-    assert focused.MAX_INPUT_BYTES == 20000
-    assert focused.MAX_SOURCES == 12
-    assert focused.MAX_OUTPUT_TOKENS == 4096
+    assert focused.MAX_SOURCE_BYTES == 32000
+    assert focused.MAX_INPUT_BYTES == 48000
+    assert focused.MAX_SOURCES == 64
+    assert focused.MAX_OUTPUT_TOKENS == 8192
 
 
 @pytest.mark.parametrize("prefix", [

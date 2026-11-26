@@ -39,7 +39,7 @@ class ParticipationFocusProjectionTest {
     }
 
     @Test void modelTextClassificationScopeAndAudiencePassThroughWithoutLocalRewriting() {
-        String quote = "업력 7년 이상인 중소기업. 단, 추천받은 창업기업은 업력 제한 없음";
+        String quote = "도입기업: 업력 7년 이상인 중소기업. 단, 추천받은 창업기업은 업력 제한 없음";
         String text = "중소기업은 업력이 7년 이상이어야 합니다. 다만 추천받은 창업기업에는 업력 제한이 없습니다.";
         var response = new Response(List.of(new Statement(List.of("s0"), "BUSINESS_FORM", text, "일반 절 제목",
                 List.of(quote), "ELIGIBILITY", "성장형", "도입기업")), List.of(), "READY");
@@ -70,14 +70,14 @@ class ParticipationFocusProjectionTest {
         }
     }
 
-    @Test void oldCachedSingleClausesGainOnlyAnEndingAndKeepTheirMissingScope() {
+    @Test void oldCachedSingleClausesKeepTheirWordingAndMissingScope() {
         String age = "업력 7년 이내";
         String patent = "등록 특허 보유 시 2점 가점";
         var response = new Response(List.of(
                 new Statement(List.of("s0"), "BUSINESS_AGE", age, "신청자격 및 신청요건", List.of(age), "ELIGIBILITY"),
                 new Statement(List.of("s1"), "IP", patent, "", List.of(patent), "PREFERENCE")), List.of(), "READY");
         var guide = project(raw(age, patent), response);
-        assertThat(guide.rules()).extracting(ParticipationRule::text).containsExactly(age + "이어야 합니다.", patent + "을 부여합니다.");
+        assertThat(guide.rules()).extracting(ParticipationRule::text).containsExactly(age, patent);
         assertThat(guide.rules()).allSatisfy(rule -> {
             assertThat(rule.scope()).isNull();
             assertThat(rule.audience()).isNull();

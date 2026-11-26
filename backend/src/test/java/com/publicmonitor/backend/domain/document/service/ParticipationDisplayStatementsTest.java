@@ -20,7 +20,7 @@ class ParticipationDisplayStatementsTest {
     private Statement cached(String code, String text, String quote, String kind) {
         return new Statement(List.of("s0"), code, text, "", List.of(quote), kind, "유형 A", "신청기관");
     }
-    @Test void currentEmptyAndBrokenCachesRecoverOnlyTheThreeReadableCommonRequirements() throws Exception {
+    @Test void legacySupplementRetainsThreeUncoveredRequirementsAlongsideValidatedCacheRows() throws Exception {
         Observed[] rows;
         try (var stream = getClass().getResourceAsStream("/participation-conditions/readable-qualification-recovery.json")) {
             rows = mapper.readValue(stream, Observed[].class);
@@ -31,12 +31,16 @@ class ParticipationDisplayStatementsTest {
             String before = mapper.writeValueAsString(request);
             var guide = ParticipationRewriteProjection.guide(new ParticipationGuide(List.of(), List.of(), List.of(), List.of()),
                     input, row.cache(), row.cache().status());
-            assertThat(guide.rules()).hasSize(3).allSatisfy(rule -> {
+            assertThat(guide.rules()).extracting(ParticipationRule::text)
+                    .containsAll(row.cache().statements().stream().map(Statement::text).toList());
+            var supplement = guide.rules().stream().filter(rule -> row.cache().statements().stream()
+                    .noneMatch(item -> item.text().equals(rule.text()))).toList();
+            assertThat(supplement).hasSize(3).allSatisfy(rule -> {
                 assertThat(rule.text()).endsWith("다.").doesNotContain("민간간기", "2인 이상", "선정 규모", "정부 지원");
                 assertThat(rule.sources()).allMatch(source -> source.excerpt().contains("□ 신청 자격"));
             });
-            assertThat(guide.rules()).extracting(ParticipationRule::label).containsExactlyInAnyOrder("신청 주체", "신용·재무 요건", "실적·수행 역량");
-            assertThat(guide.rules().stream().filter(rule -> rule.label().equals("신용·재무 요건")).findFirst().orElseThrow().text())
+            assertThat(supplement).extracting(ParticipationRule::label).containsExactlyInAnyOrder("신청 주체", "신용·재무 요건", "실적·수행 역량");
+            assertThat(supplement.stream().filter(rule -> rule.label().equals("신용·재무 요건")).findFirst().orElseThrow().text())
                     .contains("B 이상", "BB-", "B0", "모집공고 게시일로부터 마감일 이내", "평가 및 발급");
             assertThat(guide.categories().stream().flatMap(c -> c.rows().stream()).flatMap(r -> r.entries().stream())
                     .filter(e -> e.displayStatus().equals("EVIDENCE_ONLY")).flatMap(e -> e.rule().sources().stream()))
@@ -83,7 +87,7 @@ class ParticipationDisplayStatementsTest {
         var input = input("지원대상", "업력 3년 이하");
         var item = cached("BUSINESS_AGE", "업력 3년 이하", "업력 3년 이하", "ELIGIBILITY");
         assertThat(ParticipationDisplayStatements.prepare(input, List.of(item))).singleElement().satisfies(result -> {
-            assertThat(result.text()).isEqualTo("업력 3년 이하이어야 합니다.");
+            assertThat(result.text()).isEqualTo(item.text());
             assertThat(result.criterion()).isEqualTo(item.criterion());
             assertThat(result.scope()).isEqualTo(item.scope());
             assertThat(result.audience()).isEqualTo(item.audience());
@@ -93,11 +97,13 @@ class ParticipationDisplayStatementsTest {
         assertThat(ParticipationDisplayStatements.prepare(input("우대사항", "중소기업 우대"), List.of(preference)))
                 .singleElement().satisfies(result -> {
                     assertThat(result.kind()).isEqualTo("PREFERENCE");
-                    assertThat(result.text()).isEqualTo("중소기업 우대합니다.").doesNotContain("해야");
+                    assertThat(result.text()).isEqualTo(preference.text()).doesNotContain("해야");
                 });
     }
-    @Test void completedModelSentencesArePreservedWithoutApplyingRestorationHeuristics() {
-        for (String text : List.of("신청기업은 중소기업이어야 합니다", "법인(중소기업(예외 포함))이어야 합니다.")) {
+    @Test void modelWordingIsPreservedAcrossEndingsWithoutRestorationHeuristics() {
+        for (String text : List.of("신청기업은 중소기업이어야 합니다", "법인(중소기업(예외 포함))이어야 합니다.",
+                "업력 3년 이하", "기술인력 보유 필수", "참여제한 중 신청 불가", "매출액 10억원 이상!",
+                "지역 내 영업", "신청할 수 있음", "기술력 보유 시 우대", "독립 법인", "매출 증빙 필요")) {
             var item = cached("BUSINESS_FORM", text, "중소기업", "ELIGIBILITY");
             assertThat(ParticipationDisplayStatements.prepare(input("지원조건", "중소기업"), List.of(item)))
                     .containsExactly(item);

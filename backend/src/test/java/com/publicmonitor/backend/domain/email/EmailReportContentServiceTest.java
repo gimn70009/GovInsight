@@ -71,8 +71,10 @@ class EmailReportContentServiceTest {
         var attachments = mock(com.publicmonitor.backend.domain.document.repository.DocumentAttachmentRepository.class);
         var rewrites = mock(com.publicmonitor.backend.domain.document.service.ParticipationRewriteService.class);
         var notes = com.publicmonitor.backend.domain.document.service.SubmissionNotesTestSupport.service();
+        var snapshots = mock(com.publicmonitor.backend.domain.document.service.DocumentDetailSnapshotReader.class);
+        when(snapshots.read(any())).thenReturn(com.publicmonitor.backend.domain.document.service.DocumentDetailPayload.empty("PENDING"));
         var details = new DocumentDetectionDetailService(detailRepository, analyses, tasks, attachments,
-                new tools.jackson.databind.ObjectMapper(), rewrites, notes);
+                new tools.jackson.databind.ObjectMapper(), snapshots);
         var report = mock(MonitoringReport.class);
         var run = mock(MonitoringRun.class);
         when(run.getId()).thenReturn(9L);
@@ -95,10 +97,7 @@ class EmailReportContentServiceTest {
         assertThat(content.plainText()).contains("중소기업 지원 공고");
         verifyNoInteractions(rewrites, notes);
         details.findById(1L);
-        assertThat(org.mockito.Mockito.mockingDetails(rewrites).getInvocations()).singleElement().satisfies(invocation -> {
-            assertThat(invocation.getMethod().getName()).isEqualTo("resolve");
-            assertThat(invocation.getArguments()[0]).isSameAs(detection.getDocumentVersion());
-        });
+        verifyNoInteractions(rewrites, notes);
     }
     @Test
     void 현재_설정과_한국_발송일을_사용하고_재전송시_다시_계산한다() {

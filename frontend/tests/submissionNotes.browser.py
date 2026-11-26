@@ -99,6 +99,44 @@ async def layouts(browser):
             await h.close()
 
 
+async def grouped_conditions(browser):
+    guide = json.loads((ROOT / "backend/build/submission-grouped-condition-projected.json").read_text(encoding="utf-8"))
+    title = guide["documents"][0]["title"]
+    explanation = guide["notes"][0]["text"]
+    for width in (1440, 390, 320):
+        print(f"Checking grouped condition explanation {width}", flush=True)
+        h = await refresh.Harness(browser).start()
+        try:
+            await h.page.set_viewport_size(dict(width=width, height=1000))
+            value = ready()
+            value["submissionGuide"] = copy.deepcopy(guide)
+            h.states[1] = value
+            await h.open(analysis_tab=False)
+            table = h.page.get_by_role("table", name="제출서류 안내")
+            row = table.locator("tr.business-summary__document-row")
+            await expect(row).to_have_count(1)
+            await expect(row.locator(".business-summary__document-name")).to_have_text(title)
+            toggle = row.get_by_role("button", name=re.compile("해당 시 제출 조건 (보기|접기)$"))
+            await toggle.focus()
+            await h.page.keyboard.press("Enter")
+            panel = row.get_by_role("region", name=re.compile(" 제출 조건$"))
+            await expect(panel).to_be_visible()
+            await expect(panel.get_by_text(title + ".", exact=True)).to_have_count(0)
+            await expect(panel.get_by_text(explanation, exact=True)).to_be_visible()
+            await expect(panel).to_contain_text(guide["documents"][0]["conditions"][0])
+            evidence = panel.get_by_role("button", name=re.compile(" 원문 근거 확인$"))
+            await evidence.click()
+            await expect(panel.locator("blockquote")).to_have_text(guide["notes"][0]["source"]["excerpt"])
+            assert await h.page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")
+            await panel.scroll_into_view_if_needed()
+            await h.page.screenshot(path=str(OUT / f"grouped-condition-{width}.png"), full_page=True)
+            await toggle.focus()
+            await h.page.keyboard.press("Space")
+            await expect(panel).to_be_hidden()
+        finally:
+            await h.close()
+
+
 async def main():
     OUT.mkdir(exist_ok=True)
     async with async_playwright() as p:
@@ -106,9 +144,10 @@ async def main():
         try:
             await states(browser)
             await layouts(browser)
+            await grouped_conditions(browser)
         finally:
             await browser.close()
-    print("Submission notes refresh, scope, evidence, keyboard and 4 viewport checks passed")
+    print("Submission notes refresh, scope, evidence, grouped explanations and keyboard/layout checks passed")
 
 
 asyncio.run(main())

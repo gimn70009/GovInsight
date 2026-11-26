@@ -38,11 +38,13 @@ def test_latest_notices_keep_both_program_requirements_and_normal_applicant_sour
     assert "초기" in original["s11"].excerpt and "도약" in original["s17"].excerpt
     if notice_id == 3:
         assert "[문서 전체 텍스트 추출]" in original["s2"].excerpt
-        assert "s2" not in ids
-    assert len(selected) <= 12
-    assert sum(len(s.excerpt.encode()) for s in selected) <= 8000
-    input_bytes = focused.CallBudget().reserve(focused.model_messages(selected), focused.Extraction)
-    assert input_bytes <= 20000
+        assert all("제출 서류\t비고" not in s.excerpt for s in selected if s.id == "s2")
+    assert len(selected) <= focused.MAX_SOURCES
+    assert sum(len(s.excerpt.encode()) for s in selected) <= focused.MAX_SOURCE_BYTES
+    input_bytes = focused.call_budget().reserve(
+        focused.model_messages(selected), focused.Extraction
+    )
+    assert input_bytes <= focused.MAX_INPUT_BYTES
 
 
 def test_extraction_restart_does_not_inherit_an_unrelated_eligibility_parent():
@@ -98,4 +100,4 @@ def test_explicit_requirements_precede_parent_inherited_and_excluded_sections():
 def test_clear_sentence_contract_fits_the_bounded_serialized_budget():
     assert len(focused.PROMPT.encode()) <= 5500
     src = Source(id="one", excerpt="□ 신청자격\n업력 7년 이내 기업", group_label="신청자격")
-    assert focused.CallBudget().reserve(focused.model_messages([src]), focused.Extraction) <= 9000
+    assert focused.call_budget().reserve(focused.model_messages([src]), focused.Extraction) <= 9000

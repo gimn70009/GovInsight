@@ -168,7 +168,8 @@ class DocumentDetectionDetailServiceTest {
         given(attachmentRepository.findAllByDocumentVersionId(3L)).willReturn(List.of(alternate, attachment));
         var notes = SubmissionNotesTestSupport.service();
         var selectedService = new DocumentDetectionDetailService(detectionRepository, analysisRepository,
-                analysisTaskRepository, attachmentRepository, new ObjectMapper(), rewriteService(), notes);
+                analysisTaskRepository, attachmentRepository, new ObjectMapper(), DocumentSnapshotFixtures.prepare(
+                        detectionRepository, attachmentRepository, analysisRepository, rewriteService(), notes, new ObjectMapper()));
         var selectedResponse = selectedService.findById(4L);
         assertThat(selectedResponse.attachments()).extracting(item -> item.fileName())
                 .containsExactly("공고문.pdf", "공고문.hwpx");
@@ -219,7 +220,9 @@ class DocumentDetectionDetailServiceTest {
     void 존재하지_않는_감지_문서는_예외를_반환한다() {
         given(detectionRepository.findById(999L)).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service().findById(999L))
+        var readService = new DocumentDetectionDetailService(detectionRepository, analysisRepository,
+                analysisTaskRepository, attachmentRepository, new ObjectMapper(), DocumentSnapshotFixtures.empty());
+        assertThatThrownBy(() -> readService.findById(999L))
                 .isInstanceOf(DocumentDetectionException.class);
     }
 
@@ -287,7 +290,7 @@ class DocumentDetectionDetailServiceTest {
         given(detectionRepository.findById(4L)).willReturn(Optional.of(detection));
         given(analysisRepository.findByDocumentVersionId(3L)).willReturn(Optional.of(analysis));
         given(attachmentRepository.findAllByDocumentVersionId(3L)).willReturn(List.of());
-        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(DocumentDetectionDetailService.class);
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(DocumentDetailSnapshotBuilder.class);
         var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
         appender.start();
         logger.addAppender(appender);
@@ -297,7 +300,7 @@ class DocumentDetectionDetailServiceTest {
             assertThat(response.businessType().sources().getFirst().excerpt()).isEqualTo(quote);
             assertThat(appender.list).hasSize(1);
             assertThat(appender.list.getFirst().getFormattedMessage())
-                    .contains("detection_id=4 version_id=3", "decision_reason=SAVED_CLASSIFICATION", "stored_reason=VALIDATED")
+                    .contains("version_id=3", "decision_reason=SAVED_CLASSIFICATION", "stored_reason=VALIDATED")
                     .doesNotContain(quote, body, "로그에남기지않을제목", "https://example.com");
         } finally {
             logger.detachAppender(appender);
@@ -366,7 +369,8 @@ class DocumentDetectionDetailServiceTest {
                 analysisRepository,
                 analysisTaskRepository,
                 attachmentRepository,
-                new ObjectMapper(), rewriteService(), com.publicmonitor.backend.domain.document.service.SubmissionNotesTestSupport.service()
+                new ObjectMapper(), DocumentSnapshotFixtures.prepare(detectionRepository, attachmentRepository,
+                        analysisRepository, rewriteService(), new ObjectMapper())
         );
     }
     private com.publicmonitor.backend.domain.document.service.ParticipationRewriteService rewriteService() {

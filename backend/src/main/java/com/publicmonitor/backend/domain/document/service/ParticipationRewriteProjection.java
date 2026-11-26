@@ -61,7 +61,10 @@ final class ParticipationRewriteProjection {
         if (!legacy && !previous) {
             var known = new HashSet<RequirementSource>();
             evidence.values().forEach(known::addAll);
-            for (var rule : raw.rules()) for (var source : rule.sources()) {
+            var supplemental = new ArrayList<RequirementSource>();
+            raw.rules().forEach(rule -> supplemental.addAll(rule.sources()));
+            if (scopes != null) supplemental.addAll(scopes.supplementalSources());
+            for (var source : supplemental) {
                 if (known.contains(source) || source.excerpt() == null || source.excerpt().isBlank()
                         || !(ParticipationSourceSelection.compatibleCandidate(source)
                         || ParticipationSourceSelection.explicit(source))) continue;
@@ -88,22 +91,29 @@ final class ParticipationRewriteProjection {
 
     static ParticipationGuide guide(ParticipationGuide raw, Input input, Response result, String status, Input currentInput) {
         var selected = ParticipationSourceSelection.select(currentInput);
+        var applicabilitySources = selected.outbound(currentInput).sources();
         var entries = new LinkedHashMap<String, List<ParticipationCriterionEntry>>();
         var displayedQuotes = new LinkedHashMap<String, List<String>>();
         var unresolved = new HashSet<>(result.evidenceOnlyIds() == null ? List.<String>of() : result.evidenceOnlyIds());
-        var irrelevant = "READY".equals(result.status()) && result.irrelevantSourceIds() != null
+        var irrelevant = ("READY".equals(result.status()) || "PARTIAL".equals(result.status())) && result.irrelevantSourceIds() != null
                 ? new HashSet<>(result.irrelevantSourceIds()) : Set.<String>of();
         var displayedRules = new ArrayList<ParticipationRule>();
         var grounded = new ArrayList<Statement>();
-        if ("READY".equals(result.status()) && result.statements() != null) for (var item : result.statements()) {
-            if (valid(item, input.evidence())) {
+        if (("READY".equals(result.status()) || "PARTIAL".equals(result.status())) && result.statements() != null) for (var item : result.statements()) {
+            if (valid(item, input.evidence()) && ParticipationEvidenceQuality.rejection(item.text(),
+                    String.join("\n", item.supportingQuotes()), item.kind(), item.sourceIds().stream()
+                    .flatMap(id -> input.evidence().get(id).stream()).map(source -> Objects.toString(source.sectionTitle(), ""))
+                    .collect(java.util.stream.Collectors.joining("\n")), false) == null) {
                 var details = item.details().stream().filter(detail -> validDetail(detail, input.evidence())).limit(6).toList();
                 grounded.add(new Statement(item.sourceIds(), item.criterion(), item.text(), item.groupLabel(),
-                        item.supportingQuotes(), item.kind(), item.scope(), item.audience(), details));
+                        item.supportingQuotes(), item.kind(), item.scope(), item.audience(), details, item.reviewRequired()));
             }
             else if (item != null && item.sourceIds() != null) unresolved.addAll(item.sourceIds());
         }
-        for (var item : ParticipationDisplayStatements.prepare(input, grounded)) {
+        var displayItems = ParticipationDisplayStatements.prepare(input, grounded);
+        var knownPrograms = displayItems.stream().map(item -> displayScope(item.scope(), null))
+                .filter(Objects::nonNull).flatMap(value -> Arrays.stream(value.split(" / "))).distinct().toList();
+        for (var item : displayItems) {
             // Paid statements retain every grounded citation; export selection must not trim their meaning.
             var sourceIds = new LinkedHashSet<>(item.sourceIds());
             var allQuotes = new LinkedHashSet<>(item.supportingQuotes());
@@ -114,19 +124,49 @@ final class ParticipationRewriteProjection {
             }
             var sources = sourceIds.stream().map(input.evidence()::get).flatMap(List::stream).distinct().toList();
             var quotes = List.copyOf(allQuotes);
-            var criterion = ParticipationFocusCriterion.valueOf(item.criterion());
-            var rule = new ParticipationRule("EXCLUSION".equals(item.kind()) ? "EXCLUSION"
+            var criterion = ParticipationFocusCriterion.valueOf(ParticipationApplicability.criterion(item));
+            var mainSources = item.sourceIds().stream().map(input.evidence()::get).flatMap(List::stream).distinct().toList();
+            String applicant = ParticipationApplicantLabel.from(item, mainSources);
+            String audience = ParticipationApplicantLabel.isPersonnelAudience(item, mainSources) ? null
+                    : applicant != null ? applicant : ParticipationContextLabels.audience(
+                            item.audience(), String.join("\n", item.supportingQuotes()));
+            boolean procedure = ParticipationPresentationQuality.procedureOnly(item, mainSources);
+            var readableDetails = item.details().stream()
+                    .filter(detail -> !ParticipationPresentationQuality.redundantDetail(item, detail))
+                    .filter(detail -> !detail.reviewRequired() && ParticipationPresentationQuality.completeSentence(detail.text()))
+                    .map(Detail::text).distinct().toList();
+            String semanticReason = ParticipationCompleteness.reviewReason(item.text(),
+                    readableDetails, quotes, item.kind());
+            if (semanticReason == null && ParticipationApplicability.conflict(item, applicabilitySources))
+                semanticReason = "NOTICE_EXEMPTION_UNRESOLVED";
+            if (input.scopes() != null && item.supportingQuotes().stream().anyMatch(q ->
+                    "적용 범위 확인 필요".equals(input.scopes().owner(mainSources, q))))
+                semanticReason = "CITATION_SCOPE_AMBIGUOUS";
+            boolean review = semanticReason != null || item.reviewRequired()
+                    || !ParticipationPresentationQuality.completeSentence(item.text());
+            boolean detailReview = item.details().stream()
+                    .filter(detail -> !ParticipationPresentationQuality.redundantDetail(item, detail))
+                    .anyMatch(detail -> detail.reviewRequired() || !ParticipationPresentationQuality.completeSentence(detail.text()));
+            var notices = new ArrayList<String>();
+            if (semanticReason != null) notices.add(ParticipationCompleteness.explanation(semanticReason));
+            if (detailReview) notices.add(ParticipationPresentationQuality.DETAIL_REVIEW);
+            var rule = new ParticipationRule(procedure ? "APPLICATION_GUIDANCE"
+                    : "EXCLUSION".equals(item.kind()) ? "EXCLUSION"
                     : "PREFERENCE".equals(item.kind()) ? "PREFERENCE" : "BASIC",
-                    criterion.label, item.text(), displayScope(item.scope()), item.audience(),
-                    item.details().stream().map(Detail::text).distinct().toList(), List.of(), List.of(), List.of(), sources);
+                    criterion.label, item.text(), ParticipationNamedPrograms.expand(displayScope(ParticipationProgramScope.resolve(
+                            item.scope(), item, mainSources, currentInput.scopes()), applicant), knownPrograms), audience,
+                    semanticReason == null ? readableDetails : List.of(), List.of(), notices, List.of(), sources);
             entries.computeIfAbsent(criterion.name(), ignored -> new ArrayList<>()).add(
-                    new ParticipationCriterionEntry(rule, null, null, List.of(), "VERIFIED", quotes));
+                    new ParticipationCriterionEntry(rule, null, null, List.of(), review ? "REVIEW_REQUIRED" : "VERIFIED", quotes));
             displayedRules.add(rule);
             for (String id : item.sourceIds()) displayedQuotes.computeIfAbsent(id, ignored -> new ArrayList<>()).addAll(item.supportingQuotes());
         }
         for (var source : currentInput.availableSources()) {
+            if (ParticipationRecruitmentScope.referenceOnly(currentInput, List.of(source.id()))) continue;
             // Legacy ids belong only to their original request, never to newly recovered raw sections.
-            if (input == currentInput && !unresolved.contains(source.id())
+            boolean checklistEvidence = source.groupLabel().contains(ParticipationChecklistSources.MARKER)
+                    || source.groupLabel().contains(ParticipationChecklistSources.EXCEPTION);
+            if (!checklistEvidence && input == currentInput && !unresolved.contains(source.id())
                     && (irrelevant.contains(source.id()) || currentInput.evidence().get(source.id()).stream().allMatch(original ->
                         ParticipationDisplayStatements.fullyCovered(original, displayedQuotes.getOrDefault(source.id(), List.of()))))) continue;
             var sources = currentInput.evidence().get(source.id()).stream().filter(selected::includes).toList();
@@ -144,8 +184,11 @@ final class ParticipationRewriteProjection {
             boolean verified = items.stream().anyMatch(e -> "VERIFIED".equals(e.displayStatus()));
             return new ParticipationCriterionRow(c.name(), c.label, verified ? "STATED" : "REVIEW_REQUIRED", items);
         }).toList();
+        // Old READY caches may contain only rejected/unresolved evidence. Do not report absence.
+        String displayStatus = ("READY".equals(status) || "PARTIAL".equals(status)) && displayedRules.isEmpty() && !unresolved.isEmpty()
+                ? "UNAVAILABLE" : status;
         return new ParticipationGuide(List.of(), displayedRules, raw.variants(),
-                List.of(new ParticipationCategory("COMPANY_REQUIREMENTS", "참여기업 조건", rows)), status);
+                List.of(new ParticipationCategory("COMPANY_REQUIREMENTS", "참여기업 조건", rows)), displayStatus);
     }
 
     private static boolean valid(Statement item, Map<String, List<RequirementSource>> evidence) {
@@ -162,22 +205,42 @@ final class ParticipationRewriteProjection {
     }
 
     private static boolean validDetail(Detail detail, Map<String, List<RequirementSource>> evidence) {
-        if (detail == null || detail.text() == null || detail.text().isBlank() || detail.text().length() > 240
+        if (detail == null || detail.text() == null || detail.text().isBlank() || detail.text().strip().matches("\\[\\s*\\]|null") || detail.text().length() > 240
                 || detail.supportingQuotes() == null || detail.supportingQuotes().size() > 4
                 || detail.supportingQuotes().stream().anyMatch(quote -> quote == null || quote.length() > 600)) return false;
         // Validate each explanation independently; a bad explanation cannot erase a grounded parent.
+        if (ParticipationEvidenceQuality.rejection(detail.text(), String.join("\n", detail.supportingQuotes()),
+                "ELIGIBILITY", "", true) != null) return false;
         return valid(new Statement(detail.sourceIds(), "BUSINESS_FORM", detail.text(), "",
                 detail.supportingQuotes(), "ELIGIBILITY"), evidence);
     }
 
-    private static String displayScope(String value) {
+    static String displayScope(String value, String applicant) {
         if (value == null || value.isBlank()) return null;
+        var paths = new LinkedHashSet<String>();
+        for (String path : value.split(" / ")) {
+            var parts = Arrays.stream(path.split(" · ")).map(String::strip)
+                    .map(part -> "common".equalsIgnoreCase(part) ? "공통" : part)
+                    .filter(part -> !genericScopeLabel(part))
+                    .filter(part -> applicant == null || !compact(part).equals(compact(applicant))).toList();
+            if (!parts.isEmpty()) paths.add(String.join(" · ", parts));
+        }
+        return paths.isEmpty() ? null : String.join(" / ", paths);
+    }
+
+    private static boolean genericScopeLabel(String value) {
         String compact = compact(value);
-        if (Set.of("상위구역", "원문구역", "적용유형", "유형명", "신청역할", "신청주체명",
+        // Compare headings without numbering, but preserve the original spelling of real programs.
+        String heading = compact.replaceFirst("^(?:\\(?(?:[0-9]+(?:-[0-9]+)*|[가-힣]|[IVXⅠ-Ⅻ]+)[.)]|[①-⑳])", "");
+        return compact.isEmpty() || ParticipationContextLabels.structural(value)
+                || compact.matches("(?:별표|별지|붙임)[0-9]+(?:호)?")
+                || compact.matches(".*(?:법률|시행령|시행규칙|운영요령|규정)제[0-9]+조(?:의[0-9]+)?(?:제[0-9]+항)?") || Set.of("상위구역", "원문구역", "적용유형", "유형명", "신청역할", "신청주체명",
                 "신청자격", "신청요건", "신청자격및신청요건", "지원대상", "지원내용", "사업개요",
-                "scope", "parent", "section", "program", "null").contains(compact)
-                || compact.matches("^\\[(?:상위구역|원문구역|적용유형)\\].*")) return null;
-        return value.strip();
+                "scope", "parent", "section", "program", "null").contains(heading.toLowerCase(Locale.ROOT))
+                || compact.matches("^\\[(?:상위구역|원문구역|적용유형)\\].*")
+                || compact.matches("실제사업[·ㆍ]과제유형(?:\\(.*\\))?")
+                || heading.matches("(?:(?:세부|내역)?(?:사업|과제))?(?:지원)?(?:유형|구분)"
+                        + "|(?:사업|유형)별(?:지원계획|지원내용|신청자격)|신청자격및선정기준|유형미지정");
     }
 
     private static List<String> matching(RequirementSource source, boolean legacy, boolean previous) {

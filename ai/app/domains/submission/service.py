@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from app.core.openai_models import ChatOpenAI
 from app.domains.report.evidence import select_report_evidence
 from app.domains.submission.prompts import PROMPT
+from app.domains.submission.quantities import comparison_quote
 from app.domains.submission.schemas import Note, NotesDraft, NotesRequest, NotesResponse
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,7 @@ _MEASURE = re.compile(
 )
 _BOUND = re.compile(r"이상|이하|미만|초과|이내|이전|이후")
 _NEGATIVE = re.compile(r"불가|불허|금지|않|없|면제|생략|제외|불필요|무효|미인정")
+_EXCLUSIVE = re.compile(r"오직|한하여|한해|한정|(?<![다미])만(?=\s|[)）.,]|$)")
 _EXCEPTION = re.compile(r"다만|경우|한하여|한해|해당|제외|면제|예외")
 
 
@@ -62,19 +64,25 @@ def valid_note(note: Note, request: NotesRequest) -> bool:
     def numbers(value):
         return Counter(n.replace(",", "") for n in _NUMBER.findall(value))
 
-    if numbers(note.quote) != numbers(text):
+    doc = next((d for d in request.documents if d.id == note.documentId), None)
+    numeric_quote = comparison_quote(note.quote, doc.title, doc.excerpt) if (
+        note.scope == "DOCUMENT" and doc and doc.sourceId == note.sourceId
+    ) else note.quote
+    if numbers(numeric_quote) != numbers(text):
         return False
 
     def measures(value):
         return sorted(re.sub(r"\s|,", "", m).lower() for m in _MEASURE.findall(value))
 
-    if measures(note.quote) != measures(text):
+    if measures(numeric_quote) != measures(text):
         return False
     if set(_BOUND.findall(note.quote)) != set(_BOUND.findall(text)):
         return False
     if bool(_NEGATIVE.search(note.quote)) != bool(_NEGATIVE.search(text)):
         return False
     if _EXCEPTION.search(note.quote) and not _EXCEPTION.search(text):
+        return False
+    if _EXCLUSIVE.search(text) and not _EXCLUSIVE.search(note.quote):
         return False
     if note.scope == "DOCUMENT":
         doc = next((d for d in request.documents if d.id == note.documentId), None)

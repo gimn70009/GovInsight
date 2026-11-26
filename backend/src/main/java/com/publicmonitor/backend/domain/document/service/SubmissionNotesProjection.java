@@ -13,6 +13,7 @@ final class SubmissionNotesProjection {
     private static final Pattern MEASURE = Pattern.compile("\\d+(?:[.,]\\d+)*\\s*(?:개월|시간|천원|만원|억원|년|월|일|시|분|부|매|개|건|원|쪽|%|MB|KB|GB)", Pattern.CASE_INSENSITIVE);
     private static final Pattern BOUND = Pattern.compile("이상|이하|미만|초과|이내|이전|이후");
     private static final Pattern NEGATIVE = Pattern.compile("불가|불허|금지|않|없|면제|생략|제외|불필요|무효|미인정");
+    private static final Pattern EXCLUSIVE = Pattern.compile("오직|한하여|한해|한정|(?<![다미])만(?=\\s|[)）.,]|$)");
     private static final Pattern EXCEPTION = Pattern.compile("다만|경우|한하여|한해|해당|제외|면제|예외");
     record Origin(String id, String text, String fileName) {}
     record Input(Request request, Map<String, Origin> origins, Map<String, SubmissionDocument> documents) {}
@@ -36,7 +37,9 @@ final class SubmissionNotesProjection {
                     (origin.fileName() == null ? "NOTICE_BODY" : "ATTACHMENT").equals(doc.source().origin())
                     && Objects.equals(origin.fileName(), doc.source().attachmentName())
                     && origin.text().contains(doc.source().excerpt())).toList();
-            if (matches.size() != 1) continue;
+            // Repeated exports of one named attachment may contain identical evidence.
+            // Use the first exact source in resolver order; never match another file or rewritten text.
+            if (matches.isEmpty()) continue;
             String id = "d" + catalog.size();
             catalog.add(new com.publicmonitor.backend.domain.document.client.SubmissionNotesContract.Document(
                     id, doc.title(), matches.getFirst().id(), doc.source().excerpt(), doc.stage(), doc.appliesTo()));
@@ -57,10 +60,11 @@ final class SubmissionNotesProjection {
     static SubmissionGuide guide(SubmissionGuide raw, Input input, Response response) {
         if (response == null || response.notes() == null || response.notes().size() > 30 || response.status() == null
                 || !List.of("READY", "PARTIAL", "UNAVAILABLE", "PENDING").contains(response.status()))
-            return new SubmissionGuide(raw.documents(), List.of(), "UNAVAILABLE");
+            return new SubmissionGuide(raw.documents().stream().map(SubmissionTitleCondition::explain).toList(), List.of(), "UNAVAILABLE");
         if (List.of("PENDING", "UNAVAILABLE").contains(response.status()))
-            return new SubmissionGuide(raw.documents(), List.of(), response.status());
+            return new SubmissionGuide(raw.documents().stream().map(SubmissionTitleCondition::explain).toList(), List.of(), response.status());
         var notes = new LinkedHashSet<SubmissionNote>();
+        var explainedTitles = new HashSet<SubmissionDocument>();
         boolean rejected = input.request().incomplete();
         for (var note : response.notes()) {
             if (!valid(note, input)) { rejected = true; continue; }
@@ -68,16 +72,49 @@ final class SubmissionNotesProjection {
             var target = note.documentId() == null ? null : input.documents().get(note.documentId());
             String scope = "COMMON".equals(note.scope()) ? null : target == null ? note.appliesTo()
                     : target.title() + (target.appliesTo() == null || target.appliesTo().isBlank() ? "" : " · " + target.appliesTo());
-            int start = Math.min(origin.text().indexOf(note.quote()), origin.text().indexOf(note.scopeQuote()));
-            int end = Math.max(origin.text().indexOf(note.quote()) + note.quote().length(),
-                    origin.text().indexOf(note.scopeQuote()) + note.scopeQuote().length());
-            if (end - start > 8000) { rejected = true; continue; }
+            var span = evidenceSpan(origin.text(), note.quote(), note.scopeQuote());
+            if (span == null || span.end() - span.start() > 8000) { rejected = true; continue; }
             var source = new RequirementSource(origin.fileName() == null ? "NOTICE_BODY" : "ATTACHMENT",
                     origin.fileName(), "제출 유의사항", target == null ? null : target.source().location(),
-                    origin.text().substring(start, end));
+                    origin.text().substring(span.start(), span.end()));
             notes.add(new SubmissionNote(note.text(), scope, source));
+            // Only a validated explanation quoting the full title can replace its raw echo.
+            if (target != null && note.quote().contains(target.title())) explainedTitles.add(target);
         }
-        return new SubmissionGuide(raw.documents(), List.copyOf(notes), rejected ? "PARTIAL" : response.status());
+        var documents = raw.documents().stream().map(doc -> SubmissionTitleCondition.explain(withoutExplainedTitle(doc, explainedTitles))).toList();
+        return new SubmissionGuide(documents, List.copyOf(notes), rejected ? "PARTIAL" : response.status());
+    }
+    private record EvidenceSpan(int start, int end) {}
+
+    private static EvidenceSpan evidenceSpan(String source, String quote, String scopeQuote) {
+        // The same clause can occur in a summary and the full attachment. Pair nearby occurrences
+        // instead of joining the first quote to an unrelated, later scope and losing valid notes.
+        int quoteAt = source.indexOf(quote), scopeAt = source.indexOf(scopeQuote);
+        EvidenceSpan closest = null;
+        while (quoteAt >= 0 && scopeAt >= 0) {
+            int start = Math.min(quoteAt, scopeAt);
+            int end = Math.max(quoteAt + quote.length(), scopeAt + scopeQuote.length());
+            if (closest == null || end - start < closest.end() - closest.start()) {
+                closest = new EvidenceSpan(start, end);
+                if (end - start == Math.max(quote.length(), scopeQuote.length())) return closest;
+            }
+            // Both cursors move only forwards, including for heavily repeated OCR fragments.
+            if (quoteAt < scopeAt) quoteAt = source.indexOf(quote, quoteAt + 1);
+            else scopeAt = source.indexOf(scopeQuote, scopeAt + 1);
+        }
+        return closest;
+    }
+
+    private static SubmissionDocument withoutExplainedTitle(SubmissionDocument doc, Set<SubmissionDocument> explained) {
+        if (!explained.contains(doc)) return doc;
+        var conditions = doc.conditions().stream()
+                .filter(condition -> !displayKey(condition).equals(displayKey(doc.title()))).toList();
+        if (conditions.equals(doc.conditions())) return doc;
+        return new SubmissionDocument(doc.title(), doc.detail(), doc.requirementLevel(), doc.stage(), doc.appliesTo(),
+                doc.source(), doc.documentNames(), conditions, doc.formats());
+    }
+    private static String displayKey(String text) {
+        return text.strip().replaceFirst("[.。]$", "").replaceAll("\\s+", "");
     }
     private static boolean valid(Note note, Input input) {
         if (note == null || note.sourceId() == null || note.text() == null || note.quote() == null
@@ -90,11 +127,16 @@ final class SubmissionNotesProjection {
         if (text.isBlank() || text.length() > 800 || !text.equals(text.strip()) || !text.matches("(?s).*(?:다|요)\\.")
                 || text.matches("(?s).*[\\p{Co}\\p{Cs}\\p{Cc}�⏎□■▣].*")
                 || text.matches("(?s).*<[^>]+>.*") || text.matches("^[*#•※].*")) return false;
-        if (!tokens(NUMBER, text).equals(tokens(NUMBER, note.quote()))
-                || !tokens(MEASURE, text).equals(tokens(MEASURE, note.quote()))
+        var numericDocument = input.request().documents().stream().filter(d -> "DOCUMENT".equals(note.scope())
+                && d.id().equals(note.documentId()) && d.sourceId().equals(note.sourceId())).findFirst();
+        String numericQuote = numericDocument.map(d -> SubmissionQuantityEvidence.comparisonQuote(
+                note.quote(), d.title(), d.excerpt())).orElse(note.quote());
+        if (!tokens(NUMBER, text).equals(tokens(NUMBER, numericQuote))
+                || !tokens(MEASURE, text).equals(tokens(MEASURE, numericQuote))
                 || !new HashSet<>(tokens(BOUND, text)).equals(new HashSet<>(tokens(BOUND, note.quote())))
                 || NEGATIVE.matcher(text).find() != NEGATIVE.matcher(note.quote()).find()
                 || (EXCEPTION.matcher(note.quote()).find() && !EXCEPTION.matcher(text).find())) return false;
+        if (EXCLUSIVE.matcher(text).find() && !EXCLUSIVE.matcher(note.quote()).find()) return false;
         if ("DOCUMENT".equals(note.scope())) {
             var target = note.documentId() == null ? null : input.documents().get(note.documentId());
             var catalog = input.request().documents().stream().filter(d -> d.id().equals(note.documentId())).findFirst();

@@ -273,7 +273,7 @@ export interface ParticipationCondition {
 
 export interface ParticipationRule {
   reviewReason?: ParticipationReviewReason | null
-  section: 'BASIC' | 'ELIGIBILITY' | 'EVIDENCE' | 'FUNDING' | 'TARGETED' | 'EXCLUSION' | 'PREFERENCE' | 'DEDUCTION' | 'REVIEW'
+  section: 'APPLICATION_GUIDANCE' | 'BASIC' | 'ELIGIBILITY' | 'EVIDENCE' | 'FUNDING' | 'TARGETED' | 'EXCLUSION' | 'PREFERENCE' | 'DEDUCTION' | 'REVIEW'
   label: string
   text: string
   scope: string | null
@@ -287,7 +287,7 @@ export interface ParticipationRule {
 
 export interface ParticipationCriterionEntry {
   supportingQuotes?: string[]
-  displayStatus?: 'VERIFIED' | 'EVIDENCE_ONLY'
+  displayStatus?: 'VERIFIED' | 'REVIEW_REQUIRED' | 'EVIDENCE_ONLY'
   rule: ParticipationRule
   context: string | null
   relation: 'LINKED' | 'ALTERNATIVE' | null
@@ -305,7 +305,7 @@ export interface ParticipationCategory {
   rows: ParticipationCriterionRow[]
 }
 export interface ParticipationGuide {
-  rewriteStatus?: 'PENDING' | 'READY' | 'UNAVAILABLE'
+  rewriteStatus?: 'PENDING' | 'READY' | 'PARTIAL' | 'UNAVAILABLE'
   categories?: ParticipationCategory[]
   conditions: ParticipationCondition[]
   rules?: ParticipationRule[]

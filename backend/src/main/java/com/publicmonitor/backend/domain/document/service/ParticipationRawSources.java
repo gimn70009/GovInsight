@@ -19,6 +19,8 @@ final class ParticipationRawSources {
     static ScopedSources collectWithScopes(String body, List<DocumentAttachment> attachments) {
         var current = collectWithScopes(body, attachments, false);
         current.scopes().compatibility(collectWithScopes(body, attachments, true));
+        for (var linked : ParticipationChecklistSources.collect(body, attachments))
+            current.scopes().addSupplemental(linked.source(), linked.recruitment());
         return current;
     }
 

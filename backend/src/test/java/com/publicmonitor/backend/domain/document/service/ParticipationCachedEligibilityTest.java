@@ -33,34 +33,19 @@ class ParticipationCachedEligibilityTest {
                 sample.evidence(), false, null, sample.sources());
         return ParticipationRewriteProjection.guide(raw(List.of()), input, sample.cache(), sample.cache().status());
     }
-    @Test void investmentCacheDisplaysOnlyActualApplicantRequirementWithoutChangingStoredContent() throws Exception {
-        var sample = sample("investment-cached-eligibility");
-        String before = mapper.writeValueAsString(sample);
-        assertThat(sample.cache().statements()).hasSize(8);
-        var guide = project(sample);
-        assertThat(guide.rules()).singleElement().satisfies(rule -> {
-            assertThat(rule.label()).isEqualTo("신청 주체");
-            assertThat(rule.section()).isEqualTo("BASIC");
-            assertThat(rule.text()).startsWith("신청 대상은 ").endsWith("중소·중견 소부장 기업입니다.")
-                    .contains("공급망안정품목", "또는", "전략물자", "생산하고 있거나 생산 예정인");
-            assertThat(rule.sources()).containsExactlyElementsOf(sample.evidence().get("s6"));
-        });
-        assertThat(entries(guide)).noneMatch(entry -> "REVIEW_REQUIRED".equals(entry.displayStatus()));
-        assertThat(entries(guide).stream().filter(entry -> entry.displayStatus().equals("VERIFIED"))).hasSize(1);
-        assertThat(mapper.writeValueAsString(sample)).isEqualTo(before);
-    }
-    @Test void technologySharingApplicantSurvivesButDefinitionsDoNotBecomePreferences() throws Exception {
-        var sample = sample("inline-qualification-recovery");
-        var guide = project(sample);
-        assertThat(guide.rules()).singleElement().satisfies(rule -> {
-            assertThat(rule.text()).isEqualTo("신청 대상은 중소·중견기업입니다.");
-            assertThat(rule.section()).isEqualTo("BASIC");
-            assertThat(rule.sources()).singleElement().satisfies(source ->
-                    assertThat(source.excerpt()).contains("중소기업기본법", "중견기업 성장촉진"));
-        });
-        assertThat(entries(guide).stream().filter(entry -> entry.displayStatus().equals("VERIFIED")))
-                .singleElement().satisfies(entry -> assertThat(entry.supportingQuotes())
-                        .containsExactly("□ 지원자격 : 중소·중견기업"));
+    @Test void legacyFragmentsKeepEvidenceAndRequirePresentationReview() throws Exception {
+        // These fixtures contain raw fragments: retain evidence, but do not label the presentation verified.
+        for (String name : List.of("investment-cached-eligibility", "inline-qualification-recovery")) {
+            var sample = sample(name);
+            String before = mapper.writeValueAsString(sample);
+            var guide = project(sample);
+            assertThat(guide.rules()).extracting(ParticipationRule::text)
+                    .containsExactlyElementsOf(sample.cache().statements().stream().map(Statement::text).toList());
+            assertThat(entries(guide).stream().filter(entry -> entry.displayStatus().equals("REVIEW_REQUIRED")))
+                    .hasSize(sample.cache().statements().size());
+            assertThat(guide.rules()).allSatisfy(rule -> assertThat(rule.sources()).isNotEmpty());
+            assertThat(mapper.writeValueAsString(sample)).isEqualTo(before);
+        }
     }
     private ParticipationGuide one(String quote, String text, String kind) {
         var source = new RequirementSource("NOTICE_BODY", null, "원문", null, quote);
@@ -68,7 +53,7 @@ class ParticipationCachedEligibilityTest {
         return project(new Sample(List.of(request), Map.of("s0", List.of(source)), new Response(List.of(
                 new Statement(List.of("s0"), "BUSINESS_FORM", text, "", List.of(quote), kind, "일반형", "신청기업")), List.of(), "READY"), null));
     }
-    @Test void inlineApplicantLabelsWorkAcrossFormattingWithoutReclassifyingOrLosingQuotes() {
+    @Test void cachedWordingKeepsScopeAndQuotesButCannotInventAnApplicantAcrossFormatting() {
         for (String title : List.of("지원대상", "신청 자격", "참여 요건", "모집 대상")) {
             for (String prefix : List.of("", "□ ", "■ ")) {
                 for (String colon : List.of(": ", "：")) {
@@ -77,9 +62,9 @@ class ParticipationCachedEligibilityTest {
                     for (String text : List.of(quote, clause)) {
                         var guide = one(quote, text, "ELIGIBILITY");
                         assertThat(guide.rules()).singleElement().satisfies(rule -> {
-                            assertThat(rule.text()).isEqualTo("신청 대상은 " + clause + "입니다.");
+                            assertThat(rule.text()).isEqualTo(text);
                             assertThat(rule.scope()).isEqualTo("일반형");
-                            assertThat(rule.audience()).isEqualTo("신청기업");
+                            assertThat(rule.audience()).isNull();
                         });
                         assertThat(entries(guide)).singleElement().satisfies(entry ->
                                 assertThat(entry.supportingQuotes()).containsExactly(quote));
@@ -88,15 +73,15 @@ class ParticipationCachedEligibilityTest {
             }
         }
     }
-    @Test void headingsProceduresFundingAndAmbiguousFragmentsAreNotApplicantClaims() {
-        for (String quote : List.of("□ 추진체계 : 전담기관", "□ 지원범위 : 건설 및 토지 매입 비용", "□ 관련 규정 : 지원금 운영 규정",
-                "□ 문의처 : 사업 운영기관", "가. 신청서 제출 전 확인 절차 필요", "□ 지원자격 : 중소기업\n※ 예외: 별도 확인",
-                "□ 지원대상 : 중소기업\n□ 지원내용 : 지원금", "□ 지원대상 : [표] 기업\t기관 [/표]")) {
-            assertThat(one(quote, quote, "ELIGIBILITY").rules()).isEmpty();
+    @Test void citationValidationDoesNotPretendToDecideWhetherLegacyFragmentsAreConditions() {
+        for (String text : List.of("□ 지원대상 : 중소기업", "법인명(성명) 예시산업(대표자)",
+                "□ 문의처 : 사업 운영기관", "[표] 자격\t국내 기업 [/표]", "요건을 갖춘 기관(예외 포함")) {
+            assertThat(one(text, text, "ELIGIBILITY").rules()).singleElement()
+                    .satisfies(rule -> assertThat(rule.text()).isEqualTo(text));
         }
-        assertThat(one("□ 지원대상 : 중소기업 또는 비영리기관", "중소기업", "ELIGIBILITY").rules()).isEmpty();
-        assertThat(one("지원 대상", "□ 추진체계 : 사업 운영기관", "ELIGIBILITY").rules()).isEmpty();
-        assertThat(one("* 중소기업 : 관계 법령 제2조에 의한 기업", "중소기업 : 관계 법령 제2조에 의한 기업", "PREFERENCE").rules()).isEmpty();
+        // A matching quote proves provenance, not that the model selected or summarized it correctly.
+        assertThat(one("중소기업 또는 비영리기관", "중소기업", "ELIGIBILITY").rules())
+                .singleElement().satisfies(rule -> assertThat(rule.text()).isEqualTo("중소기업"));
     }
     @Test void repeatedReadsAndRestartsReuseTheExactCacheWithoutPaidCallsOrDatabaseWrites() throws Exception {
         var sample = sample("investment-cached-eligibility");
@@ -120,7 +105,7 @@ class ParticipationCachedEligibilityTest {
                 ReflectionTestUtils.setField(version, "participationRewriteKey", key);
                 ReflectionTestUtils.setField(version, "participationRewriteJson", json);
                 for (int read = 0; read < 3; read++) {
-                    assertThat(service.resolve(version, raw, false).rules()).hasSize(1);
+                    assertThat(service.resolve(version, raw, false).rules()).hasSize(sample.cache().statements().size());
                     assertThat(version.getParticipationRewriteKey()).isEqualTo(key);
                     assertThat(version.getParticipationRewriteJson()).isEqualTo(json);
                 }

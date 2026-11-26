@@ -3,7 +3,8 @@ import { useId, useState } from 'react'
 import { BadgeCheck, BriefcaseBusiness, Building2, CalendarDays, ChevronDown, ClipboardCheck, ExternalLink, Factory, FileText, Landmark, TriangleAlert, TrendingUp } from 'lucide-react'
 import type { DocumentDetail, ParticipationRule, ParticipationCriterionEntry } from '../api/types'
 import { evidenceAttachment } from '../utils/businessSummary'
-import { companyParticipationRows, companyParticipationExclusions, companyHasBusinessDivision, companyConditionSourceKey, companyConditionPresentation, companyConditionScope, companyConditionAppliesTo, activeCompanyConditionProgram } from '../utils/companyParticipation'
+import { companyParticipationRows, companyParticipationGuidance, companyParticipationExclusions, companyConditionSourceKey, companyConditionPresentation, companyConditionScope, companyConditionAppliesTo, activeCompanyConditionProgram } from '../utils/companyParticipation'
+import { conditionDetailLines } from '../utils/conditionDetailLines'
 import './ParticipationConditions.css'
 
 type RuleSource = ParticipationRule['sources'][number]
@@ -12,6 +13,11 @@ const sourceKey = companyConditionSourceKey
 
 function sourceName(source: RuleSource) {
   return source.origin === 'NOTICE_BODY' ? '공고 본문' : source.attachmentName || '첨부 문서'
+}
+
+function sourceSection(source: RuleSource) {
+  return source.sectionTitle?.replace('[자격 확인서] ', '')
+    .replace('[확인서 적용 예외] ', '공고 적용 예외 · ')
 }
 
 function RuleEvidence({ item, detail }: { item: ParticipationRule; detail: DocumentDetail }) {
@@ -30,11 +36,11 @@ function RuleEvidence({ item, detail }: { item: ParticipationRule; detail: Docum
       <select id={id} value={selectedIndex} title={sourceName(source)}
         onChange={event => setSelectedKey(sourceKey(sources[Number(event.target.value)]))}>
         {sources.map((value, index) => <option key={sourceKey(value)} value={index}>
-          {index + 1}. {[sourceName(value), value.sectionTitle, value.location].filter(Boolean).join(' · ')}
+          {index + 1}. {[sourceName(value), sourceSection(value), value.location].filter(Boolean).join(' · ')}
         </option>)}
       </select>
     </div> : <span>{sourceName(source)}</span>}
-    <small>{[source.sectionTitle, source.location].filter(Boolean).join(' · ')}</small>
+    <small>{[sourceSection(source), source.location].filter(Boolean).join(' · ')}</small>
     <blockquote key={sourceKey(source)} tabIndex={0} aria-label="선택한 원문 근거">{source.excerpt}</blockquote>
     {file && <a href={file.downloadUrl} target="_blank" rel="noreferrer">근거 문서 열기<ExternalLink size={12} aria-hidden="true" /></a>}
   </div>
@@ -71,22 +77,21 @@ const criterionIcons = {
 }
 
 function ConditionContext({ condition }: { condition: ConditionPresentation }) {
-  if (!condition.scope && !condition.scopeReviewRequired) return null
-  return <span className="participation-guide__context">
+  if (!condition.scope) return null
+  return <span className="participation-guide__context participation-guide__business-context">
     <span className="participation-guide__context-label">적용 사업</span>
-    {condition.scope ? <span className="participation-guide__program">
+    <span className="participation-guide__program">
       {condition.scope.split(' / ').map((path, index) => <span className="participation-guide__program-path" key={path}>
         {index > 0 && <span aria-hidden="true"> / </span>}
         {path === '공통' ? '전체 사업 공통' : path}
       </span>)}
-    </span> : <span className="participation-guide__unscoped">원문 확인 필요</span>}
-    {condition.scope && condition.scopeReviewRequired && <span className="participation-guide__scope-review">원문 확인 필요</span>}
+    </span>
   </span>
 }
 
 function Rule({ entry, detail, label, condition, number, kind }: {
   entry: ParticipationCriterionEntry; detail: DocumentDetail; label: string; condition: ConditionPresentation
-  number?: number; kind: 'mandatory' | 'preference' | 'exclusion'
+  number?: number; kind: 'mandatory' | 'preference' | 'exclusion' | 'guidance'
 }) {
   const item = entry.rule
   const [open, setOpen] = useState(false)
@@ -94,13 +99,17 @@ function Rule({ entry, detail, label, condition, number, kind }: {
   const hasEvidence = item.sources.some(source => source.excerpt?.trim())
   const hasNotes = condition.notes.length > 0
   const expandable = hasNotes || hasEvidence
-  const kindLabel = kind === 'exclusion' ? '지원 제외' : kind === 'preference' ? '우대' : '필수'
+  const kindLabel = kind === 'guidance' ? '접수 준비' : kind === 'exclusion' ? '지원 제외' : kind === 'preference' ? '우대' : '신청 요건'
   const content = <>
     {number != null && <span className="participation-guide__number" aria-hidden="true">{number}</span>}
     <span className="participation-guide__copy">
       <span className="participation-guide__meta">
         <span className={`participation-guide__kind-badge participation-guide__kind-badge--${kind}`}>{kindLabel}</span>
         <ConditionContext condition={condition} />
+        {condition.audience && <span className="participation-guide__context participation-guide__applicant">
+          <span className="participation-guide__context-label">신청 구분</span>
+          <span className="participation-guide__audience">{condition.audience}</span>
+        </span>}
       </span>
       <span className="participation-guide__main">{condition.sentence}</span>
     </span>
@@ -117,8 +126,11 @@ function Rule({ entry, detail, label, condition, number, kind }: {
     </button> : <div className={className}>{content}</div>}
     {expandable && <div id={id} hidden={!open} className={`participation-guide__details${number != null ? " participation-guide__details--numbered" : ""}`}>
       {hasNotes && <div className="participation-guide__notes">
-        <strong>세부 설명</strong>
-        <ul>{condition.notes.map((note, index) => <li key={index}>{note}</li>)}</ul>
+        <strong className="participation-guide__notes-heading">세부 설명</strong>
+        <ul>{condition.notes.map((note, index) => <li key={index}>
+          <span className="participation-guide__note-copy">{conditionDetailLines(note).map((line, lineIndex) =>
+            <span className="participation-guide__note-line" key={lineIndex}>{line}</span>)}</span>
+        </li>)}</ul>
       </div>}
       {open && hasEvidence && <EvidencePanel item={item} detail={detail} defaultOpen={!hasNotes} />}
     </div>}
@@ -127,14 +139,14 @@ function Rule({ entry, detail, label, condition, number, kind }: {
 
 export function ParticipationConditions({ detail }: { detail: DocumentDetail }) {
   const rows = companyParticipationRows(detail.participationGuide)
-  const hasBusinessDivision = companyHasBusinessDivision(detail.participationGuide)
   const allRows = [...rows.filter(row => row.code === 'BUSINESS_FORM'), ...rows.filter(row => row.code !== 'BUSINESS_FORM')]
     .filter(row => row.mandatory.length || row.preference.length)
+  const guidance = companyParticipationGuidance(detail.participationGuide)
   const exclusions = companyParticipationExclusions(detail.participationGuide)
   const allEntries = [...allRows.flatMap(row => [...row.mandatory, ...row.preference]), ...exclusions]
   const programs = [...new Set(allEntries.flatMap(entry => companyConditionScope(entry)?.split(' / ') ?? []))]
     .filter(value => value !== '공통' && !value.endsWith(' · 공통'))
-  const canFilter = programs.length >= 3 && allEntries.length >= 8
+  const canFilter = programs.length >= 2 && allEntries.length >= 8
   const [programSelection, setProgramSelection] = useState({ detectionId: detail.detectionId, program: '' })
   const activeProgram = activeCompanyConditionProgram(programSelection, detail.detectionId, programs, allEntries.length)
   const selectProgram = (program: string) => setProgramSelection({ detectionId: detail.detectionId, program })
@@ -158,6 +170,9 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
     <div className="business-summary__section-body">
       {pending && <SectionStatus state="loading" compact={visibleCount > 0}
         title="신청 자격을 확인하고 있습니다" description="확인이 끝나면 자동으로 반영됩니다." />}
+      {status === 'PARTIAL' && <SectionStatus state="unavailable" compact
+        title="일부 신청 조건은 확인을 완료하지 못했습니다"
+        description="아래 조건 외에 누락된 요건이 있을 수 있으니 공고 원문을 함께 확인해 주세요." />}
       {visibleCount > 0 ? <>
         {canFilter && <div className="participation-guide__filter">
           <label htmlFor={filterId}>해당 사업</label>
@@ -165,9 +180,6 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
             <option value="">전체 사업</option>
             {programs.map(program => <option key={program} value={program}>{program}</option>)}
           </select>
-          <span className="participation-guide__filter-count" aria-live="polite">{activeProgram ? `${visibleCount}개 표시 / 전체 ${allEntries.length}개 조건` : `전체 ${allEntries.length}개 조건`}</span>
-          {activeProgram && <button type="button" onClick={() => selectProgram('')}>전체 보기</button>}
-          {activeProgram && <p>선택한 사업의 조건과 공통 조건을 표시합니다. 사업 구분이 확인되지 않은 조건도 포함합니다.</p>}
         </div>}
         {visibleRows.length >= 4 && <nav className="participation-guide__index" aria-label="신청 자격 항목 바로가기">
           <span className="participation-guide__index-label" aria-hidden="true">자격 항목 바로가기</span>
@@ -192,7 +204,7 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
               </header>
               <ol className="participation-guide__conditions">
                 {conditions.map((entry, index) => {
-                  const condition = companyConditionPresentation(entry, hasBusinessDivision)
+                  const condition = companyConditionPresentation(entry)
                   const kind = entry.rule.section === 'PREFERENCE' ? 'preference' : 'mandatory'
                   return <li key={JSON.stringify([detail.detectionId, entry.rule.scope, entry.rule.audience, entry.rule.text, index])}>
                     <Rule entry={entry} detail={detail} condition={condition} kind={kind}
@@ -211,7 +223,7 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
             </header>
             <ol className="participation-guide__conditions">
               {visibleExclusions.map((entry, index) => <li key={JSON.stringify([detail.detectionId, entry.rule.scope, entry.rule.text, index])}>
-                <Rule entry={entry} detail={detail} condition={companyConditionPresentation(entry, hasBusinessDivision)}
+                <Rule entry={entry} detail={detail} condition={companyConditionPresentation(entry)}
                   kind="exclusion" number={visibleExclusions.length > 1 ? index + 1 : undefined}
                   label={`지원 제외 ${index + 1}번 조건`} />
               </li>)}
@@ -221,6 +233,18 @@ export function ParticipationConditions({ detail }: { detail: DocumentDetail }) 
       </> : !pending && <SectionStatus state={status === 'UNAVAILABLE' ? 'unavailable' : 'empty'}
         title={status === 'UNAVAILABLE' ? '신청 자격 확인을 완료하지 못했습니다' : '신청 자격은 원문에서 확인해 주세요'}
         description={status === 'UNAVAILABLE' ? '공고 원문에서 지원 대상과 신청 요건을 확인해 주세요.' : '정리된 신청 조건을 찾지 못했습니다.'} />}
+      {guidance.length > 0 && <section className="participation-guide__group participation-guide__application-guidance"
+        aria-labelledby={`${headingId}-guidance`}>
+        <header className="participation-guide__group-heading">
+          <FileText size={18} aria-hidden="true" /><h4 id={`${headingId}-guidance`}>접수 준비 안내</h4>
+        </header>
+        <ul className="participation-guide__conditions">
+          {guidance.map((entry, index) => <li key={index}>
+            <Rule entry={entry} detail={detail} condition={companyConditionPresentation(entry)}
+              kind="guidance" label={`접수 준비 ${index + 1}번 안내`} />
+          </li>)}
+        </ul>
+      </section>}
     </div>
   </section>
 }

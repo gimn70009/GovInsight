@@ -106,12 +106,12 @@ class ParticipationScopeIndexTest {
             assertThat(service.fingerprint(ParticipationRewriteProjection.input(
                     candidates.guide(), false, candidates.scopes()).request())).isNotEqualTo(key);
             var guide = ParticipationRewriteProjection.guide(candidates.guide(), newInput, saved, "READY");
-            assertThat(guide.rules()).singleElement().satisfies(rule -> assertThat(rule.scope()).isNull());
+            assertThat(guide.rules()).singleElement().satisfies(rule -> assertThat(rule.scope()).isEqualTo("점프업1000"));
             verifyNoInteractions(client, store);
         } finally { service.close(); }
     }
 
-    @Test void separateSavedStatementsDoNotInferAndMergeProgramScopes() {
+    @Test void separateSavedStatementsRecoverTheirOwnProgramWithoutMerging() {
         String body = "1. 점프업100\n□ 지원대상\n" + quote + "\n※ 첫 유형 설명\n"
                 + "2. 점프업500\n□ 지원대상\n" + quote + "\n※ 둘째 유형 설명\n";
         var candidates = ParticipationConditionResolver.candidatesWithScopes(body, List.of(), null);
@@ -119,10 +119,10 @@ class ParticipationScopeIndexTest {
         var statements = input.request().sources().stream().filter(s -> s.excerpt().contains(quote))
                 .map(s -> new Statement(List.of(s.id()), "BUSINESS_AGE", quote, "", List.of(quote), "ELIGIBILITY")).toList();
         var guide = ParticipationRewriteProjection.guide(candidates.guide(), input, new Response(statements, List.of(), "READY"), "READY");
+        assertThat(guide.rules()).extracting(ParticipationRule::scope).containsExactly("점프업100", "점프업500");
         assertThat(guide.rules()).hasSize(2).allSatisfy(rule -> {
-            assertThat(rule.scope()).isNull();
             assertThat(rule.sources()).hasSize(1);
-            assertThat(rule.text()).isEqualTo(quote.replace("수 있음", "수 있습니다."));
+            assertThat(rule.text()).isEqualTo(quote);
         });
     }
     @Test void frozenParsingPreservesEveryOriginalSourceAndItsOrder() {
@@ -134,7 +134,7 @@ class ParticipationScopeIndexTest {
         assertThat(current.rules()).flatExtracting(ParticipationRule::sources).anyMatch(source -> source.sectionTitle().contains("3-1. 사업개요"));
     }
 
-    @Test void whitespaceVariantsDoNotCauseBackendScopeInference() {
+    @Test void whitespaceVariantsKeepTheirOwnSourceProgram() {
         String a = "매출액100억원이상인기업";
         String b = "매출액 100억원 이상인 기업";
         String body = "1. 점프업100\n□ 지원대상\n" + a + "\n"
@@ -147,7 +147,7 @@ class ParticipationScopeIndexTest {
                     return new Statement(List.of(source.id()), "REVENUE", text, "", List.of(text), "ELIGIBILITY");
                 }).toList();
         var guide = ParticipationRewriteProjection.guide(candidates.guide(), input, new Response(statements, List.of(), "READY"), "READY");
-        assertThat(guide.rules()).hasSize(2).allSatisfy(rule -> assertThat(rule.scope()).isNull());
+        assertThat(guide.rules()).extracting(ParticipationRule::scope).containsExactly("점프업100", "점프업500");
     }
 
 
@@ -214,7 +214,7 @@ class ParticipationScopeIndexTest {
         }
     }
 
-    @Test void currentPaidCacheKeepsMissingScopeWithoutCallingTheModelAgain() throws Exception {
+    @Test void currentPaidCacheRecoversSourceProgramWithoutCallingTheModelAgain() throws Exception {
         String text = "경제안보품목 및 경제안보서비스의 원활한 도입·생산 및 제공에 기여하고자 하는 사업자 또는 사업자단체";
         String body = "1. 경제안보지원사업\n□ 사업개요\n안정적인 공급망 확보를 지원하\n는사업\n□ 지원대상\n" + text;
         var candidates = ParticipationConditionResolver.candidatesWithScopes(body, List.of(), null);
@@ -235,7 +235,7 @@ class ParticipationScopeIndexTest {
             var guide = service.resolve(version, candidates.guide(), false, candidates.scopes());
             assertThat(guide.rewriteStatus()).isEqualTo("READY");
             assertThat(guide.rules()).isNotEmpty().allSatisfy(rule -> {
-                assertThat(rule.scope()).isNull();
+                assertThat(rule.scope()).isEqualTo("경제안보지원사업");
                 assertThat(rule.text()).contains("경제안보품목", "사업자 또는 사업자단체");
                 assertThat(rule.sources()).anySatisfy(evidence -> assertThat(evidence.excerpt()).contains(text));
             });

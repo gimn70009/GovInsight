@@ -28,8 +28,26 @@ final class ParticipationScopeIndex {
     void compatibility(ParticipationRawSources.ScopedSources value) { compatibility = value; }
     ParticipationRawSources.ScopedSources compatibility() { return compatibility; }
     private final Map<RequirementSource, List<Span>> sources = new LinkedHashMap<>();
+    private final List<RequirementSource> supplementalSources = new ArrayList<>();
+    List<RequirementSource> supplementalSources() { return List.copyOf(supplementalSources); }
+    void addSupplemental(RequirementSource source, String recruitment) {
+        if (!supplementalSources.contains(source)) supplementalSources.add(source);
+        if (recruitment != null && !recruitment.isBlank()) recruitments.put(source, recruitment);
+    }
 
     private final Map<RequirementSource, String> contexts = new LinkedHashMap<>();
+    private final Map<RequirementSource, List<com.publicmonitor.backend.domain.document.client.ParticipationRewriteContract.ScopeRegion>> ownership = new LinkedHashMap<>();
+    List<com.publicmonitor.backend.domain.document.client.ParticipationRewriteContract.ScopeRegion> scopeRegions(RequirementSource source) {
+        return ownership.getOrDefault(source, List.of());
+    }
+    String owner(List<RequirementSource> evidence, String quote) {
+        var labels = new LinkedHashSet<String>();
+        for (var source : evidence) labels.addAll(ParticipationScopeOwnership.owners(source.excerpt(), scopeRegions(source), quote));
+        return labels.isEmpty() ? null : labels.size() == 1 ? labels.iterator().next() : "적용 범위 확인 필요";
+    }
+    private final Map<RequirementSource, String> documentNames = new LinkedHashMap<>();
+    String documentName(RequirementSource source) { return documentNames.getOrDefault(source, source.attachmentName()); }
+    private final Map<RequirementSource, String> recruitments = new LinkedHashMap<>();
     private final Map<RequirementSource, Set<String>> originalContexts = new LinkedHashMap<>();
 
     record Line(String text, int from, int to) {}
@@ -37,6 +55,12 @@ final class ParticipationScopeIndex {
     record Heading(int level, String title) {}
 
     void addDocument(String document, List<ParticipationRule> rules) {
+        String first = document.lines().findFirst().orElse("").strip();
+        if (first.startsWith("[파일:") && first.endsWith("]")) {
+            // Filenames may themselves contain [붙임], [공고문], etc.
+            String name = first.substring(4, first.length() - 1).strip();
+            rules.forEach(rule -> rule.sources().forEach(source -> documentNames.put(source, name)));
+        }
         // Keep paid request identities unchanged; repair physical-line headings only for presentation.
         if (!forDisplay) {
             if (displayIndex == null) displayIndex = new ParticipationScopeIndex(frozen, true);
@@ -51,7 +75,9 @@ final class ParticipationScopeIndex {
         for (int i = 0; i < lines.size(); i++) {
             var line = lines.get(i);
             String text = forDisplay ? displayTitle(line.text()) : line.text().strip();
-            if (text.startsWith("[파일:")) { stack.clear(); contents = false; table = false; }
+            if (text.startsWith("[파일:") || (forDisplay && text.equals("[문서 전체 텍스트 추출]"))) {
+                stack.clear(); contents = false; table = false; skipTitle = -1;
+            }
             if (text.replaceAll("\\s+", "").matches("(?:목차|차례)")) {
                 contents = true;
                 stack.clear();
@@ -66,7 +92,8 @@ final class ParticipationScopeIndex {
                         skipTitle = i + 1;
                     }
                 }
-                if (forDisplay && heading != null && fragmentTitle(heading.title())) heading = null;
+                if (forDisplay && heading != null && (fragmentTitle(heading.title())
+                        || administrativeHeading(heading.title()))) heading = null;
                 boolean contentsPage = contents && text.matches(".*\\s\\d+\\s*$");
                 if (contents && heading != null && !contentsPage && !TOC_ENTRY.matcher(text).matches() && hasContent(lines, i + 1))
                     contents = false;
@@ -92,15 +119,41 @@ final class ParticipationScopeIndex {
             spans.add(new Span(line.from(), line.to(), labels(stack)));
             if (text.equals("[/표]")) table = false;
         }
+        String recruitment = ParticipationRecruitmentContext.from(document);
+        if (!forDisplay && !frozen && !rules.isEmpty()) {
+            String file = rules.stream().flatMap(rule -> rule.sources().stream()).findFirst()
+                    .map(RequirementSource::attachmentName).orElse(null);
+            for (var source : ParticipationReferencedSources.collect(document, file)) {
+                supplementalSources.add(source);
+                if (!recruitment.isBlank()) recruitments.put(source, recruitment);
+            }
+        }
+        var parentSections = parentSections(document);
+        var ownedRegions = ParticipationScopeOwnership.scan(document);
+        String recruitmentDocument = forDisplay ? originalDocument(document) : document;
         int cursor = 0;
         for (var rule : rules) for (var source : rule.sources()) {
             String excerpt = source.excerpt();
             int start = document.indexOf(excerpt, cursor);
             if (start < 0) continue;
-            String parent = parentSection(document.substring(0, start));
+            var localOwners = ParticipationScopeOwnership.local(ownedRegions, excerpt, start);
+            var previousOwners = ownership.get(source);
+            if (previousOwners == null) ownership.put(source, localOwners);
+            else if (!previousOwners.equals(localOwners)) {
+                var combined = new ArrayList<>(previousOwners);
+                combined.addAll(localOwners);
+                if (previousOwners.isEmpty() || localOwners.isEmpty())
+                    combined.add(new com.publicmonitor.backend.domain.document.client.ParticipationRewriteContract.ScopeRegion(
+                            0, excerpt.codePointCount(0, excerpt.length()), "적용 범위 확인 필요"));
+                ownership.put(source, combined.stream().distinct().toList());
+            }
+            // Raw blocks start at line boundaries. Index their preceding headings once per document.
+            String parent = parentSections.get(start);
+            if (parent == null) parent = parentSection(document.substring(0, start));
             if (!parent.isBlank()) originalContexts.computeIfAbsent(source, ignored -> new LinkedHashSet<>()).add(parent);
-            if (secondaryBuyer(forDisplay ? originalDocument(document) : document, parent)) parent += "\n[별도 참여 역할] 구매기관";
+            if (secondaryBuyer(recruitmentDocument, parent)) parent += "\n[별도 참여 역할] 구매기관";
             contexts.put(source, parent);
+            if (!recruitment.isBlank()) recruitments.put(source, recruitment);
             int end = start + excerpt.length();
             var local = sources.computeIfAbsent(source, ignored -> new ArrayList<>());
             for (var span : spans) if (span.to() > start && span.from() < end) {
@@ -110,6 +163,10 @@ final class ParticipationScopeIndex {
             }
             cursor = end;
         }
+    }
+
+    String recruitmentContext(RequirementSource source) {
+        return recruitments.getOrDefault(source, "");
     }
 
     String context(List<RequirementSource> evidence) {
@@ -139,30 +196,57 @@ final class ParticipationScopeIndex {
         return introduction.matches(".*(?:기업|제품).{0,60}(?:판로|납품).{0,30}지원.*");
     }
 
+    private static final Pattern LINE_BREAK = Pattern.compile("\\R");
+    private static final Pattern PARENT_NUMBER = Pattern.compile("[0-9]{1,2}");
+    private static final Pattern PARENT_HEADING = Pattern.compile("^[0-9]{1,2}[.)]?\\s+([가-힣].*)$");
+    private static final Pattern PARENT_TITLE = Pattern.compile(".*(?:개요|자격|대상|안내|신청|요건|절차|내용|과제|프로그램|제외대상)$");
+    private static final Pattern PARENT_INVALID = Pattern.compile(".*[0-9%:：].*");
+
+    private Map<Integer, String> parentSections(String document) {
+        var result = new HashMap<Integer, String>();
+        result.put(0, "");
+        String current = "", previous = "";
+        int from = 0;
+        var breaks = LINE_BREAK.matcher(document);
+        while (breaks.find()) {
+            String line = document.substring(from, breaks.start()).strip();
+            current = parentAfterLine(current, previous, line);
+            result.put(breaks.end(), current);
+            previous = line;
+            from = breaks.end();
+        }
+        if (from < document.length())
+            current = parentAfterLine(current, previous, document.substring(from).strip());
+        result.put(document.length(), current);
+        return result;
+    }
+
     private String parentSection(String prefix) {
-        String[] lines = prefix.split("\\R");
-        String current = "";
-        for (int i = 0; i < lines.length; i++) {
-            String line = lines[i].strip();
-            if (line.startsWith("[파일:")) current = "";
-            String title = null;
-            if (!frozen) {
-                var subsection = JOINED_SUBSECTION.matcher(line);
-                if (subsection.matches() && generic(subsection.group(2))) {
-                    current = subsection.group(2).replaceAll("\\s+", " ").strip();
-                    continue;
-                }
-            }
-            if (line.matches("[0-9]{1,2}") && i + 1 < lines.length) title = lines[i + 1].strip();
-            else {
-                var match = Pattern.compile("^[0-9]{1,2}[.)]?\\s+([가-힣].*)$").matcher(line);
-                if (match.matches()) title = match.group(1).strip();
-            }
-            if (title != null && title.length() <= 60 && !title.matches(".*[0-9%:：].*")
-                    && title.matches(".*(?:개요|자격|대상|안내|신청|요건|절차|내용|과제|프로그램|제외대상)$"))
-                current = title.replaceAll("\\s+", " ");
+        String current = "", previous = "";
+        for (String raw : LINE_BREAK.split(prefix)) {
+            String line = raw.strip();
+            current = parentAfterLine(current, previous, line);
+            previous = line;
         }
         return current;
+    }
+
+    private String parentAfterLine(String current, String previous, String line) {
+        // A standalone number gains a title only after the next line is present in the prefix.
+        if (PARENT_NUMBER.matcher(previous).matches()) current = parentTitle(current, line);
+        if (line.startsWith("[파일:") || (forDisplay && line.equals("[문서 전체 텍스트 추출]"))) return "";
+        if (!frozen) {
+            var subsection = JOINED_SUBSECTION.matcher(line);
+            if (subsection.matches() && generic(subsection.group(2)))
+                return subsection.group(2).replaceAll("\\s+", " ").strip();
+        }
+        var heading = PARENT_HEADING.matcher(line);
+        return heading.matches() ? parentTitle(current, heading.group(1).strip()) : current;
+    }
+
+    private static String parentTitle(String current, String title) {
+        return title.length() <= 60 && !PARENT_INVALID.matcher(title).matches()
+                && PARENT_TITLE.matcher(title).matches() ? title.replaceAll("\\s+", " ") : current;
     }
 
     private boolean isGeneric(String title) {
@@ -307,6 +391,10 @@ final class ParticipationScopeIndex {
             if (next.matches(".*(?:신청|지원|참여).*(?:기업|대상|요건|자격).*")) return true;
         }
         return false;
+    }
+
+    static boolean administrativeHeading(String value) {
+        return value.strip().matches("^(?:\\((?:제출서류|신청방법|접수방법|유의사항|평가방법)\\)|(?:제출서류|신청방법|접수방법|유의사항|평가방법)(?:\\s|[:：]|$)).*");
     }
 
     static boolean generic(String title) {

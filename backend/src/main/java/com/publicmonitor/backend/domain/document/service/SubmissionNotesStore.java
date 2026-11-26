@@ -10,10 +10,14 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class SubmissionNotesStore {
     private final DocumentVersionRepository versions;
+    private final com.publicmonitor.backend.domain.document.repository.DocumentDetailSnapshotRepository snapshots;
     @Transactional
     public boolean claim(Long id, String key, String previousKey, String json) {
         return versions.claimSubmissionNotes(id, key, previousKey, json) == 1;
     }
     @Transactional
-    public void finish(Long id, String key, String json) { versions.finishSubmissionNotes(id, key, json); }
+    public void finish(Long id, String key, String json) {
+        if (versions.finishSubmissionNotes(id, key, json) == 1)
+            snapshots.invalidate(id, java.time.LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul")));
+    }
 }

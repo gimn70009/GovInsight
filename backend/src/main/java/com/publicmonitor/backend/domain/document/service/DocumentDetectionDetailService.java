@@ -6,9 +6,7 @@ import com.publicmonitor.backend.domain.analysis.repository.AnalysisTaskReposito
 import com.publicmonitor.backend.domain.analysis.repository.DocumentAnalysisRepository;
 import com.publicmonitor.backend.domain.analysis.entity.OpportunityDimensionType;
 import com.publicmonitor.backend.domain.analysis.service.OpportunityScoreCalculator;
-import com.publicmonitor.backend.domain.document.entity.DocumentAttachment;
 import com.publicmonitor.backend.domain.document.entity.DocumentAnalysisStatus;
-import com.publicmonitor.backend.domain.document.entity.AttachmentParseStatus;
 import com.publicmonitor.backend.domain.document.entity.DocumentDetection;
 import com.publicmonitor.backend.domain.document.entity.DocumentVersion;
 import com.publicmonitor.backend.domain.document.exception.DocumentDetectionException;
@@ -24,13 +22,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 
-@Slf4j
 @Service
 @Lazy
 @RequiredArgsConstructor
@@ -41,8 +37,7 @@ public class DocumentDetectionDetailService {
     private final AnalysisTaskRepository analysisTaskRepository;
     private final DocumentAttachmentRepository attachmentRepository;
     private final ObjectMapper objectMapper;
-    private final ParticipationRewriteService participationRewriteService;
-    private final SubmissionNotesService submissionNotesService;
+    private final DocumentDetailSnapshotReader snapshotReader;
 
     @Transactional(readOnly = true)
     public DocumentDetectionDetailResponse findById(Long detectionId) {
@@ -65,25 +60,12 @@ public class DocumentDetectionDetailService {
                 analysis != null, processing.runStatus(), processing.taskState());
         boolean analysisPending = analysisStatus != DocumentAnalysisStatus.FAILED
                 && DocumentAnalysisStatusResolver.isProcessing(processing.runStatus(), processing.taskState());
-        List<DocumentAttachment> storedAttachments = attachmentRepository.findAllByDocumentVersionId(version.getId());
-        List<DocumentDetectionDetailResponse.Attachment> attachments = storedAttachments.stream()
+        List<DocumentDetectionDetailResponse.Attachment> attachments = attachmentRepository.findMetadataByDocumentVersionId(version.getId()).stream()
                 .map(this::toAttachment)
                 .toList();
 
         var analysisResponse = toAnalysis(analysis);
-        var preparation = analysisResponse == null ? null : analysisResponse.proposal().preparation();
-        var businessType = BusinessTypeResolver.diagnose(version.getTitle(), version.getContentText(), storedAttachments,
-                analysis == null ? null : analysis.getComparisonSummary(),
-                analysisResponse == null ? null : analysisResponse.proposal().documentType(), objectMapper);
-        log.info("Business type resolution. detection_id={} version_id={} analysis_pending={} status={} type_code={} decision_reason={} stored_reason={} source_index={} usable_source_count={} failed_attachment_count={} empty_attachment_count={}",
-                detectionId, version.getId(), analysisPending, businessType.summary().status(), businessType.summary().code(),
-                businessType.decisionReason(), businessType.storedReason(), businessType.rejectedSourceIndex(),
-                businessType.usableSourceCount(), businessType.failedAttachmentCount(), businessType.emptyAttachmentCount());
-        var participation = includeParticipationGuide
-                ? ParticipationConditionResolver.candidatesWithScopes(version.getContentText(), storedAttachments, preparation) : null;
-        var submissionSources = SubmissionDocumentResolver.resolveWithSources(version.getContentText(), storedAttachments, preparation);
-        var submission = submissionSources.guide();
-        if (includeParticipationGuide) submission = submissionNotesService.resolve(version, submissionSources.attachments(), submission);
+        var saved = snapshotReader.read(version.getId());
         return new DocumentDetectionDetailResponse(
                 detection.getId(),
                 detection.getMonitoringRunSource().getMonitoringSource().getOrganizationName(),
@@ -96,14 +78,12 @@ public class DocumentDetectionDetailService {
                 analysisResponse,
                 analysisPending,
                 analysisStatus,
-                analysisStatus == DocumentAnalysisStatus.FAILED ? failureReason(version, storedAttachments) : null,
+                analysisStatus == DocumentAnalysisStatus.FAILED ? failureReason(version) : null,
                 attachments,
-                ResponsibleOrganizationExtractor.extract(version.getContentText(), storedAttachments),
-                submission,
-                includeParticipationGuide ? participationRewriteService.resolve(version,
-                        participation.guide(),
-                        ParticipationCategorySources.incomplete(version.getContentText(), storedAttachments), participation.scopes()) : null,
-                businessType.summary()
+                saved.responsibleOrganizations(),
+                saved.submissionGuide(),
+                includeParticipationGuide ? saved.participationGuide() : null,
+                saved.businessType()
         );
     }
 
@@ -121,12 +101,9 @@ public class DocumentDetectionDetailService {
 
     private record ProcessingState(MonitoringRunStatus runStatus, AnalysisTask.State taskState) {}
 
-    private String failureReason(DocumentVersion version, List<DocumentAttachment> attachments) {
+    private String failureReason(DocumentVersion version) {
         boolean hasText = version.getContentText() != null && !version.getContentText().isBlank();
-        boolean hasAttachmentText = attachments.stream()
-                .filter(attachment -> attachment.getParseStatus() == AttachmentParseStatus.COMPLETED)
-                .anyMatch(attachment -> attachment.getExtractedText() != null
-                        && !attachment.getExtractedText().isBlank());
+        boolean hasAttachmentText = !hasText && attachmentRepository.countReadableByVersionId(version.getId()) > 0;
         return !hasText && !hasAttachmentText
                 ? "본문·첨부파일에서 읽을 텍스트를 찾지 못했어요. 이미지로 된 공고일 수 있으니 원문을 확인해 주세요."
                 : "분석을 완료하지 못했어요. 원문을 확인하거나 다시 모니터링해 주세요.";
@@ -263,7 +240,7 @@ public class DocumentDetectionDetailService {
     private record StoredDimension(String type, Integer score, String reason) {
     }
 
-    private DocumentDetectionDetailResponse.Attachment toAttachment(DocumentAttachment attachment) {
+    private DocumentDetectionDetailResponse.Attachment toAttachment(DocumentAttachmentRepository.Metadata attachment) {
         return new DocumentDetectionDetailResponse.Attachment(
                 attachment.getFileName(),
                 attachment.getFileExtension(),

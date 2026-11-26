@@ -6,18 +6,39 @@ import java.util.List;
 public final class ParticipationRewriteContract {
     private ParticipationRewriteContract() {}
     public record Criterion(String code, String label, String category) {}
+    /** Code-point offsets in the original excerpt; the label belongs only to this interval. */
+    public record ScopeRegion(int start, int end, String scope) {}
     public record Source(String id, String excerpt, @JsonProperty("group_label") String groupLabel,
-                         List<String> criteria) {}
+                         List<String> criteria,
+                         @JsonProperty("scope_regions") @com.fasterxml.jackson.annotation.JsonInclude(
+                                 com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY) List<ScopeRegion> scopeRegions) {
+        public Source { scopeRegions = scopeRegions == null ? List.of() : List.copyOf(scopeRegions); }
+        public Source(String id, String excerpt, String groupLabel, List<String> criteria) {
+            this(id, excerpt, groupLabel, criteria, List.of());
+        }
+    }
     public record Request(List<Source> sources, List<Criterion> criteria,
                           @JsonProperty("business_types") List<String> businessTypes) {}
     public record Detail(@JsonProperty("source_ids") List<String> sourceIds, String text,
-                         @JsonProperty("supporting_quotes") List<String> supportingQuotes) {}
+                         @JsonProperty("supporting_quotes") List<String> supportingQuotes,
+                         @JsonProperty("review_required") Boolean reviewRequired) {
+        public Detail { reviewRequired = Boolean.TRUE.equals(reviewRequired); }
+        public Detail(List<String> sourceIds, String text, List<String> supportingQuotes) {
+            this(sourceIds, text, supportingQuotes, false);
+        }
+    }
     public record Statement(@JsonProperty("source_ids") List<String> sourceIds, String criterion,
                             String text, @JsonProperty("group_label") String groupLabel,
                             @JsonProperty("supporting_quotes") List<String> supportingQuotes, String kind,
-                            String scope, String audience, List<Detail> details) {
+                            String scope, String audience, List<Detail> details,
+                            @JsonProperty("review_required") Boolean reviewRequired) {
         public Statement {
+            reviewRequired = Boolean.TRUE.equals(reviewRequired);
             details = details == null ? List.of() : List.copyOf(details);
+        }
+        public Statement(List<String> sourceIds, String criterion, String text, String groupLabel,
+                         List<String> supportingQuotes, String kind, String scope, String audience, List<Detail> details) {
+            this(sourceIds, criterion, text, groupLabel, supportingQuotes, kind, scope, audience, details, false);
         }
         public Statement(List<String> sourceIds, String criterion, String text, String groupLabel,
                          List<String> supportingQuotes, String kind, String scope, String audience) {
@@ -30,7 +51,12 @@ public final class ParticipationRewriteContract {
     }
     public record Response(List<Statement> statements,
                            @JsonProperty("evidence_only_ids") List<String> evidenceOnlyIds, String status,
-                           @JsonProperty("irrelevant_source_ids") List<String> irrelevantSourceIds) {
+                           @JsonProperty("irrelevant_source_ids") List<String> irrelevantSourceIds,
+                           java.util.Map<String, Integer> diagnostics) {
+        public Response { diagnostics = diagnostics == null ? java.util.Map.of() : java.util.Map.copyOf(diagnostics); }
+        public Response(List<Statement> statements, List<String> evidenceOnlyIds, String status, List<String> irrelevantSourceIds) {
+            this(statements, evidenceOnlyIds, status, irrelevantSourceIds, java.util.Map.of());
+        }
         public Response(List<Statement> statements, List<String> evidenceOnlyIds, String status) {
             this(statements, evidenceOnlyIds, status, List.of());
         }

@@ -55,19 +55,19 @@ class Fake:
 
 
 def test_field_balancing_does_not_spend_every_slot_on_age():
-    sources = [source(str(i), f"창업 후 {i + 1}년 이내 기업") for i in range(20)]
+    sources = [source(str(i), f"창업 후 {i + 1}년 이내 기업") for i in range(80)]
     sources += [
         source("r", "매출액 5억원 미만 기업"),
         source("p", "특허 보유기업"),
         source("s", "자동차 제조업 영위기업"),
     ]
     selected = focused.select_sources(request(*sources))
-    assert len(selected) == 12
+    assert len(selected) == min(len(sources), focused.MAX_SOURCES)
     assert {"r", "p", "s"} <= {s.id for s in selected}
 
 
 def test_unselected_whole_source_remains_evidence():
-    huge = source("huge", "특허 보유 조건 " * 1500)
+    huge = source("huge", "특허 보유 조건 " * 5000)
     model = Fake()
     result = asyncio.run(service.rewrite(request(huge), model))
     assert not model.calls
@@ -144,7 +144,7 @@ def test_sdk_single_request_cheap_model_caps_and_usage_log(monkeypatch, caplog):
     assert len(payloads) == 1
     assert payloads[0]["model"] == "gpt-5-mini"
     assert payloads[0]["reasoning_effort"] == "low"
-    assert payloads[0]["max_completion_tokens"] == 4096
+    assert payloads[0]["max_completion_tokens"] == 8192
     assert options[0]["max_retries"] == 0
     assert '"input_tokens": 120' in caplog.text
     assert quote not in caplog.text and "test-not-real" not in caplog.text
@@ -155,9 +155,9 @@ def test_input_budget_stays_bounded_and_qualification_gets_priority():
     key = source("export", "지원대상 전년도 직접수출액 5,000만불 미만", "지원대상")
     selected = focused.select_sources(request(*noise, key))
     assert any(s.id == "export" for s in selected)
-    assert sum(len(s.excerpt.encode("utf-8")) for s in selected) <= 8000
-    assert focused.MAX_OUTPUT_TOKENS <= 4096
-    assert len(selected) <= 12
+    assert sum(len(s.excerpt.encode("utf-8")) for s in selected) <= focused.MAX_SOURCE_BYTES
+    assert focused.MAX_OUTPUT_TOKENS <= 8192
+    assert len(selected) <= focused.MAX_SOURCES
 
 
 def test_actual_operator_and_export_fixture_qualifications_fit_the_reduced_input_budget():
@@ -176,17 +176,17 @@ def test_actual_operator_and_export_fixture_qualifications_fit_the_reduced_input
         src = source("real", block, marker)
         selected = focused.select_sources(request(src))
         assert len(selected) == 1
-        assert len(selected[0].excerpt.encode("utf-8")) <= 8000
+        assert len(selected[0].excerpt.encode("utf-8")) <= focused.MAX_SOURCE_BYTES
         assert expected <= focused.source_fields(selected[0])
 
 
 def test_expanded_serialized_input_guard_stops_before_any_model_request():
-    src = source("x", "업력 7년 이상", "신청자격 " + "x" * 20_000)
+    src = source("x", "업력 7년 이상", "신청자격 " + "x" * 48_000)
     model = Fake()
     result = asyncio.run(service.rewrite(request(src), model))
     assert result.status == "UNAVAILABLE"
     assert not model.calls
-    assert focused.MAX_INPUT_BYTES == 20_000
+    assert focused.MAX_INPUT_BYTES == 48_000
 
 
 @pytest.mark.parametrize(
@@ -247,7 +247,7 @@ def test_all_qualification_scopes_precede_large_other_sections(labels):
     ]
     selected = focused.select_sources(request(*sources))
     assert {s.id for s in selected} == {"0", "1", "2"}
-    assert sum(len(s.excerpt.encode()) for s in selected) <= 8000
+    assert sum(len(s.excerpt.encode()) for s in selected) <= focused.MAX_SOURCE_BYTES
 
 
 def test_nested_qualification_retains_wrapped_sentence_table_and_exception():
@@ -290,13 +290,14 @@ def test_large_attachment_collection_still_uses_one_bounded_call_for_short_quali
     key = source("key", "□ 신청자격\n전년도 직접수출액 4,000만불 미만인 중소기업")
     req = request(*noise, key)
     assert sum(len(s.excerpt) for s in req.sources) > 64000
-    fake = Fake([item("key", "REVENUE", "전년도 직접수출액 4,000만불 미만인 중소기업")])
+    fake = Fake([item("key", "REVENUE", "전년도 직접수출액 4,000만불 미만인 중소기업",
+                      text="전년도 직접수출액이 4,000만불 미만인 중소기업이 신청할 수 있습니다.")])
     result = asyncio.run(service.rewrite(req, fake))
     assert result.status == "READY"
     assert len(result.statements) == 1
     assert len(fake.calls) == 1
     schema, messages = fake.calls[0]
-    assert focused.CallBudget().reserve(messages, schema) <= focused.MAX_INPUT_BYTES
+    assert focused.call_budget().reserve(messages, schema) <= focused.MAX_INPUT_BYTES
     assert len(json.loads(messages[1].content)["sources"]) == 1
 
 
@@ -325,12 +326,13 @@ def test_real_public_notice_sections_fit_one_request_and_keep_expected_eligibili
         assert all(label in headings for label in ["점프업100", "점프업500", "점프업1000"])
     fake = Fake()
     result = asyncio.run(service.rewrite(req, fake))
-    assert result.status == "READY"
+    # Input selection is successful, but an empty model answer is not proof of no eligibility.
+    assert result.status == "UNAVAILABLE"
     assert len(fake.calls) == 1
     schema, messages = fake.calls[0]
-    assert focused.CallBudget().reserve(messages, schema) <= 20000
-    assert sum(len(s.excerpt.encode()) for s in selected) <= 8000
-    assert len(selected) <= 12
+    assert focused.call_budget().reserve(messages, schema) <= focused.MAX_INPUT_BYTES
+    assert sum(len(s.excerpt.encode()) for s in selected) <= focused.MAX_SOURCE_BYTES
+    assert len(selected) <= focused.MAX_SOURCES
 
 
 def test_synthetic_join_between_qualification_sections_cannot_ground_a_quote():
@@ -444,7 +446,7 @@ def test_direct_eligibility_is_not_starved_by_large_target_and_financial_section
     assert focused.selection.prepare(req.sources[-1], focused.source_fields)[1] == 0
     assert focused.selection.prepare(req.sources[0], focused.source_fields)[1] == 1
     assert "core" in [s.id for s in selected]
-    assert sum(len(s.excerpt.encode()) for s in selected) <= 8000
+    assert sum(len(s.excerpt.encode()) for s in selected) <= focused.MAX_SOURCE_BYTES
 
 
 def test_line_prefix_with_model_comment_only_uses_the_referenced_original():
@@ -588,15 +590,15 @@ def test_structure_enum_is_still_enforced(field, value):
 
 
 def test_cost_limits_and_prompt_remain_bounded():
-    assert len(focused.PROMPT.encode("utf-8")) <= 5500
-    assert focused.MAX_SOURCE_BYTES == 8000
-    assert focused.MAX_INPUT_BYTES == 20000
-    assert focused.MAX_OUTPUT_TOKENS == 4096
-    assert focused.MAX_SOURCES == 12
-    assert focused.TIMEOUT_SECONDS == 45
-    assert focused.DOCUMENT_TIMEOUT_SECONDS == 60
+    assert len(focused.PROMPT.encode("utf-8")) <= 3600
+    assert focused.MAX_SOURCE_BYTES == 32000
+    assert focused.MAX_INPUT_BYTES == 48000
+    assert focused.MAX_OUTPUT_TOKENS == 8192
+    assert focused.MAX_SOURCES == 64
+    assert focused.TIMEOUT_SECONDS == 120
+    assert focused.DOCUMENT_TIMEOUT_SECONDS == 150
     assert "basis" not in ExtractedCondition.model_json_schema()["properties"]
-    assert Extraction.model_json_schema()["properties"]["items"]["maxItems"] == 32
+    assert Extraction.model_json_schema()["properties"]["items"]["maxItems"] == 64
 
 
 def test_empty_extraction_has_no_local_generated_conditions():
@@ -627,8 +629,9 @@ def test_selection_log_reports_counts_without_original_or_identifier(caplog):
 
 def test_serialized_prompt_source_and_schema_input_remains_bounded():
     selected = [source("one", "□ 신청자격\n업력 7년 이내 기업")]
-    actual = focused.CallBudget().reserve(focused.model_messages(selected), Extraction)
-    assert actual <= 9000
+    actual = focused.call_budget().reserve(focused.model_messages(selected), Extraction)
+    # Includes the strict output schema: duplicated field descriptions also consume input.
+    assert actual <= 7000
     assert actual <= focused.MAX_INPUT_BYTES
 
 
@@ -718,4 +721,141 @@ def test_input_context_separates_actual_program_from_document_sections():
         "parent": "지원 대상",
         "program": "성장형",
         "section": "□ 신청자격",
+        "required_spans": ["L1"],
     }
+
+
+@pytest.mark.parametrize("label", [
+    "아. 세부과제 지원유형", "2. 사업 유형", "① 지원대상", "(가) 신청자격",
+    "3-1. 사업개요", "유형별 지원내용", "내역사업 구분", "신청자격 및 선정기준",
+])
+def test_structural_scope_does_not_invent_a_program_or_change_grounded_conditions(label):
+    quote = "협회·단체, 연구기관, 기업지원기관이 단독 또는 컨소시엄으로 신청할 수 있습니다."
+    req = request(source("a", quote, label))
+    result = focused.project(Extraction(items=[
+        item("a", "BUSINESS_FORM", quote, scope=label, audience="총괄주관기관")
+    ], unresolved_source_ids=[]), req.sources, req)
+    assert len(result.statements) == 1
+    value = result.statements[0]
+    assert value.scope is None
+    assert value.text == quote
+    assert value.audience is None  # This role is absent from the cited condition.
+    assert value.supporting_quotes == [quote]
+
+
+@pytest.mark.parametrize(("label", "expected"), [
+    (None, None),
+    ("일반 유형 / DX 유형", "일반 유형 / DX 유형"),
+    ("① 점프업100", "① 점프업100"),
+    ("스마트공장 구축 · 자율형공장", "스마트공장 구축 · 자율형공장"),
+    ("소재·부품·장비", "소재·부품·장비"),
+    ("성장형 · 2. 신청자격 / 일반형", "성장형 / 일반형"),
+    ("아. 세부과제 지원유형 / 적용 범위 확인 필요", "적용 범위 확인 필요"),
+    ("공통", "공통"),
+    (" common ", "공통"),
+    ("COMMON", "공통"),
+    ("성장사업 · Common", "성장사업 · 공통"),
+    ("Common Ground 지원사업", "Common Ground 지원사업"),
+])
+def test_real_types_and_explicit_uncertainty_survive_scope_cleanup(label, expected):
+    assert focused.scope_label(label) == expected
+
+
+def test_table_columns_and_recruitment_context_reach_the_single_model_call():
+    table = (
+        "아. 세부과제 지원유형\n[표]\n구분\t일반 유형\tDX 유형\n"
+        "지원대상\t국내 소재·부품·장비 공급기업\t국내 소재·부품·장비 공급기업\n[/표]"
+    )
+    req = request(source("a", table,
+        "[상위 구역] 총괄주관기관 모집\n[적용 유형] 아. 세부과제 지원유형\n지원대상"))
+    quote = table.splitlines()[3]
+    model = Fake([item("a", "SECTOR", quote,
+        text="국내 소재·부품·장비 공급기업이 지원 대상입니다.", scope="일반 유형 / DX 유형",
+        audience="세부과제 주관연구개발기관")])
+    result = asyncio.run(service.rewrite(req, model))
+    assert len(model.calls) == 1
+    payload = json.loads(model.calls[0][1][1].content)["sources"][0]
+    assert payload["context"]["parent"] == "총괄주관기관 모집"
+    assert "program" not in payload["context"]
+    assert "구분\t일반 유형\tDX 유형" in payload["excerpt"]
+    assert result.statements[0].scope == "일반 유형 / DX 유형"
+    assert result.statements[0].supporting_quotes == [quote]
+
+
+def test_recruitment_context_is_sent_once_and_never_assigned_to_other_notices():
+    recruitment = "총괄주관연구개발기관 모집 / 세부주관연구개발기관은 별도 모집 예정"
+    heading = f"[공고 대상] {recruitment}\n[원문 구역] 신청자격"
+    selected = [
+        source("a", "비영리법인인 협회·단체", heading),
+        source("b", "국공립 연구기관", heading),
+        source("c", "업력 7년 이내 기업", "[공고 대상] 창업기업 모집\n[원문 구역] 신청자격"),
+        source("d", "특허 보유기업", "신청자격"),
+    ]
+    messages = focused.model_messages(selected)
+    payload = json.loads(messages[1].content)
+    assert payload["recruitments"] == [recruitment, "창업기업 모집"]
+    assert [s["context"].get("recruitment") for s in payload["sources"]] == [0, 0, 1, None]
+    assert messages[1].content.count(recruitment) == 1
+    assert [s["excerpt"] for s in payload["sources"]] == [f"L1: {s.excerpt}" for s in selected]
+    assert focused.call_budget().reserve(messages, Extraction) <= 9000
+
+
+def test_recruitment_context_keeps_existing_output_contract():
+    assert set(Extraction.model_fields) == {"items", "unresolved_source_ids"}
+    assert set(ExtractedCondition.model_fields) == {
+        "source_id", "criterion", "kind", "text", "quote", "scope", "audience", "details"
+    }
+
+
+@pytest.mark.parametrize(
+    "role", ["총괄주관연구개발기관", "주관연구개발기관", "수요기업", "공급기업"]
+)
+def test_scope_names_are_not_classified_by_a_role_dictionary(role):
+    assert focused.scope_label(role) == role
+    assert focused.scope_label("공급기업 역량진단") == "공급기업 역량진단"
+
+
+def test_projection_does_not_override_model_semantics_based_on_account_words():
+    text = (
+        "기관대표자는 IRIS 회원가입 및 연구자전환 동의(국가연구자번호 발급)를 "
+        "반드시 이행해야 합니다."
+    )
+    src = source("account", text, "가. 신청방법 : 서류접수(IRIS)")
+    req = request(src, source("qualified", "국공립 연구기관이 신청할 수 있습니다."))
+    result = focused.project(Extraction(items=[
+        item("account", "BUSINESS_FORM", "L1", text=text),
+        item("qualified", "BUSINESS_FORM", "L1", text=req.sources[1].excerpt),
+    ], unresolved_source_ids=[]), req.sources, req)
+    assert [s.source_ids for s in result.statements] == [["account"], ["qualified"]]
+    assert not result.evidence_only_ids
+
+
+@pytest.mark.parametrize("text", [
+    "중소기업은 IRIS 회원가입을 해야 합니다.",
+    "국공립 연구기관은 IRIS 기관등록을 해야 합니다.",
+    "IRIS 기관등록과 함께 매출액 10억원 이상 요건을 충족해야 합니다.",
+    "IRIS 기관등록 및 전담 인력 보유가 필수입니다.",
+])
+def test_mixed_real_qualifications_are_not_discarded_as_account_setup(text):
+    src = source("a", text, "가. 신청방법")
+    value = item("a", "BUSINESS_FORM", "L1", text=text)
+    result = focused.project(
+        Extraction(items=[value], unresolved_source_ids=[]), [src], request(src),
+    )
+    assert result.statements[0].text == text
+
+
+def test_applicant_table_categories_survive_the_existing_single_call_contract():
+    labels = ["협회·단체", "연구기관", "기업지원기관"]
+    rows = [f"{label}\t법령에 따른 비영리기관이어야 합니다." for label in labels]
+    src = source("table", "[표]\n구 분\t자 격\n" + "\n".join(rows) + "\n[/표]")
+    model = Fake([item("table", "BUSINESS_FORM", f"L{i + 3}",
+                       text=f"{label}는 법령에 따른 비영리기관이어야 합니다.", audience=label)
+                  for i, label in enumerate(labels)])
+    result = asyncio.run(service.rewrite(request(src), model))
+    assert len(model.calls) == 1
+    assert [s.audience for s in result.statements] == labels
+    assert [s.scope for s in result.statements] == [None] * 3
+    assert [s.supporting_quotes for s in result.statements] == [[row] for row in rows]
+    payload = json.loads(model.calls[0][1][1].content)
+    assert "구 분\t자 격" in payload["sources"][0]["excerpt"]

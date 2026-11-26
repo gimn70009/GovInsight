@@ -18,7 +18,7 @@ import static com.publicmonitor.backend.domain.document.client.SubmissionNotesCo
 @Service
 @org.springframework.context.annotation.Lazy
 public class SubmissionNotesService {
-    private static final String VERSION = "submission-notes-ko-v1";
+    private static final String VERSION = "submission-notes-contract-v2";
     private final PythonSubmissionNotesClient client;
     private final SubmissionNotesStore store;
     private final ObjectMapper mapper;
@@ -58,7 +58,7 @@ public class SubmissionNotesService {
             try { executor.execute(() -> run(version.getId(), key, version.getSubmissionNotesKey(), request)); }
             catch (RejectedExecutionException exception) {
                 running.remove(version.getId());
-                return new SubmissionGuide(raw.documents(), List.of(), "UNAVAILABLE");
+                return new SubmissionGuide(raw.documents(), List.of(), "PENDING");
             }
         }
         return new SubmissionGuide(raw.documents(), List.of(), "PENDING");

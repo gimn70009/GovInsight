@@ -235,3 +235,73 @@ def test_api_returns_structured_result_without_a_real_model(monkeypatch):
     assert response.json()["notes"][0]["sourceId"] == "s0"
     assert response.json()["status"] == "READY"
     mock.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    ("title", "explanation"),
+    [
+        (
+            "법인등기부 등본(법인해당시), 사업자등록증",
+            "법인등기부 등본은 법인에 해당하는 경우 제출하며, 사업자등록증도 제출합니다.",
+        ),
+        (
+            "참여확인서(최초 참여 기관만), 변경신고서(변경 시)",
+            "참여확인서는 최초 참여 기관만 제출하며, 변경신고서는 변경 시 제출합니다.",
+        ),
+    ],
+)
+def test_grouped_inline_conditions_use_existing_single_call_and_keep_evidence(title, explanation):
+    row = f"| 5 | {title} | 각 1부 | 기관별 1부 |"
+    req = request(
+        "나. 구비서류\n| 순번 | 제출서류 | 부수 | 비고 |\n" + row,
+        [Document(id="d0", title=title, sourceId="s0", excerpt=row,
+                  stage="APPLICATION", appliesTo=None)],
+    )
+    n = note(quote=title, text=explanation, scope="DOCUMENT", documentId="d0", scopeQuote=row)
+    result, runner = run(req, NotesDraft(notes=[n], complete=True))
+    assert result.status == "READY"
+    assert result.notes == [n]
+    sent = NotesRequest.model_validate_json(runner.ainvoke.call_args.args[0][1][1])
+    assert sent.documents == req.documents
+    assert row in sent.sources[0].text
+    runner.ainvoke.assert_awaited_once()
+
+
+@pytest.mark.parametrize("method", ["기관장 명의의 공문", "온라인 신청 시스템", "등기우편"])
+def test_submission_methods_do_not_gain_exclusive_restrictions(method):
+    quote = f"{method} 제출"
+    req = request("제출 방식\n" + quote)
+    safe = note(quote=quote, scopeQuote="제출 방식", text=f"{method} 방식으로 제출합니다.")
+    assert valid_note(safe, req)
+    for text in [f"{method} 방식으로만 접수합니다.", f"오직 {method} 방식으로 제출합니다."]:
+        bad = safe.model_copy(update={"text": text})
+        result, runner = run(req, NotesDraft(notes=[bad], complete=True))
+        assert result.notes == [] and result.status == "PARTIAL"
+        runner.ainvoke.assert_awaited_once()
+
+
+def test_explicit_exclusivity_is_preserved_and_daman_is_not_exclusivity():
+    for quote, text in [
+        ("온라인으로만 접수", "온라인으로만 접수합니다."),
+        (
+            "기관장 명의 공문 제출. 다만 접수 기한은 별도 안내",
+            "기관장 명의 공문을 제출합니다. 다만 접수 기한은 별도 안내합니다.",
+        ),
+    ]:
+        assert valid_note(note(quote=quote, scopeQuote=quote, text=text), request(quote))
+
+
+def test_common_submission_method_keeps_catalog_and_one_call():
+    quote = "온라인 시스템으로 제출"
+    req = request("제출서류\n신청서\n운영계획서\n제출 방법\n" + quote, [
+        Document(id=f"d{i}", title=title, sourceId="s0", excerpt=title,
+                 stage="APPLICATION", appliesTo=None)
+        for i, title in enumerate(["신청서", "운영계획서"])
+    ])
+    common = note(quote=quote, scopeQuote="제출 방법", text="온라인 시스템으로 제출합니다.")
+    result, runner = run(req, NotesDraft(notes=[common], complete=True))
+    assert result.notes == [common]
+    assert result.notes[0].scope == "COMMON" and result.notes[0].appliesTo is None
+    runner.ainvoke.assert_awaited_once()
+    sent = NotesRequest.model_validate_json(runner.ainvoke.call_args.args[0][1][1])
+    assert sent.documents == req.documents

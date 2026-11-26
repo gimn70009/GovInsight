@@ -35,3 +35,15 @@ def test_explicit_qualification_inside_funding_section_is_not_lost():
     ))
     prepared, _ = selection.prepare(source, focused.source_fields)
     assert prepared.excerpt == eligibility
+
+
+def test_long_applicant_heading_keeps_body_mentions_of_purpose_and_procedure():
+    for tail in (
+        "사업목적에 부합하는", "지원내용을 수행할 역량이 있는", "제출서류로 자격을 입증하는"
+    ):
+        text = f"지원대상 : {tail} 국내 기업, 대학, 연구기관 또는 비영리법인"
+        source = Source(id="target", group_label=text, excerpt=text)
+        prepared, priority = selection.prepare(source, focused.source_fields)
+        assert prepared.excerpt == text
+        assert prepared.id == "target"
+        assert priority <= 1
