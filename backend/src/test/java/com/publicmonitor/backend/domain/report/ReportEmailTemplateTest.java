@@ -1,5 +1,7 @@
 package com.publicmonitor.backend.domain.report;
 
+import com.publicmonitor.backend.domain.email.EmailBrand;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -113,7 +115,7 @@ class ReportEmailTemplateTest {
                 "▸ <img src=x onerror=alert(1)>\n요약: <script>alert(1)</script>\n"
                 + "첨부파일 ↓\n• [위험](javascript:alert(1))");
         assertThat(html).contains("&lt;script&gt;", "&lt;img", "javascript:alert(1)");
-        assertThat(html).doesNotContain("<script>", "<img ", "href=\"javascript:");
+        assertThat(html.replace(EmailBrand.html(), "")).doesNotContain("<script>", "<img ", "href=\"javascript:");
     }
 
     @Test void legacyTextStillKeepsNewlinesAndLinks() {

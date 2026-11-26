@@ -1,0 +1,13 @@
+[
+  {"name":"different document", "text":"사업자등록증을 제출할 수 있어야 합니다.", "quote":"서약서 1부", "kind":"ELIGIBILITY", "heading":"신청서류", "detail":false, "reason":"DOCUMENT_QUOTE_MISMATCH"},
+  {"name":"unsupported alternative", "text":"사업자등록증 또는 고유번호증을 제출합니다.", "quote":"사업자등록증 1부", "kind":"ELIGIBILITY", "heading":"신청서류", "detail":true, "reason":"DOCUMENT_QUOTE_MISMATCH"},
+  {"name":"proof explanation", "text":"사업자등록증 또는 고유번호증으로 확인합니다.", "quote":"사업자등록증 또는 고유번호증 1부", "kind":"ELIGIBILITY", "heading":"신청서류", "detail":true, "reason":null},
+  {"name":"document list", "text":"신청자는 사업자등록증을 제출할 수 있어야 합니다.", "quote":"사업자등록증 1부", "kind":"ELIGIBILITY", "heading":"신청서류", "detail":false, "reason":"DOCUMENT_LIST_NOT_QUALIFICATION"},
+  {"name":"legal qualification", "text":"신청자는 등록된 비영리단체여야 합니다.", "quote":"비영리단체로 등록된 기관에 한함. 비영리민간단체등록증 제출", "kind":"ELIGIBILITY", "heading":"제출서류", "detail":false, "reason":null},
+  {"name":"procurement exception", "text":"본 사업은 우선조달계약의 예외 대상입니다.", "quote":"특정 품질이 필요한 경우로 우선조달계약 예외 대상임", "kind":"EXCLUSION", "heading":"예외 공지", "detail":false, "reason":"PROCUREMENT_EXCEPTION"},
+  {"name":"hallucinated denial", "text":"중소기업은 신청할 수 없습니다.", "quote":"중소기업자와의 우선조달계약 예외 대상임", "kind":"EXCLUSION", "heading":"예외 공지", "detail":false, "reason":"PROCUREMENT_EXCEPTION"},
+  {"name":"actual applicant denial with exception", "text":"참여제한 기업은 신청할 수 없습니다.", "quote":"참여제한 기업은 신청 불가. 우선조달계약 예외와 무관함", "kind":"EXCLUSION", "heading":"신청제외", "detail":false, "reason":null},
+  {"name":"document exclusion", "text":"서약서가 누락되면 신청할 수 없습니다.", "quote":"서약서 누락 시 신청 불가", "kind":"EXCLUSION", "heading":"신청서류", "detail":false, "reason":null},
+  {"name":"ordinary eligibility", "text":"대학이나 연구기관은 신청할 수 있습니다.", "quote":"대학 또는 연구기관", "kind":"ELIGIBILITY", "heading":"신청자격", "detail":false, "reason":null},
+  {"name":"spaced document", "text":"사업자 등록증으로 확인합니다.", "quote":"사업자등록증 제출", "kind":"ELIGIBILITY", "heading":"신청서류", "detail":true, "reason":null}
+]

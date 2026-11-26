@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { documentPresentation, evidenceAttachment, formatSupportScale, organizationEvidenceAttachment, summaryDocuments, summaryValue } from '../src/utils/businessSummary.ts'
+import { documentPresentation, evidenceAttachment, formatSupportScale, organizationEvidenceAttachment, summaryDocuments, submissionDocumentName, summaryValue } from '../src/utils/businessSummary.ts'
 
 const source = { origin: 'NOTICE_BODY', sectionTitle: '제출서류', excerpt: '모든 신청기업은 사업계획서를 제출한다.' }
 const required = { title: '사업계획서', detail: '지정 서식 사용', requirementLevel: 'MANDATORY', stage: 'APPLICATION', source }
@@ -115,5 +115,41 @@ test('legacy guidance is kept in a disclosure and missing conditional criteria a
   assert.equal(documentPresentation(legacy).description, null)
   assert.deepEqual(documentPresentation(legacy).conditions, [legacy.detail])
   const unknown = { ...required, documentNames: ['확인서'], detail: null, requirementLevel: 'CONDITIONAL' }
-  assert.match(documentPresentation(unknown).conditions[0], /구체적인 적용 대상은 원문을 확인/u)
+  assert.deepEqual(documentPresentation(unknown).conditions, [])
+  const legacyUnknown = { ...unknown, conditions: ['원문에 ‘해당 시 제출’로 명시되어 있습니다. 구체적인 적용 대상은 원문을 확인해 주세요.'] }
+  assert.deepEqual(documentPresentation(legacyUnknown).conditions, [])
+})
+
+
+test('submission names remove administrative table markers but retain identifying numbers and targets', () => {
+  const cases = [
+    ['해당시 ④ (증빙서류) 기업신용평가등급 확인서', '기업신용평가등급 확인서'],
+    ['해당 시 제출 ④ (증빙서류) 기업신용평가등급 확인서', '기업신용평가등급 확인서'],
+    ['필수: 1. [붙임 4] 사업계획서', '사업계획서'],
+    ['② (제출서류) [별지 제2호] 신청서', '신청서'],
+    ['[선택] 실적증명서', '실적증명서'],
+    ['EU 수출실적 증빙양식(해당 시)', 'EU 수출실적 증빙양식'],
+    ['4대 사회보험 가입자 명부', '4대 사회보험 가입자 명부'],
+    ['최근 3년간 표준재무제표증명원 각 1부', '최근 3년간 표준재무제표증명원 각 1부'],
+    ['2026년 (개인) 신용정보 동의서', '2026년 (개인) 신용정보 동의서'],
+    ['필수 교육 이수확인서', '필수 교육 이수확인서'],
+    ['(법인) 사업자등록증 또는 법인등기부등본', '(법인) 사업자등록증 또는 법인등기부등본'],
+    ['ISO 9001 인증서', 'ISO 9001 인증서'],
+  ]
+  for (const [input, expected] of cases) {
+    assert.equal(submissionDocumentName(input), expected, input)
+    assert.equal(submissionDocumentName(expected), expected, `idempotent: ${expected}`)
+  }
+})
+
+test('old and structured responses share clean names without mutating evidence or inferring labels', () => {
+  const title = '해당시 ④ (증빙서류) 기업신용평가등급 확인서'
+  const original = { ...required, title, requirementLevel: null, stage: null,
+    formats: [' HWPX ', 'pdf', 'PDF', ''], source: { ...source, excerpt: title } }
+  for (const item of [original, { ...original, documentNames: [title] }]) {
+    const before = structuredClone(item)
+    assert.deepEqual(documentPresentation(item).names, ['기업신용평가등급 확인서'])
+    assert.deepEqual(documentPresentation(item).formats, ['HWPX', 'PDF'])
+    assert.deepEqual(item, before)
+  }
 })

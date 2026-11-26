@@ -7,6 +7,7 @@ import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Component;
+import org.springframework.core.io.ClassPathResource;
 @Component @RequiredArgsConstructor
 public class EmailClient {
     private final JavaMailSender reportMailSender;
@@ -24,6 +25,9 @@ public class EmailClient {
             String subject = title == null ? "GovInsight 보고서" : YearNotation.display(title).replaceAll("[\\r\\n]", " ");
             helper.setSubject(subject);
             helper.setText(content.plainText(), content.html());
+            if (content.html().contains("cid:" + EmailBrand.CONTENT_ID)) {
+                helper.addInline(EmailBrand.CONTENT_ID, new ClassPathResource(EmailBrand.RESOURCE), "image/png");
+            }
             reportMailSender.send(message);
         } catch (MailAuthenticationException exception) {
             throw new EmailClientException("메일 계정 인증에 실패했습니다. 앱 비밀번호와 SMTP 설정을 확인해 주세요.");

@@ -1,0 +1,26 @@
+.section-status { display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: center; gap: 16px; min-height: 112px; box-sizing: border-box; padding: 24px; border: 1px solid #e1e8f0; border-radius: 12px; background: #f8fafc; }
+.section-status:not(:last-child) { margin-bottom: 18px; }
+.section-status__icon { display: grid; place-items: center; width: 44px; height: 44px; box-sizing: border-box; border: 1px solid #dce5ef; border-radius: 12px; background: #fff; color: #617893; }
+.section-status__content { min-width: 0; }
+.section-status__title { display: block; color: #304b6b; font-size: 14px; font-weight: 650; line-height: 1.6; word-break: keep-all; overflow-wrap: anywhere; }
+.section-status__content p { margin: 5px 0 0; color: #62738a; font-size: 13px; line-height: 1.7; word-break: keep-all; overflow-wrap: anywhere; }
+.section-status--loading { grid-template-columns: 44px minmax(0, 1fr); background: #f5f9ff; border-color: #dbe8f9; }
+.section-status--loading .section-status__icon { border-color: #d2e3fa; color: #3576cc; }
+.section-status__spinner { animation: section-status-spin 1.2s linear infinite; }
+.section-status--compact { grid-template-columns: 32px minmax(0, 1fr); min-height: 0; gap: 12px; padding: 14px 16px; }
+.section-status--compact .section-status__icon { width: 32px; height: 32px; border-radius: 9px; }
+.section-status--compact .section-status__icon svg { width: 18px; height: 18px; }
+.section-status--compact .section-status__title { font-size: 13px; }
+.section-status--compact .section-status__content p { margin-top: 2px; font-size: 12px; }
+@keyframes section-status-spin { to { transform: rotate(360deg); } }
+@media (max-width: 720px) {
+  .section-status { grid-template-columns: 40px minmax(0, 1fr); gap: 12px; padding: 20px 16px; }
+  .section-status__icon { width: 40px; height: 40px; border-radius: 11px; }
+  .section-status--compact { grid-template-columns: 32px minmax(0, 1fr); padding: 13px 14px; }
+}
+@media (max-width: 400px) {
+  .section-status { gap: 12px 10px; padding: 18px 14px; }
+  .section-status__title { font-size: 13px; }
+  .section-status__content p { font-size: 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .section-status__spinner { animation: none; } }

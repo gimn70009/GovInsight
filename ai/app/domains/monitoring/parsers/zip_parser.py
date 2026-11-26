@@ -75,7 +75,7 @@ class ZipParser:
                     if not parsed.text.strip():
                         raise AttachmentParseError("문서에서 본문을 찾지 못했습니다.")
                     documents.append((index, name, parsed.text.strip(), actual))
-                    item.update(status="COMPLETED", reason="")
+                    item.update(status="COMPLETED", reason=getattr(parsed, "warning", None) or "")
                 except ZipParseError:
                     raise
                 except (AttachmentParseError, OSError, RuntimeError, zipfile.BadZipFile):
@@ -101,7 +101,12 @@ class ZipParser:
                 manifest[document[0]]["partIndex"] = part_index
                 if document[0] != representative[0]:
                     manifest[document[0]]["status"] = "DUPLICATE"
-        return ParsedAttachment(text="\n\n".join(sections), archive_entries=tuple(manifest))
+        warning = "ZIP 내부 문서의 일부 OCR을 적용하지 못했습니다. 기존 추출문을 유지합니다."
+        return ParsedAttachment(
+            text="\n\n".join(sections), archive_entries=tuple(manifest),
+            warning=warning if any(e["status"] == "COMPLETED" and e["reason"]
+                                   for e in manifest) else None,
+        )
 
     def _copy_entry(
         self,

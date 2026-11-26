@@ -6,8 +6,9 @@ spring.datasource.username=${DB_USERNAME:govinsight}
 spring.datasource.password=${DB_PASSWORD}
 spring.datasource.driver-class-name=oracle.jdbc.OracleDriver
 
-# Local development only. Use validate after creating the schema.
-spring.jpa.hibernate.ddl-auto=${JPA_DDL_AUTO:update}
+# Preserve collected documents and paid AI caches on normal restarts.
+# Initialize a new development DB explicitly with --spring.jpa.hibernate.ddl-auto=create.
+spring.jpa.hibernate.ddl-auto=${JPA_DDL_AUTO:none}
 spring.jpa.open-in-view=false
 
 # Generate with: openssl rand -base64 32
@@ -60,3 +61,8 @@ app.analysis.recovery.interval-ms=10000
 app.analysis.recovery.initial-delay-ms=10000
 app.analysis.recovery.minimum-lease=PT30M
 app.analysis.recovery.per-document-lease=PT15M
+
+# Build/persist document display sections before a browser requests them.
+app.document-detail.worker.enabled=${DOCUMENT_DETAIL_WORKER_ENABLED:true}
+app.document-detail.worker.interval-ms=3000
+app.document-detail.worker.initial-delay-ms=5000

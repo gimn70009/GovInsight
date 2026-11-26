@@ -21,7 +21,8 @@ class NumberedSubmissionListTest {
     void 창업도시_저장_첨부의_여섯_서류를_분리하고_각_형식과_원문을_보존한다() throws Exception {
         String original;
         try (var stream = getClass().getResourceAsStream("/submission-documents/startup-city.txt")) {
-            original = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+            // Stored parser output uses LF; Windows Git checkouts may convert the fixture to CRLF.
+            original = new String(stream.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
         }
         var attachment = DocumentAttachment.create(null, "창업도시_모집_공고.hwpx", "https://example.org/notice",
                 "hwpx", "application/zip", 1L, "hash", original, AttachmentParseStatus.COMPLETED, null);

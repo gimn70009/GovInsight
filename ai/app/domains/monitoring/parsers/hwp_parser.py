@@ -170,8 +170,15 @@ def _table_records(records, control_level):
                  if tag == HWPTAG_TABLE and level == control_level + 1), None)
     if body is None or len(records[body][2]) < 8:
         return None
-    if any(tag == HWPTAG_CTRL_HEADER for tag, _, _ in records[body + 1:]):
-        return None  # Nested objects retain paragraph text without guessed boundaries.
+    # Column definitions have no child text/cells and do not invalidate a table.
+    # Unknown objects still retain paragraph text instead of guessed boundaries.
+    for index in range(body + 1, len(records)):
+        tag, level, data = records[index]
+        if tag == HWPTAG_CTRL_HEADER and (
+            data[:4] != b"dloc"
+            or (index + 1 < len(records) and records[index + 1][1] > level)
+        ):
+            return None
     row_count, column_count = struct.unpack_from("<HH", records[body][2], 4)
     cells = []
     current = None
@@ -180,7 +187,7 @@ def _table_records(records, control_level):
     def flush():
         if current is not None:
             column, row, column_span, row_span = current
-            cells.append(Cell(row, column, " ".join(paragraphs), row_span, column_span))
+            cells.append(Cell(row, column, "\n".join(paragraphs), row_span, column_span))
         paragraphs.clear()
 
     for tag, level, data in records[body + 1:]:

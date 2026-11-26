@@ -14,6 +14,94 @@ import tools.jackson.databind.ObjectMapper;
 
 class SubmissionDocumentResolverTest {
     @Test
+    void 요약의_증빙서류_묶음과_저장된_분류명은_상세표의_두_실제서류로_대체한다() throws IOException {
+        String original = fixture("category-reference");
+        Preparation preparation = new ObjectMapper().readValue("""
+                {"submissionDocuments":[
+                  {"title":"증빙서류","requirementLevel":"MANDATORY","stage":"APPLICATION",
+                   "source":{"origin":"ATTACHMENT","attachmentName":"공고.hwpx","excerpt":"③·④증빙서류 각 1부"}},
+                  {"title":"증빙서류","requirementLevel":"CONDITIONAL","stage":"APPLICATION",
+                   "source":{"origin":"ATTACHMENT","attachmentName":"공고.hwpx","excerpt":"③·④증빙서류 각 1부"}}
+                ]}
+                """, Preparation.class);
+        for (Preparation saved : java.util.Arrays.asList(null, preparation)) {
+            var guide = SubmissionDocumentResolver.resolve(null, List.of(attachment("공고.hwpx", original)), saved);
+            assertThat(guide.documents()).extracting(SubmissionDocument::title).containsExactly(
+                    "제출 공문", "사업계획서", "(증빙서류) 개인정보 이용동의서", "(증빙서류) 기업신용평가등급 확인서");
+            assertThat(guide.documents().getLast().requirementLevel()).isEqualTo("CONDITIONAL");
+            assertThat(guide.documents().getLast().conditions()).anySatisfy(value -> assertThat(value).contains("민간기관"));
+            assertThat(guide.documents().getLast().source().excerpt()).contains("④ (증빙서류)");
+            var output = java.nio.file.Path.of("build/submission-category-guide.json");
+            java.nio.file.Files.createDirectories(output.getParent());
+            java.nio.file.Files.writeString(output, new ObjectMapper().writeValueAsString(guide), StandardCharsets.UTF_8);
+        }
+    }
+
+    @Test
+    void 독립_증빙자료와_다른_출처_단계_미해결_번호는_묶음명으로_삭제하지_않는다() throws IOException {
+        String original = fixture("category-reference");
+        String generic = "④ 증빙서류 각 1부";
+        var independent = SubmissionDocumentResolver.resolve(original.replace("[/표]",
+                "필수\t⑤ 증빙서류\t기타 사업실적 자료\t신청 시\n[/표]"), List.of(), null);
+        assertThat(independent.documents()).anySatisfy(item -> {
+            assertThat(item.title()).isEqualTo("증빙서류");
+            assertThat(item.source().location()).isEqualTo("표의 6행");
+        });
+        var otherSource = SubmissionDocumentResolver.resolve("신청서류\n" + generic,
+                List.of(attachment("공고.hwpx", original)), null);
+        assertThat(otherSource.documents()).anySatisfy(item -> {
+            assertThat(item.title()).isEqualTo("증빙서류 각 1부");
+            assertThat(item.source().origin()).isEqualTo("NOTICE_BODY");
+        });
+        var otherStage = SubmissionDocumentResolver.resolve(original + "\n□ 협약 절차\n협약 시 제출서류\n" + generic, List.of(), null);
+        assertThat(otherStage.documents()).anySatisfy(item -> {
+            assertThat(item.title()).isEqualTo("증빙서류 각 1부");
+            assertThat(item.stage()).isEqualTo("AGREEMENT");
+        });
+        var unresolved = SubmissionDocumentResolver.resolve(original.replace("③·④증빙서류", "③·⑥증빙서류"), List.of(), null);
+        assertThat(unresolved.documents()).anySatisfy(item -> assertThat(item.title()).isEqualTo("증빙서류 각 1부"));
+        var specific = SubmissionDocumentResolver.resolve("신청서류\n① 기타 실적 증빙서류 각 1부", List.of(), null);
+        assertThat(specific.documents()).singleElement().satisfies(item -> assertThat(item.title()).contains("기타 실적 증빙서류"));
+    }
+
+    @Test
+    void 일반목록과_두가지_표에서_문의처를_제외하고_공통_제출조건을_보존한다() {
+        String condition = "모든 제출서류는 PDF로 제출하며, 마감일 이후에는 보완 불가";
+        String raw = "* " + condition + " \uFFFD 문의처: 서류 제출 지원센터";
+        for (String prefix : List.of(
+                "신청서류\n① 사업계획서\n",
+                "신청서류\n[표]\n제출서류\t비고\n사업계획서\t필수\n[/표]\n",
+                "신청서류\n제출 서류\n주요내용\n비고\n필수\n사업계획서\n사업 수행계획 작성\n")) {
+            var guide = SubmissionDocumentResolver.resolve(prefix + raw, List.of(), null);
+            assertThat(guide.documents()).hasSize(1);
+            assertThat(guide.notes()).singleElement().satisfies(note -> {
+                assertThat(note.text()).isEqualTo(condition + ".");
+                assertThat(note.appliesTo()).isNull();
+                assertThat(note.source().excerpt()).contains(raw);
+            });
+            assertThat(guide.documents().getFirst().requirementLevel()).isEqualTo("MANDATORY");
+        }
+    }
+
+
+    @Test
+    void 유의사항에_붙은_문의절은_표시에서_분리하고_원문근거는_그대로_보존한다() throws IOException {
+        String condition = "제출서류 등에 누락·착오가 있더라도 신청마감일 이후 수정·보완·교체 등 일체 불가";
+        String raw = "* " + condition + " \uF06F 신청·접수 시스템(K-Startup) 문의 :국번없이 1357 (시스템운영팀)";
+        var guide = SubmissionDocumentResolver.resolve("신청서류\n① 사업계획서\n" + raw, List.of(), null);
+        assertThat(guide.documents()).extracting(SubmissionDocument::title).containsExactly("사업계획서");
+        assertThat(guide.notes()).singleElement().satisfies(note -> {
+            assertThat(note.text()).isEqualTo(condition + ".");
+            assertThat(note.appliesTo()).isNull();
+            assertThat(note.source().excerpt()).isEqualTo("신청서류\n" + raw);
+        });
+        var output = java.nio.file.Path.of("build/submission-note-checks/contact-boundary-guide.json");
+        java.nio.file.Files.createDirectories(output.getParent());
+        java.nio.file.Files.writeString(output, new ObjectMapper().writeValueAsString(guide), StandardCharsets.UTF_8);
+    }
+
+
+    @Test
     void CBAM_제출표의_11개_서류와_유형별_대상_및_공통_조건을_보존한다() throws IOException {
         var guide = SubmissionDocumentResolver.resolve(null, List.of(attachment("공고.hwpx", fixture("cbam"))), null);
         assertThat(guide.documents()).hasSize(11);

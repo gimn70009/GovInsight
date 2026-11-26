@@ -62,23 +62,42 @@ export function summaryDocuments(analysis: DocumentAnalysis | null, guide?: Subm
   )
 }
 
+// Strip only standalone table markers; retain meaningful numbers, targets and the original evidence.
+export function submissionDocumentName(value: string): string {
+  const prefixes = [
+    /^[•●○◦▪■□※*①-⑳㉑-㉟]\s*/u,
+    /^\d{1,2}[.)](?=\s|[가-힣A-Za-z(])\s*/u,
+    /^해당\s*시(?:\s*제출)?(?=\s|[①-⑳㉑-㉟([:：·-]|$)\s*[:：·-]?\s*/u,
+    /^(?:필수|선택)(?:\s*제출)?\s*(?:[:：·-]\s*|(?=[①-⑳㉑-㉟([]|\d{1,2}[.)]))/u,
+    /^[([]\s*(?:필수|선택|해당\s*시)(?:\s*제출)?\s*[)\]]\s*/u,
+    /^[([]\s*(?:증빙\s*서류|제출\s*서류|구비\s*서류)\s*[)\]]\s*/u,
+    /^[([]\s*(?:붙임|별첨|첨부|서식|별지|양식)\s*제?\s*\d+(?:\s*[-의]\s*\d+)*\s*호?\s*[)\]]\s*/u,
+  ]
+  let name = value.trim()
+  for (;;) {
+    const prefix = prefixes.find(pattern => pattern.test(name))
+    if (!prefix) break
+    name = name.replace(prefix, '').trim()
+  }
+  name = name.replace(/\s*[([]\s*(?:필수|선택|해당\s*시)(?:\s*제출)?\s*[)\]]\s*$/u, '').trim()
+  return name || value.trim()
+}
+
 // Old API responses retain their full guidance in a disclosure; do not guess row boundaries in the UI.
 export function documentPresentation(item: SubmissionDocument) {
   const names = item.documentNames?.filter(name => name.trim()) ?? []
   const structured = names.length > 0
-  const conditions = item.conditions?.filter(condition => condition.trim()) ?? []
+  const unavailableCondition = '원문에 ‘해당 시 제출’로 명시되어 있습니다. 구체적인 적용 대상은 원문을 확인해 주세요.'
+  const conditions = item.conditions?.filter(condition => condition.trim() && condition.trim() !== unavailableCondition) ?? []
   if (!structured) {
     if (item.appliesTo?.trim()) conditions.push(`제출 대상: ${item.appliesTo.trim()}`)
     if (item.detail?.trim() && item.detail !== item.title && item.detail !== item.appliesTo) conditions.push(item.detail.trim())
   }
-  if (item.requirementLevel === 'CONDITIONAL' && conditions.length === 0) {
-    conditions.push('원문에 ‘해당 시 제출’로 명시되어 있습니다. 구체적인 적용 대상은 원문을 확인해 주세요.')
-  }
   return {
-    names: structured ? names : [item.title],
+    names: [...new Set((structured ? names : [item.title]).map(submissionDocumentName))],
     conditions: [...new Set(conditions)],
     description: structured && item.detail !== item.title ? item.detail : null,
-    formats: [...new Set(item.formats ?? [])],
+    formats: [...new Set((item.formats ?? []).map(format => format.trim().toUpperCase()).filter(Boolean))],
   }
 }
 

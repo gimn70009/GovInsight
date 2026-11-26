@@ -55,7 +55,7 @@ def _table(node: ElementTree.Element) -> str | None:
                 if _property(cell, "tcPr", "hMerge") is not None:
                     return None
                 merge = _property(cell, "tcPr", "vMerge")
-                value = " ".join(text_blocks(cell, lambda _: None))
+                value = "\n".join(text_blocks(cell, lambda _: None))
                 key = (column, width)
                 if merge is not None and attribute(merge, "val") != "restart":
                     if key not in vertical or value:

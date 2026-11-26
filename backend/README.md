@@ -217,3 +217,12 @@ GET /api/document-detections/{id} 응답의 participationGuide.categories는 8�
 - 기존 DB의 `ddl-auto=none/validate` 환경에서는 `schema/participation-rewrite.sql`을 먼저 적용합니다. 로컬 `update` 설정은 백엔드 시작 시 두 nullable 캐시 컬럼을 추가합니다. 기존 문서·분석 데이터 초기화는 필요하지 않습니다. Python·백엔드·프런트엔드를 함께 반영해야 합니다.
 
 참여 조건 재작성은 AI의 `/internal/monitoring/participation-rewrite/stream`에서 검증된 중간 결과를 받습니다. `PENDING`에도 `VERIFIED` 문장이 포함될 수 있고 상세 화면은 처리 완료까지 자동 갱신합니다. HWP/PDF의 같은 원문은 한 번 처리하되 모든 근거를 유지합니다. 후속 장애가 먼저 검증된 문장을 지우지 않으며 최종 결과만 영속 캐시에 기록합니다. 일시적인 `UNAVAILABLE`은 5분 후 재조회나 서버 재시작 시 재시도할 수 있습니다.
+
+
+## 제출 유의사항 문맥 정리 (2026-11-04)
+
+상세 화면의 `submissionGuide.notes`는 현재 공고 원문을 Python 전용 프롬프트로 읽고 원문·서류 ID·수치/단위·적용 범위를 검증한 문장입니다. 서류 목록은 기존 파서로 유지합니다. 최초 조회는 비동기 `notesStatus=PENDING`, 이후 `READY/PARTIAL/UNAVAILABLE`이며 화면이 완료까지 갱신합니다. 실패/부분 누락은 원문 확인을 안내합니다. 메일용 상세 조회는 새 모델 작업을 시작하지 않습니다.
+
+Python `POST /internal/monitoring/submission-notes`의 요청·응답과 한도는 [설계 문서](../docs/DESIGN.md)의 ‘제출 유의사항의 문맥 기반 정리’를 따릅니다. 버전별 입력 SHA-256과 최종 결과를 저장하며 동시 조회는 DB의 이전 키 조건으로 선점해 중복 유료 호출을 방지합니다. 실패/중단된 같은 입력을 자동 재시도하지 않습니다.
+
+`document_versions`에 `submission_notes_key`, `submission_notes_json` 컬럼이 필요합니다. 로컬 `ddl-auto=update` 설정은 다음 시작 시 자동 추가합니다. 기존 `none/validate` 환경은 [추가 컬럼 SQL](schema/submission-notes.sql)을 먼저 한 번 적용하세요. 데이터 초기화는 필요하지 않습니다. Python·백엔드·프런트엔드를 함께 반영합니다.

@@ -74,6 +74,8 @@ NOTICE_APPLICABILITY_INSTRUCTIONS = """
 
 
 EVIDENCE_COVERAGE_INSTRUCTIONS = """
+[표] 안의 탭은 셀 경계이며 ⏎는 같은 셀 안의 문단 경계입니다.
+한 셀에 여러 서류가 있으면 개별 목록과 공통 대상·하위 조건·수량·제출 시점을 함께 읽습니다.
 원문 coverage.truncated가 true이면 일부 구간만 확인한 것입니다.
 sourceRanges는 해당 파일 원문 문자열의 0부터 시작하는 문자 구간(start 포함, end 제외)입니다.
 생략 표시는 원문 문장이 아니며, 서로 떨어진 구간을 연결해 하나의 조건으로 해석하지 않습니다.
@@ -85,4 +87,14 @@ duplicateOfAttachmentId는 같은 추출 텍스트의 다른 파일이며 새로
 임의로 하나를 선택하거나 평균내지 말고 원문 간 차이와 확인 필요를 설명합니다.
 각 핵심 사실은 현재 본문 또는 해당 첨부의 실제 구절로 확인한 경우만 작성합니다.
 표의 열 제목, 빈 서식의 예시, 작성요령을 실제 신청 대상이나 확정된 값으로 사용하지 않습니다.
+""".strip()
+
+TARGETED_EVIDENCE_INSTRUCTIONS = """
+추가 검색·문맥 조회의 sourceId는 body 또는 attachment:N이며 현재 문서 버전에만 속합니다.
+검색어 일치와 원문 확인을 구분합니다. text가 비어 있거나 READ_REQUIRED·CONTEXT_TOO_LARGE인
+검색 위치만으로 사실을 확정하지 않습니다. NO_MATCH나 조회 한도 소진은 조건 부재가 아닙니다.
+추가 결과도 실제 text와 coverage 범위만 근거로 사용하며 생략 구간은 미확인으로 남깁니다.
+evidence_check는 원문이 아닌 확인 범위 진단입니다. CHECK_REQUIRED의 unresolved_topics에
+해당하는 항목은 확인 필요로 표시하고, 근거 누락을 조건 없음·자격 충족으로 바꾸지 않습니다.
+CANDIDATES_RECOVERED도 키워드 후보의 복구일 뿐 원문 전체의 완전한 확인을 뜻하지 않습니다.
 """.strip()

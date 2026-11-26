@@ -48,7 +48,7 @@ final class GeneralNoticeClassifier {
     private static final Pattern DESIGNATION_RECRUITMENT_TITLE = Pattern.compile("선정계획|지정.{0,20}(?:모집|공모|신청)");
     private static final Pattern CONDITIONAL_DESIGNATION = Pattern.compile(
             "지정되더라도.{0,25}지원.{0,25}(?:확정되는것은아님|확정되지않)|"
-                    + "지정신청(?:서)?(?:을|를)?(?:받습니다|접수합니다)|지정을희망하는.{0,20}(?:신청|제출)");
+                    + "지정신청(?:서)?(?:을|를)?(?:받습니다|접수합니다|(?:다음과같이)?공고합니다)|지정하고자하오니신청|지정을희망하는.{0,20}(?:신청|제출)");
 
     private static final Pattern FILED_APPLICATION_TITLE = Pattern.compile("(?:지정|인증|허가|승인).{0,16}신청");
     private static final Pattern FILED_APPLICATION = Pattern.compile("(?:지정|인증|허가|승인)신청이(?:있어|있으므로|접수되어|접수되었)");
@@ -115,6 +115,9 @@ final class GeneralNoticeClassifier {
                 && REGULATION_TITLE.matcher(heading).find()
                 && introductions.stream().anyMatch(text -> affirmative(text, REGULATION_ACTION))) return Nature.REGULATION;
         boolean recruiting = sources.stream().anyMatch(GeneralNoticeClassifier::recruitmentBody);
+        if (!currentTitle && !recruiting && heading.matches(".*(?:지정|보호기간연장).*")
+                && introductions.stream().anyMatch(text -> affirmative(text, Pattern.compile(
+                        "(?:지정|연장)하였기에.{0,160}고시합니다")))) return Nature.GENERAL;
         boolean selected = SELECTION_PUBLICATION_TITLE.matcher(heading).find()
                 && !ADDITIONAL_RECRUITMENT.matcher(heading).find()
                 && introductions.stream().anyMatch(text -> affirmative(text, SELECTION_PUBLICATION_ACTION));

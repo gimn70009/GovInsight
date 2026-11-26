@@ -123,4 +123,40 @@ class StructuredSubmissionTableTest {
         });
     }
 
+    @Test
+    void 특정_서류의_각주를_다른_서류나_전체_공통으로_확장하지_않는다() {
+        var guide = SubmissionDocumentResolver.resolve(TEXT + "* 개인기업은 사업계획서 제출 면제\n", List.of(), null);
+        assertThat(guide.notes()).singleElement().satisfies(note -> {
+            assertThat(note.appliesTo()).isEqualTo("사업계획서");
+            assertThat(note.text()).contains("개인기업", "면제");
+            assertThat(TEXT + "* 개인기업은 사업계획서 제출 면제\n").contains(note.source().excerpt());
+        });
+    }
+
+    @Test
+    void 표_아래_유효기간_주석은_그_표의_서류에만_연결한다() throws Exception {
+        String text;
+        try (var stream = getClass().getResourceAsStream("/submission-documents/certification-submission-notes.txt")) {
+            text = new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        var guide = SubmissionDocumentResolver.resolve("신청서류\n[표]\n서류명\t구분\n신청서\t필수\n[/표]\n" + text, List.of(), null);
+        var validity = guide.notes().stream().filter(note -> note.text().contains("90일")).toList();
+        assertThat(validity).isNotEmpty();
+        assertThat(validity).allSatisfy(note -> {
+            assertThat(note.appliesTo()).isNotBlank().isNotEqualTo("신청서");
+            assertThat(guide.documents()).anyMatch(item -> item.title().equals(note.appliesTo()));
+            assertThat(text).contains(note.source().excerpt());
+        });
+        assertThat(guide.notes()).noneMatch(note -> note.appliesTo() == null && note.text().contains("90일"));
+    }
+
+    @Test
+    void 동일한_서류명의_신청과_협약_조건은_서로_다른_근거로_유지한다() {
+        String text = "신청서류\n[표]\n서류명\t제출시기\n신청서\t신청 시\n[/표]\n* 원본에 서명하여 제출\n"
+                + "협약서류\n[표]\n서류명\t제출시기\n신청서\t협약 시\n[/표]\n* 원본에 서명하여 제출\n";
+        var guide = SubmissionDocumentResolver.resolve(text, List.of(), null);
+        assertThat(guide.notes()).hasSize(2);
+        assertThat(guide.notes().getFirst().source().excerpt()).contains("신청 시").doesNotContain("협약 시");
+        assertThat(guide.notes().getLast().source().excerpt()).contains("협약 시").doesNotContain("신청 시");
+    }
 }

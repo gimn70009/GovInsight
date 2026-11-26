@@ -2,16 +2,35 @@ package com.publicmonitor.backend.domain.report;
 
 import com.publicmonitor.backend.domain.document.service.BusinessType;
 import com.publicmonitor.backend.domain.document.web.dto.DocumentDetectionDetailResponse;
+import java.time.LocalDateTime;
 import java.util.List;
 
 /** The six rows use the same fields and fallback order as the web BusinessSummary component. */
 public record BusinessSummaryEmailView(
         String type, List<Organization> organizations, String title, String sourceOrganization, String supportScale,
-        String purpose, String deadline, Integer score, String change, String originalUrl
+        String purpose, String deadline, Integer score, String change, String originalUrl,
+        BusinessSummaryEmailInsights insights
 ) {
     public record Organization(String name, String role) {}
 
+    public BusinessSummaryEmailView(String type, List<Organization> organizations, String title,
+            String sourceOrganization, String supportScale, String purpose, String deadline,
+            Integer score, String change, String originalUrl) {
+        this(type, organizations, title, sourceOrganization, supportScale, purpose, deadline,
+                score, change, originalUrl, BusinessSummaryEmailInsights.unavailable());
+    }
+
     public static BusinessSummaryEmailView from(DocumentDetectionDetailResponse detail) {
+        return from(detail, null, null);
+    }
+
+    public static BusinessSummaryEmailView from(DocumentDetectionDetailResponse detail,
+            LocalDateTime sentAt, Integer preparationDays) {
+        return from(detail, sentAt, preparationDays, null);
+    }
+
+    public static BusinessSummaryEmailView from(DocumentDetectionDetailResponse detail,
+            LocalDateTime sentAt, Integer preparationDays, EmailReviewBrief.Result review) {
         var analysis = detail.analysis();
         var summary = analysis == null ? null : analysis.businessSummary();
         var preparation = analysis == null || analysis.proposal() == null ? null : analysis.proposal().preparation();
@@ -34,7 +53,8 @@ public record BusinessSummaryEmailView(
                 BusinessSummaryEmailText.supportScale(display(summary == null ? null : summary.supportScale())),
                 display(purpose), display(deadline),
                 analysis == null || analysis.opportunity() == null ? null : analysis.opportunity().totalScore(),
-                change, safeUrl(detail.originalUrl()));
+                change, safeUrl(detail.originalUrl()),
+                BusinessSummaryEmailInsights.from(detail, deadline, sentAt, preparationDays, review));
     }
 
     private static String typeLabel(DocumentDetectionDetailResponse detail) {

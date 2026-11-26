@@ -10,6 +10,10 @@ Thumbs.db
 /.ruff_cache/
 /.uv-cache-check/
 
+# Python 실행 산출물 (브라우저 테스트 포함)
+__pycache__/
+*.py[cod]
+
 # Frontend
 frontend/node_modules/
 frontend/dist/

@@ -1,5 +1,10 @@
 from fastapi import APIRouter, BackgroundTasks, status
 
+from app.domains.report.email_review import (
+    EmailReviewRequest,
+    EmailReviewResponse,
+    summarize_email_reviews,
+)
 from app.domains.report.schemas.request import ReportJobRequest
 from app.domains.report.schemas.response import ReportJobAcceptedResponse
 from app.domains.report.service import accept_report_job
@@ -20,3 +25,8 @@ def create_report_job(
     response = accept_report_job(request)
     background_tasks.add_task(run_report_job, response.job_id, request)
     return response
+
+
+@router.post("/email-review-briefs", response_model=EmailReviewResponse)
+async def email_review_briefs(request: EmailReviewRequest) -> EmailReviewResponse:
+    return await summarize_email_reviews(request)

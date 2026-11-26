@@ -137,6 +137,8 @@ def _same_row(item: PreparationChecklistItem, row: SubmissionRequirement) -> boo
         return False
     if item.source == row.source:
         return True
+    if (item.source.section_title == row.source.section_title == "제출서류 표 내 목록"):
+        return _key(item.source.excerpt) == _key(row.source.excerpt)
     if same_submission_source(item.source, row.source):
         return True
     period = left.period or right.period
@@ -265,6 +267,14 @@ def validate_submission_documents(
     reconciled = reconcile_submission_documents(items, document)
     verified: list[PreparationChecklistItem] = []
     notes: list[str] = []
+    from .submission_requirements import unresolved_submission_rows
+    unresolved_rows = unresolved_submission_rows(document)
+    if unresolved_rows:
+        notes.append(
+            f"제출서류 표의 {unresolved_rows}개 행은 "
+            "대상·조건을 자동 검증하지 못했습니다. "
+            "제출하지 않아도 된다는 뜻이 아니므로 원문 표를 확인해 주세요."
+        )
     seen_rows: set[int] = set()
     for item in reconciled:
         matches = [(index, row) for index, row in enumerate(rows) if _same_row(item, row)]
@@ -328,7 +338,7 @@ def validate_submission_documents(
         if len(label) > 150:
             label = "첨부자료"
         notes.append(
-            f"제출 여부 확인: {item.title} — 별도 제출 의무가 확인되지 않았습니다. "
+            f"제출 여부 확인: {item.title} — 제출 근거의 대상·조건을 자동 검증하지 못했습니다. "
             f"{label}에서 제출 대상·조건과 상위 서류에 포함할 내용인지 확인합니다."
         )
     return verified, list(dict.fromkeys(notes))

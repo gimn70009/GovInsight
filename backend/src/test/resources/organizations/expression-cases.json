@@ -1,0 +1,2717 @@
+[
+  {
+    "id": "C001",
+    "group": "기본 역할 표기",
+    "label": "주관기관 / 콜론",
+    "body": "주관기관: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C002",
+    "group": "기본 역할 표기",
+    "label": "주관기관 / 띄어진 역할",
+    "body": "주 관 기 관 : 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C003",
+    "group": "기본 역할 표기",
+    "label": "주최기관 / 콜론",
+    "body": "주최기관: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주최기관"
+      }
+    ]
+  },
+  {
+    "id": "C004",
+    "group": "기본 역할 표기",
+    "label": "주최기관 / 띄어진 역할",
+    "body": "주 최 기 관 : 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주최기관"
+      }
+    ]
+  },
+  {
+    "id": "C005",
+    "group": "기본 역할 표기",
+    "label": "총괄기관 / 콜론",
+    "body": "총괄기관: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "총괄기관"
+      }
+    ]
+  },
+  {
+    "id": "C006",
+    "group": "기본 역할 표기",
+    "label": "총괄기관 / 띄어진 역할",
+    "body": "총 괄 기 관 : 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "총괄기관"
+      }
+    ]
+  },
+  {
+    "id": "C007",
+    "group": "기본 역할 표기",
+    "label": "총괄부처 / 콜론",
+    "body": "총괄부처: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "총괄부처"
+      }
+    ]
+  },
+  {
+    "id": "C008",
+    "group": "기본 역할 표기",
+    "label": "총괄부처 / 띄어진 역할",
+    "body": "총 괄 부 처 : 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "총괄부처"
+      }
+    ]
+  },
+  {
+    "id": "C009",
+    "group": "기본 역할 표기",
+    "label": "소관부처 / 콜론",
+    "body": "소관부처: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "소관부처"
+      }
+    ]
+  },
+  {
+    "id": "C010",
+    "group": "기본 역할 표기",
+    "label": "소관부처 / 띄어진 역할",
+    "body": "소 관 부 처 : 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "소관부처"
+      }
+    ]
+  },
+  {
+    "id": "C011",
+    "group": "기본 역할 표기",
+    "label": "시행기관 / 콜론",
+    "body": "시행기관: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "시행기관"
+      }
+    ]
+  },
+  {
+    "id": "C012",
+    "group": "기본 역할 표기",
+    "label": "시행기관 / 띄어진 역할",
+    "body": "시 행 기 관 : 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "시행기관"
+      }
+    ]
+  },
+  {
+    "id": "C013",
+    "group": "기본 역할 표기",
+    "label": "전담기관 / 콜론",
+    "body": "전담기관: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "전담기관"
+      }
+    ]
+  },
+  {
+    "id": "C014",
+    "group": "기본 역할 표기",
+    "label": "전담기관 / 띄어진 역할",
+    "body": "전 담 기 관 : 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "전담기관"
+      }
+    ]
+  },
+  {
+    "id": "C015",
+    "group": "기본 역할 표기",
+    "label": "운영기관 / 콜론",
+    "body": "운영기관: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "운영기관"
+      }
+    ]
+  },
+  {
+    "id": "C016",
+    "group": "기본 역할 표기",
+    "label": "운영기관 / 띄어진 역할",
+    "body": "운 영 기 관 : 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "운영기관"
+      }
+    ]
+  },
+  {
+    "id": "C017",
+    "group": "기본 역할 표기",
+    "label": "관리기관 / 콜론",
+    "body": "관리기관: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "관리기관"
+      }
+    ]
+  },
+  {
+    "id": "C018",
+    "group": "기본 역할 표기",
+    "label": "관리기관 / 띄어진 역할",
+    "body": "관 리 기 관 : 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "관리기관"
+      }
+    ]
+  },
+  {
+    "id": "C019",
+    "group": "기본 역할 표기",
+    "label": "전문기관 / 콜론",
+    "body": "전문기관: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "전문기관"
+      }
+    ]
+  },
+  {
+    "id": "C020",
+    "group": "기본 역할 표기",
+    "label": "전문기관 / 띄어진 역할",
+    "body": "전 문 기 관 : 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "전문기관"
+      }
+    ]
+  },
+  {
+    "id": "C021",
+    "group": "기본 역할 표기",
+    "label": "주관 / 콜론",
+    "body": "주관: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관"
+      }
+    ]
+  },
+  {
+    "id": "C022",
+    "group": "기본 역할 표기",
+    "label": "주관 / 띄어진 역할",
+    "body": "주 관 : 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관"
+      }
+    ]
+  },
+  {
+    "id": "C023",
+    "group": "기본 역할 표기",
+    "label": "주최 / 콜론",
+    "body": "주최: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주최"
+      }
+    ]
+  },
+  {
+    "id": "C024",
+    "group": "기본 역할 표기",
+    "label": "주최 / 띄어진 역할",
+    "body": "주 최 : 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주최"
+      }
+    ]
+  },
+  {
+    "id": "C025",
+    "group": "기본 역할 표기",
+    "label": "접수처 / 콜론",
+    "body": "접수처: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "접수처"
+      }
+    ]
+  },
+  {
+    "id": "C026",
+    "group": "기본 역할 표기",
+    "label": "접수처 / 띄어진 역할",
+    "body": "접 수 처 : 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "접수처"
+      }
+    ]
+  },
+  {
+    "id": "C027",
+    "group": "기본 역할 표기",
+    "label": "문의처 / 콜론",
+    "body": "문의처: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "문의처"
+      }
+    ]
+  },
+  {
+    "id": "C028",
+    "group": "기본 역할 표기",
+    "label": "문의처 / 띄어진 역할",
+    "body": "문 의 처 : 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "문의처"
+      }
+    ]
+  },
+  {
+    "id": "C029",
+    "group": "표기와 문장",
+    "label": "공백 / 본문",
+    "body": "주관기관 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C030",
+    "group": "표기와 문장",
+    "label": "공백 / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "주관기관 한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C031",
+    "group": "표기와 문장",
+    "label": "전각 콜론 / 본문",
+    "body": "주관기관：한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C032",
+    "group": "표기와 문장",
+    "label": "전각 콜론 / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "주관기관：한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C033",
+    "group": "표기와 문장",
+    "label": "괄호 역할 / 본문",
+    "body": "(주관기관) 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C034",
+    "group": "표기와 문장",
+    "label": "괄호 역할 / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "(주관기관) 한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C035",
+    "group": "표기와 문장",
+    "label": "사각 괄호 역할 / 본문",
+    "body": "[주관기관] 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C036",
+    "group": "표기와 문장",
+    "label": "사각 괄호 역할 / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "[주관기관] 한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C037",
+    "group": "표기와 문장",
+    "label": "기관 괄호 / 본문",
+    "body": "주관기관(한국산업기술진흥원)",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C038",
+    "group": "표기와 문장",
+    "label": "기관 괄호 / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "주관기관(한국산업기술진흥원)",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C039",
+    "group": "표기와 문장",
+    "label": "다음 줄 / 본문",
+    "body": "주관기관\n한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C040",
+    "group": "표기와 문장",
+    "label": "다음 줄 / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "주관기관\n한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C041",
+    "group": "표기와 문장",
+    "label": "CRLF / 본문",
+    "body": "주관기관\r\n한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C042",
+    "group": "표기와 문장",
+    "label": "CRLF / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "주관기관\r\n한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C043",
+    "group": "표기와 문장",
+    "label": "빈 줄 / 본문",
+    "body": "주관기관\n\n한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C044",
+    "group": "표기와 문장",
+    "label": "빈 줄 / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "주관기관\n\n한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C045",
+    "group": "표기와 문장",
+    "label": "기호 / 본문",
+    "body": "□ 주관기관: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C046",
+    "group": "표기와 문장",
+    "label": "기호 / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "□ 주관기관: 한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C047",
+    "group": "표기와 문장",
+    "label": "전각 괄호 / 본문",
+    "body": "주관기관（한국산업기술진흥원）",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C048",
+    "group": "표기와 문장",
+    "label": "전각 괄호 / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "주관기관（한국산업기술진흥원）",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C049",
+    "group": "표기와 문장",
+    "label": "중괄호형 표제 / 본문",
+    "body": "【주관기관】 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C050",
+    "group": "표기와 문장",
+    "label": "중괄호형 표제 / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "【주관기관】 한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C051",
+    "group": "표기와 문장",
+    "label": "하이픈 / 본문",
+    "body": "주관기관 - 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C052",
+    "group": "표기와 문장",
+    "label": "하이픈 / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "주관기관 - 한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C053",
+    "group": "표기와 문장",
+    "label": "대시 / 본문",
+    "body": "주관기관 – 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C054",
+    "group": "표기와 문장",
+    "label": "대시 / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "주관기관 – 한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C055",
+    "group": "표기와 문장",
+    "label": "등호 / 본문",
+    "body": "주관기관 = 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C056",
+    "group": "표기와 문장",
+    "label": "등호 / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "주관기관 = 한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C057",
+    "group": "표기와 문장",
+    "label": "번호 / 본문",
+    "body": "1. 주관기관: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C058",
+    "group": "표기와 문장",
+    "label": "번호 / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "1. 주관기관: 한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C059",
+    "group": "표기와 문장",
+    "label": "사업 접두 / 본문",
+    "body": "사업 주관기관: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C060",
+    "group": "표기와 문장",
+    "label": "사업 접두 / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "사업 주관기관: 한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C061",
+    "group": "표기와 문장",
+    "label": "본 사업 접두 / 본문",
+    "body": "본 사업 주관기관: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C062",
+    "group": "표기와 문장",
+    "label": "본 사업 접두 / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "본 사업 주관기관: 한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C063",
+    "group": "표기와 문장",
+    "label": "담당 접두 / 본문",
+    "body": "사업 담당 주관기관: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C064",
+    "group": "표기와 문장",
+    "label": "담당 접두 / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "사업 담당 주관기관: 한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C065",
+    "group": "표기와 문장",
+    "label": "이름 라벨 / 본문",
+    "body": "주관기관명: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C066",
+    "group": "표기와 문장",
+    "label": "이름 라벨 / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "주관기관명: 한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C067",
+    "group": "표기와 문장",
+    "label": "조사 은 / 본문",
+    "body": "주관기관은 한국산업기술진흥원입니다.",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C068",
+    "group": "표기와 문장",
+    "label": "조사 은 / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "주관기관은 한국산업기술진흥원입니다.",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C069",
+    "group": "표기와 문장",
+    "label": "역순 문장 / 본문",
+    "body": "한국산업기술진흥원이 본 사업을 주관합니다.",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C070",
+    "group": "표기와 문장",
+    "label": "역순 문장 / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "한국산업기술진흥원이 본 사업을 주관합니다.",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C071",
+    "group": "표기와 문장",
+    "label": "역순 괄호 / 본문",
+    "body": "한국산업기술진흥원(주관기관)",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C072",
+    "group": "표기와 문장",
+    "label": "역순 괄호 / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "한국산업기술진흥원(주관기관)",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C073",
+    "group": "표기와 문장",
+    "label": "NBSP / 본문",
+    "body": "주관기관 : 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C074",
+    "group": "표기와 문장",
+    "label": "NBSP / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "주관기관 : 한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C075",
+    "group": "표기와 문장",
+    "label": "제로폭 / 본문",
+    "body": "주관​기관: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C076",
+    "group": "표기와 문장",
+    "label": "제로폭 / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "주관​기관: 한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C077",
+    "group": "표기와 문장",
+    "label": "형식상 기관명 분절 / 본문",
+    "body": "주관기관: 한국 산업 기술 진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국 산업 기술 진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C078",
+    "group": "표기와 문장",
+    "label": "형식상 기관명 분절 / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "주관기관: 한국 산업 기술 진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국 산업 기술 진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C079",
+    "group": "표기와 문장",
+    "label": "기관명 줄바꿈 / 본문",
+    "body": "주관기관: 한국산업기술\n진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C080",
+    "group": "표기와 문장",
+    "label": "기관명 줄바꿈 / 첨부",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "주관기관: 한국산업기술\n진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C081",
+    "group": "기관명 종류",
+    "label": "창조경제혁신센터",
+    "body": "주관기관: 창조경제혁신센터",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "창조경제혁신센터",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C082",
+    "group": "기관명 종류",
+    "label": "창업지원센터",
+    "body": "주관기관: 창업지원센터",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "창업지원센터",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C083",
+    "group": "기관명 종류",
+    "label": "한국보건의료정보원",
+    "body": "주관기관: 한국보건의료정보원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국보건의료정보원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C084",
+    "group": "기관명 종류",
+    "label": "한국교육학술정보원",
+    "body": "주관기관: 한국교육학술정보원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국교육학술정보원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C085",
+    "group": "기관명 종류",
+    "label": "서울의료원",
+    "body": "주관기관: 서울의료원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "서울의료원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C086",
+    "group": "기관명 종류",
+    "label": "한국장학재단",
+    "body": "주관기관: 한국장학재단",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국장학재단",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C087",
+    "group": "기관명 종류",
+    "label": "한국청소년상담복지개발원",
+    "body": "주관기관: 한국청소년상담복지개발원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국청소년상담복지개발원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C088",
+    "group": "기관명 종류",
+    "label": "중소벤처기업부",
+    "body": "주관기관: 중소벤처기업부",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "중소벤처기업부",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C089",
+    "group": "기관명 종류",
+    "label": "기획재정부",
+    "body": "주관기관: 기획재정부",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "기획재정부",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C090",
+    "group": "기관명 종류",
+    "label": "서울특별시",
+    "body": "주관기관: 서울특별시",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "서울특별시",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C091",
+    "group": "기관명 종류",
+    "label": "강원특별자치도",
+    "body": "주관기관: 강원특별자치도",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "강원특별자치도",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C092",
+    "group": "기관명 종류",
+    "label": "경기도",
+    "body": "주관기관: 경기도",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "경기도",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C093",
+    "group": "기관명 종류",
+    "label": "조달청",
+    "body": "주관기관: 조달청",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "조달청",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C094",
+    "group": "기관명 종류",
+    "label": "농촌진흥청",
+    "body": "주관기관: 농촌진흥청",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "농촌진흥청",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C095",
+    "group": "기관명 종류",
+    "label": "국가유산청",
+    "body": "주관기관: 국가유산청",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "국가유산청",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C096",
+    "group": "기관명 종류",
+    "label": "대한상공회의소",
+    "body": "주관기관: 대한상공회의소",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "대한상공회의소",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C097",
+    "group": "기관명 종류",
+    "label": "경기테크노파크",
+    "body": "주관기관: 경기테크노파크",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "경기테크노파크",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C098",
+    "group": "기관명 종류",
+    "label": "한국무역협회",
+    "body": "주관기관: 한국무역협회",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국무역협회",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C099",
+    "group": "기관명 종류",
+    "label": "대·중소기업·농어업협력재단",
+    "body": "주관기관: 대·중소기업·농어업협력재단",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "대·중소기업·농어업협력재단",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C100",
+    "group": "기관명 종류",
+    "label": "국가과학기술연구회",
+    "body": "주관기관: 국가과학기술연구회",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "국가과학기술연구회",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C101",
+    "group": "기관명 종류",
+    "label": "중소기업중앙회",
+    "body": "주관기관: 중소기업중앙회",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "중소기업중앙회",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C102",
+    "group": "기관명 종류",
+    "label": "한국은행",
+    "body": "주관기관: 한국은행",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국은행",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C103",
+    "group": "기관명 종류",
+    "label": "서울특별시청",
+    "body": "주관기관: 서울특별시청",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "서울특별시청",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C104",
+    "group": "기관명 종류",
+    "label": "강남구",
+    "body": "주관기관: 강남구",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "강남구",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C105",
+    "group": "기관명 종류",
+    "label": "강남구청",
+    "body": "주관기관: 강남구청",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "강남구청",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C106",
+    "group": "기관명 종류",
+    "label": "서울대학교 산학협력단",
+    "body": "주관기관: 서울대학교 산학협력단",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "서울대학교 산학협력단",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C107",
+    "group": "기관명 종류",
+    "label": "서울경제진흥원",
+    "body": "주관기관: 서울경제진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "서울경제진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C108",
+    "group": "기관명 종류",
+    "label": "(재)경기테크노파크",
+    "body": "주관기관: (재)경기테크노파크",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "(재)경기테크노파크",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C109",
+    "group": "기관명 종류",
+    "label": "(사)한국무역협회",
+    "body": "주관기관: (사)한국무역협회",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "(사)한국무역협회",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C110",
+    "group": "기관명 종류",
+    "label": "재단법인 서울경제진흥원",
+    "body": "주관기관: 재단법인 서울경제진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "재단법인 서울경제진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C111",
+    "group": "기관명 종류",
+    "label": "KOTRA",
+    "body": "주관기관: KOTRA",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "KOTRA",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C112",
+    "group": "기관명 종류",
+    "label": "KAIST",
+    "body": "주관기관: KAIST",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "KAIST",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C113",
+    "group": "기관명 종류",
+    "label": "창업지원센터 운영본부",
+    "body": "주관기관: 창업지원센터 운영본부",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "창업지원센터 운영본부",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C114",
+    "group": "기관명 종류",
+    "label": "㈜가나다",
+    "body": "주관기관: ㈜가나다",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "㈜가나다",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C115",
+    "group": "기관명 종류",
+    "label": "한국에너지기술연구원",
+    "body": "주관기관: 한국에너지기술연구원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국에너지기술연구원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C116",
+    "group": "복수 기관",
+    "label": "구분자 ', '",
+    "body": "주관기관: 한국산업기술진흥원, 창조경제혁신센터",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      },
+      {
+        "name": "창조경제혁신센터",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C117",
+    "group": "복수 기관",
+    "label": "구분자 '/'",
+    "body": "주관기관: 한국산업기술진흥원/창조경제혁신센터",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      },
+      {
+        "name": "창조경제혁신센터",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C118",
+    "group": "복수 기관",
+    "label": "구분자 '; '",
+    "body": "주관기관: 한국산업기술진흥원; 창조경제혁신센터",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      },
+      {
+        "name": "창조경제혁신센터",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C119",
+    "group": "복수 기관",
+    "label": "구분자 ' 및 '",
+    "body": "주관기관: 한국산업기술진흥원 및 창조경제혁신센터",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      },
+      {
+        "name": "창조경제혁신센터",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C120",
+    "group": "복수 기관",
+    "label": "구분자 'ㆍ'",
+    "body": "주관기관: 한국산업기술진흥원ㆍ창조경제혁신센터",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      },
+      {
+        "name": "창조경제혁신센터",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C121",
+    "group": "복수 기관",
+    "label": "구분자 '·'",
+    "body": "주관기관: 한국산업기술진흥원·창조경제혁신센터",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      },
+      {
+        "name": "창조경제혁신센터",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C122",
+    "group": "복수 기관",
+    "label": "구분자 과",
+    "body": "주관기관: 한국산업기술진흥원과 창조경제혁신센터",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      },
+      {
+        "name": "창조경제혁신센터",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C123",
+    "group": "복수 기관",
+    "label": "구분자 ' / '",
+    "body": "주관기관: 한국산업기술진흥원 / 창조경제혁신센터",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      },
+      {
+        "name": "창조경제혁신센터",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C124",
+    "group": "복수 기관",
+    "label": "구분자 ' & '",
+    "body": "주관기관: 한국산업기술진흥원 & 창조경제혁신센터",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      },
+      {
+        "name": "창조경제혁신센터",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C125",
+    "group": "복수 기관",
+    "label": "구분자 '\\n'",
+    "body": "주관기관: 한국산업기술진흥원\n창조경제혁신센터",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      },
+      {
+        "name": "창조경제혁신센터",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C126",
+    "group": "복수 기관",
+    "label": "괄호 안 약칭 뒤 두 번째",
+    "body": "주관기관: 한국산업기술진흥원(KIAT), 창조경제혁신센터",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      },
+      {
+        "name": "창조경제혁신센터",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C127",
+    "group": "복수 기관",
+    "label": "각 기관 괄호",
+    "body": "주관기관: (한국산업기술진흥원), (창조경제혁신센터)",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      },
+      {
+        "name": "창조경제혁신센터",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C128",
+    "group": "복수 기관",
+    "label": "한 줄에 명시된 주최와 주관",
+    "body": "주최: 중소벤처기업부 / 주관: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "중소벤처기업부",
+        "role": "주최"
+      },
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관"
+      }
+    ]
+  },
+  {
+    "id": "C129",
+    "group": "복수 기관",
+    "label": "한 줄에 별도 역할",
+    "body": "주관기관: 한국산업기술진흥원 / 운영기관: 창조경제혁신센터",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      },
+      {
+        "name": "창조경제혁신센터",
+        "role": "운영기관"
+      }
+    ]
+  },
+  {
+    "id": "C130",
+    "group": "복수 기관",
+    "label": "줄별 별도 역할",
+    "body": "주관기관: 한국산업기술진흥원\n운영기관: 창조경제혁신센터",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      },
+      {
+        "name": "창조경제혁신센터",
+        "role": "운영기관"
+      }
+    ]
+  },
+  {
+    "id": "C131",
+    "group": "복수 기관",
+    "label": "중복 문의 제거",
+    "body": "주관기관: 한국산업기술진흥원\n문의처: 한국산업기술진흥원\n문의처: 창조경제혁신센터",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      },
+      {
+        "name": "창조경제혁신센터",
+        "role": "문의처"
+      }
+    ]
+  },
+  {
+    "id": "C132",
+    "group": "복수 기관",
+    "label": "같은 기관 다른 역할",
+    "body": "주관기관: 한국산업기술진흥원\n운영기관: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      },
+      {
+        "name": "한국산업기술진흥원",
+        "role": "운영기관"
+      }
+    ]
+  },
+  {
+    "id": "C133",
+    "group": "표 구조",
+    "label": "좌우",
+    "body": "[표]\n주관기관\t한국산업기술진흥원\n[/표]",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C134",
+    "group": "표 구조",
+    "label": "상하",
+    "body": "[표]\n주관기관\t운영기관\n한국산업기술진흥원\t창조경제혁신센터\n[/표]",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      },
+      {
+        "name": "창조경제혁신센터",
+        "role": "운영기관"
+      }
+    ]
+  },
+  {
+    "id": "C135",
+    "group": "표 구조",
+    "label": "가로 병합",
+    "body": "[표]\n주관기관\t주관기관\t한국산업기술진흥원\t한국산업기술진흥원\n[/표]",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C136",
+    "group": "표 구조",
+    "label": "빈 셀",
+    "body": "[표]\n주관기관\t\t한국산업기술진흥원\n[/표]",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C137",
+    "group": "표 구조",
+    "label": "번호 열",
+    "body": "[표]\n번호\t구분\t기관\n1\t주관기관\t한국산업기술진흥원\n[/표]",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C138",
+    "group": "표 구조",
+    "label": "기관 구분 헤더",
+    "body": "[표]\n구분\t기관명\n주관기관\t한국산업기술진흥원\n[/표]",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C139",
+    "group": "표 구조",
+    "label": "역할이 뒤쪽 열",
+    "body": "[표]\n기관명\t역할\n한국산업기술진흥원\t주관기관\n[/표]",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C140",
+    "group": "표 구조",
+    "label": "세로 한 열 빈칸",
+    "body": "[표]\n주관기관\t운영기관\n한국산업기술진흥원\t\n[/표]",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C141",
+    "group": "표 구조",
+    "label": "다른 열 연결 금지",
+    "body": "[표]\n주관기관\t설명\n\t한국산업기술진흥원\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C142",
+    "group": "표 구조",
+    "label": "잘린 표",
+    "body": "[표]\n주관기관\t한국산업기술진흥원",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C143",
+    "group": "표 구조",
+    "label": "열 수 불일치",
+    "body": "[표]\n구분\t기관명\n주관기관\t한국산업기술진흥원\t설명\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C144",
+    "group": "표 구조",
+    "label": "표 밖 연결 금지",
+    "body": "[표]\n주관기관\t\n[/표]\n한국산업기술진흥원",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C145",
+    "group": "업무와 미확정 표현",
+    "label": "프로그램 운영예산 지원 / 문장",
+    "body": "운영기관 프로그램 운영예산 지원",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C146",
+    "group": "업무와 미확정 표현",
+    "label": "프로그램 운영예산 지원 / 표",
+    "body": "[표]\n운영기관\t프로그램 운영예산 지원\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C147",
+    "group": "업무와 미확정 표현",
+    "label": "사업비 교부 / 문장",
+    "body": "운영기관 사업비 교부",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C148",
+    "group": "업무와 미확정 표현",
+    "label": "사업비 교부 / 표",
+    "body": "[표]\n운영기관\t사업비 교부\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C149",
+    "group": "업무와 미확정 표현",
+    "label": "온라인 사업 신청 / 문장",
+    "body": "운영기관 온라인 사업 신청",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C150",
+    "group": "업무와 미확정 표현",
+    "label": "온라인 사업 신청 / 표",
+    "body": "[표]\n운영기관\t온라인 사업 신청\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C151",
+    "group": "업무와 미확정 표현",
+    "label": "운영예산 지 원 / 문장",
+    "body": "운영기관 운영예산 지 원",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C152",
+    "group": "업무와 미확정 표현",
+    "label": "운영예산 지 원 / 표",
+    "body": "[표]\n운영기관\t운영예산 지 원\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C153",
+    "group": "업무와 미확정 표현",
+    "label": "사업 수행 시 / 문장",
+    "body": "운영기관 사업 수행 시",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C154",
+    "group": "업무와 미확정 표현",
+    "label": "사업 수행 시 / 표",
+    "body": "[표]\n운영기관\t사업 수행 시\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C155",
+    "group": "업무와 미확정 표현",
+    "label": "성과 보고시 / 문장",
+    "body": "운영기관 성과 보고시",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C156",
+    "group": "업무와 미확정 표현",
+    "label": "성과 보고시 / 표",
+    "body": "[표]\n운영기관\t성과 보고시\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C157",
+    "group": "업무와 미확정 표현",
+    "label": "지원 한도 / 문장",
+    "body": "운영기관 지원 한도",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C158",
+    "group": "업무와 미확정 표현",
+    "label": "지원 한도 / 표",
+    "body": "[표]\n운영기관\t지원 한도\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C159",
+    "group": "업무와 미확정 표현",
+    "label": "사업 추진 정도 / 문장",
+    "body": "운영기관 사업 추진 정도",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C160",
+    "group": "업무와 미확정 표현",
+    "label": "사업 추진 정도 / 표",
+    "body": "[표]\n운영기관\t사업 추진 정도\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C161",
+    "group": "업무와 미확정 표현",
+    "label": "예산 1억원 / 문장",
+    "body": "운영기관 예산 1억원",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C162",
+    "group": "업무와 미확정 표현",
+    "label": "예산 1억원 / 표",
+    "body": "[표]\n운영기관\t예산 1억원\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C163",
+    "group": "업무와 미확정 표현",
+    "label": "사업비 5억원 / 문장",
+    "body": "운영기관 사업비 5억원",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C164",
+    "group": "업무와 미확정 표현",
+    "label": "사업비 5억원 / 표",
+    "body": "[표]\n운영기관\t사업비 5억원\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C165",
+    "group": "업무와 미확정 표현",
+    "label": "기업당 1천만원 / 문장",
+    "body": "운영기관 기업당 1천만원",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C166",
+    "group": "업무와 미확정 표현",
+    "label": "기업당 1천만원 / 표",
+    "body": "[표]\n운영기관\t기업당 1천만원\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C167",
+    "group": "업무와 미확정 표현",
+    "label": "정부 보조금 500만원 / 문장",
+    "body": "운영기관 정부 보조금 500만원",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C168",
+    "group": "업무와 미확정 표현",
+    "label": "정부 보조금 500만원 / 표",
+    "body": "[표]\n운영기관\t정부 보조금 500만원\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C169",
+    "group": "업무와 미확정 표현",
+    "label": "사업 외부 / 문장",
+    "body": "운영기관 사업 외부",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C170",
+    "group": "업무와 미확정 표현",
+    "label": "사업 외부 / 표",
+    "body": "[표]\n운영기관\t사업 외부\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C171",
+    "group": "업무와 미확정 표현",
+    "label": "사업 전부 / 문장",
+    "body": "운영기관 사업 전부",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C172",
+    "group": "업무와 미확정 표현",
+    "label": "사업 전부 / 표",
+    "body": "[표]\n운영기관\t사업 전부\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C173",
+    "group": "업무와 미확정 표현",
+    "label": "평가위원 / 문장",
+    "body": "운영기관 평가위원",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C174",
+    "group": "업무와 미확정 표현",
+    "label": "평가위원 / 표",
+    "body": "[표]\n운영기관\t평가위원\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C175",
+    "group": "업무와 미확정 표현",
+    "label": "심사위원 / 문장",
+    "body": "운영기관 심사위원",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C176",
+    "group": "업무와 미확정 표현",
+    "label": "심사위원 / 표",
+    "body": "[표]\n운영기관\t심사위원\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C177",
+    "group": "업무와 미확정 표현",
+    "label": "참여연구원 / 문장",
+    "body": "운영기관 참여연구원",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C178",
+    "group": "업무와 미확정 표현",
+    "label": "참여연구원 / 표",
+    "body": "[표]\n운영기관\t참여연구원\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C179",
+    "group": "업무와 미확정 표현",
+    "label": "담당자 / 문장",
+    "body": "운영기관 담당자",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C180",
+    "group": "업무와 미확정 표현",
+    "label": "담당자 / 표",
+    "body": "[표]\n운영기관\t담당자\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C181",
+    "group": "업무와 미확정 표현",
+    "label": "공공기관 / 문장",
+    "body": "운영기관 공공기관",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C182",
+    "group": "업무와 미확정 표현",
+    "label": "공공기관 / 표",
+    "body": "[표]\n운영기관\t공공기관\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C183",
+    "group": "업무와 미확정 표현",
+    "label": "기업부설연구소 / 문장",
+    "body": "운영기관 기업부설연구소",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C184",
+    "group": "업무와 미확정 표현",
+    "label": "기업부설연구소 / 표",
+    "body": "[표]\n운영기관\t기업부설연구소\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C185",
+    "group": "업무와 미확정 표현",
+    "label": "필요시 / 문장",
+    "body": "운영기관 필요시",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C186",
+    "group": "업무와 미확정 표현",
+    "label": "필요시 / 표",
+    "body": "[표]\n운영기관\t필요시\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C187",
+    "group": "업무와 미확정 표현",
+    "label": "방문시 / 문장",
+    "body": "운영기관 방문시",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C188",
+    "group": "업무와 미확정 표현",
+    "label": "방문시 / 표",
+    "body": "[표]\n운영기관\t방문시\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C189",
+    "group": "업무와 미확정 표현",
+    "label": "협의시 / 문장",
+    "body": "운영기관 협의시",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C190",
+    "group": "업무와 미확정 표현",
+    "label": "협의시 / 표",
+    "body": "[표]\n운영기관\t협의시\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C191",
+    "group": "업무와 미확정 표현",
+    "label": "한국산업기술진흥원 또는 추후 선정 / 문장",
+    "body": "운영기관 한국산업기술진흥원 또는 추후 선정",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C192",
+    "group": "업무와 미확정 표현",
+    "label": "한국산업기술진흥원 또는 추후 선정 / 표",
+    "body": "[표]\n운영기관\t한국산업기술진흥원 또는 추후 선정\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C193",
+    "group": "업무와 미확정 표현",
+    "label": "추후 선정 / 문장",
+    "body": "운영기관 추후 선정",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C194",
+    "group": "업무와 미확정 표현",
+    "label": "추후 선정 / 표",
+    "body": "[표]\n운영기관\t추후 선정\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C195",
+    "group": "업무와 미확정 표현",
+    "label": "OO진흥원 / 문장",
+    "body": "운영기관 OO진흥원",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C196",
+    "group": "업무와 미확정 표현",
+    "label": "OO진흥원 / 표",
+    "body": "[표]\n운영기관\tOO진흥원\n[/표]",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C197",
+    "group": "문맥 구분",
+    "label": "전년도",
+    "body": "전년도 주관기관: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C198",
+    "group": "문맥 구분",
+    "label": "타 사업",
+    "body": "타 사업 주관기관: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C199",
+    "group": "문맥 구분",
+    "label": "작성 예시",
+    "body": "작성 예시\n주관기관: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C200",
+    "group": "문맥 구분",
+    "label": "서식",
+    "body": "서식1 신청서\n주관기관: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C201",
+    "group": "문맥 구분",
+    "label": "수혜 연구기관",
+    "body": "주관연구개발기관: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C202",
+    "group": "문맥 구분",
+    "label": "서류 제목",
+    "body": "주관기관: 한국산업기술진흥원 재직증명서",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C203",
+    "group": "문맥 구분",
+    "label": "역할 없는 이름",
+    "body": "한국산업기술진흥원",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C204",
+    "group": "문맥 구분",
+    "label": "선정 예정",
+    "body": "주관기관: 한국산업기술진흥원(선정 예정)",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C205",
+    "group": "문맥 구분",
+    "label": "부정 지정",
+    "body": "주관기관: 한국산업기술진흥원 아님",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C206",
+    "group": "문맥 구분",
+    "label": "담당 제외",
+    "body": "주관기관: 한국산업기술진흥원(담당 제외)",
+    "attachments": [],
+    "expected": []
+  },
+  {
+    "id": "C207",
+    "group": "문맥 구분",
+    "label": "다른 기관으로 변경",
+    "body": "주관기관: 한국산업기술진흥원에서 창조경제혁신센터로 변경",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "창조경제혁신센터",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C208",
+    "group": "문맥 구분",
+    "label": "본 사업 명시",
+    "body": "사업 개요\n주관기관: 한국산업기술진흥원",
+    "attachments": [],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C209",
+    "group": "출처와 문서 경계",
+    "label": "별도 신청서",
+    "body": "",
+    "attachments": [
+      {
+        "name": "신청서.hwpx",
+        "text": "주관기관: 한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": []
+  },
+  {
+    "id": "C210",
+    "group": "출처와 문서 경계",
+    "label": "별도 FAQ",
+    "body": "",
+    "attachments": [
+      {
+        "name": "FAQ.pdf",
+        "text": "주관기관: 한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": []
+  },
+  {
+    "id": "C211",
+    "group": "출처와 문서 경계",
+    "label": "파싱 실패",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "주관기관: 한국산업기술진흥원",
+        "status": "FAILED"
+      }
+    ],
+    "expected": []
+  },
+  {
+    "id": "C212",
+    "group": "출처와 문서 경계",
+    "label": "본문 첨부 중복",
+    "body": "주관기관: 한국산업기술진흥원",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "주관기관: 한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C213",
+    "group": "출처와 문서 경계",
+    "label": "ZIP 문서 경계",
+    "body": "",
+    "attachments": [
+      {
+        "name": "첨부.zip",
+        "text": "[파일: 앞 공고.hwpx]\n주관기관\n[파일: 뒤 공고.hwpx]\n한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": []
+  },
+  {
+    "id": "C214",
+    "group": "출처와 문서 경계",
+    "label": "ZIP 서식 이후 공고",
+    "body": "",
+    "attachments": [
+      {
+        "name": "첨부.zip",
+        "text": "[파일: 신청서.hwpx]\n주관기관: 예제연구원\n[파일: 공고.hwpx]\n주관기관: 한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "주관기관"
+      }
+    ]
+  },
+  {
+    "id": "C215",
+    "group": "출처와 문서 경계",
+    "label": "서식 뒤 문의처",
+    "body": "",
+    "attachments": [
+      {
+        "name": "사업 공고.hwpx",
+        "text": "서식1 신청서\n주관기관: 예제연구원\n문의처: 한국산업기술진흥원",
+        "status": "COMPLETED"
+      }
+    ],
+    "expected": [
+      {
+        "name": "한국산업기술진흥원",
+        "role": "문의처"
+      }
+    ]
+  }
+]

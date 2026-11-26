@@ -40,6 +40,21 @@ class DocumentAnalysisStatusIntegrationTest {
     @Autowired AnalysisTaskRepository tasks;
     @Autowired DocumentAttachmentRepository attachments;
     @Autowired DocumentVersionRepository versions;
+    @Autowired DocumentDetailSnapshotRepository snapshots;
+
+    @Test void submissionNotesClaimsAreAtomicAndStaleCompletionsCannotOverwrite() {
+        // Use the existing fixture so all required source/run relations are persisted.
+        var detection = fixture("본문", MonitoringRunStatus.COMPLETED, "NONE");
+        Long id = detection.getDocumentVersion().getId();
+        em.flush();
+        assertThat(versions.claimSubmissionNotes(id, "a", null, "pending")).isEqualTo(1);
+        assertThat(versions.claimSubmissionNotes(id, "a", null, "duplicate")).isZero();
+        assertThat(versions.finishSubmissionNotes(id, "a", "ready")).isEqualTo(1);
+        assertThat(versions.claimSubmissionNotes(id, "b", "a", "new pending")).isEqualTo(1);
+        assertThat(versions.finishSubmissionNotes(id, "a", "stale")).isZero();
+        em.clear();
+        assertThat(versions.findById(id).orElseThrow().getSubmissionNotesJson()).isEqualTo("new pending");
+    }
 
     @ParameterizedTest
     @CsvSource({
@@ -136,8 +151,13 @@ class DocumentAnalysisStatusIntegrationTest {
     void participationCachePersistsWithoutOverwritingANewerRequest() {
         var version = fixture("참여 자격", MonitoringRunStatus.COMPLETED, "NONE").getDocumentVersion();
         em.flush();
-        versions.beginParticipationRewrite(version.getId(), "old");
-        versions.beginParticipationRewrite(version.getId(), "new");
+        assertThat(versions.claimParticipationRewrite(version.getId(), "old", null, "pending old")).isOne();
+        assertThat(versions.claimParticipationRewrite(version.getId(), "old", null, "duplicate")).isZero();
+        assertThat(versions.claimParticipationRewrite(version.getId(), "old", "old", "same input retry")).isZero();
+        assertThat(versions.claimParticipationRewrite(version.getId(), "new", null, "stale snapshot")).isZero();
+        assertThat(versions.claimParticipationRewrite(version.getId(), "new", "old", "pending new")).isOne();
+        em.clear();
+        assertThat(versions.findById(version.getId()).orElseThrow().getParticipationRewriteJson()).isEqualTo("pending new");
         assertThat(versions.finishParticipationRewrite(version.getId(), "old", "wrong")).isZero();
         assertThat(versions.finishParticipationRewrite(version.getId(), "new", "{\"status\":\"READY\"}")).isOne();
         em.clear();
@@ -174,12 +194,7 @@ class DocumentAnalysisStatusIntegrationTest {
     }
 
     private DocumentDetectionDetailService detailService() {
-        return new DocumentDetectionDetailService(detections, analyses, tasks, attachments, new ObjectMapper(), rewriteService());
-    }
-    private com.publicmonitor.backend.domain.document.service.ParticipationRewriteService rewriteService() {
-        var service = org.mockito.Mockito.mock(com.publicmonitor.backend.domain.document.service.ParticipationRewriteService.class);
-        org.mockito.Mockito.lenient().when(service.resolve(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyBoolean()))
-                .thenAnswer(invocation -> invocation.getArgument(1));
-        return service;
+        return new DocumentDetectionDetailService(detections, analyses, tasks, attachments, new ObjectMapper(),
+                new com.publicmonitor.backend.domain.document.service.DocumentDetailSnapshotReader(snapshots, new ObjectMapper()));
     }
 }

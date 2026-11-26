@@ -51,7 +51,8 @@ class EvaluationSettingsData(CamelCaseModel):
 
 
 class EvaluationSettingsSnapshot(CamelCaseModel):
-    revision: int = Field(gt=0)
+    # Revision zero is the backend's effective default configuration, before any save.
+    revision: int = Field(ge=0)
     data: EvaluationSettingsData
 
 

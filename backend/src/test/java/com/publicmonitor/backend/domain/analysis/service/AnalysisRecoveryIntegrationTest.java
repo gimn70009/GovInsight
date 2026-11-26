@@ -190,4 +190,58 @@ class AnalysisRecoveryIntegrationTest {
         for (int i = 0; i < 3; i++) { assertThat(service.claim(id)).isEmpty(); clock.advance(11); }
         assertThat(task(id).getState()).isEqualTo(AnalysisTask.State.FAILED);
     }
+
+    AnalysisResultFailureRequest rejection(Long id, String token, AnalysisResultFailureRequest.Phase phase) {
+        return new AnalysisResultFailureRequest(id, UUID.fromString(token), phase, 400);
+    }
+
+    @Test void rejectedResultEndsCurrentRunImmediatelyAndRepeatedNoticeIsHarmless() {
+        Long id = queued();
+        var work = service.claim(id).orElseThrow();
+        var notice = rejection(id, work.token(), AnalysisResultFailureRequest.Phase.ANALYSIS);
+        assertThat(service.resultRejected(notice)).isTrue();
+        assertThat(task(id).getState()).isEqualTo(AnalysisTask.State.FAILED);
+        assertThat(task(id).getRequestJson()).isNull();
+        var run = runs.findById(id).orElseThrow();
+        assertThat(run.getStatus()).isEqualTo(MonitoringRunStatus.FAILED);
+        assertThat(run.getCompletedAt()).isEqualTo(clock.now());
+        assertThat(run.getErrorMessage()).contains("공고 분석", "저장하지 못했습니다");
+        assertThat(service.resultRejected(notice)).isFalse();
+        recovery.recover();
+        verifyNoInteractions(client);
+    }
+
+    @Test void staleExpiredWrongStageAndRateLimitedNoticesNeverEndCurrentWork() {
+        Long id = queued();
+        var first = service.claim(id).orElseThrow();
+        assertThat(service.resultRejected(rejection(id, first.token(), AnalysisResultFailureRequest.Phase.PROPOSAL))).isFalse();
+        assertThat(service.resultRejected(new AnalysisResultFailureRequest(id, UUID.fromString(first.token()),
+                AnalysisResultFailureRequest.Phase.ANALYSIS, 429))).isFalse();
+        clock.advance(1801);
+        assertThat(service.resultRejected(rejection(id, first.token(), AnalysisResultFailureRequest.Phase.ANALYSIS))).isFalse();
+        var current = service.claim(id).orElseThrow();
+        assertThat(service.resultRejected(rejection(id, first.token(), AnalysisResultFailureRequest.Phase.ANALYSIS))).isFalse();
+        assertThat(task(id).getAttemptId()).isEqualTo(current.token());
+        assertThat(task(id).getState()).isEqualTo(AnalysisTask.State.RUNNING);
+    }
+
+    @Test void lostAnalysisSuccessResponseAndCompletedProposalArePreserved() {
+        Long id = queued();
+        var work = service.claim(id).orElseThrow();
+        results.receive(analysis(id, work.token()));
+        assertThat(service.resultRejected(rejection(id, work.token(), AnalysisResultFailureRequest.Phase.ANALYSIS))).isFalse();
+        assertThat(task(id).getState()).isEqualTo(AnalysisTask.State.ANALYZED);
+        results.receiveProposal(proposal(id, work.token()));
+        assertThat(service.resultRejected(rejection(id, work.token(), AnalysisResultFailureRequest.Phase.PROPOSAL))).isFalse();
+        assertThat(task(id).getState()).isEqualTo(AnalysisTask.State.DONE);
+    }
+
+    @Test void rejectedProposalEndsRunWithoutTreatingEarlierAnalysisAsRejected() {
+        Long id = queued();
+        var work = service.claim(id).orElseThrow();
+        results.receive(analysis(id, work.token()));
+        assertThat(service.resultRejected(rejection(id, work.token(), AnalysisResultFailureRequest.Phase.PROPOSAL))).isTrue();
+        assertThat(runs.findById(id).orElseThrow().getErrorMessage()).contains("사업 제안");
+        assertThat(task(id).getState()).isEqualTo(AnalysisTask.State.FAILED);
+    }
 }

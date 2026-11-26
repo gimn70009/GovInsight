@@ -209,6 +209,7 @@ class OpportunityDimension(BaseModel):
 
 class OpportunityAssessment(BaseModel):
     settings_revision: int = Field(default=0, ge=0, alias="settingsRevision")
+    scoring_policy_version: int = Field(default=0, ge=0, alias="scoringPolicyVersion")
     dimensions: list[OpportunityDimension] = Field(min_length=4, max_length=4)
 
     @model_validator(mode="after")

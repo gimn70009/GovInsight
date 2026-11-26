@@ -43,12 +43,12 @@ public class EvaluationSettingsService {
     @Transactional(readOnly = true)
     public EvaluationSettingsSnapshot currentSnapshot() {
         var current = find();
-        return current.revision() == 0 ? null : new EvaluationSettingsSnapshot(current.revision(), current.data());
+        return new EvaluationSettingsSnapshot(current.revision(), current.data());
     }
 
     @Transactional(readOnly = true)
     public EvaluationSettingsData revision(long revision) {
-        if (revision == 0) return null;
+        if (revision == 0) return defaults;
         return revisions.findById(revision).map(s -> read(s.getData())).orElseThrow(() ->
                 new EvaluationSettingsException(EvaluationSettingsResponseCode.UNKNOWN_REVISION));
     }

@@ -1,5 +1,7 @@
 package com.publicmonitor.backend.domain.report;
 
+import com.publicmonitor.backend.domain.email.EmailBrand;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
@@ -123,7 +125,7 @@ class ReportEmailOpportunityTest {
                 • 금액·규모: <script>금액</script>
                 • 제출처·방법: [접수](javascript:alert(1))
                 """);
-        assertThat(html).contains("유형:</td>", "&lt;img src=x", "방식:</td>", "&lt;script&gt;alert(1)", "&lt;script&gt;금액", "border-top:4px solid #357bd8")
+        assertThat(html.replace(EmailBrand.html(), "")).contains("유형:</td>", "&lt;img src=x", "방식:</td>", "&lt;script&gt;alert(1)", "&lt;script&gt;금액", "border-top:4px solid #357bd8")
                 .doesNotContain("<script>", "<img ", "href=\"javascript:", "유형: 거짓 분류</span>", "border-top:4px solid #dc2626");
     }
 

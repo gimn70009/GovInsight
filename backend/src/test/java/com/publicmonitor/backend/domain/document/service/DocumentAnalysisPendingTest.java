@@ -182,12 +182,6 @@ class DocumentAnalysisPendingTest {
     }
 
     private DocumentDetectionDetailService service() {
-        return new DocumentDetectionDetailService(detections, analyses, tasks, attachments, new ObjectMapper(), rewriteService());
-    }
-    private com.publicmonitor.backend.domain.document.service.ParticipationRewriteService rewriteService() {
-        var service = org.mockito.Mockito.mock(com.publicmonitor.backend.domain.document.service.ParticipationRewriteService.class);
-        org.mockito.Mockito.lenient().when(service.resolve(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyBoolean()))
-                .thenAnswer(invocation -> invocation.getArgument(1));
-        return service;
+        return new DocumentDetectionDetailService(detections, analyses, tasks, attachments, new ObjectMapper(), DocumentSnapshotFixtures.empty());
     }
 }

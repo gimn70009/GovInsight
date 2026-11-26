@@ -56,7 +56,10 @@ public class AnalysisTask {
     public void retry(LocalDateTime now) { state = State.PENDING; availableAt = now.plusSeconds(10); }
     public void complete() { state = State.DONE; requestJson = null; }
     public void fail(LocalDateTime now) {
+        fail(now, "분석·제안 작업 복구 재시도 한도를 초과했습니다. 다시 실행해 주세요.");
+    }
+    public void fail(LocalDateTime now, String reason) {
         state = State.FAILED; requestJson = null;
-        run.failAnalysis("분석·제안 작업 복구 재시도 한도를 초과했습니다. 다시 실행해 주세요.", now);
+        run.failAnalysis(reason, now);
     }
 }

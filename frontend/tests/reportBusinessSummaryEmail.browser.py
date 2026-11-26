@@ -32,6 +32,17 @@ async def main():
                 for card in await cards.all():
                     rows = card.locator("[data-business-summary-row]")
                     await expect(rows).to_have_count(6)
+                    review_table = card.locator("[data-business-review-table]")
+                    review_rows = review_table.locator("[data-business-review-row]")
+                    await expect(review_rows).to_have_count(3)
+                    assert await review_rows.locator("th").all_text_contents() == ["종합 검토", "우선 확인사항", "준비 일정"]
+                    facts_box = await card.locator("[data-business-summary-table]").bounding_box()
+                    review_box = await review_table.bounding_box()
+                    assert review_box["y"] - facts_box["y"] - facts_box["height"] >= 20
+                    assert abs(review_box["x"] - facts_box["x"]) <= 1
+                    assert abs(review_box["width"] - facts_box["width"]) <= 1
+                    for cell in await review_rows.locator("th,td").all():
+                        assert await cell.evaluate("(el) => el.scrollWidth <= el.clientWidth + 1")
                     assert await rows.locator("th").all_text_contents() == [
                         "사업 유형", "사업 담당기관", "사업명", "지원규모", "사업 설명", "제출기한"
                     ]
@@ -45,6 +56,14 @@ async def main():
                         assert await cell.evaluate("(el) => el.scrollWidth <= el.clientWidth + 1")
                 assert await page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
                 first = cards.first
+                await expect(first.locator("[data-preparation-recommendation]")).to_have_text("오늘 준비 착수 권장")
+                await expect(first.locator("[data-preparation-deadline]")).to_have_text("마감까지 D-7일")
+                await expect(first.locator("[data-preparation-deadline]")).to_have_css("color", "rgb(166, 53, 45)")
+                if width >= 768:
+                    recommendation_box = await first.locator("[data-preparation-recommendation]").bounding_box()
+                    deadline_box = await first.locator("[data-preparation-deadline]").bounding_box()
+                    assert deadline_box["x"] > recommendation_box["x"] + recommendation_box["width"]
+                    assert abs(deadline_box["y"] - recommendation_box["y"]) < 5
                 await expect(first.locator("[data-report-score]")).to_have_text("기회점수 72점")
                 await expect(first.locator("[data-report-score]")).to_have_css("background-color", "rgb(33, 95, 168)")
                 await expect(page.locator("[data-organization-evidence]")).to_have_count(0)
@@ -71,10 +90,33 @@ async def main():
                         "x": header_box["x"], "y": header_box["y"], "width": header_box["width"],
                         "height": card_box["y"] + card_box["height"] - header_box["y"],
                     })
-                print(f"PASS {width}px: original report header and cards, source institutions, six rows, original button, no overflow")
+                print(f"PASS {width}px: original report header and cards, source institutions, six summary rows, separate three-row review, red D-day, original button, no overflow")
             text = await page.locator("body").inner_text()
             assert "온라인 10월 30일 18시" in text and "원본 우편 11월 2일 도착분" in text
             assert "이전의 긴 보고서용 요약" not in text
+            assert "발송일 기준" not in text and "최소 준비 7일" not in text
+            await page.goto((OUT / "email-review-mocked.html").resolve().as_uri())
+            cards = page.locator("[data-business-summary-card]")
+            await expect(cards).to_have_count(2)
+            for width in (1000, 390, 320):
+                await page.set_viewport_size({"width": width, "height": 1200})
+                assert await page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
+                for index, days in enumerate((24, 17)):
+                    card = cards.nth(index)
+                    await expect(card.locator("[data-preparation-deadline]")).to_have_text(f"마감까지 D-{days}일")
+                    rows = card.locator("[data-business-review-row]")
+                    assert len(await rows.nth(0).locator("td").inner_text()) <= 160
+                    checks = await rows.nth(1).locator("[data-priority-text]").all_text_contents()
+                    assert len(checks) == 2 and all(len(check) <= 80 for check in checks)
+                    for cell in await rows.locator("th,td").all():
+                        assert await cell.evaluate("(el) => el.scrollWidth <= el.clientWidth + 1")
+                    await expect(card.locator("[data-priority-number]")).to_have_text(["1", "2"])
+                    await expect(card.locator("[data-priority-number]").first).to_have_css("background-color", "rgb(234, 242, 252)")
+                    await expect(card.locator("[data-priority-list] li")).to_have_count(0)
+                    assert all("—" not in check and " - " not in check for check in checks)
+                    assert "↵" not in await card.inner_text() and "①" not in await card.inner_text()
+                await cards.first.screenshot(path=str(OUT / f"email-review-mocked-{width}.png"))
+                print(f"PASS {width}px: reported deadline cases, short mocked review copy, no raw table fragments")
             assert not errors, errors
         finally:
             await browser.close()

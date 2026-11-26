@@ -1,0 +1,232 @@
+[
+  {
+    "id": "common_legacy",
+    "text": "□ 신청서류\n[표]\n구분\t제출서류\n공통\t- 지원신청서 원본 1부 - 사업계획서 사본 3부\n[/표]",
+    "titles": [
+      "지원신청서",
+      "사업계획서"
+    ],
+    "levels": [
+      "MANDATORY",
+      "MANDATORY"
+    ],
+    "stages": [
+      "APPLICATION",
+      "APPLICATION"
+    ]
+  },
+  {
+    "id": "common_paragraphs",
+    "text": "□ 신청서류\n[표]\n구분\t제출서류\n공통\t지원신청서 원본 1부 ⏎ 사업계획서 사본 3부\n[/표]",
+    "titles": [
+      "지원신청서",
+      "사업계획서"
+    ],
+    "levels": [
+      "MANDATORY",
+      "MANDATORY"
+    ],
+    "stages": [
+      "APPLICATION",
+      "APPLICATION"
+    ]
+  },
+  {
+    "id": "recipient_scope",
+    "text": "□ 서류접수\n[표]\n구분\t제출서류\n영리기관만 제출\t- 기업유형증빙서 1부 ⏎ - 기업부설연구소 증빙서 1부\n[/표]",
+    "titles": [
+      "기업유형증빙서",
+      "기업부설연구소 증빙서"
+    ],
+    "levels": [
+      "CONDITIONAL",
+      "CONDITIONAL"
+    ],
+    "stages": [
+      "APPLICATION",
+      "APPLICATION"
+    ],
+    "conditions": [
+      "영리기관만 제출",
+      "영리기관만 제출"
+    ]
+  },
+  {
+    "id": "local_agreement_note",
+    "text": "□ 신청서류\n[표]\n구분\t제출서류\n국제공동 연구의 경우\t- 해외기관 참여 의사 확인서(LOI) 1부 ⏎ - 국제공동연구계획서 1부 ⏎ - 기관 간 계약서(또는 협약서) 1부 ※ 계약서는 과제 선정 후 협약 시점에 제출\n[/표]",
+    "titles": [
+      "해외기관 참여 의사 확인서(LOI)",
+      "국제공동연구계획서",
+      "기관 간 계약서(또는 협약서) 1부"
+    ],
+    "levels": [
+      "CONDITIONAL",
+      "CONDITIONAL",
+      "CONDITIONAL"
+    ],
+    "stages": [
+      "APPLICATION",
+      "APPLICATION",
+      "AGREEMENT"
+    ]
+  },
+  {
+    "id": "alternative_kept",
+    "text": "□ 신청서류\n[표]\n구분\t제출서류\n공통\t- 지원신청서 1부 ⏎ - 표준재무제표 또는 신용등급 확인서(택1)\n[/표]",
+    "titles": [
+      "지원신청서",
+      "표준재무제표 또는 신용등급 확인서(택1)"
+    ],
+    "levels": [
+      "MANDATORY",
+      "CONDITIONAL"
+    ],
+    "stages": [
+      "APPLICATION",
+      "APPLICATION"
+    ]
+  },
+  {
+    "id": "nested_condition",
+    "text": "□ 신청서류\n[표]\n구분\t제출서류\n공통\t- 지원신청서 1부 ⏎ - 기술이전 관련 서류(해당 과제만) ⏎ · 기술이전계약서\n[/표]",
+    "titles": [
+      "지원신청서",
+      "기술이전계약서"
+    ],
+    "levels": [
+      "MANDATORY",
+      "CONDITIONAL"
+    ],
+    "stages": [
+      "APPLICATION",
+      "APPLICATION"
+    ],
+    "conditions": [
+      "",
+      "해당 과제만"
+    ]
+  },
+  {
+    "id": "explanation_column",
+    "text": "□ 신청서류\n[표]\n구분\t제출서류\t주요내용\n필수\t- 지원신청서 1부 ⏎ - 사업계획서 1부\t예산 계획과 발표자료 작성 안내\n[/표]",
+    "titles": [
+      "지원신청서",
+      "사업계획서"
+    ],
+    "levels": [
+      "MANDATORY",
+      "MANDATORY"
+    ],
+    "stages": [
+      "APPLICATION",
+      "APPLICATION"
+    ]
+  },
+  {
+    "id": "missing_group",
+    "text": "□ 신청서류\n[표]\n구분\t제출서류\n\t- 지원신청서 1부 ⏎ - 사업계획서 1부\n[/표]",
+    "titles": [],
+    "levels": [],
+    "stages": []
+  },
+  {
+    "id": "shared_exception",
+    "text": "□ 신청서류\n[표]\n구분\t제출서류\n공통\t- 지원신청서 1부 ⏎ - 사업계획서 1부\n[/표]\n※ 개인기업은 확인서 제출 면제",
+    "titles": [],
+    "levels": [],
+    "stages": []
+  },
+  {
+    "id": "reference_table",
+    "text": "작성 예시\n□ 신청서류\n[표]\n구분\t제출서류\n공통\t- 지원신청서 1부 ⏎ - 사업계획서 1부\n[/표]",
+    "titles": [],
+    "levels": [],
+    "stages": []
+  },
+  {
+    "id": "hyphen_in_name",
+    "text": "□ 신청서류\n[표]\n구분\t제출서류\n공통\t- 산학-연 협력계획서 1부 ⏎ - 2027년 실적보고서 1부\n[/표]",
+    "titles": [
+      "산학-연 협력계획서",
+      "2027년 실적보고서"
+    ],
+    "levels": [
+      "MANDATORY",
+      "MANDATORY"
+    ],
+    "stages": [
+      "APPLICATION",
+      "APPLICATION"
+    ]
+  },
+  {
+    "id": "separate_scopes",
+    "text": "□ 신청서류\n[표]\n구분\t제출서류\n공통\t- 지원신청서 1부 ⏎ - 사업계획서 1부\n법인기업\t- 법인등기부등본 1부 ⏎ - 대표자 확인서 1부\n[/표]",
+    "titles": [
+      "지원신청서",
+      "사업계획서",
+      "법인등기부등본",
+      "대표자 확인서"
+    ],
+    "levels": [
+      "MANDATORY",
+      "MANDATORY",
+      "CONDITIONAL",
+      "CONDITIONAL"
+    ],
+    "stages": [
+      "APPLICATION",
+      "APPLICATION",
+      "APPLICATION",
+      "APPLICATION"
+    ]
+  },
+  {
+    "id": "nested_scope_ends",
+    "text": "□ 신청서류\n[표]\n구분\t제출서류\n공통\t- 기술이전 관련 서류(해당 과제만) ⏎ · 기술이전계약서 ⏎ - 지원신청서 1부\n[/표]",
+    "titles": [
+      "기술이전계약서",
+      "지원신청서"
+    ],
+    "levels": [
+      "CONDITIONAL",
+      "MANDATORY"
+    ],
+    "stages": [
+      "APPLICATION",
+      "APPLICATION"
+    ]
+  },
+  {
+    "id": "paragraph_note",
+    "text": "□ 신청서류\n[표]\n구분\t제출서류\n공통\t- 지원신청서 1부 ⏎ - 기관 협약서 1부 ⏎ ※ 협약서는 선정 후 협약 시 제출\n[/표]",
+    "titles": [
+      "지원신청서",
+      "기관 협약서"
+    ],
+    "levels": [
+      "MANDATORY",
+      "MANDATORY"
+    ],
+    "stages": [
+      "APPLICATION",
+      "AGREEMENT"
+    ]
+  },
+  {
+    "id": "copy_quantities",
+    "text": "□ 신청서류\n[표]\n구분\t제출서류\n공통\t- 사업계획서 원본 1부 ⏎ - 사업계획서 사본 3부\n[/표]",
+    "titles": [
+      "사업계획서",
+      "사업계획서"
+    ],
+    "levels": [
+      "MANDATORY",
+      "MANDATORY"
+    ],
+    "stages": [
+      "APPLICATION",
+      "APPLICATION"
+    ]
+  }
+]

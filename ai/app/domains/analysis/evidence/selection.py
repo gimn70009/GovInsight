@@ -33,7 +33,18 @@ class Excerpt:
         }
 
 
-def _units(text: str) -> list[tuple[int, int]]:
+def range_covered(start: int, end: int, ranges: list[tuple[int, int]]) -> bool:
+    cursor = start
+    for left, right in sorted(ranges):
+        if left > cursor:
+            break
+        cursor = max(cursor, right) if right > cursor else cursor
+        if cursor >= end:
+            return True
+    return False
+
+
+def source_units(text: str) -> list[tuple[int, int]]:
     # Preserve short sections (including exceptions and list/table rows) as one unit.
     boundaries = {0, len(text)}
     boundaries.update(m.end() for m in re.finditer(r"\r?\n[ \t]*\r?\n", text))
@@ -74,7 +85,7 @@ def select_evidence(text: str | None, limit: int) -> Excerpt:
         return Excerpt(source, len(source), ((0, len(source)),) if source else (), False)
     if limit <= len(_GAP):
         return Excerpt("", len(source), (), True)
-    units = _units(source)
+    units = source_units(source)
     topics = [
         set(i for i, pattern in enumerate(_TOPICS) if pattern.search(source[s:e])) for s, e in units
     ]

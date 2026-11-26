@@ -1,6 +1,7 @@
 """Verify proposal checklists are removed while summary evidence, strategy and meetings remain."""
 import asyncio
 import os
+import re
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -121,6 +122,13 @@ async def main():
                                 section="BASIC", label="업력·창업", text="업력이 7년 이내인 기업이 대상입니다.",
                                 scope=None, audience=None, details=[], exceptions=[], guidance=[], outcomes=[],
                                 sources=[dict(origin="NOTICE_BODY", sectionTitle="신청 자격", excerpt="공고일 기준 업력 7년 이내 기업")])]))
+                guide = data["participationGuide"]
+                condition = guide["rules"][0]
+                guide["rewriteStatus"] = "READY"
+                guide["categories"] = [dict(code="COMPANY_REQUIREMENTS", label="참여기업 조건", rows=[
+                    dict(code="BUSINESS_AGE", label="업력", availability="STATED", entries=[
+                        dict(rule=condition, displayStatus="VERIFIED",
+                             supportingQuotes=[condition["sources"][0]["excerpt"]])])])]
             elif path.endswith("/similar-notices"):
                 data = dict(currentNotice={}, similarNotices=[])
             elif path.endswith("/proposal-sources") or path.endswith("/proposal-drafts"):
@@ -151,7 +159,7 @@ async def main():
             await expect(page.locator("#proposal-strategy .preparation-block__header > span")).to_have_text("01")
             await expect(page.locator("#proposal-agenda .preparation-block__header > span")).to_have_text("02")
             await expect(page.get_by_role("heading", name="제안서 초안", exact=True)).to_be_visible()
-            for width in (1280, 390):
+            for width in (1440, 768, 390, 320):
                 await page.set_viewport_size({"width": width, "height": 960})
                 panel = page.locator(".proposal-preparation")
                 assert await panel.evaluate("el => el.scrollWidth <= el.clientWidth")
@@ -165,15 +173,25 @@ async def main():
                 await documents.get_by_role("button", name="결산재무제표 제출 조건 조건 보기", exact=True).click()
                 await expect(documents).to_contain_text("2023~2025")
                 await expect(documents).to_contain_text("원본 대조필")
-                await documents.get_by_role("button", name="결산재무제표 근거 보기", exact=True).click()
+                await documents.get_by_role("button", name="결산재무제표 원문 근거 확인", exact=True).click()
                 assert await documents.locator("blockquote").text_content() == FINANCIAL["source"]["excerpt"]
+                toggle = documents.get_by_role("button", name=re.compile("^결산재무제표 원문 근거 (?:확인|접기)$"))
+                await expect(toggle).to_have_accessible_name("결산재무제표 원문 근거 접기")
+                await toggle.focus()
+                await page.keyboard.press("Space")
+                await expect(toggle).to_have_accessible_name("결산재무제표 원문 근거 확인")
+                await expect(documents.locator("blockquote")).to_have_count(0)
+                for width in (1440, 768, 390, 320):
+                    await page.set_viewport_size({"width": width, "height": 960})
+                    assert await documents.evaluate("el => el.scrollWidth <= el.clientWidth + 1"), width
+                    await documents.screenshot(path=str(OUT / f"summary-documents-{mode}-{width}.png"))
             else:
-                await expect(page.get_by_text("제출서류 확인 필요", exact=True)).to_be_visible()
+                await expect(page.get_by_text("제출서류는 원문에서 확인해 주세요", exact=True)).to_be_visible()
             await page.get_by_role("button", name="사업 제안", exact=True).click()
             await expect(page.locator("#proposal-eligibility, #proposal-documents")).to_have_count(0)
         assert not errors, errors
         await browser.close()
-        print("All 4 data modes: proposal checklists, navigation counts and derived highlights removed; strategy, 8 meetings and writer retained at 1280/390px; summary eligibility, documents, conditions and exact evidence preserved across tab changes.")
+        print("All 4 data modes: proposal checklists, navigation counts and derived highlights removed; strategy, 8 meetings and writer retained at 1440/768/390/320px; summary eligibility, documents, conditions and exact evidence preserved across tab changes.")
 
 
 asyncio.run(main())
