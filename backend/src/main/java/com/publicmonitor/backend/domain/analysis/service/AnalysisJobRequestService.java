@@ -60,6 +60,7 @@ public class AnalysisJobRequestService {
         }
         return analysisRepository.findByDocumentVersionId(detection.getDocumentVersion().getId())
                 .map(analysis -> OpportunitySettingsMetadata.revision(analysis.getOpportunityAssessment(), objectMapper) < revision
+                        || OpportunitySettingsMetadata.requiresScoringUpgrade(analysis.getOpportunityAssessment(), objectMapper)
                         || analysis.requiresProposalSchemaUpgrade()
                         || requiresLegalReview(analysis.getComparisonSummary()))
                 .orElse(true);
@@ -74,6 +75,7 @@ public class AnalysisJobRequestService {
         DocumentAnalysis existing = analysisRepository.findByDocumentVersionId(version.getId()).orElse(null);
         boolean legalOnly = detection.getChangeType() == DocumentChangeType.UNCHANGED_DOCUMENT
                 && existing != null && !existing.requiresProposalSchemaUpgrade()
+                && !OpportunitySettingsMetadata.requiresScoringUpgrade(existing.getOpportunityAssessment(), objectMapper)
                 && OpportunitySettingsMetadata.revision(existing.getOpportunityAssessment(), objectMapper) >= revision;
         List<PythonAnalysisAttachmentRequest> attachments = attachmentRepository
                 .findAllByDocumentVersionId(version.getId()).stream()

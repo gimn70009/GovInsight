@@ -208,6 +208,35 @@ class AnalysisResultServiceTest {
         assertThat(existing.getOpportunityRankingVersion()).isEqualTo(DocumentAnalysis.OPPORTUNITY_RANKING_VERSION);
     }
 
+    @ParameterizedTest
+    @CsvSource({"0,0,1,1", "0,1,1,0", "0,1,0,0", "2,0,1,1", "2,1,1,0", "2,1,0,0"})
+    void 같은_설정의_새_채점만_교체하고_중복과_이전_정책은_보존한다(
+            long revision, int previousPolicy, int incomingPolicy, int stored
+    ) throws Exception {
+        var mapper = new ObjectMapper();
+        var existing = DocumentAnalysis.create(detection.getDocumentVersion(), "기존 분석", "[]",
+                DocumentImportance.LOW, "기존 근거", AnalysisEligibility.REVIEW_REQUIRED,
+                AnalysisFavorability.NOT_APPLICABLE, "{}", 30, OpportunityPriority.LOW,
+                "{\"settingsRevision\":" + revision + ",\"scoringPolicyVersion\":" + previousPolicy + "}",
+                "[]", "old-model", LocalDateTime.now());
+        existing.updateComparisonSummary("{\"purpose\":\"기존 목적\"}");
+        given(analysisRepository.findByDocumentVersionIdForUpdate(40L)).willReturn(Optional.of(existing));
+        var payload = mapper.valueToTree(request());
+        ((tools.jackson.databind.node.ObjectNode) payload.path("results").get(0).path("opportunity"))
+                .put("settingsRevision", revision).put("scoringPolicyVersion", incomingPolicy);
+
+        var response = service.receive(mapper.treeToValue(payload, AnalysisResultRequest.class));
+
+        assertThat(response.storedAnalysisCount()).isEqualTo(stored);
+        assertThat(response.duplicateAnalysisCount()).isEqualTo(1 - stored);
+        assertThat(mapper.readTree(existing.getOpportunityAssessment()).path("scoringPolicyVersion").asInt())
+                .isEqualTo(stored == 1 ? incomingPolicy : previousPolicy);
+        assertThat(existing.getSummary()).isEqualTo(stored == 1 ? request().results().getFirst().summary() : "기존 분석");
+        if (incomingPolicy < previousPolicy) {
+            assertThat(existing.getComparisonSummary()).isEqualTo("{\"purpose\":\"기존 목적\"}");
+        }
+    }
+
     @Test
     void 기존_사업제안_스키마는_새_분석_결과로_교체한다() {
         DocumentAnalysis existing = mock(DocumentAnalysis.class);

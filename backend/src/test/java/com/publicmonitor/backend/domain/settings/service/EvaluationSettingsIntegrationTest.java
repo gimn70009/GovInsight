@@ -41,10 +41,13 @@ class EvaluationSettingsIntegrationTest {
 
     @BeforeEach void clear() { revisions.deleteAll(); settings.deleteAll(); }
 
-    @Test void defaultsDoNotActivateBeforeFirstSave() {
+    @Test void defaultsApplyBeforeFirstSaveWithoutCreatingSettingsRecords() {
         assertThat(service.find().revision()).isZero();
-        assertThat(service.currentSnapshot()).isNull();
+        assertThat(service.currentSnapshot().revision()).isZero();
+        assertThat(service.currentSnapshot().data()).isEqualTo(service.find().data());
+        assertThat(service.revision(0)).isEqualTo(service.find().data());
         assertThat(settings.count()).isZero();
+        assertThat(revisions.count()).isZero();
         assertThat(service.find().catalog().get("industries")).extracting(EvaluationSettingsResponse.SelectionGroup::name)
                 .containsExactly("전자·첨단제조", "기계·모빌리티");
     }
@@ -60,6 +63,7 @@ class EvaluationSettingsIntegrationTest {
         assertThat(service.update(new UpdateEvaluationSettingsRequest(1L, changed)).revision()).isEqualTo(2);
         assertThat(service.revision(1)).isEqualTo(initial);
         assertThat(service.revision(2)).isEqualTo(changed);
+        assertThat(service.revision(0)).isEqualTo(initial);
         assertThat(revisions.count()).isEqualTo(2);
         assertThat(service.find().data().company().name()).isEqualTo("새 회사");
     }
@@ -114,7 +118,7 @@ class EvaluationSettingsIntegrationTest {
     }
 
     @Test void unknownHistoricalRevisionIsNotSilentlyScoredWithCurrentSettings() {
-        assertThat(service.revision(0)).isNull();
+        assertThat(service.revision(0)).isEqualTo(service.find().data());
         assertThatThrownBy(() -> service.revision(99)).isInstanceOf(EvaluationSettingsException.class);
     }
 

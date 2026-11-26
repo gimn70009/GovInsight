@@ -28,6 +28,10 @@ from app.domains.analysis.legal.risks import (
     no_candidate_legal_risks,
 )
 from app.domains.analysis.schemas.business_type import BusinessTypeAssessment
+from app.domains.analysis.schemas.feasibility import (
+    ConfiguredOpportunityAssessment,
+    FeasibilityEvidence,
+)
 from app.domains.analysis.schemas.request import (
     AnalysisChangeType,
     AnalysisDocumentRequest,
@@ -129,6 +133,7 @@ class AgentAnalysis:
     draft: AnalysisDraft
     used_tools: list[str]
     model_name: str
+    feasibility: FeasibilityEvidence | None = None
 
 
 class BaseProposalAssessment(CamelCaseModel):
@@ -159,6 +164,10 @@ class BaseAnalysisDraft(BaseModel):
     comparison_summary: BaseComparisonSummary
 
 
+class ConfiguredBaseAnalysisDraft(BaseAnalysisDraft):
+    opportunity: ConfiguredOpportunityAssessment
+
+
 class AnalysisRunner(Protocol):
     async def analyze(
         self,
@@ -178,6 +187,7 @@ class LangChainAnalysisRunner:
             reasoning_effort="minimal",
         )
         self._analysis_model = model.with_structured_output(BaseAnalysisDraft)
+        self._configured_analysis_model = model.with_structured_output(ConfiguredBaseAnalysisDraft)
         evidence_model = ChatOpenAI(
             model=settings.model_name,
             api_key=settings.api_key,
@@ -254,8 +264,10 @@ class LangChainAnalysisRunner:
         )
 
         legal_risk_task = asyncio.create_task(self._assess_legal_risks(document))
+        configured = document.evaluation_settings is not None
+        analysis_model = self._configured_analysis_model if configured else self._analysis_model
         try:
-            response = await self._analysis_model.ainvoke([
+            response = await analysis_model.ainvoke([
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
             ])
@@ -266,12 +278,22 @@ class LangChainAnalysisRunner:
             await asyncio.gather(legal_risk_task, return_exceptions=True)
             raise
 
+        response_schema = ConfiguredBaseAnalysisDraft if configured else BaseAnalysisDraft
         base_draft = (
             response
-            if isinstance(response, BaseAnalysisDraft)
-            else BaseAnalysisDraft.model_validate(response)
+            if isinstance(response, response_schema)
+            else response_schema.model_validate(response)
         )
         draft_payload = base_draft.model_dump()
+        feasibility = base_draft.opportunity.feasibility if configured else None
+        if configured:
+            # The model supplies evidence, never the configured feasibility score.
+            dimensions = draft_payload["opportunity"]["dimensions"]
+            dimensions.insert(2, {
+                "type": "FEASIBILITY", "score": 0,
+                "reason": "확인한 항목별 근거로 실행 가능성을 산정합니다.",
+            })
+            draft_payload["opportunity"] = {"dimensions": dimensions}
         business_type, business_type_review = reviewed_business_type(
             base_draft.comparison_summary.business_type, document,
         )
@@ -296,6 +318,7 @@ class LangChainAnalysisRunner:
             draft=draft,
             used_tools=used_tools,
             model_name=self._settings.model_name,
+            feasibility=feasibility,
         )
 
     async def review_legal_only(self, document: AnalysisDocumentRequest) -> list[LegalRiskFinding]:

@@ -265,9 +265,16 @@ public record AnalysisResultRequest(
 
     public record Opportunity(
             @NotNull @Size(min = 4, max = 4) List<@Valid OpportunityDimension> dimensions,
-            @jakarta.validation.constraints.Min(0) Long settingsRevision
+            @jakarta.validation.constraints.Min(0) Long settingsRevision,
+            @jakarta.validation.constraints.Min(0) Integer scoringPolicyVersion
     ) {
-        public Opportunity { settingsRevision = settingsRevision == null ? 0L : settingsRevision; }
+        public Opportunity {
+            settingsRevision = settingsRevision == null ? 0L : settingsRevision;
+            scoringPolicyVersion = scoringPolicyVersion == null ? 0 : scoringPolicyVersion;
+        }
+        public Opportunity(List<OpportunityDimension> dimensions, Long settingsRevision) {
+            this(dimensions, settingsRevision, 0);
+        }
         public Opportunity(List<OpportunityDimension> dimensions) { this(dimensions, 0L); }
         @AssertTrue(message = "기회 점수의 네 평가 항목이 각각 한 번씩 필요합니다.")
         public boolean hasAllDimensions() {
